@@ -1,0 +1,395 @@
+#
+ version 7.1.070, Alpha 7170
+#
+ sysname ICP-AS
+#
+ip vpn-instance MGT
+ route-distinguisher 10:1
+#
+ip public-instance
+#
+ irf mac-address persistent timer
+ irf auto-update enable
+ undo irf link-delay
+ irf member 1 priority 1
+#
+ ip unreachables enable
+ ip ttl-expires enable
+#
+ dhcp enable
+#
+ lldp global enable
+#
+ system-working-mode standard
+ xbar load-single
+ password-recovery enable
+ lpu-type f-series
+#
+vlan 1
+#
+vlan 10
+#
+vlan 20
+#
+ stp global enable
+#
+dhcp server ip-pool 36
+ gateway-list 192.168.36.1
+ network 192.168.36.0 mask 255.255.255.0
+ address range 10.66.36.10 10.66.36.250
+ dns-list 192.168.36.1
+ domain-name hcl.com
+ expired unlimited
+ nbns-list 192.168.36.1
+#
+interface NULL0
+#
+interface Vlan-interface10
+ ip address 10.66.36.1 255.255.255.0
+#
+interface Vlan-interface20
+ ip address 10.67.252.6 255.255.255.248
+#
+interface FortyGigE1/0/53
+ port link-mode bridge
+#
+interface FortyGigE1/0/54
+ port link-mode bridge
+#
+interface GigabitEthernet1/0/1
+ port link-mode bridge
+ port access vlan 20
+ combo enable fiber
+#
+interface GigabitEthernet1/0/2
+ port link-mode bridge
+ port access vlan 20
+ combo enable fiber
+#
+interface GigabitEthernet1/0/3
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/4
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/5
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/6
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/7
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/8
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/9
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/10
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/11
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/12
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/13
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/14
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/15
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/16
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/17
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/18
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/19
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/20
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/21
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/22
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/23
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/24
+ port link-mode bridge
+ port access vlan 10
+ combo enable fiber
+#
+interface GigabitEthernet1/0/25
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/26
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/27
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/28
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/29
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/30
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/31
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/32
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/33
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/34
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/35
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/36
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/37
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/38
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/39
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/40
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/41
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/42
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/43
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/44
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/45
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/46
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/47
+ port link-mode bridge
+ combo enable fiber
+#
+interface GigabitEthernet1/0/48
+ port link-mode bridge
+ combo enable fiber
+#
+interface M-GigabitEthernet0/0/0
+ ip binding vpn-instance MGT
+ ip address 192.168.56.116 255.255.255.0
+#
+interface Ten-GigabitEthernet1/0/49
+ port link-mode bridge
+ combo enable fiber
+#
+interface Ten-GigabitEthernet1/0/50
+ port link-mode bridge
+ combo enable fiber
+#
+interface Ten-GigabitEthernet1/0/51
+ port link-mode bridge
+ combo enable fiber
+#
+interface Ten-GigabitEthernet1/0/52
+ port link-mode bridge
+ combo enable fiber
+#
+ scheduler logfile size 16
+#
+line class aux
+ user-role network-operator
+#
+line class console
+ user-role network-admin
+#
+line class tty
+ user-role network-operator
+#
+line class vty
+ authentication-mode scheme
+ user-role network-operator
+#
+line aux 0
+ user-role network-operator
+#
+line con 0
+ user-role network-admin
+#
+line vty 0 63
+ user-role network-operator
+#
+ ip route-static 10.0.0.0 22 10.67.252.1
+ ip route-static 10.0.4.0 22 10.67.252.1
+ ip route-static 10.0.128.0 22 10.67.252.1
+ ip route-static 10.0.132.0 22 10.67.252.2
+ ip route-static 10.10.0.0 18 10.67.252.1
+ ip route-static 10.10.64.0 18 10.67.252.1
+ ip route-static 10.10.128.0 18 10.67.252.1
+ ip route-static 10.15.0.0 18 10.67.252.2
+#
+ snmp-agent
+ snmp-agent local-engineid 800063A280A67A61370D0000000001
+ snmp-agent sys-info version all 
+ snmp-agent group v3 snmpv3
+ snmp-agent target-host trap address udp-domain 192.168.56.134 vpn-instance MGT params securityname public v2c
+ snmp-agent usm-user v3 snmp snmpv3 cipher authentication-mode md5 $c$3$3Ds7P+65g4rRxGr+IcXTnzehzc+k8RKZV9Ad2hJOOl8Ing== privacy-mode des56 $c$3$ywsAyqI5fjDJuR9/ARrvvA9qGvBfDYHokJOKIiPzmp0ATQ==
+ snmp-agent trap enable arp 
+ snmp-agent trap enable local-server 
+ snmp-agent trap enable port-attack 
+ snmp-agent trap enable radius 
+ snmp-agent trap enable stp 
+ snmp-agent trap enable super 
+ snmp-agent trap enable syslog 
+#
+ ssh server enable
+#
+radius scheme system
+ user-name-format without-domain
+#
+domain system
+#
+ domain default enable system
+#
+role name level-0
+ description Predefined level-0 role
+#
+role name level-1
+ description Predefined level-1 role
+#
+role name level-2
+ description Predefined level-2 role
+#
+role name level-3
+ description Predefined level-3 role
+#
+role name level-4
+ description Predefined level-4 role
+#
+role name level-5
+ description Predefined level-5 role
+#
+role name level-6
+ description Predefined level-6 role
+#
+role name level-7
+ description Predefined level-7 role
+#
+role name level-8
+ description Predefined level-8 role
+#
+role name level-9
+ description Predefined level-9 role
+#
+role name level-10
+ description Predefined level-10 role
+#
+role name level-11
+ description Predefined level-11 role
+#
+role name level-12
+ description Predefined level-12 role
+#
+role name level-13
+ description Predefined level-13 role
+#
+role name level-14
+ description Predefined level-14 role
+#
+user-group system
+#
+local-user admin class manage
+ password hash $h$6$5k8HrUnDGeYwQ993$if6BwTTLbwPiqJGog2I06703ip3/VZDI8g8l554KhpvDwtf0GRdBPalp8XGvlI2reAdS1aIVUXGd0BKhoIczAg==
+ service-type ssh
+ authorization-attribute user-role network-admin
+ authorization-attribute user-role network-operator
+#
+return

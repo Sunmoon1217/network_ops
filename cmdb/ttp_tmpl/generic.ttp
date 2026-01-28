@@ -1,0 +1,6 @@
+<vars>
+vlan_range = "unrange(rangechar=' to ', joinchar=' ') | split(' ') | join(':') | joinmatches(':')"
+</vars>
+<group name="vlans">
+vlan {{ vlan | ORPHRASE | chain('vlan_range') }}
+</group>

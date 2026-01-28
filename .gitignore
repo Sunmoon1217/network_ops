@@ -1,0 +1,43 @@
+# 忽略目录
+logs/
+.venv/
+.vscode/
+.github/
+frontend/node_modules/
+.idea/
+*.egg-info/
+dist/
+build/
+
+# 忽略编译生成的文件
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# 忽略数据库和临时文件
+*.sqlite3
+db.sqlite3
+*.db
+service_pids.json
+
+# 忽略环境文件
+.env
+.env.local
+.env.*.local
+
+# 忽略指定文件
+response.html
+
+# IDE 和编辑器
+.DS_Store
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace

@@ -1,0 +1,123 @@
+# HP Comware Device Configuration TTP Template (Comprehensive)
+
+# 系统信息
+<group name="hostname">
+ sysname {{ hostname }}
+</group>
+
+<group name="version">
+ version {{ version | re('.+') }}
+</group>
+
+# VPN实例配置
+<group name="vpn_instances">
+ip vpn-instance {{ vrf }}
+ route-distinguisher {{ rd }}
+</group>
+
+# IRF配置
+<group name="irf">
+ irf mac-address persistent timer
+ irf auto-update enable
+ undo irf link-delay
+ irf member {{ member_id }} priority {{ priority }}
+</group>
+
+# DHCP配置
+<group name="dhcp">
+ dhcp enable
+</group>
+
+# LLDP配置
+<group name="lldp">
+ lldp global enable
+</group>
+
+# VLAN配置
+<group name="vlans">
+vlan {{ vlan_id }}
+</group>
+
+# STP配置
+<group name="stp">
+ stp global enable
+</group>
+
+# DHCP地址池配置
+<group name="dhcp_pools">
+dhcp server ip-pool {{ pool_name }}
+ gateway-list {{ gateway }}
+ network {{ network }} mask {{ netmask }}
+ address range {{ start_ip }} {{ end_ip }}
+ dns-list {{ dns }}
+ domain-name {{ domain }}
+ expired {{ expired_time }}
+ nbns-list {{ nbns }}
+</group>
+
+# 接口配置 - 通用接口配置
+<group name="interfaces">
+interface {{ interface }}
+ description {{ description }}
+ shutdown {{ shutdown | set(true) }}
+ ip binding vpn-instance {{ vrf }}
+ port link-mode {{ mode }}
+ port access vlan {{ access_vlan }}
+ combo enable {{ combo_type }}
+ ip address {{ ip_address }} {{ subnet_mask }}
+</group>
+
+# 静态路由配置
+<group name="static_routes">
+ ip route-static {{ destination_network }} {{ mask }} {{ next_hop }}
+</group>
+
+# SNMP配置
+<group name="snmp">
+ snmp-agent
+ snmp-agent local-engineid {{ engine_id }}
+ snmp-agent sys-info version {{ version }}
+ <group name="target_hosts">
+ snmp-agent target-host trap address udp-domain {{ ip }} vpn-instance {{ vrf }} params securityname {{ securityname }} {{ snmp_version }}
+ </group>
+ <group name="traps">
+ snmp-agent trap enable {{ trap_type }}
+ </group>
+</group>
+
+# SSH配置
+<group name="ssh">
+ ssh server enable
+</group>
+
+# RADIUS配置
+<group name="radius">
+radius scheme {{ radius_name }}
+ user-name-format {{ username_format }}
+</group>
+
+# 域配置
+<group name="domains">
+domain {{ domain_name }}
+</group>
+
+# 域默认配置
+<group name="domain_default">
+ domain default enable {{ default_domain }}
+</group>
+
+# 角色配置
+<group name="roles">
+role name {{ role_name }}
+ description {{ description }}
+</group>
+
+# 本地用户配置
+<group name="local_users">
+local-user {{ username }} class {{ user_class }}
+ password hash {{ password }}
+ service-type {{ service_type }}
+ <group name="user_roles">
+ authorization-attribute user-role {{ role }}
+ </group>
+</group>

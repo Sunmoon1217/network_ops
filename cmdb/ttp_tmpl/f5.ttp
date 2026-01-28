@@ -1,0 +1,184 @@
+# F5 BIG-IP Device Configuration TTP Template
+
+# 系统信息
+<group name="hostname">
+sys management-ip {{ hostname }}
+</group>
+
+<group name="version">
+sys software image {{ version }}
+</group>
+
+# 系统全局配置
+<group name="system">
+sys global-settings {{ _ }}
+</group>
+
+# 虚拟机配置
+<group name="vlans">
+net vlan {{ vlan_name }}
+ vlanid {{ vlan_id | to_int }}
+ <group name="tagged_interfaces">
+ tagged {{ interface }}
+ </group>
+ <group name="untagged_interfaces">
+ untagged {{ interface }}
+ </group>
+</group>
+
+# 物理接口配置
+<group name="interfaces">
+net interface {{ interface }}
+ description {{ description }}
+ speed {{ speed }}
+ mtu {{ mtu | to_int }}
+ media-active {{ media_type }}
+ enabled {{ enabled | set(true) }}
+</group>
+
+# 自治系统配置（LACP）
+<group name="trunks">
+net trunk {{ trunk_name }}
+ description {{ description }}
+ interfaces {{ interfaces | split(',') }}
+ lacp enabled {{ lacp_enabled | set(true) }}
+ lacp-timeout {{ lacp_timeout }}
+</group>
+
+# 路由相关配置
+<group name="routes">
+net route {{ route_name }}
+ destination {{ destination }}
+ gw {{ gateway }}
+ mtu {{ mtu | to_int }}
+</group>
+
+# IP 路由配置
+<group name="routing">
+net routing bfd {{ bfd_name }}
+ description {{ description }}
+</group>
+
+# Self IP 配置（本地IP）
+<group name="self_ips">
+net self {{ self_ip_name }}
+ address {{ ip_address }}
+ netmask {{ netmask }}
+ vlan {{ vlan }}
+ allow-service {{ services | split(' ') }}
+ traffic-group {{ traffic_group }}
+</group>
+
+# 虚拟服务器配置
+<group name="virtual_servers">
+ltm virtual {{ virtual_name }}
+ description {{ description }}
+ destination {{ destination_ip }}:{{ destination_port }}
+ ip-protocol {{ protocol }}
+ profiles {{ profiles | split(' ') }}
+ pool {{ pool_name }}
+ rules {{ rules | split(' ') }}
+ enabled {{ enabled | set(true) }}
+</group>
+
+# 池配置
+<group name="pools">
+ltm pool {{ pool_name }}
+ description {{ description }}
+ load-balancing-mode {{ lb_method }}
+ monitor {{ monitors | split(' ') }}
+ <group name="pool_members">
+ members {{ member_name }}
+ </group>
+</group>
+
+# 池成员配置
+<group name="pool_members">
+ltm pool {{ pool_name }} members {{ member_name }}
+ address {{ member_ip }}
+ port {{ member_port | to_int }}
+ session {{ session_state }}
+ state {{ state }}
+</group>
+
+# 监控器配置
+<group name="monitors">
+ltm monitor {{ monitor_type }} {{ monitor_name }}
+ description {{ description }}
+ interval {{ interval | to_int }}
+ timeout {{ timeout | to_int }}
+ send {{ send_string }}
+ recv {{ recv_string }}
+</group>
+
+# 节点配置
+<group name="nodes">
+ltm node {{ node_name }}
+ address {{ node_ip }}
+ description {{ description }}
+ monitor {{ monitors | split(' ') }}
+</group>
+
+# iRule配置
+<group name="irules">
+ltm rule {{ rule_name }}
+ description {{ description }}
+</group>
+
+# 配置文件名和时间戳
+<group name="metadata">
+#\s+Last\s+modified\s+on\s+{{ last_modified }}
+#\s+Built\s+{{ built_time }}
+</group>
+
+# SNAT 池配置
+<group name="snat_pools">
+ltm snat-pool {{ snat_pool_name }}
+ members {{ members | split(' ') }}
+ description {{ description }}
+</group>
+
+# VS绑定SNAT配置
+<group name="virtual_snat">
+ltm virtual {{ virtual_name }} snatpool {{ snat_pool }}
+</group>
+
+# 持久性配置
+<group name="persistence">
+ltm persistence {{ persistence_type }} {{ persistence_name }}
+ description {{ description }}
+ timeout {{ timeout | to_int }}
+</group>
+
+# HTTP配置文件
+<group name="http_profile">
+ltm profile http {{ profile_name }}
+ description {{ description }}
+ defaults-from {{ defaults_from }}
+</group>
+
+# TCP配置文件
+<group name="tcp_profile">
+ltm profile tcp {{ profile_name }}
+ description {{ description }}
+ defaults-from {{ defaults_from }}
+</group>
+
+# SSL/TLS配置文件
+<group name="ssl_profile">
+ltm profile client-ssl {{ profile_name }}
+ description {{ description }}
+ cert {{ certificate }}
+ key {{ key }}
+ ciphers {{ ciphers }}
+</group>
+
+# 策略配置
+<group name="policies">
+ltm policy {{ policy_name }}
+ description {{ description }}
+ strategy {{ strategy }}
+ <group name="policy_rules">
+ rules {{ rule_name }}
+ </group>
+</group>
