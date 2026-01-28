@@ -29,7 +29,7 @@ service_pids.json
 .env.*.local
 
 # 忽略指定文件
-response.html
+device_list.csv
 
 # IDE 和编辑器
 .DS_Store
