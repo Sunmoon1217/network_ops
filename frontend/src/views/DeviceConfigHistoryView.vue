@@ -123,12 +123,11 @@ onMounted(() => {
 
           <!-- 分页组件 -->
           <div v-if="totalItems > 0" class="pagination-container">
-            <Pagination
-              :current-page="currentPage"
-              :total-pages="totalPages"
-              :page-size="pageSize"
-              :total-items="totalItems"
-              :on-page-change="handlePageChange"
+            <el-pagination 
+              small
+              hide-on-single-page=1
+              layout="prev, pager, next"
+              :total="totalPages"
             />
           </div>
         </div>
@@ -226,6 +225,7 @@ onMounted(() => {
 .pagination-container {
   padding: 15px;
   border-top: 1px solid #e0e0e0;
+  font: 0.7em sans-serif !important;
 }
 
 .config-item {

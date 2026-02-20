@@ -24,9 +24,9 @@ class ConfigParser:
             TTP模板文件路径
         """
         template_map = {
-            'hp_comware': 'h3c.ttp',
-            'f5': 'f5.ttp',
-            'f5_bigip': 'f5.ttp',
+            'h3c_switch': 'h3c.ttp',
+            'f5_ltm': 'f5_ltm.ttp',
+            'f5_gtm': 'f5_gtm.ttp',
             # 可以添加更多设备类型的模板映射
             # 'cisco_ios': 'cisco_ios_template.ttp',
             # 'juniper_junos': 'juniper_junos_template.ttp',
@@ -67,6 +67,7 @@ class ConfigParser:
         
         # 检查解析结果是否为空
         if not parsed_result:
+            logger.warning("解析失败")
             raise ValueError("解析结果为空")
 
         # 提取解析结果中的第一个元素

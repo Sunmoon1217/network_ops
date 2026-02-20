@@ -1,5 +1,6 @@
 # 忽略目录
 logs/
+tmp/
 .venv/
 .vscode/
 .github/

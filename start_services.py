@@ -3,8 +3,8 @@
 启动脚本：在后台并行启动三个开发服务并记录 PID 与日志。
 
 服务：
-- Django 开发服务器: `python manage.py runserver 0.0.0.0:8000`
-- FastAPI (uvicorn)    : `uvicorn main:app --host 0.0.0.0 --port 8001` （回退到 `python main.py` 当 uvicorn 不可用）
+- Django 开发服务器: `uv run uvicorn netops.asgi:application --port 8000 --reload`
+- FastAPI (uvicorn)    : `uvicorn main:app --host 0.0.0.0 --port 8001`
 - 前端开发服务器    : `pnpm run dev`（回退到 `npm run dev` 当 pnpm 不可用）
 
 用法:
@@ -31,6 +31,7 @@ SERVICES = {}
 def detect_commands():
     # Django
     SERVICES['django'] = {
+        # 'cmd': ['uv', 'run', 'gunicorn', 'netops.wsgi:application', '--bind', '0.0.0.0:8000', '--reload'],
         'cmd': ['uv', 'run', 'uvicorn', 'netops.asgi:application', '--port', '8000', '--reload'],
         'cwd': str(ROOT),
         'log': str(LOG_DIR / 'django.log')

@@ -1,0 +1,50 @@
+# F5 BIG-IP Device Configuration TTP Template
+
+<group name="nodes">
+ltm node {{ name | _start_ }} {
+    address {{ address }}
+</group>
+
+<group name="pools">
+ltm pool {{ name | _start_ }} {
+    load-balancing-mode {{ mode }}
+    monitor {{ monitor | ORPHRASE }}
+    <group name="members">
+    members { {{ _start_ }}
+        {{ name }} {
+            address {{ address }}
+    </group>
+</group>
+
+<group name="virtuals">
+ltm virtual {{ name | _start_ }} {
+    destination /Common/{{ vs_address }}:{{ vs_port }}
+    ip-protocol {{ protocol }}
+    mask {{ mask }}
+    pool {{ pool }}
+    <group name="persist">
+    persist { {{ _start_ }}
+        <group>
+        {{ name }} {
+        </group>
+    </group>
+    <group name="profiles" method="table">
+    profiles { {{ _start_ }}
+        <group>
+        {{ name }} {
+        </group>
+        <group>
+        {{ name }} { }
+        </group>
+    } {{ _end_ }}
+    </group>
+    <group name="rules" method="table">
+    rules { {{ _start_ }}
+        <group>
+        {{ name }}
+        </group>
+    </group>
+    source {{ source }}
+        pool {{ snat_pool }}
+        type {{ snat_type }}
+</group>

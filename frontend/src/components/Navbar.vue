@@ -101,81 +101,70 @@ const handleNavClick = (item: NavItem) => {
 </script>
 
 <template>
-  <div class="navbar-wrapper">
-    <div class="navbar-container">
-      <div class="navbar-logo">
-        <ElIcon size="24"><HomeFilled /></ElIcon>
-        <span class="logo-text">网络运维平台</span>
-      </div>
-      <div class="menu-container">
-        <ul class="nav-menu">
-          <!-- 导航项渲染 -->
-          <li
-            v-for="item in navItems"
-            :key="item.path"
-            class="nav-item"
-            :class="{
-              active: isActive(item.path) || activeDropdown === item.path,
-              'dropdown-item': hasChildren(item),
-            }"
-            @mouseenter="hasChildren(item) && (activeDropdown = item.path)"
-            @mouseleave="hasChildren(item) && (activeDropdown = null)"
+  <div class="navbar-container">
+    <div class="navbar-logo">
+      <ElIcon ><HomeFilled /></ElIcon>
+      <span class="logo-text">网络运维平台</span>
+    </div>
+    <div class="menu-container">
+      <ul class="nav-menu">
+        <!-- 导航项渲染 -->
+        <li
+          v-for="item in navItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{
+            active: isActive(item.path) || activeDropdown === item.path,
+            'dropdown-item': hasChildren(item),
+          }"
+          @mouseenter="hasChildren(item) && (activeDropdown = item.path)"
+          @mouseleave="hasChildren(item) && (activeDropdown = null)"
+        >
+          <!-- 导航项内容 -->
+          <div
+            :class="hasChildren(item) ? 'dropdown-toggle' : 'nav-item-content'"
+            @click="handleNavClick(item)"
           >
-            <!-- 导航项内容 -->
-            <div
-              :class="hasChildren(item) ? 'dropdown-toggle' : 'nav-item-content'"
-              @click="handleNavClick(item)"
-            >
-              <ElIcon class="nav-icon"><component :is="item.icon" /></ElIcon>
-              <span class="nav-text">{{ item.name }}</span>
-              <ElIcon v-if="hasChildren(item)" class="dropdown-icon"><ArrowDown /></ElIcon>
-            </div>
+            <ElIcon class="nav-icon"><component :is="item.icon" /></ElIcon>
+            <span class="nav-text">{{ item.name }}</span>
+            <ElIcon v-if="hasChildren(item)" class="dropdown-icon"><ArrowDown /></ElIcon>
+          </div>
 
-            <!-- 自定义下拉菜单 -->
+          <!-- 自定义下拉菜单 -->
+          <div
+            v-if="hasChildren(item) && activeDropdown === item.path"
+            class="custom-dropdown-menu"
+          >
             <div
-              v-if="hasChildren(item) && activeDropdown === item.path"
-              class="custom-dropdown-menu"
+              v-for="child in item.children"
+              :key="child.path"
+              class="dropdown-menu-item"
+              :class="{ active: isActive(child.path) }"
+              @click="handleNavClick(child)"
             >
-              <div
-                v-for="child in item.children"
-                :key="child.path"
-                class="dropdown-menu-item"
-                :class="{ active: isActive(child.path) }"
-                @click="handleNavClick(child)"
-              >
-                <ElIcon class="nav-icon"><component :is="child.icon" /></ElIcon>
-                <span>{{ child.name }}</span>
-              </div>
+              <ElIcon class="nav-icon"><component :is="child.icon" /></ElIcon>
+              <span>{{ child.name }}</span>
             </div>
-          </li>
-        </ul>
-      </div>
+          </div>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
 
 <style scoped>
-.navbar-wrapper {
-  width: 100%;
-  background-color: #2c3e50;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-}
-
 .navbar-container {
   max-width: 1200px;
   margin: 0 auto;
   display: flex;
   align-items: center;
-  height: 60px;
   padding: 0 20px;
 }
 
 .navbar-logo {
   display: flex;
   align-items: center;
+  height: 100%;
   gap: 10px;
   font-size: 1.2rem;
   font-weight: bold;
@@ -188,6 +177,7 @@ const handleNavClick = (item: NavItem) => {
 
 .menu-container {
   flex: 1;
+  height: 100%;
   display: flex;
   justify-content: flex-start;
   margin-left: 40px;
@@ -206,8 +196,6 @@ const handleNavClick = (item: NavItem) => {
   align-items: center;
   gap: 8px;
   padding: 0 16px;
-  height: 60px;
-  line-height: 60px;
   color: white;
   cursor: pointer;
   transition: background-color 0.3s ease;
@@ -240,7 +228,7 @@ const handleNavClick = (item: NavItem) => {
   width: 100%;
   height: 100%;
   padding: 0 16px;
-  line-height: 60px;
+  /* line-height: 60px; */
   color: white;
   cursor: pointer;
   transition: background-color 0.3s ease;
@@ -279,12 +267,11 @@ const handleNavClick = (item: NavItem) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
+  height: 33px;
   padding: 0 16px;
   color: white;
   cursor: pointer;
   transition: background-color 0.3s ease;
-  line-height: 44px;
 }
 
 .dropdown-menu-item:hover {

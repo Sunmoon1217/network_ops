@@ -59,9 +59,10 @@ dhcp server ip-pool {{ pool_name }}
 <group name="interfaces">
 interface {{ interface }}
  description {{ description }}
- shutdown {{ shutdown | set(true) }}
+ shutdown {{ enabled | set(0) | default(1) }}
  ip binding vpn-instance {{ vrf }}
  port link-mode {{ mode }}
+ port link-mode {{ type }}
  port access vlan {{ access_vlan }}
  combo enable {{ combo_type }}
  ip address {{ ip_address }} {{ subnet_mask }}

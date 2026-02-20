@@ -2,9 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../utils/django_api'
-import DataTable from '../components/DataTable.vue'
+import type { TableColumn } from '@/types'
 import type { InterfaceConfig } from '../types'
-import type { TableColumn, TablePagination } from '../types'
+import type { ComponentSize } from 'element-plus'
 
 const router = useRouter()
 const interfaces = ref<InterfaceConfig[]>([])
@@ -13,17 +13,15 @@ const error = ref<string | null>(null)
 
 // 分页相关变量
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(15)
 const totalItems = ref(0)
-
-// 计算分页配置
-const pagination = computed<TablePagination>(() => ({
-  currentPage: currentPage.value,
-  pageSize: pageSize.value,
-  total: totalItems.value,
-  pageSizes: [10, 20, 50, 100],
-  layout: 'total, sizes, prev, pager, next, jumper'
-}))
+const totalPages = ref(0)
+const size = ref<ComponentSize>('default')
+const emit = defineEmits<{
+  'page-change': [page: number]
+  'size-change': [size: number]
+  'refresh': []
+}>()
 
 // 搜索和过滤相关变量
 const searchQuery = ref('')
@@ -63,7 +61,7 @@ const columns = ref<TableColumn[]>([
   {
     prop: 'device_name',
     label: '设备名称',
-    width: 150,
+    width: 230,
     sortable: true,
     formatter: (row: any) => {
       return `<span class="clickable" @click="goToDeviceDetails(${row.device_id})"><i class="el-icon-view"></i> ${row.device_name || '-'}</span>`
@@ -84,7 +82,7 @@ const columns = ref<TableColumn[]>([
   {
     prop: 'vrf',
     label: 'VPN实例',
-    width: 120,
+    width: 150,
     sortable: true
   },
   {
@@ -97,22 +95,10 @@ const columns = ref<TableColumn[]>([
     label: '状态',
     width: 120, 
     sortable: true, 
-    formatter: (row: any) => { 
-      return row.shutdown ? '<span class="status-red">是</span>' : '否' 
+    formatter: (row: { shutdown?: boolean }) => { 
+      return row.shutdown ? 'Shutdown' : 'UP' 
     } 
-  },
-  // {
-  //   prop: 'speed',
-  //   label: '速率',
-  //   width: 100,
-  //   sortable: true
-  // },
-  // {
-  //   prop: 'duplex',
-  //   label: '双工',
-  //   width: 100,
-  //   sortable: true
-  // }
+  }
 ])
 
 // 获取接口配置
@@ -147,21 +133,21 @@ async function fetchInterfaces(page = 1) {
     }
 
     console.log('发送API请求:', {
-      url: '/config/interfaces/',
+      url: '/interfaces/',
       params: params,
       baseURL: import.meta.env.VITE_API_BASE_URL,
     })
 
     // 发送请求
-    const data = await api.get('/configs/interfaces/', { params })
+    const data = await api.get('/interfaces/', { params })
 
     console.log('API响应:', data)
 
     // 处理响应数据
-    interfaces.value = data.data?.interfaces || []
+    interfaces.value = data.data?.results || []
     totalItems.value = data.data?.count || 0
     // 不再需要计算总页数，DataTable会自动处理
-    // totalPages.value = Math.ceil(totalItems.value / pageSize.value)
+    totalPages.value = Math.ceil(totalItems.value / pageSize.value)
     currentPage.value = page
   } catch (e) {
     console.error('API请求失败:', e)
@@ -188,6 +174,7 @@ function applyFilters() {
 // 分页变化处理
 function handlePageChange(page: number) {
   currentPage.value = page
+  console.log('当前页面：', page)
   fetchInterfaces(page)
 }
 
@@ -196,6 +183,10 @@ function handleSizeChange(size: number) {
   fetchInterfaces(1) // 回到第一页
 }
 
+const handleCurrentChange = (page: number) => {
+  currentPage.value = page
+  fetchInterfaces(page)
+}
 // 跳转到设备详情
 function goToDeviceDetails(deviceId: number) {
   router.push(`/devices/${deviceId}/config`)
@@ -208,13 +199,13 @@ onMounted(async () => {
   console.log('组件挂载 - 设备列表获取完成，开始获取接口数据')
   await fetchInterfaces()
   console.log('组件挂载 - 接口数据获取完成')
-  // console.log('组件挂载 - 接口数据:', interfaces.value)
+  console.log('组件挂载 - 接口数据:', interfaces.value)
 })
 </script>
 
 <template>
   <div class="interface-management-container">
-    <h2>接口管理</h2>
+    <h2 class="viewtitle">接口管理</h2>
 
     <!-- 搜索和过滤区域 -->
     <div class="filters-container">
@@ -283,16 +274,28 @@ onMounted(async () => {
       <button @click="fetchInterfaces(currentPage)" class="retry-btn">重试</button>
     </div>
 
-    <!-- 接口配置表格 - 使用DataTable组件 -->
+    <!-- 接口表格 -->
     <div v-else class="interface-table-container">
-      <DataTable
+      <el-table
         :data="interfaces"
-        :columns="columns"
-        :loading="loading"
-        :pagination="pagination"
-        :show-pagination="totalItems > 0"
-        @page-change="handlePageChange"
-        @size-change="handleSizeChange"
+        class="interface-table"
+      >
+        <el-table-column 
+          v-for="col in columns"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+        />
+      </el-table>
+      <el-pagination
+        style="height: 10%;"
+        :current-page="currentPage"
+        @update:current-page="handleCurrentChange"
+        :page-sizes="[15, 30, 50, 100]"
+        background
+        :size="size"
+        layout="->, total, jumper, prev, pager, next, sizes"
+        :total="totalItems"
       />
     </div>
   </div>
@@ -302,23 +305,29 @@ onMounted(async () => {
 .interface-management-container {
   max-width: 100%;
   margin: 0 auto;
-  padding: 20px;
+  padding: 10px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
-
+.viewtitle{
+  flex: 3;
+}
 /* 搜索和过滤区域样式 */
 .filters-container {
+  flex: 6;
   background-color: #f8f9fa;
   border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 6px;
+  margin-bottom: 6px;
+  box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .filter-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  align-items: end;
+  flex-wrap: wrap-reverse;
+  gap: 5px;
+  align-items:center;
 }
 
 .filter-item {
@@ -380,7 +389,9 @@ onMounted(async () => {
 
 /* 表格样式 */
 .interface-table-container {
-  overflow-x: auto;
+  flex: 41;
+  position: relative;
+  height: 100%;
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -390,6 +401,7 @@ onMounted(async () => {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  overflow-x: auto;
 }
 
 .interface-table th {
@@ -408,6 +420,14 @@ onMounted(async () => {
 
 .interface-table tr:hover {
   background-color: #f5f7fa;
+}
+
+.table-pagination {
+  flex: 1;
+  /* padding: 16px; */
+  border-top: 1px solid #ebeef5;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .clickable {

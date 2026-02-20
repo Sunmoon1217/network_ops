@@ -1,0 +1,89 @@
+<group name="datacenters">
+gtm datacenter /Common/{{ datacenter }} { }
+</group>
+
+<group name="regions">
+gtm region /Common/{{ name | _start_ }} {
+    <group name="members">
+    region-members { {{ _start_ }}
+        <group>
+        pool /Common/{{ pool }} { }
+        </group>
+        <group>
+        subnet {{ subnet }} { }
+        </group>
+    </group>
+</group>
+
+<group name="servers">
+gtm server /Common/{{ name | _start_ }} {
+    datacenter /Common/{{ datacenter }}
+    <group name="devices">
+    devices { {{ _start_ }}
+        {{ dev_name }} {
+            <group name="addresses">
+            addresses { {{ _start_ }}
+                <group>
+                {{ address }} { }
+                </group>
+            </group>
+    </group>
+    monitors {{ monitors | ORPHRASE }}
+    product {{ type }}
+    <group name="vs">
+    virtual-servers { {{ _start_ }}
+        {{ vs_name }} {
+            destination {{ address }}:{{ port }}
+    </group>
+</group>
+
+<group name="topologies">
+gtm topology ldns: {{ ldns_type }} {{ ldns }} server: {{ server_type }} {{ server }} {
+    order {{ order }}
+</group>
+
+<group name="monitors">
+gtm monitor {{ type }} /Common/{{ name }} {
+    defaults-from /Common/{{ extend }}
+    destination {{ dest }}
+    interval {{ interval }}
+    ignore-down-response {{ ignore-down }}
+    interval {{ interval }}
+    probe-attempts {{ probe-attempts }}
+    probe-interval {{ probe-interval}}
+    probe-timeout {{ probe-timeout}}
+    recv {{ recv | ORPHRASE }}
+    send {{ send | ORPHRASE }}
+    timeout {{ timeout }}
+</group>
+
+<group name="pools">
+gtm pool {{ type | upper }} /Common/{{ name }} {
+    alternate-mode {{ alternate-mode | default("round-robin") }}
+    fallback-ip {{ fallback-ip }}
+    fallback-mode {{ fallback-mode | default("return-to-dns") }}
+    load-balancing-mode {{ lb-mode | default("round-robin") }}
+    <group name="members">
+    members { {{ _start_ }}
+        <group>
+        {{ server }}:{{ vs_name }} {
+            {{ enabled | equal("disabled") | default("enabled") }}
+            member-order {{ order }}
+            ratio {{ ratio }}
+        </group>
+    </group>
+    monitor {{ monitor | ORPHRASE }}
+    ttl {{ ttl | default(30) }}
+</group>
+
+<group name="wideips">
+gtm wideip {{ type | upper }} /Common/{{ name }} {
+    pool-lb-mode {{ pool-lb-mode | default("round-robin") }}
+    <group name="pools">
+    pools { {{ _start_ }}
+        <group>
+        /Common/{{ pool_name }} {
+            order {{ order }}
+        </group>
+    </group>
+</group>

@@ -33,6 +33,16 @@ const router = createRouter({
       name: 'interfaces',
       component: () => import('@/views/InterfaceManagementView.vue'),
     },
+    {
+      path: '/config/load_balancer',
+      name: 'virtuals',
+      component: () => import('@/views/VirtualManagementView.vue'),
+    },
+    {
+      path: '/config/dns',
+      name: 'wideip',
+      component: () => import('@/views/GtmDNSManagementView.vue')
+    }
   ],
 })
 

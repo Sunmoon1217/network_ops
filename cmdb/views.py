@@ -8,12 +8,13 @@ from asyncio import run as asyncio_run
 from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.http import JsonResponse
-from cmdb.models import Device, DeviceConfig
-from .serializers import DeviceSerializer, DeviceConfigSerializer, InterfaceSerializer
+from cmdb.models import Device, DeviceConfig, Interface, LtmVirtualServer
+from .serializers import DeviceSerializer, DeviceConfigSerializer, InterfaceSerializer, VirtualSerializer
 from .services import batch_fetch_configs, async_fetch_config
 
 # Import config parser
 from .utils import config_parser
+from netops.utils import CustomPagination
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -157,7 +158,62 @@ class DeviceViewSet(viewsets.ModelViewSet):
         
         return Response(result, status=status.HTTP_200_OK)
 
-
+    @action(detail=True, methods=['get'], url_path='history')
+    def get_config_history(self, request, pk=None):
+        """
+        获取设备的历史配置
+        
+        Args:
+            request: HTTP请求对象
+            pk: 设备ID
+            
+        Returns:
+            Response: 包含设备最新配置的HTTP响应
+        """
+        logger.info(f"开始获取设备{pk}的最新配置")
+        
+        # 获取设备对象
+        device = self.get_object()
+        logger.debug(f"获取到设备信息: {device.hostname} ({device.address})")
+        
+        try:
+            # 获取设备的最新配置
+            logger.debug(f"查询设备{pk}的历史配置列表")
+            config_list_objs = DeviceConfig.objects.filter(device=device)
+            
+            if config_list_objs:
+                logger.info(f"成功获取设备{pk}的历史配置列表")
+                # 序列化返回结果
+                config_list = [(obj.id, obj.time) for obj in config_list_objs]
+                return Response(
+                    {
+                        "success": True,
+                        "message": f"成功获取{device.hostname}的最新配置",
+                        "config": config_list
+                    },
+                    status=status.HTTP_200_OK
+                )
+            else:
+                logger.warning(f"设备{pk}没有配置记录")
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"设备{device.hostname}没有配置记录",
+                        "config": None
+                    },
+                    status=status.HTTP_200_OK
+                )
+        except Exception as e:
+            logger.error(f"获取设备{pk}最新配置失败: {str(e)}", exc_info=True)
+            return Response(
+                {
+                    "success": False,
+                    "message": f"获取配置失败: {str(e)}",
+                    "config": None
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
 
 class DeviceConfigViewSet(viewsets.ModelViewSet):
     """设备配置的RESTful API视图集
@@ -180,41 +236,22 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         device = self.request.query_params.get('device')
         if device:
-            queryset = queryset.filter(device__hostname=device)
+            queryset = queryset.filter(device__pk=device)
         return queryset
 
-    @action(detail=False, methods=['get'], url_path='interfaces', url_name='interfaces')
-    def get_all_interfaces(self, request):
-        """
-        获取所有设备的接口信息
-        请求路径: /api/devices/interfaces/ 或 /api/devices/interfaces
-        """
-        logger.info("开始处理获取所有设备接口信息的请求")
-        
-        # 获取所有设备
-        devices = Device.objects.all()  # type: ignore
-        
-        # 收集所有设备的接口信息
-        all_interfaces = []
-        
-        for device in devices:
-            device_config = DeviceConfig.objects.filter(device=device).first()
-            if device_config and device_config.interface_json:
-                interfaces = device_config.interface_json
-                if not isinstance(interfaces, list):
-                    continue
-                for interface in interfaces:
-                    # 为每个接口添加设备信息
-                    interface['device_id'] = device.pk
-                    interface['device_name'] = device.hostname
-                    all_interfaces.append(InterfaceSerializer(interface).data)
-        
-        logger.info(f"共收集到{len(all_interfaces)}个接口信息")
-        
-        # 返回接口信息
-        return Response({
-            "success": True,
-            "count": len(all_interfaces),
-            "interfaces": all_interfaces
-        })
- 
+
+class VirtualServerViewSet(viewsets.ModelViewSet):
+    queryset = LtmVirtualServer.objects.select_related('config__device').all()  # type: ignore
+    serializer_class = VirtualSerializer
+    permission_classes = [AllowAny]  # 允许所有访问，生产环境应使用更严格的权限
+    filterset_fields = ['config']  # 支持按设备过滤
+
+    pagination_class = CustomPagination
+
+class InterfaceViewSet(viewsets.ModelViewSet):
+    queryset = Interface.objects.select_related('config__device').all()
+    serializer_class = InterfaceSerializer
+    permission_classes = [AllowAny]
+    filterset_fields = ['config']
+
+    pagination_class = CustomPagination

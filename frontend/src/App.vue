@@ -5,8 +5,10 @@ import Navbar from './components/Navbar.vue'
 
 <template>
   <div class="app">
-    <Navbar />
-    <main class="main-content">
+    <nav class="nav-contianer">
+      <Navbar />
+    </nav>
+    <main class="main-container">
       <RouterView />
     </main>
   </div>
@@ -25,16 +27,27 @@ body {
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-.main-content {
-  flex: 1;
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+.nav-contianer {
+  flex: 5;
   width: 100%;
+  display: flex;
+  background-color: #2c3e50;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  z-index: 1000;
+}
+
+.main-container {
+  flex: 95;
+  /* padding: 20px; */
+  /* max-width: 1200px; */
+  margin: 0 auto;
+  width: 90%;
+  overflow: hidden;
 }
 </style>
