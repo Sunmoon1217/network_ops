@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
+    'django_filters',
     'rest_framework',
     'cmdb',
 ]
@@ -166,6 +167,9 @@ REST_FRAMEWORK = {
     # 配置分页
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,  # 默认每页显示10条记录
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend'
+    ]
 }
 
 # CORS Configuration

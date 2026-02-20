@@ -32,6 +32,7 @@ class DeviceConfig(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='configs', verbose_name='关联设备')
     config_text = models.TextField(verbose_name='配置内容')
     config_json = JSONField(blank=True, null=True, verbose_name='JSON格式的配置内容')
+    latest = models.BooleanField(default=True)
     time = models.DateTimeField(auto_now_add=True, verbose_name='保存时间')
 
     def save(self, *args, **kwargs):
@@ -147,8 +148,16 @@ class DeviceConfig(models.Model):
         verbose_name_plural = verbose_name
         ordering = ['-time']  # 默认按时间倒序排序
 
+        constraints = [
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(latest=True),
+                name='uni_latest_config_per_device'
+            )
+        ]
+
         indexes = [
-		    models.Index(fields=['device', '-time'], name='idx_config_latest'),
+		    models.Index(fields=['device', 'latest'], name='idx_config_latest'),
         ]
 
     def __str__(self):

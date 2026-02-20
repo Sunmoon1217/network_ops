@@ -10,6 +10,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "django>=6.0.1",
     "django-cors-headers>=4.9.0",
+    "django-filter>=25.2",
     "djangorestframework>=3.16.1",
     "fastapi>=0.128.0",
     "gunicorn>=25.1.0",

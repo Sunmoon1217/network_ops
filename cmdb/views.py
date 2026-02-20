@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from asyncio import run as asyncio_run
 from asgiref.sync import async_to_sync
 from django.db import transaction
+from django.db.models import Subquery, OuterRef
 from django.http import JsonResponse
 from cmdb.models import Device, DeviceConfig, Interface, LtmVirtualServer
 from .serializers import DeviceSerializer, DeviceConfigSerializer, InterfaceSerializer, VirtualSerializer
@@ -244,14 +245,36 @@ class VirtualServerViewSet(viewsets.ModelViewSet):
     queryset = LtmVirtualServer.objects.select_related('config__device').all()  # type: ignore
     serializer_class = VirtualSerializer
     permission_classes = [AllowAny]  # 允许所有访问，生产环境应使用更严格的权限
-    filterset_fields = ['config']  # 支持按设备过滤
+    filterset_fields = ['name']  # 支持按设备过滤
 
     pagination_class = CustomPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        device = self.request.query_params.get('device')
+        if device:
+            queryset = queryset.filter(config__device__pk=device)
+
+        latest_configs = DeviceConfig.objects.filter(latest=True)
+        latest_virtuals = queryset.filter(config__in=latest_configs)
+        return latest_virtuals
+    
 
 class InterfaceViewSet(viewsets.ModelViewSet):
     queryset = Interface.objects.select_related('config__device').all()
     serializer_class = InterfaceSerializer
     permission_classes = [AllowAny]
-    filterset_fields = ['config']
+    filterset_fields = ['interface']
 
     pagination_class = CustomPagination
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        device = self.request.query_params.get('device')
+        if device:
+            queryset = queryset.filter(config__device__pk=device)
+
+        latest_configs = DeviceConfig.objects.filter(latest=True)
+        latest_interfaces = queryset.filter(config__in=latest_configs)
+        return latest_interfaces
+    

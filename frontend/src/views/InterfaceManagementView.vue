@@ -111,6 +111,7 @@ async function fetchInterfaces(page = 1) {
 
     // 添加设备过滤
     if (deviceFilter.value !== 'all') {
+      console.log("过滤设备名：", deviceFilter.value)
       params.device = deviceFilter.value
     }
 
@@ -251,6 +252,7 @@ onMounted(async () => {
     <div v-else class="interface-table-container">
       <el-table
         :data="interfaces"
+        stripe
         class="interface-table"
       >
         <el-table-column 
@@ -267,6 +269,7 @@ onMounted(async () => {
         background
         layout="->, total, jumper, prev, pager, next"
         :total="totalItems"
+        :page-size="15"
       />
     </div>
   </div>
@@ -385,7 +388,7 @@ onMounted(async () => {
 
 /* 表格样式 */
 .interface-table-container {
-  flex: 39;
+  flex: 60;
   display: flex;
   flex-direction: column;
   background-color: white;
@@ -491,6 +494,7 @@ onMounted(async () => {
 .loading,
 .error,
 .no-data {
+  flex: 60;
   margin: 20px 0;
   padding: 20px;
   border-radius: 8px;
