@@ -14,7 +14,6 @@ declare module 'vue' {
     DataTable: typeof import('./src/components/DataTable.vue')['default']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
     ElPagination: typeof import('element-plus/es')['ElPagination']
-    ElPagition: typeof import('element-plus/es')['ElPagition']
     ElTable: typeof import('element-plus/es')['ElTable']
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     Navbar: typeof import('./src/components/Navbar.vue')['default']

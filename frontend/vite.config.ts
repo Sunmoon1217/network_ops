@@ -14,10 +14,10 @@ export default defineConfig({
     assetsDir: 'static',
     rollupOptions: {
       output: {
-        entryFileNames: 'static/js/[name]-[hash].js',
-        chunkFileNames: 'static/js/[name]-[hash].js',
+        entryFileNames: 'static/js/[name].js',
+        chunkFileNames: 'static/js/[name].js',
         assetFileNames: (assetInfo) => {
-          return 'static/[ext]/[name]-[hash].[ext]'
+          return 'static/[ext]/[name].[ext]'
         },
       },
     },

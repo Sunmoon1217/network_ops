@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
 import api from '../utils/django_api'
 import type { TableColumn } from '@/types'
 import type { InterfaceConfig } from '../types'
-import type { ComponentSize } from 'element-plus'
 
-const router = useRouter()
 const interfaces = ref<InterfaceConfig[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -15,13 +12,6 @@ const error = ref<string | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(15)
 const totalItems = ref(0)
-const totalPages = ref(0)
-const size = ref<ComponentSize>('default')
-const emit = defineEmits<{
-  'page-change': [page: number]
-  'size-change': [size: number]
-  'refresh': []
-}>()
 
 // 搜索和过滤相关变量
 const searchQuery = ref('')
@@ -63,9 +53,6 @@ const columns = ref<TableColumn[]>([
     label: '设备名称',
     width: 230,
     sortable: true,
-    formatter: (row: any) => {
-      return `<span class="clickable" @click="goToDeviceDetails(${row.device_id})"><i class="el-icon-view"></i> ${row.device_name || '-'}</span>`
-    }
   },
   {
     prop: 'interface',
@@ -146,8 +133,6 @@ async function fetchInterfaces(page = 1) {
     // 处理响应数据
     interfaces.value = data.data?.results || []
     totalItems.value = data.data?.count || 0
-    // 不再需要计算总页数，DataTable会自动处理
-    totalPages.value = Math.ceil(totalItems.value / pageSize.value)
     currentPage.value = page
   } catch (e) {
     console.error('API请求失败:', e)
@@ -172,24 +157,13 @@ function applyFilters() {
 }
 
 // 分页变化处理
-function handlePageChange(page: number) {
-  currentPage.value = page
-  console.log('当前页面：', page)
-  fetchInterfaces(page)
-}
-
 function handleSizeChange(size: number) {
   pageSize.value = size
   fetchInterfaces(1) // 回到第一页
 }
-
 const handleCurrentChange = (page: number) => {
   currentPage.value = page
   fetchInterfaces(page)
-}
-// 跳转到设备详情
-function goToDeviceDetails(deviceId: number) {
-  router.push(`/devices/${deviceId}/config`)
 }
 
 // 组件挂载时初始化数据
@@ -288,13 +262,11 @@ onMounted(async () => {
         />
       </el-table>
       <el-pagination
-        style="height: 10%;"
+        class="table-pagination"
         :current-page="currentPage"
         @update:current-page="handleCurrentChange"
-        :page-sizes="[15, 30, 50, 100]"
         background
-        :size="size"
-        layout="->, total, jumper, prev, pager, next, sizes"
+        layout="->, total, jumper, prev, pager, next"
         :total="totalItems"
       />
     </div>
@@ -315,7 +287,7 @@ onMounted(async () => {
 }
 /* 搜索和过滤区域样式 */
 .filters-container {
-  flex: 6;
+  flex: 5;
   background-color: #f8f9fa;
   border-radius: 8px;
   padding: 6px;
@@ -389,15 +361,17 @@ onMounted(async () => {
 
 /* 表格样式 */
 .interface-table-container {
-  flex: 41;
-  position: relative;
-  height: 100%;
+  flex: 39;
+  display: flex;
+  flex-direction: column;
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .interface-table {
+  flex: 2;
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
@@ -423,11 +397,12 @@ onMounted(async () => {
 }
 
 .table-pagination {
-  flex: 1;
-  /* padding: 16px; */
+  padding: 16px;
   border-top: 1px solid #ebeef5;
   display: flex;
   justify-content: flex-end;
+  background-color: white;
+  flex-shrink: 0;
 }
 
 .clickable {
@@ -527,5 +502,4 @@ onMounted(async () => {
   background-color: #f9f9f9;
   border: 1px solid #e0e0e0;
   color: #7f8c8d;
-}
-</style>
+}</style>
