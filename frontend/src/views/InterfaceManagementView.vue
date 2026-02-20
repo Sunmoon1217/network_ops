@@ -228,12 +228,11 @@ onMounted(async () => {
             @keyup.enter="applyFilters"
           />
         </div>
-
-        <!-- 按钮组 -->
-        <div class="filter-buttons">
-          <button @click="applyFilters" class="apply-btn">应用过滤器</button>
-          <button @click="resetFilters" class="reset-btn">重置</button>
-        </div>
+      </div>
+      <!-- 按钮组 - 移到第二行 -->
+      <div class="filter-buttons-row">
+        <button @click="applyFilters" class="apply-btn">应用过滤器</button>
+        <button @click="resetFilters" class="reset-btn">重置</button>
       </div>
     </div>
 
@@ -290,73 +289,98 @@ onMounted(async () => {
   flex: 5;
   background-color: #f8f9fa;
   border-radius: 8px;
-  padding: 6px;
-  margin-bottom: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
   box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .filter-row {
   display: flex;
-  flex-wrap: wrap-reverse;
-  gap: 5px;
-  align-items:center;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 
 .filter-item {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  min-width: 150px;
+  gap: 6px;
+  min-width: 120px;
+  flex: 1;
+  min-width: 0;
 }
 
 .filter-item label {
-  font-weight: bold;
+  font-weight: 500;
   font-size: 14px;
   color: #333;
+  margin-bottom: 4px;
 }
 
 .filter-item input,
 .filter-item select {
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid #e4e7ed;
   border-radius: 4px;
   font-size: 14px;
+  background-color: white;
+  transition: border-color 0.3s;
 }
 
-.filter-buttons {
+.filter-item input:focus,
+.filter-item select:focus {
+  outline: none;
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+}
+
+/* 按钮行样式 - 第二行 */
+.filter-buttons-row {
   display: flex;
-  gap: 10px;
-  margin-left: auto;
+  gap: 12px;
+  justify-content: flex-start;
+  align-items: center;
 }
 
 .apply-btn {
   background-color: #409eff;
   color: white;
   border: none;
-  padding: 8px 16px;
+  padding: 8px 20px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.3s;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .apply-btn:hover {
   background-color: #66b1ff;
+  transform: translateY(-1px);
 }
 
 .reset-btn {
   background-color: #909399;
   color: white;
   border: none;
-  padding: 8px 16px;
+  padding: 8px 20px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.3s;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .reset-btn:hover {
   background-color: #a6a9ad;
+  transform: translateY(-1px);
 }
 
 /* 表格样式 */
