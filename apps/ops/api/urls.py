@@ -1,5 +1,7 @@
 from django.urls import path
 
+from ops.ansible import views as ansible_views
+
 from . import analysis, configs, parsers, trace
 
 urlpatterns = [
@@ -23,4 +25,8 @@ urlpatterns = [
     path("internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
     path("internet-analysis/analyze/", analysis.internet_analysis_run, name="internet-analysis-run"),
     path("internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
+    # Ansible
+    path("ansible/playbooks/", ansible_views.list_playbooks, name="ansible-playbooks"),
+    path("ansible/playbook/", ansible_views.run_playbook, name="ansible-playbook"),
+    path("ansible/inventory/", ansible_views.generate_inventory, name="ansible-inventory"),
 ]
