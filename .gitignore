@@ -73,7 +73,6 @@ network_ops-archive-*
 
 # AI / Compose
 .mimocode/
-AGENTS.md
 docs/
 
 # Database init scripts (keep in repo)
