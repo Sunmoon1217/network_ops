@@ -30,7 +30,7 @@ let savedEdgeSnapshot: any = null
 
 // === 加载拓扑列表 ===
 // 该列表用于顶部下拉选择器，必须完整，故走全量分页拉取（后端已启用数字分页）
-async function loadTopologyList() {
+const loadTopologyList = async () => {
   try {
     topologyList.value = await fetchAllPages('/api/assets/topologies/', { ordering: 'name' })
   } catch {
@@ -39,7 +39,7 @@ async function loadTopologyList() {
 }
 
 // === 切换拓扑 ===
-async function switchTopology(id: number) {
+const switchTopology = async (id: number) => {
   if (editing.value) {
     try {
       await ElMessageBox.confirm('当前有未保存的修改，确认切换？', '提示', { type: 'warning' })
@@ -56,7 +56,7 @@ async function switchTopology(id: number) {
 }
 
 // === 加载单个拓扑数据 ===
-async function loadTopologyData(id: number) {
+const loadTopologyData = async (id: number) => {
   try {
     const res = await getTopology(id)
     const data = res.data?.graph_data
@@ -71,7 +71,7 @@ async function loadTopologyData(id: number) {
 }
 
 // === 新建拓扑 ===
-async function handleCreateTopology() {
+const handleCreateTopology = async () => {
   try {
     const { value: name } = await ElMessageBox.prompt('请输入拓扑名称', '新建拓扑', {
       inputPattern: /^.{1,50}$/,
@@ -92,7 +92,7 @@ async function handleCreateTopology() {
 }
 
 // === 删除拓扑 ===
-async function handleDeleteTopology() {
+const handleDeleteTopology = async () => {
   if (!topologyId.value) return
   try {
     await ElMessageBox.confirm('确认删除此拓扑图？不可恢复。', '删除拓扑', {
@@ -116,7 +116,7 @@ async function handleDeleteTopology() {
 }
 
 // === 保存 ===
-async function handleSave() {
+const handleSave = async () => {
   console.log("[SAVE] topologyId:", topologyId.value)
   if (!graphRef.value) return
   // 先 flush 渲染，确保 getData 拿到最新位置
@@ -138,7 +138,7 @@ async function handleSave() {
 }
 
 // === 添加设备 ===
-function handleAddDevice(device: any) {
+const handleAddDevice = (device: any) => {
   showDeviceSelector.value = false
   const iconSrc = buildIconDataUri(device.device_type)
   graphRef.value?.addNode({
@@ -149,7 +149,7 @@ function handleAddDevice(device: any) {
   })
 }
 
-function handleAddCustom() {
+const handleAddCustom = () => {
   graphRef.value?.addNode({
     id: `custom-${Date.now()}`,
     label: '自定义节点',
@@ -158,14 +158,14 @@ function handleAddCustom() {
   })
 }
 
-function handleDeleteSelected() {
+const handleDeleteSelected = () => {
   graphRef.value?.removeSelected()
 }
 
 // === 编辑节点（右键菜单触发） ===
 let savedNodeSnapshot: any = null
 
-function handleEditNode(nodeId: string, mouseEvent: MouseEvent) {
+const handleEditNode = (nodeId: string, mouseEvent: MouseEvent) => {
   const data = graphRef.value?.getData()
   const node = data?.nodes?.find((n: any) => n.id === nodeId)
   if (!node) return
@@ -179,7 +179,7 @@ function handleEditNode(nodeId: string, mouseEvent: MouseEvent) {
   showNodePopover.value = true
 }
 
-function closePopover() {
+const closePopover = () => {
   showNodePopover.value = false
   if (popoverAnchor.value) {
     popoverAnchor.value.remove()
@@ -191,7 +191,7 @@ function closePopover() {
   nextTick(() => graphRef.value?.resize())
 }
 
-function handleNodeSave(updated: any) {
+const handleNodeSave = (updated: any) => {
   // 同步到图数据
   const data = graphRef.value?.getData()
   graphRef.value?.setData({
@@ -201,7 +201,7 @@ function handleNodeSave(updated: any) {
   closePopover()
 }
 
-function handleNodeCancel() {
+const handleNodeCancel = () => {
   // 恢复原始数据
   if (savedNodeSnapshot) {
     const data = graphRef.value?.getData()
@@ -213,16 +213,16 @@ function handleNodeCancel() {
   closePopover()
 }
 
-function handleNodeUpdate(updated: any) {
+const handleNodeUpdate = (updated: any) => {
   selectedNode.value = { ...selectedNode.value, ...updated }
 }
 
-function handleEdgeUpdate(updated: any) {
+const handleEdgeUpdate = (updated: any) => {
   selectedEdge.value = { ...selectedEdge.value, ...updated }
 }
 
 // === 编辑连线（右键菜单触发） ===
-function handleEditEdge(edgeId: string, mouseEvent: MouseEvent) {
+const handleEditEdge = (edgeId: string, mouseEvent: MouseEvent) => {
   const data = graphRef.value?.getData()
   const edge = data?.edges?.find((e: any) => e.id === edgeId)
   if (!edge) return
@@ -236,7 +236,7 @@ function handleEditEdge(edgeId: string, mouseEvent: MouseEvent) {
   showEdgePopover.value = true
 }
 
-function closeEdgePopover() {
+const closeEdgePopover = () => {
   showEdgePopover.value = false
   if (popoverAnchor.value) {
     popoverAnchor.value.remove()
@@ -247,7 +247,7 @@ function closeEdgePopover() {
   nextTick(() => graphRef.value?.resize())
 }
 
-function handleEdgeSave(updated: any) {
+const handleEdgeSave = (updated: any) => {
   const data = graphRef.value?.getData()
   graphRef.value?.setData({
     nodes: data?.nodes ?? [],
@@ -256,7 +256,7 @@ function handleEdgeSave(updated: any) {
   closeEdgePopover()
 }
 
-function handleEdgeCancel() {
+const handleEdgeCancel = () => {
   if (savedEdgeSnapshot) {
     const data = graphRef.value?.getData()
     graphRef.value?.setData({

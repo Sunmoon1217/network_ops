@@ -17,7 +17,7 @@ const batchDetails = ref<any[]>([])
 
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'PTR']
 
-async function query() {
+const query = async () => {
   error.value = ''
   results.value = []
   batchStats.value = []
@@ -33,7 +33,7 @@ async function query() {
   }
 }
 
-async function querySingle(name: string) {
+const querySingle = async (name: string) => {
   loading.value = true
   const servers = dnsServers.value.filter(s => s.trim())
   try {
@@ -63,7 +63,7 @@ async function querySingle(name: string) {
   }
 }
 
-async function queryBatch(names: string[]) {
+const queryBatch = async (names: string[]) => {
   loading.value = true
   const servers = dnsServers.value.filter(s => s.trim())
   const targetServers = servers.length > 0 ? servers : ['默认']
@@ -119,7 +119,7 @@ async function queryBatch(names: string[]) {
 }
 
 // 检查两个服务器的结果是否一致
-function isSameResult(a: any[], b: any[]): boolean {
+const isSameResult = (a: any[], b: any[]): boolean => {
   if (a.length !== b.length) return false
   const va = a.map(r => r.value).sort()
   const vb = b.map(r => r.value).sort()

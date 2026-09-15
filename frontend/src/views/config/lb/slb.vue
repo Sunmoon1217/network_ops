@@ -29,7 +29,7 @@ const loadPools = () =>
   fetchPoolData(() => getLtmPools(poolPageParams({ device: filterDevice.value || undefined })))
 
 // 设备筛选变化时两个表格都回到第 1 页并重新拉取
-function handleDeviceChange() {
+const handleDeviceChange = () => {
   resetVs()
   resetPool()
 }

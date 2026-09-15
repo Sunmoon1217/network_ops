@@ -1,6 +1,6 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
-export function useTableHeight() {
+export const useTableHeight = () => {
   const tableRef = ref<HTMLElement | null>(null)
   const tableHeight = ref(600)
   const tableWidth = ref(1200)

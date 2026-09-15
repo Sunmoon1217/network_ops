@@ -37,7 +37,7 @@ watch(() => props.edge, async (e) => {
   await loadInterfaces(e.source, e.target)
 }, { immediate: true })
 
-async function loadInterfaces(sourceId: string, targetId: string) {
+const loadInterfaces = async (sourceId: string, targetId: string) => {
   if (!props.graphData?.nodes) return
   loadingInterfaces.value = true
   try {
@@ -76,7 +76,7 @@ async function loadInterfaces(sourceId: string, targetId: string) {
   }
 }
 
-function getUpdatedEdge() {
+const getUpdatedEdge = () => {
   return {
     ...props.edge,
     label: label.value,
@@ -92,11 +92,11 @@ function getUpdatedEdge() {
   }
 }
 
-function handleSave() {
+const handleSave = () => {
   emit('save', getUpdatedEdge())
 }
 
-function handleCancel() {
+const handleCancel = () => {
   emit('cancel')
 }
 </script>

@@ -12,7 +12,7 @@ const search = ref('')
 const devices = ref<any[]>([])
 const loading = ref(false)
 
-async function fetchDevices() {
+const fetchDevices = async () => {
   loading.value = true
   try {
     const res = await getDevices({ search: search.value, page_size: 50 })
@@ -22,7 +22,7 @@ async function fetchDevices() {
   }
 }
 
-function handleSelect(device: any) {
+const handleSelect = (device: any) => {
   emit('select', device)
 }
 </script>

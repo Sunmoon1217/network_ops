@@ -1,4 +1,4 @@
-export function useTagType(map: Record<string, string>, fallback = 'info') {
+export const useTagType = (map: Record<string, string>, fallback = 'info') => {
   return (value: string) => (map[value] || fallback) as any
 }
 

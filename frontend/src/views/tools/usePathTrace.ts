@@ -35,11 +35,11 @@ export const actionColor: Record<string, string> = { allow: '#18a058', deny: '#d
 export const actionLabel: Record<string, string> = { allow: '放行', deny: '拒绝' }
 export const deviceLabel: Record<string, string> = { firewall: '防火墙', switch: '交换机', loadbalancer: '负载均衡' }
 
-export function hasTranslation(hop: HopData): boolean {
+export const hasTranslation = (hop: HopData): boolean => {
   return !!(hop.src_after || hop.dst_after || hop.port_after)
 }
 
-export function usePathTrace() {
+export const usePathTrace = () => {
   const srcIp = ref('')
   const dstIp = ref('')
   const dstPort = ref('')
@@ -47,7 +47,7 @@ export function usePathTrace() {
   const result = ref<TraceResult | null>(null)
   const error = ref('')
 
-  async function handleTrace() {
+  const handleTrace = async () => {
     if (!srcIp.value || !dstIp.value) {
       error.value = '请输入源地址和目的地址'
       return

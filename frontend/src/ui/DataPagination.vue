@@ -19,12 +19,12 @@ const emit = defineEmits<{
   (e: 'change'): void
 }>()
 
-function handlePage(p: number) {
+const handlePage = (p: number) => {
   emit('update:page', p)
   emit('change')
 }
 
-function handleSize(s: number) {
+const handleSize = (s: number) => {
   emit('update:pageSize', s)
   emit('update:page', 1)
   emit('change')

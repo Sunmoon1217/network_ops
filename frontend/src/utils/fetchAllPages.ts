@@ -10,7 +10,7 @@ import api from '@/api/index'
  * @param params   除分页外的查询参数
  * @param pageSize 每次请求的条数（后端上限 500）
  */
-export async function fetchAllPages(url: string, params: Record<string, any> = {}, pageSize = 500) {
+export const fetchAllPages = async (url: string, params: Record<string, any> = {}, pageSize = 500) => {
   const items: any[] = []
   let page = 1
   // 安全上限，避免接口异常时无限循环

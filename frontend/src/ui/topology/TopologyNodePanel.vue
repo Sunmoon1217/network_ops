@@ -18,7 +18,7 @@ watch(() => props.node, (n) => {
   }
 }, { immediate: true })
 
-function getUpdatedNode() {
+const getUpdatedNode = () => {
   return {
     ...props.node,
     label: label.value,
@@ -26,11 +26,11 @@ function getUpdatedNode() {
   }
 }
 
-function handleSave() {
+const handleSave = () => {
   emit('save', getUpdatedNode())
 }
 
-function handleCancel() {
+const handleCancel = () => {
   emit('cancel')
 }
 </script>
