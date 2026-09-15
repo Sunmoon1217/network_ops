@@ -83,3 +83,8 @@ src/auto-imports.d.ts
 src/components.d.ts
 .django-stub-gen/
 data/*
+
+# nginx TLS 证书（配置文件提交，证书与私钥不提交）
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
