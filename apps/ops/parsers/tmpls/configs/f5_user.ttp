@@ -1,0 +1,8 @@
+<group name="users*">
+auth user {{ username | _start_ }} {
+    description {{ desc | ORPHRASE }}
+    partition-access {{ privilege }}
+    role {{ role }}
+    shell {{ shell }}
+} {{ _end_ }}
+</group>

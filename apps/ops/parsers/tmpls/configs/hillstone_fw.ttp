@@ -1,0 +1,93 @@
+<vars>
+src_type = r"src-ip|src-addr|src-range|src-host"
+dst_type = r"dst-ip|dst-addr|dst-range|dst-host"
+address_type = r"range|ip|address|host"
+</vars>
+
+<macro>
+def set_src_dst(data):
+    data["src"] = {}
+    data["dst"] = {}
+    for k, v in data.items():
+        if k.startswith("src"):
+            data["src"][k] = v
+        elif k.startswith("dst"):
+            data["dst"][k] = v
+</macro>
+
+<group name="vswitches*">
+vswitch "{{ vswitch_name }}"
+exit {{ _end_ }}
+</group>
+
+<group name="vrouter*">
+ip vrouter "{{ vrouter_name }}"
+exit {{ _end_ }}
+</group>
+
+<group name="zones*">
+zone "{{ zone_name }}"
+exit {{ _end_ }}
+</group>
+
+<group name="interfaces*.{{ interface }}">
+interface {{ interface }}
+exit {{ _end_ }}
+</group>
+
+<group name="services*.{{ service_name }}">
+service "{{ service_name }}"
+  <group>
+  {{ protocol }} {{ port_type }} {{ port }}
+  </group>
+exit {{ _end_ }}
+</group>
+
+<group name="addresses.{{ address_name }}">
+address "{{ address_name }}" {{ ignore }}
+  ip {{ ip | joinmatches | to_list }}
+exit {{ _end_ }}
+</group>
+
+<group name="addresses.{{ address_name }}">
+address "{{ address_name }}"
+  ip {{ ip | joinmatches | to_list }}
+  host {{ host | strip('"' ) | joinmatches | to_list }}
+  range {{ range | ORPHRASE | split() | joinmatches | to_list }}
+  address "{{ addresses | joinmatches | to_list }}"
+exit {{ _end_ }}
+</group>
+
+<group name="rules*">
+rule id {{ rule_id }}
+  action {{ action }}
+  src-zone "{{ source_zone | default("any") }}"
+  dst-zone "{{ destination_zone | default("any") }}"
+  <group name="src**.{{ address_type }}*" itemize="address">
+  {{ address_type | re("src_type") | _start_ }} {{ address | strip('"') }}
+  </group>
+  <group name="dst**.{{ address_type }}*" itemize="address">
+  {{ address_type | re("dst_type") | _start_ }} {{ address | strip('"') }}
+  </group>
+  service {{ service | strip('"') | joinmatches() | to_list }}
+  name {{ rule_name | strip('"') | default("") }}
+exit {{ _end_ }}
+</group>
+
+<group name="rules2*">
+rule id {{ rule_id }}
+  action {{ action }}
+  {{ rule_status | equal("disable") | default("enable") }}
+  src-zone "{{ source_zone | default("any") }}"
+  dst-zone "{{ destination_zone | default("any") }}"
+  src-ip {{ src-ip | joinmatches() | to_list }}
+  src-addr "{{ src-address | strip('"') | joinmatches() | to_list }}"
+  src-range {{ range | ORPHRASE | joinmatches | to_list }}
+  dst-ip {{ dst-ip | joinmatches() | to_list }}  service {{ service | strip('"') | joinmatches() | to_list }}
+  dst-addr "{{ dst-address | strip('"') | joinmatches() | to_list }}"
+  dst-range {{ range | ORPHRASE | joinmatches | to_list }}
+  dst-host "{{ dst-host | strip('"') | joinmatches() | to_list }}"
+  service {{ service | strip('"') | joinmatches() | to_list }}
+  name {{ rule_name | strip('"') | default("") }}
+exit {{ _end_ }}
+</group>

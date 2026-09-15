@@ -1083,3 +1083,21 @@ class ArpMacViewSet(viewsets.ModelViewSet):
         if arp_type:
             qs = qs.filter(arp_type=arp_type)
         return qs
+
+
+class SubnetUsageLogViewSet(viewsets.ModelViewSet):
+    from assets.models import SubnetUsageLog
+
+    from .serializers import SubnetUsageLogSerializer
+
+    queryset = SubnetUsageLog.objects.select_related("subnet").all()
+    serializer_class = SubnetUsageLogSerializer
+    permission_classes = (AllowAny,)
+    ordering_fields = ("recorded_at", "utilization")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        subnet_id = self.request.query_params.get("subnet")
+        if subnet_id:
+            qs = qs.filter(subnet_id=subnet_id)
+        return qs

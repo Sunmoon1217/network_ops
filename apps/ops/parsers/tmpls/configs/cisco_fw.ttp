@@ -1,0 +1,44 @@
+# Cisco ASA Firewall Configuration TTP Template
+
+# 系统信息
+<group name="hostname">
+hostname {{ hostname }}
+</group>
+
+<group name="version">
+: Saved
+: {{ version | re('.+') }}
+</group>
+
+# 接口配置
+<group name="interfaces">
+interface {{ interface }}
+ nameif {{ nameif }}
+ security-level {{ security_level }}
+ ip address {{ ip_address }} {{ subnet_mask }}
+ {{ enabled | set(1) | default(0) }}
+</group>
+
+# 静态路由配置
+<group name="static_routes">
+route {{ interface_name }} {{ destination_network }} {{ mask }} {{ next_hop }} {{ metric }}
+</group>
+
+# ACL配置
+<group name="acl">
+access-list {{ acl_name }} extended {{ action }} {{ protocol }} {{ source }} {{ source_mask }} {{ destination }} {{ destination_mask }}
+</group>
+
+# NAT配置
+<group name="nat">
+object network {{ network_name }}
+ host {{ host_ip }}
+ nat ({{ inside_interface }},{{ outside_interface }}) static {{ public_ip }}
+</group>
+
+# 对象组配置
+<group name="object_groups">
+object-group network {{ group_name }}
+ network-object host {{ host_ip }}
+ network-object {{ network }} {{ mask }}
+</group>

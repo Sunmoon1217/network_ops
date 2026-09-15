@@ -36,6 +36,8 @@ const menuOptions: MenuItem[] = [
       { index: '/devices/interfaces', label: '接口管理', icon: renderIcon(IconInterfaces) },
       { index: '/devices/baseline', label: '基线管理', icon: renderIcon(IconBaseline) },
       { index: '/devices/parsers', label: '解析器模板', icon: renderIcon(IconParsers) },
+      { index: '/devices/accounts', label: '设备账号', icon: renderIcon(IconBaseline) },
+      { index: '/devices/vlans', label: 'VLAN 管理', icon: renderIcon(IconInterfaces) },
     ],
   },
   {
@@ -61,6 +63,7 @@ const menuOptions: MenuItem[] = [
       { index: '/ipam/subnets', label: '网段管理', icon: renderIcon(IconSubnet) },
       { index: '/ipam/ip-addresses', label: 'IP 地址', icon: renderIcon(IconIp) },
       { index: '/ipam/tags', label: '标签管理', icon: renderIcon(IconIp) },
+      { index: '/ipam/usage-trend', label: '使用率趋势', icon: renderIcon(IconSubnet) },
     ],
   },
   {
@@ -68,6 +71,8 @@ const menuOptions: MenuItem[] = [
     children: [
       { index: '/tools/path-trace', label: '路径追踪', icon: renderIcon(IconPathTrace) },
       { index: '/tools/rack-view', label: '机柜视图', icon: renderIcon(IconBaseline) },
+      { index: '/tools/subnet-calc', label: '子网计算器', icon: renderIcon(IconSubnet) },
+      { index: '/tools/dns-query', label: 'DNS 查询', icon: renderIcon(IconDns) },
     ],
   },
 ]

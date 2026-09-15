@@ -37,6 +37,8 @@ const router = createRouter({
         { path: 'baseline/syslog/create', name: 'syslog-create', component: () => import('@/views/devices/forms/SyslogForm.vue') },
         { path: 'baseline/syslog/:id/edit', name: 'syslog-edit', component: () => import('@/views/devices/forms/SyslogForm.vue') },
         { path: 'parsers', name: 'device-parsers', component: () => import('@/views/devices/parsers.vue') },
+        { path: 'accounts', name: 'device-accounts', component: () => import('@/views/devices/accounts.vue') },
+        { path: 'vlans', name: 'device-vlans', component: () => import('@/views/devices/vlans.vue') },
       ],
     },
     {
@@ -67,6 +69,7 @@ const router = createRouter({
         { path: 'ip-addresses/:id/edit', name: 'ip-edit', component: () => import('@/views/ipam/forms/IpAddressForm.vue') },
         { path: 'tags', name: 'ipam-tags', component: () => import('@/views/ipam/tags.vue') },
         { path: 'tags/create', name: 'tag-create', component: () => import('@/views/ipam/forms/TagForm.vue') },
+        { path: 'usage-trend', name: 'ipam-usage-trend', component: () => import('@/views/ipam/usage-trend.vue') },
         { path: 'tags/:id/edit', name: 'tag-edit', component: () => import('@/views/ipam/forms/TagForm.vue') },
       ],
     },
@@ -86,6 +89,8 @@ const router = createRouter({
         { path: '', redirect: '/tools/path-trace' },
         { path: 'path-trace', name: 'tools-path-trace', component: () => import('@/views/tools/path-trace.vue') },
         { path: 'rack-view', name: 'tools-rack-view', component: () => import('@/views/tools/rack-view.vue') },
+        { path: 'subnet-calc', name: 'tools-subnet-calc', component: () => import('@/views/tools/subnet-calc.vue') },
+        { path: 'dns-query', name: 'tools-dns-query', component: () => import('@/views/tools/dns-query.vue') },
 
       ],
     },

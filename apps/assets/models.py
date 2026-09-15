@@ -942,3 +942,26 @@ class ArpMac(models.Model):
 
     def __str__(self):
         return f"{self.ip_address} → {self.mac_address}"
+
+
+# ---------------------------------------------------------------------------
+# 子网使用率趋势
+# ---------------------------------------------------------------------------
+
+
+class SubnetUsageLog(models.Model):
+    """子网 IP 使用率快照（定时记录）"""
+
+    subnet = models.ForeignKey(Subnet, on_delete=models.CASCADE, related_name="usage_logs", verbose_name="网段")
+    total_ips = models.PositiveIntegerField(default=0, verbose_name="总 IP 数")
+    used_ips = models.PositiveIntegerField(default=0, verbose_name="已使用")
+    utilization = models.FloatField(default=0, verbose_name="使用率 (%)")
+    recorded_at = models.DateTimeField(auto_now_add=True, verbose_name="记录时间")
+
+    class Meta:
+        verbose_name = "子网使用率"
+        verbose_name_plural = verbose_name
+        ordering = ("-recorded_at",)
+
+    def __str__(self):
+        return f"{self.subnet.network} @ {self.recorded_at:%Y-%m-%d %H:%M}"

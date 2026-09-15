@@ -60,3 +60,21 @@ export function gaugeOpt(title: string, value: number, max: number) {
     }],
   })
 }
+
+export function lineOpt(title: string, xData: string[], yData: number[], unit = '') {
+  return markRaw({
+    title: { text: title, left: 'center', textStyle: { fontSize: 13, fontWeight: 600 } },
+    tooltip: { trigger: 'axis', formatter: (params: any) => `${params[0].axisValue}: ${params[0].value}${unit}` },
+    color: COLORS,
+    grid: { top: 40, bottom: 30, left: 50, right: 20 },
+    xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: `{value}${unit}` } },
+    series: [{
+      type: 'line',
+      data: yData,
+      smooth: true,
+      areaStyle: { opacity: 0.15 },
+      itemStyle: { borderRadius: [4, 4, 0, 0] },
+    }],
+  })
+}

@@ -38,5 +38,6 @@ dev = [
     "django-extensions>=4.1",
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
+    "pytest>=9.1.1",
     "ruff>=0.16.5",
 ]

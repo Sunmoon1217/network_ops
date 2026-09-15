@@ -1,0 +1,8 @@
+<group name="lldp_neighbors">
+Local Interface: {{ local_interface | ORPHRASE }}
+Chassis Id: {{ remote_chassis_id | ORPHRASE }}
+Port Id: {{ remote_port_id | ORPHRASE }}
+Port Description: {{ remote_port_desc | ORPHRASE }}
+System Name: {{ remote_system_name | ORPHRASE }}
+System Description: {{ remote_system_desc | ORPHRASE }}
+</group>

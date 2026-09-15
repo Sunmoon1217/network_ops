@@ -6,7 +6,16 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from ops.parsers.factory import ParserFactory
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "parsers" / "templates"
+_TMPLS_DIR = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+
+
+def _find_template(name: str) -> Path | None:
+    """在 configs 和 running 子目录中查找模板"""
+    for subdir in ("configs", "running"):
+        path = _TMPLS_DIR / subdir / name
+        if path.exists():
+            return path
+    return None
 
 
 @require_GET
@@ -30,16 +39,17 @@ def parser_list(request):
 def parser_template_list(request):
     """获取所有模板文件列表"""
     templates = []
-    for f in _TEMPLATES_DIR.glob("*.ttp"):
-        templates.append({"name": f.name, "size": f.stat().st_size})
+    for subdir in ("configs", "running"):
+        for f in (_TMPLS_DIR / subdir).glob("*.ttp"):
+            templates.append({"name": f.name, "group": subdir, "size": f.stat().st_size})
     return JsonResponse({"templates": templates})
 
 
 @require_GET
 def parser_template_detail(request, name):
     """获取模板文件内容"""
-    path = _TEMPLATES_DIR / name
-    if not path.exists():
+    path = _find_template(name)
+    if not path:
         return JsonResponse({"error": f"模板不存在: {name}"}, status=404)
     return JsonResponse(
         {
@@ -53,8 +63,8 @@ def parser_template_detail(request, name):
 @require_http_methods(["PUT"])
 def parser_template_update(request, name):
     """更新模板文件内容"""
-    path = _TEMPLATES_DIR / name
-    if not path.exists():
+    path = _find_template(name)
+    if not path:
         return JsonResponse({"error": f"模板不存在: {name}"}, status=404)
     try:
         data = json.loads(request.body)

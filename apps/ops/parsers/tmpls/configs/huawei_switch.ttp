@@ -1,0 +1,43 @@
+# Huawei Switch Configuration TTP Template
+
+# 系统信息
+<group name="hostname">
+ sysname {{ hostname }}
+</group>
+
+<group name="version">
+ version {{ version | re('.+') }}
+</group>
+
+# VLAN配置
+<group name="vlans">
+vlan {{ vlan_id }}
+ description {{ vlan_name }}
+</group>
+
+# 接口配置
+<group name="interfaces">
+interface {{ interface }}
+ description {{ description }}
+ port link-type {{ mode }}
+ port default vlan {{ access_vlan }}
+ port trunk allow-pass vlan {{ trunk_vlans }}
+ ip address {{ ip_address }} {{ subnet_mask }}
+ undo shutdown {{ enabled | set(1) | default(0) }}
+</group>
+
+# 静态路由配置
+<group name="static_routes">
+ip route-static {{ destination_network }} {{ mask }} {{ next_hop }}
+</group>
+
+# SNMP配置
+<group name="snmp">
+snmp-agent community {{ access_type }} {{ community }}
+snmp-agent host {{ host_ip }} {{ community }}
+</group>
+
+# SSH配置
+<group name="ssh">
+stelnet server {{ enable }}
+</group>

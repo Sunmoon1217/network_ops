@@ -1,0 +1,44 @@
+# Ruijie Switch Configuration TTP Template
+
+# 系统信息
+<group name="hostname">
+hostname {{ hostname }}
+</group>
+
+<group name="version">
+show version
+System software version: {{ version | re('.+') }}
+</group>
+
+# VLAN配置
+<group name="vlans">
+vlan {{ vlan_id }}
+ name {{ vlan_name }}
+</group>
+
+# 接口配置
+<group name="interfaces">
+interface {{ interface }}
+ description {{ description }}
+ switchport mode {{ mode }}
+ switchport access vlan {{ access_vlan }}
+ switchport trunk allowed vlan {{ trunk_vlans }}
+ ip address {{ ip_address }} {{ subnet_mask }}
+ no shutdown {{ enabled | set(1) | default(0) }}
+</group>
+
+# 静态路由配置
+<group name="static_routes">
+ip route {{ destination_network }} {{ subnet_mask }} {{ next_hop }}
+</group>
+
+# SNMP配置
+<group name="snmp">
+snmp-server community {{ community }} {{ access_type }}
+snmp-server host {{ host_ip }} {{ community }}
+</group>
+
+# SSH配置
+<group name="ssh">
+ip ssh {{ enable }}
+</group>

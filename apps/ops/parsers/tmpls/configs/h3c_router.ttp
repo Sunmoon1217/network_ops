@@ -1,0 +1,53 @@
+# H3C Router Configuration TTP Template
+
+# 系统信息
+<group name="hostname">
+ sysname {{ hostname }}
+</group>
+
+<group name="version">
+ version {{ version | re('.+') }}
+</group>
+
+# VPN实例配置
+<group name="vpn_instances">
+ip vpn-instance {{ vrf }}
+ route-distinguisher {{ rd }}
+</group>
+
+# 接口配置
+<group name="interfaces">
+interface {{ interface }}
+ description {{ description }}
+ ip binding vpn-instance {{ vrf }}
+ ip address {{ ip_address }} {{ subnet_mask }}
+</group>
+
+# 静态路由配置
+<group name="static_routes">
+ ip route-static {{ destination_network }} {{ mask }} {{ next_hop }}
+</group>
+
+# OSPF配置
+<group name="ospf">
+ospf {{ process_id }}
+ area {{ area_id }}
+  network {{ network }} {{ wildcard }}
+</group>
+
+# BGP配置
+<group name="bgp">
+bgp {{ asn }}
+ peer {{ peer_ip }} as-number {{ peer_asn }}
+</group>
+
+# SNMP配置
+<group name="snmp">
+ snmp-agent community {{ access_type }} {{ community }}
+ snmp-agent host {{ host_ip }} {{ community }}
+</group>
+
+# SSH配置
+<group name="ssh">
+ ssh server {{ enable }}
+</group>

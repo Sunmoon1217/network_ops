@@ -1,0 +1,41 @@
+<group name="servers*">
+slb server {{ name }} {{ address }}
+   health-check {{ server_monitor | ORPHRASE }}
+   {{ enable | equal("disable") | default("enable") }}
+   {{ server_nocheck | ORPHRASE | equal("no health-check") }}
+   <group name="services*">
+   port {{ port }}  {{ protocol }}
+       {{ enable | equal("disable") | default("enable") }}
+       health-check {{ monitor | ORPHRASE }}
+       {{ nocheck | ORPHRASE | equal("no health-check") }}
+   </group>
+{{ raw_lines | _line_ | joinmatches("\n") }}
+</group>
+
+<group name="service_groups*">
+slb service-group {{ name }} {{ protocol }}
+    method {{ method }}
+    health-check {{ monitor | ORPHRASE | default("None") }}
+    <group name="members*">
+    member {{ address | re("IPV6") }}.{{ port }}
+    member {{ address | re("IPV4") }}:{{ port }}
+    </group>
+{{ raw_lines | _line_ | joinmatches("\n") }}
+</group>
+
+<group name="virtual_server*">
+slb virtual-server {{ name }} {{ address }}
+   <group name="virtual_services*">
+   port {{ port }}  {{ protocol }}
+      {{ enabled | equal("disabled") | default("enabled") }}
+      source-nat {{ snat_type }} {{ snat_pool }}
+      service-group {{ service_group }}
+      template http {{ http_tmpl }}
+      template persist {{ persist_type }} {{ persist_name }}
+      template client-ssl {{ ssl_name }}
+  </group>
+{{ raw_lines | _line_ | joinmatches("\n") }}
+</group>
+
+<group name="account">
+</group>

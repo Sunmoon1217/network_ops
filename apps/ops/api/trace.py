@@ -93,9 +93,14 @@ def route_collect(request):
 
         from ttp import ttp
 
-        templates_dir = Path(__file__).resolve().parent.parent / "parsers" / "templates"
-        template_path = str(templates_dir / f"{template_name}.ttp")
-        if not Path(template_path).exists():
+        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        template_path = None
+        for subdir in ("configs", "running"):
+            candidate = tmpls_dir / subdir / f"{template_name}.ttp"
+            if candidate.exists():
+                template_path = str(candidate)
+                break
+        if not template_path:
             return Response({"error": f"模板 {template_name}.ttp 不存在"}, status=http_status.HTTP_400_BAD_REQUEST)
 
         parser = ttp(data=raw_text, template=template_path)
@@ -228,3 +233,43 @@ def route_list(request):
         for r in qs[:500]
     ]
     return Response({"routes": data, "total": qs.count()})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def dns_query(request):
+    """DNS 查询: GET /api/trace/dns-query/?domain=example.com&type=A"""
+    domain = request.query_params.get("domain", "").strip()
+    record_type = request.query_params.get("type", "A").strip().upper()
+
+    if not domain:
+        return Response({"error": "domain 参数必填"}, status=400)
+
+    import socket
+
+    results = []
+    try:
+        if record_type in ("A", "AAAA"):
+            infos = socket.getaddrinfo(domain, None, socket.AF_INET if record_type == "A" else socket.AF_INET6)
+            seen = set()
+            for info in infos:
+                addr = info[4][0]
+                if addr not in seen:
+                    seen.add(addr)
+                    results.append({"type": record_type, "name": domain, "value": addr, "ttl": "-"})
+        else:
+            try:
+                import dns.resolver
+                answers = dns.resolver.resolve(domain, record_type)
+                for rdata in answers:
+                    results.append({"type": record_type, "name": domain, "value": str(rdata), "ttl": str(answers.rrset.ttl)})
+            except ImportError:
+                return Response({"error": "dnspython 未安装，仅支持 A/AAAA 查询"}, status=501)
+            except Exception as e:
+                return Response({"error": f"DNS 查询失败: {e}"}, status=502)
+    except socket.gaierror as e:
+        return Response({"error": f"DNS 解析失败: {e}"}, status=502)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+    return Response({"domain": domain, "type": record_type, "records": results})

@@ -1,0 +1,101 @@
+<vars>
+PTN = r"\S+?(?&lt;!\\\\)(?=:)"
+</vars>
+
+<group name="datacenters*">
+gtm datacenter {{ name }} { }
+</group>
+
+<group name="regions*">
+gtm region {{ name | _start_ }} {
+    <group name="members*">
+    region-members { {{ _start_ }}
+        pool {{ pool | to_list | joinmatches }} { }
+        subnet {{ subnet | to_list | joinmatches }} { }
+    } {{ _end_ }}
+    </group>
+} {{ _end_ }}
+</group>
+
+<group name="servers*">
+gtm server {{ server_name | _line_ }} {
+    datacenter {{ datacenter }}
+    monitor {{ server_monitor | ORPHRASE }}
+    product {{ server_type }}
+    <group name="virtual_servers*">
+    virtual-servers { {{ _start_ }}
+        <group>
+        {{ vs_name }} {
+            destination {{ vs_address | re("IP") }}:{{ vs_port }}
+            destination {{ vs_address | re("IPV6") }}.{{ vs_port }}
+            monitor {{ vs_monitor | ORPHRASE }}
+        } {{ _end_ }}
+        </group>
+    } {{ _end_ }}
+    </group>
+} {{ _end_ }}
+</group>
+
+<group name="topologies*">
+gtm topology ldns: {{ ldns_type }} {{ ldns }} server: {{ server_type }} {{ server }} {
+    order {{ order }}
+</group>
+
+<group name="monitors*">
+gtm monitor {{ type }} {{ name }} {
+    defaults-from {{ extend }}
+    destination {{ dest }}
+    interval {{ interval }}
+    ignore-down-response {{ ignore-down }}
+    interval {{ interval }}
+    probe-attempts {{ probe-attempts }}
+    probe-interval {{ probe-interval}}
+    probe-timeout {{ probe-timeout}}
+    recv {{ recv | ORPHRASE }}
+    send {{ send | ORPHRASE }}
+    timeout {{ timeout }}
+} {{ _end_ }}
+</group>
+
+<group name="pools*">
+gtm pool {{ pool_type | upper }} {{ pool_name }} {
+    {{ pool_status | equal("disabled") | default("enabled") }}
+    alternate-mode {{ alternate-mode | default("round-robin") }}
+    fallback-ip {{ fallback-ip }}
+    fallback-mode {{ fallback-mode | default("return-to-dns") }}
+    load-balancing-mode {{ preferred | default("round-robin") }}
+    <group name="members*">
+    members { {{ _start_ }}
+        <group>
+        {{ server_name | re("PTN") | replaceall("\\") }}:{{ vs_name }} {
+            {{ member_status | equal("disabled") | default("enabled") }}
+            member-order {{ member_order }}
+            ratio {{ member_ratio | default(1) }}
+            monitor {{ member_monitor | ORPHRASE }}
+        } {{ _end_ }}
+        </group>
+    } {{ _end_ }}
+    </group>
+    monitor {{ pool_monitor | ORPHRASE }}
+    ttl {{ ttl | default(30) }}
+} {{ _end_ }}
+</group>
+
+<group name="wideips*">
+gtm wideip {{ wideip_type | upper }} {{ wideip_name }} {
+    pool-lb-mode {{ wideip_lbmode | default("round-robin") }}
+    <group name="pools*">
+    pools { {{ _start_ }}
+        <group>
+        {{ pool_name }} {
+            order {{ pool_order }}
+            ratio {{ pool_ratio | default(1) }}
+        } {{ _end_ }}
+        </group>
+    } {{ _end_ }}
+    </group>
+} {{ _end_ }}
+</group>
+
+<output>
+</output>

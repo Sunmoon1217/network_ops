@@ -664,3 +664,14 @@ class ArpMacSerializer(serializers.ModelSerializer):
             "learned_at", "status", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+class SubnetUsageLogSerializer(serializers.ModelSerializer):
+    subnet_network = serializers.CharField(source="subnet.network", read_only=True, default="")
+
+    class Meta:
+        from assets.models import SubnetUsageLog
+
+        model = SubnetUsageLog
+        fields = ("id", "subnet", "subnet_network", "total_ips", "used_ips", "utilization", "recorded_at")
+        read_only_fields = ("id", "recorded_at")
