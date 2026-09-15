@@ -29,7 +29,26 @@ SECRET_KEY = "django-insecure-bua49zfleexo##5iy2q^dm@880a5kdvh5q6%1zss&p#xe1y13$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# 允许的 Host
+#
+# 当前经 nginx 作为统一入口访问，且暂无域名，因此默认放开（"*"），
+# 以便同时支持 localhost、局域网 IP、以及后续临时分配的主机名。
+#
+# 注意：nginx 使用 `proxy_set_header Host $host` 透传客户端的 Host 头，
+# 因此 Django 侧必须放行这些值，否则会返回 400 Bad Request。
+#
+# 后续有正式域名或固定 IP 后，用环境变量收紧即可，例如：
+#   DJANGO_ALLOWED_HOSTS=netops.example.com,10.0.0.5
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
+
+
+# 反向代理：信任 nginx 传递的原始协议
+#
+# nginx 已配置 `proxy_set_header X-Forwarded-Proto $scheme`，但 nginx → Django
+# 之间走的是 HTTP，Django 默认会认为请求并非 HTTPS。声明信任该头之后，
+# request.is_secure() 才能正确反映客户端侧的协议；否则启用 HTTPS 后会出现
+# 重定向循环、Secure Cookie 不下发、CSRF Origin 校验失败等问题。
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # Application definition
