@@ -92,10 +92,10 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 
 class DeviceSerializer(serializers.ModelSerializer):
     idc_name = serializers.CharField(source="idc.name", read_only=True, default="")
-    cabinet_name = serializers.CharField(source="cabinet.name", read_only=True, default="")
+    cabinet_name = serializers.CharField(source="cabinet", read_only=True, default="")
     room_name = serializers.CharField(source="cabinet.room.name", read_only=True, default="")
-    security_zone_name = serializers.CharField(source="security_zone.name", read_only=True, default="")
-    device_model_name = serializers.CharField(source="device_model.name", read_only=True, default="")
+    security_zone_name = serializers.CharField(source="security_zone", read_only=True, default="")
+    device_model_name = serializers.CharField(source="device_model", read_only=True, default="")
     device_type_display = serializers.SerializerMethodField()
 
     def get_device_type_display(self, obj):
@@ -158,9 +158,11 @@ class DeviceConnectionSerializer(serializers.ModelSerializer):
 
 
 class VlanSerializer(serializers.ModelSerializer):
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+
     class Meta:
         model = Vlan
-        fields = ("id", "vid", "name", "description")
+        fields = ("id", "device", "device_hostname", "vid", "name", "description")
         read_only_fields = ("id",)
 
 
@@ -640,8 +642,6 @@ class RouteSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
 
-
-
 class TopologySerializer(serializers.ModelSerializer):
     class Meta:
         from assets.models import Topology
@@ -659,9 +659,19 @@ class ArpMacSerializer(serializers.ModelSerializer):
 
         model = ArpMac
         fields = (
-            "id", "device", "device_hostname", "vlan", "interface",
-            "ip_address", "mac_address", "vendor", "arp_type",
-            "learned_at", "status", "created_at", "updated_at",
+            "id",
+            "device",
+            "device_hostname",
+            "vlan",
+            "interface",
+            "ip_address",
+            "mac_address",
+            "vendor",
+            "arp_type",
+            "learned_at",
+            "status",
+            "created_at",
+            "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
 

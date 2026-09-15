@@ -1,0 +1,10 @@
+# 证书目录
+#
+# 此目录用于存放 nginx 的 TLS 证书：
+#   server.crt  证书（含链）
+#   server.key  私钥
+#
+# 本地开发可用脚本生成自签证书：
+#   bash nginx/gen-self-signed-cert.sh
+#
+# 证书与私钥已被 .gitignore 排除，不会提交到仓库。

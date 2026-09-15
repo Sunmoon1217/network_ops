@@ -117,8 +117,6 @@ role name {{ role_name }}
 <group name="local_users">
 local-user {{ username }} class {{ user_class }}
  password hash {{ password }}
- service-type {{ service_type }}
- <group name="user_roles">
- authorization-attribute user-role {{ role }}
- </group>
+ service-type {{ service_type | ORPHRASE | split }}
+ authorization-attribute user-role {{ role | joinmatches | to_list }}
 </group>

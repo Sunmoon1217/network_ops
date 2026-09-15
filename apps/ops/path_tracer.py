@@ -124,8 +124,10 @@ def _match_service(port_str: str, services) -> bool:
 def _subnet_cache() -> list:
     """加载所有子网（同一请求内缓存）"""
     if not hasattr(_subnet_cache, "_data"):
-        _subnet_cache._data = list(Subnet.objects.all())
-    return _subnet_cache._data
+        setattr(_subnet_cache, "_data", list(Subnet.objects.all()))
+        return getattr(_subnet_cache, "_data")
+    else:
+        return getattr(_subnet_cache, "_data")
 
 
 def _clear_subnet_cache():

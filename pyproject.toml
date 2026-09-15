@@ -1,6 +1,6 @@
 [project]
 name = "network-ops"
-version = "0.0.0"
+version = "2.0.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,16 +8,22 @@ dependencies = [
     "django>=6.1",
     "django-filter>=26.1",
     "djangorestframework>=3.18.0",
+    "dnspython>=2.8.0",
     "gitpython>=3.1.61",
     "openpyxl>=3.1.5",
     "psycopg2-binary>=2.9.12",
+    "requests>=2.34.2",
     "ttp>=0.10.1",
 ]
 
 [tool.pyright]
 include = ["apps"]
-exclude = ["**/node_modules","**/.*", "**/__pycache__", ".venv", ".git"]
+exclude = ["**/node_modules", "**/.*", "**/__pycache__", ".venv", ".git"]
 reportIncompatibleVariableOverride = false
+target = "3.12.13"
+
+[tool.django-stubs]
+django_settings_module = "netops.settings"
 
 [tool.ruff]
 line-length = 120
@@ -33,11 +39,21 @@ known-first-party = ["assets", "core", "ops"]
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
 
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "netops.settings"
+
+
+[tool.ty.environment]
+extra-paths = ["apps"]
+[tool.ty.src]
+exclude = ["**/node_modules", "**/.*", "**/__pycache__", ".venv", ".git"]
+
 [dependency-groups]
 dev = [
     "django-extensions>=4.1",
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
-    "pytest>=9.1.1",
+    "ipykernel>=7.3.0",
     "ruff>=0.16.5",
 ]
+test = ["pytest>=9.1.1", "pytest-django>=4.14.0"]

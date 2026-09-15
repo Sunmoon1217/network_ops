@@ -10,7 +10,6 @@ build/
 
 # Virtual environments
 .venv/
-venv/
 
 # IDE
 .idea/
@@ -83,7 +82,9 @@ docs/
 src/auto-imports.d.ts
 src/components.d.ts
 .django-stub-gen/
-data/config_repo
+data/*
 
-# 测试数据（本地生成，不入库）
-data/configs/
+# nginx TLS 证书（配置文件提交，证书与私钥不提交）
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem

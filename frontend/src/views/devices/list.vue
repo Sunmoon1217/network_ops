@@ -19,10 +19,15 @@ const goToConfig = (row: any) => router.push(`/devices/${row.id}/config`)
 const goToHistory = (row: any) => router.push(`/devices/${row.id}/history`)
 
 const columns = [
-  { key: 'hostname', title: '主机名', dataKey: 'hostname', width: 180 },
-  { key: 'device_type', title: '类型', dataKey: 'device_type', width: 100 },
+  { key: 'hostname', title: '主机名', dataKey: 'hostname', width: 260 },
+  { key: 'device_model_name', title: '设备型号', dataKey: 'device_model_name', width: 260 },
+  { key: 'device_type_display', title: '类型', dataKey: 'device_type_display', width: 100 },
+  { key: 'security_zone_name', title: '区域', dataKey: 'security_zone_name', width: 140 },
   { key: 'ip_address', title: '管理IP', dataKey: 'ip_address', width: 140 },
   { key: 'idc_name', title: '数据中心', dataKey: 'idc_name', width: 140 },
+  { key: 'cabinet_name', title: '机柜位置', dataKey: 'cabinet_name', width: 260 },
+  { key: 'u_position', title: 'U位', dataKey: 'u_position', width: 60 },
+  { key: 'height', title: '高度', dataKey: 'height', width: 60 },
   { key: 'remark', title: '备注', dataKey: 'remark', width: 200 },
   { key: 'operation', title: '操作', width: 200, fixed: FixedDir.RIGHT },
 ]

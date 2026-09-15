@@ -2,6 +2,7 @@ import re
 from typing import TYPE_CHECKING
 
 from django.db import models
+from django.db.models import QuerySet
 
 
 class SecurityZone(models.Model):
@@ -12,7 +13,7 @@ class SecurityZone(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
-        verbose_name = "逻辑安全区"
+        verbose_name = "安全区"
         verbose_name_plural = verbose_name
         ordering = ("name",)
 
@@ -219,7 +220,7 @@ class DeviceConnection(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
-        verbose_name = "设备连接"
+        verbose_name = "设备连接信息"
         verbose_name_plural = verbose_name
         constraints = (
             models.UniqueConstraint(fields=["device", "account_type"], name="uni_deviceconn_device_account"),
@@ -269,7 +270,10 @@ class ConfigBase(models.Model):
 class Vlan(models.Model):
     """VLAN"""
 
-    vid = models.PositiveIntegerField(unique=True, verbose_name="VLAN ID")
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="vlans", null=True, blank=True, verbose_name="所属设备"
+    )
+    vid = models.PositiveIntegerField(verbose_name="VLAN ID")
     name = models.CharField(max_length=100, blank=True, default="", verbose_name="VLAN名称")
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
 
@@ -277,9 +281,11 @@ class Vlan(models.Model):
         verbose_name = "VLAN"
         verbose_name_plural = verbose_name
         ordering = ("vid",)
+        constraints = (models.UniqueConstraint(fields=["device", "vid"], name="uni_vlan_device_vid"),)
 
     def __str__(self):
-        return f"VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
+        prefix = f"{self.device.hostname} - " if self.device else ""
+        return f"{prefix}VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
 
 
 class Vrf(ConfigBase):
@@ -609,10 +615,6 @@ class GtmPool(ConfigBase):
 
 
 class AddressBook(ConfigBase):
-    if TYPE_CHECKING:
-        from django.db.models import Manager
-
-        children: Manager["AddressBook"]
     """地址簿"""
 
     ADDRESS_TYPE_CHOICES = (
@@ -631,6 +633,11 @@ class AddressBook(ConfigBase):
         "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children", verbose_name="上级地址簿"
     )
     description = models.TextField(blank=True, default="", verbose_name="描述")
+
+    if TYPE_CHECKING:
+        from assets.models import AddressBook
+
+        children: QuerySet[AddressBook]
 
     class Meta:
         verbose_name = "地址簿"
@@ -775,6 +782,11 @@ class Subnet(models.Model):
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    if TYPE_CHECKING:
+        from assets.models import IPAddress
+
+        ip_addresses: models.QuerySet[IPAddress]
 
     class Meta:
         verbose_name = "网段"
@@ -935,9 +947,7 @@ class ArpMac(models.Model):
         verbose_name_plural = verbose_name
         ordering = ("-updated_at",)
         constraints = (
-            models.UniqueConstraint(
-                fields=["device", "ip_address", "mac_address"], name="uni_arpmac_device_ip_mac"
-            ),
+            models.UniqueConstraint(fields=["device", "ip_address", "mac_address"], name="uni_arpmac_device_ip_mac"),
         )
 
     def __str__(self):
