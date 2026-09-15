@@ -40,7 +40,7 @@ const loaders = {
 // tab 首次进入时才拉取，之后切换复用已有数据（翻页由 refetch 负责）
 const loadedTabs = ref<Record<string, boolean>>({ snmp: false, ntp: false, syslog: false })
 
-async function loadTab(tab: string) {
+const loadTab = async (tab: string) => {
   if (loadedTabs.value[tab]) return
   loadedTabs.value[tab] = true
   await loaders[tab as keyof typeof loaders]()

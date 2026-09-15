@@ -14,7 +14,7 @@ type Fetcher = () => Promise<any>
  *
  * @param _searchFields 已废弃：搜索改由后端 search_fields 处理，仅为兼容旧调用保留
  */
-export function useCrudApi<T extends Record<string, any> = any>(_searchFields: string[] = []) {
+export const useCrudApi = <T extends Record<string, any> = any>(_searchFields: string[] = []) => {
   const data = ref<T[]>([]) as any
   const loading = ref(false)
   const search = ref('')
@@ -26,7 +26,7 @@ export function useCrudApi<T extends Record<string, any> = any>(_searchFields: s
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
   /** 兼容裸数组与 {count, next, previous, results} 两种响应结构 */
-  function applyResponse(res: any) {
+  const applyResponse = (res: any) => {
     const payload = res?.data ?? res
     if (Array.isArray(payload)) {
       data.value = payload
@@ -42,7 +42,7 @@ export function useCrudApi<T extends Record<string, any> = any>(_searchFields: s
     total.value = 0
   }
 
-  async function run(fetcher: Fetcher) {
+  const run = async (fetcher: Fetcher) => {
     lastFetcher = fetcher
     loading.value = true
     try {
@@ -55,24 +55,24 @@ export function useCrudApi<T extends Record<string, any> = any>(_searchFields: s
   }
 
   /** 首次加载或条件变化后重新构造请求时调用 */
-  function fetchData(fetcher: Fetcher) {
+  const fetchData = (fetcher: Fetcher) => {
     return run(fetcher)
   }
 
   /** 用上一次的请求重新拉取（翻页 / 搜索 / 过滤器变化时使用） */
-  function refetch() {
+  const refetch = () => {
     return lastFetcher ? run(lastFetcher) : Promise.resolve()
   }
 
   /** 拼装分页与搜索参数，页面再合并自己的过滤条件 */
-  function pageParams(extra: Record<string, any> = {}) {
+  const pageParams = (extra: Record<string, any> = {}) => {
     const params: Record<string, any> = { page: page.value, page_size: pageSize.value, ...extra }
     if (search.value) params.search = search.value
     return params
   }
 
   /** 回到第一页并重新拉取（过滤器变化时使用） */
-  function resetAndFetch() {
+  const resetAndFetch = () => {
     page.value = 1
     return refetch()
   }
@@ -90,7 +90,7 @@ export function useCrudApi<T extends Record<string, any> = any>(_searchFields: s
     if (searchTimer) clearTimeout(searchTimer)
   })
 
-  async function handleSave(apiFn: () => Promise<any>, onSuccess?: () => void) {
+  const handleSave = async (apiFn: () => Promise<any>, onSuccess?: () => void) => {
     try {
       await apiFn()
       ElMessage.success('保存成功')
@@ -100,7 +100,7 @@ export function useCrudApi<T extends Record<string, any> = any>(_searchFields: s
     }
   }
 
-  async function handleDelete(name: string, apiFn: () => Promise<any>, onSuccess?: () => void) {
+  const handleDelete = async (name: string, apiFn: () => Promise<any>, onSuccess?: () => void) => {
     await ElMessageBox.confirm(`确认删除 ${name}？`, '提示', { type: 'warning' })
     try {
       await apiFn()

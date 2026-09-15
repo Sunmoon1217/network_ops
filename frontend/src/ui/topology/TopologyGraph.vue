@@ -23,7 +23,7 @@ let resizeObserver: ResizeObserver | null = null
 // 右键菜单点击兜底
 let contextmenuClickHandler: ((e: MouseEvent) => void) | null = null
 
-function getBehaviors() {
+const getBehaviors = () => {
   const base: any[] = [
     'drag-canvas',
     { type: 'scroll-canvas', minZoom: 0.2, maxZoom: 3 },
@@ -59,21 +59,21 @@ function getBehaviors() {
 }
 
 /** 启用连线模式 */
-function enableLinking() {
+const enableLinking = () => {
   if (!graph) return
   graph.updateBehavior({ key: 'create-edge', enable: true })
   if (containerRef.value) containerRef.value.style.cursor = 'crosshair'
 }
 
 /** 禁用连线模式 */
-function disableLinking() {
+const disableLinking = () => {
   if (!graph) return
   graph.updateBehavior({ key: 'create-edge', enable: false })
   if (containerRef.value) containerRef.value.style.cursor = ''
 }
 
 /** 删除指定节点及其关联边 */
-function removeNode(nodeId: string) {
+const removeNode = (nodeId: string) => {
   if (!graph) return
   const data = graph.getData()
   const relatedEdges = data.edges?.filter((e: any) => e.source === nodeId || e.target === nodeId).map((e: any) => e.id) ?? []
@@ -84,14 +84,14 @@ function removeNode(nodeId: string) {
 }
 
 /** 删除指定边 */
-function removeEdge(edgeId: string) {
+const removeEdge = (edgeId: string) => {
   if (!graph) return
   graph.removeEdgeData([edgeId])
   graph.draw()
   emit('save', graph.getData())
 }
 
-async function initGraph() {
+const initGraph = async () => {
   if (!containerRef.value) return
   const w = containerRef.value.clientWidth
   const h = containerRef.value.clientHeight || 600
@@ -285,7 +285,7 @@ onBeforeUnmount(() => {
   if (graph) { graph.destroy(); graph = null }
 })
 
-function getCenter(): { x: number; y: number } {
+const getCenter = (): { x: number; y: number } => {
   if (!containerRef.value) return { x: 400, y: 300 }
   return {
     x: containerRef.value.clientWidth / 2 + (Math.random() - 0.5) * 200,
@@ -293,16 +293,16 @@ function getCenter(): { x: number; y: number } {
   }
 }
 
-function getData(): GraphData { return graph?.getData() ?? { nodes: [], edges: [] } }
+const getData = (): GraphData => { return graph?.getData() ?? { nodes: [], edges: [] } }
 
-function setData(data: GraphData) {
+const setData = (data: GraphData) => {
   currentData = data
   if (!graph) return
   graph.setData(data)
   graph.render()
 }
 
-function addNode(node: { id: string; [key: string]: any }) {
+const addNode = (node: { id: string; [key: string]: any }) => {
   if (!graph) return
   const pos = node.x != null && node.y != null ? { x: node.x, y: node.y } : getCenter()
   graph.addNodeData([{ ...node, ...pos } as any])
@@ -310,7 +310,7 @@ function addNode(node: { id: string; [key: string]: any }) {
   graph.draw()
 }
 
-function removeSelected() {
+const removeSelected = () => {
   if (!graph) return
   const data = graph.getData()
   const selNodes = data.nodes?.filter((n: any) => n.states?.includes('selected')).map((n: any) => n.id) ?? []
@@ -321,7 +321,7 @@ function removeSelected() {
   graph.draw()
 }
 
-function resize() {
+const resize = () => {
   if (!graph || !containerRef.value) return
   const w = containerRef.value.clientWidth
   const h = containerRef.value.clientHeight

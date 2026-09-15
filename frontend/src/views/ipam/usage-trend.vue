@@ -23,14 +23,14 @@ const chartOption = computed(() => {
   )
 })
 
-async function fetchSubnets() {
+const fetchSubnets = async () => {
   try {
     // 下拉选项必须完整，使用循环拉全量
     subnets.value = await fetchAllPages('/api/assets/subnets/', { ordering: 'network' })
   } catch { /* ignore */ }
 }
 
-async function fetchLogs() {
+const fetchLogs = async () => {
   if (!selectedSubnet.value) { logs.value = []; return }
   loading.value = true
   try {

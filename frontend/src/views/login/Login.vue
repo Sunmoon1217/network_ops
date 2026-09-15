@@ -19,7 +19,7 @@ const rules: FormRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-async function handleLogin() {
+const handleLogin = async () => {
   if (!formRef.value) return
   try {
     await formRef.value.validate()

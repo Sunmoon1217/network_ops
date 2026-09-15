@@ -44,16 +44,16 @@ const DEFAULT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24
  * Return SVG string for a given device type.
  * The SVG uses `currentColor`, so set `color` in the data URI to control fill.
  */
-export function getDeviceIconSvg(deviceType: string): string {
+export const getDeviceIconSvg = (deviceType: string): string => {
   return DEVICE_ICON_MAP[deviceType] ?? DEFAULT_ICON
 }
 
-export function getDeviceColor(deviceType: string): string {
+export const getDeviceColor = (deviceType: string): string => {
   return DEVICE_COLOR_MAP[deviceType] ?? DEFAULT_COLOR
 }
 
 /** Build a data:image URI for use in G6 node style.iconSrc */
-export function buildIconDataUri(deviceType: string): string {
+export const buildIconDataUri = (deviceType: string): string => {
   const color = getDeviceColor(deviceType)
   const svg = getDeviceIconSvg(deviceType).replace('currentColor', color)
   return `data:image/svg+xml,${encodeURIComponent(svg)}`

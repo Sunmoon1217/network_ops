@@ -8,15 +8,15 @@ use([PieChart, BarChart, GaugeChart, TitleComponent, TooltipComponent, LegendCom
 
 export const COLORS = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0']
 
-export function lookup(map: Record<string, string>, key: string, fallback = '未知'): string {
+export const lookup = (map: Record<string, string>, key: string, fallback = '未知'): string => {
   return map[key] ?? fallback
 }
 
-export function mapItems(arr: { name: string; value: number }[]) {
+export const mapItems = (arr: { name: string; value: number }[]) => {
   return arr.map(i => ({ name: i.name || '未知', value: i.value }))
 }
 
-export function pieOpt(title: string, items: { name: string; value: number }[], radius = ['40%', '70%']) {
+export const pieOpt = (title: string, items: { name: string; value: number }[], radius = ['40%', '70%']) => {
   return markRaw({
     title: { text: title, left: 'center', textStyle: { fontSize: 13, fontWeight: 600 } },
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -29,7 +29,7 @@ export function pieOpt(title: string, items: { name: string; value: number }[], 
   })
 }
 
-export function barOpt(title: string, categories: string[], values: number[], horizontal = false) {
+export const barOpt = (title: string, categories: string[], values: number[], horizontal = false) => {
   const axis = horizontal
     ? { xAxis: { type: 'value' }, yAxis: { type: 'category', data: categories, axisLabel: { fontSize: 11 } } }
     : { xAxis: { type: 'category', data: categories, axisLabel: { rotate: 30, fontSize: 10 } }, yAxis: { type: 'value' } }
@@ -43,7 +43,7 @@ export function barOpt(title: string, categories: string[], values: number[], ho
   })
 }
 
-export function gaugeOpt(title: string, value: number, max: number) {
+export const gaugeOpt = (title: string, value: number, max: number) => {
   return markRaw({
     title: { text: title, left: 'center', textStyle: { fontSize: 13, fontWeight: 600 } },
     series: [{
@@ -61,7 +61,7 @@ export function gaugeOpt(title: string, value: number, max: number) {
   })
 }
 
-export function lineOpt(title: string, xData: string[], yData: number[], unit = '') {
+export const lineOpt = (title: string, xData: string[], yData: number[], unit = '') => {
   return markRaw({
     title: { text: title, left: 'center', textStyle: { fontSize: 13, fontWeight: 600 } },
     tooltip: { trigger: 'axis', formatter: (params: any) => `${params[0].axisValue}: ${params[0].value}${unit}` },
