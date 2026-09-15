@@ -33,6 +33,12 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W"]
 ignore = ["F405", "F403", "E402"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["assets", "core", "ops"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*" = ["E501"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 

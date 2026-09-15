@@ -7,6 +7,7 @@
 from pathlib import Path
 
 from django.test import TestCase
+
 from ops.parsers.factory import ParserFactory
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "configs"

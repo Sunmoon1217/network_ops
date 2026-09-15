@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 
 from django.http import JsonResponse
-from ops.config_repo import save_config
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -39,6 +38,7 @@ from assets.models import (
     Vlan,
     Vrf,
 )
+from ops.config_repo import save_config
 
 from .serializers import (
     CabinetSerializer,
