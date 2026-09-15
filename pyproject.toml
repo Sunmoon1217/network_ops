@@ -1,6 +1,6 @@
 [project]
 name = "network-ops"
-version = "0.0.0"
+version = "2.0.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,6 +21,9 @@ include = ["apps"]
 exclude = ["**/node_modules", "**/.*", "**/__pycache__", ".venv", ".git"]
 reportIncompatibleVariableOverride = false
 target = "3.12.13"
+
+[tool.django-stubs]
+django_settings_module = "netops.settings"
 
 [tool.ruff]
 line-length = 120
