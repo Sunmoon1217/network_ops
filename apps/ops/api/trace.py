@@ -309,31 +309,26 @@ def dns_query(request):
                 if addr not in seen:
                     seen.add(addr)
                     results.append({"type": record_type, "name": domain, "value": addr, "ttl": "-"})
-<<<<<<< Updated upstream
+            else:
+                try:
+                    import dns.resolver
+
+                    answers = dns.resolver.resolve(domain, record_type)
+                    for rdata in answers:
+                        results.append(
+                            {
+                                "type": record_type,
+                                "name": domain,
+                                "value": str(rdata),
+                                "ttl": str(getattr(answers.rrset, "ttl", "-")),
+                            }
+                        )
+                except ImportError:
+                    return Response({"error": "dnspython 未安装，仅支持 A/AAAA 查询"}, status=501)
+                except Exception as e:
+                    return Response({"error": f"DNS 查询失败: {e}"}, status=502)
         except socket.gaierror as e:
             return Response({"error": f"DNS 解析失败: {e}"}, status=502)
-=======
-        else:
-            try:
-                import dns.resolver
-
-                answers = dns.resolver.resolve(domain, record_type)
-                for rdata in answers:
-                    results.append(
-                        {
-                            "type": record_type,
-                            "name": domain,
-                            "value": str(rdata),
-                            "ttl": str(getattr(answers.rrset, "ttl", "-")),
-                        }
-                    )
-            except ImportError:
-                return Response({"error": "dnspython 未安装，仅支持 A/AAAA 查询"}, status=501)
-            except Exception as e:
-                return Response({"error": f"DNS 查询失败: {e}"}, status=502)
-    except socket.gaierror as e:
-        return Response({"error": f"DNS 解析失败: {e}"}, status=502)
->>>>>>> Stashed changes
     except Exception as e:
         return Response({"error": str(e)}, status=502)
 

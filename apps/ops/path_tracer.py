@@ -125,11 +125,7 @@ def _subnet_cache() -> list:
     """加载所有子网（同一请求内缓存）"""
     if not hasattr(_subnet_cache, "_data"):
         setattr(_subnet_cache, "_data", list(Subnet.objects.all()))
-<<<<<<< Updated upstream
-        return list(Subnet.objects.all())
-=======
         return getattr(_subnet_cache, "_data")
->>>>>>> Stashed changes
     else:
         return getattr(_subnet_cache, "_data")
 
