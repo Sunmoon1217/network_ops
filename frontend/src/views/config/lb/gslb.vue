@@ -1,32 +1,44 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import DeviceFilter from '@/ui/DeviceFilter.vue'
+import { useCrudApi } from '@/composables/useCrudApi'
 import { getGtmWideips, getGtmPools } from '@/api/config'
 
-const wideips = ref<any[]>([])
-const pools = ref<any[]>([])
-const loading = ref(false)
-const filterDevice = ref<number | ''>('')
 const activeTab = ref('wideip')
+const filterDevice = ref<number | ''>('')
 
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const params: Record<string, any> = {}
-    if (filterDevice.value) params.device = filterDevice.value
-    const [wRes, pRes] = await Promise.all([getGtmWideips(params), getGtmPools(params)])
-    wideips.value = wRes.data.results || wRes.data || []
-    pools.value = pRes.data.results || pRes.data || []
-  } catch {
-    ElMessage.error('加载失败')
-  } finally {
-    loading.value = false
-  }
+// Wide IP 与 Pool 各自持有独立的分页、搜索与加载状态
+const {
+  data: wideips, loading: wideipLoading, page: wideipPage, pageSize: wideipPageSize,
+  total: wideipTotal, fetchData: fetchWideipData, refetch: refetchWideips, pageParams: wideipPageParams,
+  resetAndFetch: resetWideips,
+} = useCrudApi()
+const {
+  data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
+  total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
+  resetAndFetch: resetPool,
+} = useCrudApi()
+
+// fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
+const loadWideips = () =>
+  fetchWideipData(() => getGtmWideips(wideipPageParams({ device: filterDevice.value || undefined })))
+
+const loadPools = () =>
+  fetchPoolData(() => getGtmPools(poolPageParams({ device: filterDevice.value || undefined })))
+
+// 设备筛选变化时两个表格都回到第 1 页并重新拉取
+function handleDeviceChange() {
+  resetWideips()
+  resetPool()
 }
 
-watch(filterDevice, fetchData)
-onMounted(fetchData)
+watch(filterDevice, handleDeviceChange)
+onMounted(() => {
+  loadWideips()
+  loadPools()
+})
 </script>
 
 <template>
@@ -36,29 +48,45 @@ onMounted(fetchData)
     </template>
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Wide IP" name="wideip">
-        <DataTable :data="wideips" :loading="loading" size="small">
-          <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-          <el-table-column prop="name" label="域名" width="220" sortable />
-          <el-table-column prop="rtype" label="记录类型" width="100" />
-          <el-table-column prop="lb_mode" label="负载模式" width="120" />
-          <el-table-column prop="pools" label="关联池" min-width="200">
-            <template #default="{ row }">
-              <el-tag v-for="p in (row.pools || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
-              <span v-if="!row.pools?.length" style="color: #c0c4cc">-</span>
-            </template>
-          </el-table-column>
-        </DataTable>
+        <div class="table-wrapper">
+          <DataTable :data="wideips" :loading="wideipLoading" size="small">
+            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
+            <el-table-column prop="name" label="域名" width="220" sortable />
+            <el-table-column prop="rtype" label="记录类型" width="100" />
+            <el-table-column prop="lb_mode" label="负载模式" width="120" />
+            <el-table-column prop="pools" label="关联池" min-width="200">
+              <template #default="{ row }">
+                <el-tag v-for="p in (row.pools || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
+                <span v-if="!row.pools?.length" style="color: #c0c4cc">-</span>
+              </template>
+            </el-table-column>
+          </DataTable>
+        </div>
+        <DataPagination
+          v-model:page="wideipPage"
+          v-model:page-size="wideipPageSize"
+          :total="wideipTotal"
+          @change="refetchWideips"
+        />
       </el-tab-pane>
       <el-tab-pane label="Pool" name="pool">
-        <DataTable :data="pools" :loading="loading" size="small">
-          <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-          <el-table-column prop="name" label="名称" width="180" sortable />
-          <el-table-column prop="lb_mode" label="负载模式" width="120" />
-          <el-table-column prop="alternate_mode" label="备选模式" width="120" />
-          <el-table-column prop="fallback_mode" label="回退模式" width="120" />
-          <el-table-column prop="fallback_ip" label="回退IP" width="140" />
-          <el-table-column prop="ttl" label="TTL" width="70" />
-        </DataTable>
+        <div class="table-wrapper">
+          <DataTable :data="pools" :loading="poolLoading" size="small">
+            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
+            <el-table-column prop="name" label="名称" width="180" sortable />
+            <el-table-column prop="lb_mode" label="负载模式" width="120" />
+            <el-table-column prop="alternate_mode" label="备选模式" width="120" />
+            <el-table-column prop="fallback_mode" label="回退模式" width="120" />
+            <el-table-column prop="fallback_ip" label="回退IP" width="140" />
+            <el-table-column prop="ttl" label="TTL" width="70" />
+          </DataTable>
+        </div>
+        <DataPagination
+          v-model:page="poolPage"
+          v-model:page-size="poolPageSize"
+          :total="poolTotal"
+          @change="refetchPools"
+        />
       </el-tab-pane>
     </el-tabs>
   </PageLayout>
@@ -66,4 +94,7 @@ onMounted(fetchData)
 
 <style scoped>
 .page-tabs { flex: 1; min-height: 0; }
+.page-tabs :deep(.el-tabs__content) { display: flex; flex-direction: column; }
+.page-tabs :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
 </style>

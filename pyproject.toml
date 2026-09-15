@@ -39,6 +39,10 @@ known-first-party = ["assets", "core", "ops"]
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
 
+# migrations 由 Django 自动生成（单引号风格，与既有迁移文件一致），不纳入 ruff format 检查
+[tool.ruff.format]
+exclude = ["**/migrations/*"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import DeviceFilter from '@/ui/DeviceFilter.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { modeTagType } from '@/composables/useTagType'
 import { getInterfaces } from '@/api/interfaces'
 
 const router = useRouter()
-const { data: interfaces, loading, search, filteredData, fetchData } = useCrudApi(['interface', 'ip_address', 'device_hostname'])
+const { data: interfaces, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
+  useCrudApi()
 const filterDevice = ref<number | ''>('')
 const filterMode = ref('')
 
@@ -18,23 +20,18 @@ const modeOptions = [
   { label: 'Trunk', value: 'trunk' },
 ]
 
-const displayed = computed(() => {
-  let d = filteredData.value
-  if (filterDevice.value) d = d.filter((i: any) => i.device === filterDevice.value)
-  if (filterMode.value) d = d.filter((i: any) => i.mode === filterMode.value)
-  return d
-})
+const fetchAll = () =>
+  fetchData(() =>
+    getInterfaces(
+      pageParams({
+        device: filterDevice.value || undefined,
+        mode: filterMode.value || undefined,
+      })
+    )
+  )
 
-const fetchAll = () => {
-  const params: Record<string, any> = {}
-  if (filterDevice.value) params.device = filterDevice.value
-  if (filterMode.value) params.mode = filterMode.value
-  fetchData(() => getInterfaces(params))
-}
-
-
-watch(filterDevice, fetchAll)
-watch(filterMode, fetchAll)
+watch(filterDevice, resetAndFetch)
+watch(filterMode, resetAndFetch)
 onMounted(fetchAll)
 </script>
 
@@ -48,7 +45,7 @@ onMounted(fetchAll)
       <el-input v-model="search" placeholder="搜索接口/IP/设备" clearable style="width: 200px" />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="displayed" :loading="loading">
+      <DataTable :data="interfaces" :loading="loading">
         <el-table-column prop="device_hostname" label="设备" width="150" sortable />
         <el-table-column prop="interface" label="接口" width="140" sortable />
         <el-table-column prop="mode" label="模式" width="100">
@@ -78,6 +75,7 @@ onMounted(fetchAll)
         </el-table-column>
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

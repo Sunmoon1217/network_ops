@@ -6,12 +6,13 @@ import { ElButton } from 'element-plus'
 import { FixedDir } from 'element-plus/es/components/table-v2/src/constants'
 import ImportDevice from './dialogs/ImportDevice.vue'
 import PageLayout from '@/ui/PageLayout.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { useTableHeight } from '@/composables/useTableHeight'
 
 const router = useRouter()
 const { tableRef, tableHeight, tableWidth } = useTableHeight()
-const { data: devices, loading, search, filteredData, fetchData } = useCrudApi(['hostname', 'ip_address'])
+const { data: devices, loading, search, page, pageSize, total, fetchData, refetch, pageParams } = useCrudApi()
 
 const importDialogVisible = ref(false)
 
@@ -32,7 +33,9 @@ const columns = [
   { key: 'operation', title: '操作', width: 200, fixed: FixedDir.RIGHT },
 ]
 
-onMounted(() => fetchData(getDevices))
+const fetchAll = () => fetchData(() => getDevices(pageParams()))
+
+onMounted(fetchAll)
 </script>
 
 <template>
@@ -46,7 +49,7 @@ onMounted(() => fetchData(getDevices))
       <el-table-v2
         v-loading="loading"
         :columns="columns"
-        :data="filteredData"
+        :data="devices"
         :height="tableHeight"
         :width="tableWidth"
         :fixed="true"
@@ -66,7 +69,8 @@ onMounted(() => fetchData(getDevices))
         </template>
       </el-table-v2>
     </div>
-    <ImportDevice v-model:visible="importDialogVisible" @success="() => fetchData(getDevices)" />
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
+    <ImportDevice v-model:visible="importDialogVisible" @success="fetchAll" />
   </PageLayout>
 </template>
 

@@ -104,6 +104,7 @@ class Vendor(models.Model):
     class Meta:
         verbose_name = "设备厂商"
         verbose_name_plural = verbose_name
+        ordering = ("name",)
 
     def __str__(self):
         return self.name
@@ -116,6 +117,7 @@ class DeviceModel(models.Model):
     class Meta:
         verbose_name = "设备型号"
         verbose_name_plural = verbose_name
+        ordering = ("name",)
 
     def __str__(self):
         return f"{self.vendor.name} {self.name}"
@@ -178,6 +180,7 @@ class Device(models.Model):
     class Meta:
         verbose_name = "网络设备"
         verbose_name_plural = verbose_name
+        ordering = ("hostname",)
 
     def __str__(self):
         return self.hostname
@@ -225,6 +228,7 @@ class DeviceConnection(models.Model):
         constraints = (
             models.UniqueConstraint(fields=["device", "account_type"], name="uni_deviceconn_device_account"),
         )
+        ordering = ("-created_at", "-pk")
 
     def __str__(self):
         return f"{self.device.hostname} ({self.connection_type})"
@@ -299,6 +303,7 @@ class Vrf(ConfigBase):
         verbose_name = "VRF"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_vrf_device_name"),)
+        ordering = ("device", "name")
 
     def __str__(self):
         return f"{self.device.hostname} / {self.name}"
@@ -331,6 +336,7 @@ class Interface(ConfigBase):
         verbose_name = "网络接口"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "interface"], name="uni_device_interface"),)
+        ordering = ("device", "interface")
 
     def __str__(self):
         return f"{self.device.hostname} / {self.interface}"
@@ -369,6 +375,7 @@ class DeviceAccount(ConfigBase):
         constraints = (
             models.UniqueConstraint(fields=["device", "username"], name="uni_deviceaccount_device_username"),
         )
+        ordering = ("device", "username", "-pk")
 
     def __str__(self):
         return f"{self.device.hostname} / {self.username}"
@@ -394,6 +401,7 @@ class SnmpConfig(models.Model):
     class Meta:
         verbose_name = "SNMP配置"
         verbose_name_plural = verbose_name
+        ordering = ("-created_at", "-pk")
 
     def __str__(self):
         return f"{self.device.hostname} SNMP"
@@ -415,6 +423,7 @@ class NtpConfig(models.Model):
     class Meta:
         verbose_name = "NTP配置"
         verbose_name_plural = verbose_name
+        ordering = ("-created_at", "-pk")
 
     def __str__(self):
         return f"{self.device.hostname} NTP"
@@ -457,6 +466,7 @@ class SyslogConfig(models.Model):
     class Meta:
         verbose_name = "Syslog配置"
         verbose_name_plural = verbose_name
+        ordering = ("-created_at", "-pk")
 
     def __str__(self):
         return f"{self.device.hostname} Syslog"
@@ -487,6 +497,7 @@ class LtmVirtualServer(ConfigBase):
         verbose_name = "LTM Virtual Server"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_vs_device"),)
+        ordering = ("device", "name")
 
     def __str__(self):
         return f"{self.device.hostname} / {self.name}"
@@ -503,6 +514,7 @@ class LtmPool(ConfigBase):
         verbose_name = "LTM Pool"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_pool_device"),)
+        ordering = ("device", "name")
 
 
 class LtmPoolMember(models.Model):
@@ -515,6 +527,7 @@ class LtmPoolMember(models.Model):
     class Meta:
         verbose_name = "LTM Pool Member"
         verbose_name_plural = verbose_name
+        ordering = ("pool_name", "name", "-pk")
 
 
 class LtmProfile(ConfigBase):
@@ -527,6 +540,7 @@ class LtmProfile(ConfigBase):
     class Meta:
         verbose_name = "LTM Profile"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 class LtmIRule(ConfigBase):
@@ -538,6 +552,7 @@ class LtmIRule(ConfigBase):
     class Meta:
         verbose_name = "LTM iRule"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 class LtmSNAT(ConfigBase):
@@ -549,6 +564,7 @@ class LtmSNAT(ConfigBase):
     class Meta:
         verbose_name = "LTM SNAT"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 class LtmPersist(ConfigBase):
@@ -561,6 +577,7 @@ class LtmPersist(ConfigBase):
     class Meta:
         verbose_name = "LTM Persist"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 # ---------------------------------------------------------------------------
@@ -576,6 +593,7 @@ class GtmDatacenter(ConfigBase):
     class Meta:
         verbose_name = "GTM Datacenter"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 class GtmWideip(ConfigBase):
@@ -590,6 +608,7 @@ class GtmWideip(ConfigBase):
         verbose_name = "GTM Wide IP"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_wideip_device"),)
+        ordering = ("device", "name")
 
 
 class GtmPool(ConfigBase):
@@ -607,6 +626,7 @@ class GtmPool(ConfigBase):
     class Meta:
         verbose_name = "GTM Pool"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +662,7 @@ class AddressBook(ConfigBase):
     class Meta:
         verbose_name = "地址簿"
         verbose_name_plural = verbose_name
+        ordering = ("device", "name", "-pk")
 
 
 class Service(ConfigBase):
@@ -664,6 +685,7 @@ class Service(ConfigBase):
         verbose_name = "服务"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["name"], name="uni_service_name"),)
+        ordering = ("name",)
 
 
 class Policy(ConfigBase):
@@ -690,6 +712,7 @@ class Policy(ConfigBase):
             models.UniqueConstraint(fields=["device", "policy_id"], name="uni_policy_device_pid"),
             models.UniqueConstraint(fields=["device", "order"], name="uni_policy_device_order"),
         )
+        ordering = ("device", "order")
 
 
 class NatRule(ConfigBase):
@@ -739,6 +762,7 @@ class NatRule(ConfigBase):
         verbose_name = "NAT 规则"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["device", "order"], name="uni_nat_device_order"),)
+        ordering = ("device", "order")
 
 
 # ---------------------------------------------------------------------------
@@ -883,6 +907,7 @@ class Route(models.Model):
         verbose_name = "路由"
         verbose_name_plural = verbose_name
         constraints = (models.UniqueConstraint(fields=["vrf", "destination", "nexthop"], name="uni_route_vrf_dst_nh"),)
+        ordering = ("vrf", "destination", "nexthop", "-pk")
 
     def __str__(self):
         return f"{self.destination} → {self.nexthop or self.interface}"

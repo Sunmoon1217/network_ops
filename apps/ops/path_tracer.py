@@ -178,7 +178,8 @@ def _find_device_for_ip(ip_str: str) -> Device | None:
         ipaddress.ip_address(ip_str)
     except ValueError:
         return None
-    interface = Interface.objects.select_related("device").filter(ip_address=ip_str).first()
+    # 显式 pk 序：不依赖模型默认排序，保持「取最早创建记录」的原有语义
+    interface = Interface.objects.select_related("device").filter(ip_address=ip_str).order_by("pk").first()
     return interface.device if interface else None
 
 
@@ -236,7 +237,7 @@ def _find_vrf_for_ip(ip_str: str) -> str:
             vrf = Vrf.objects.filter(device=gw_device, name="default").first()
             if vrf:
                 return "default"
-            vrf = Vrf.objects.filter(device=gw_device).first()
+            vrf = Vrf.objects.filter(device=gw_device).order_by("pk").first()
             return vrf.name if vrf else "default"
 
     return "default"
@@ -418,7 +419,7 @@ def _match_nat(src: str, dst: str, port: str, device: Device) -> dict | None:
 
 def _resolve_translated_ip(name: str) -> str | None:
     """解析NAT转换后的IP"""
-    ab = AddressBook.objects.filter(name=name).first()
+    ab = AddressBook.objects.filter(name=name).order_by("pk").first()
     if not ab:
         return None
     if ab.ip_address:
@@ -426,7 +427,7 @@ def _resolve_translated_ip(name: str) -> str | None:
     if ab.ip_start:
         return ab.ip_start
     if ab.children.exists():
-        child = ab.children.first()
+        child = ab.children.order_by("pk").first()
         if child and child.ip_address:
             return child.ip_address
     return None
@@ -443,7 +444,7 @@ def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
     vs = LtmVirtualServer.objects.filter(vs_address=dst_ip)
     if dst_port:
         vs = vs.filter(vs_port=dst_port)
-    vs = vs.first()
+    vs = vs.order_by("pk").first()
     if not vs:
         return []
     return [
@@ -554,7 +555,7 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         # 1. 获取设备信息
         device_addr = ""
         if hop_count > 0:
-            conn_intf = Interface.objects.filter(device=src_device, ip_address__isnull=False).first()
+            conn_intf = Interface.objects.filter(device=src_device, ip_address__isnull=False).order_by("pk").first()
             device_addr = conn_intf.ip_address if conn_intf else ""
 
         subnet = _find_subnet_for_ip(current_src if hop_count == 0 else device_addr)

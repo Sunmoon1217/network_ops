@@ -173,4 +173,12 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # 列表接口统一启用搜索与排序，各 ViewSet 通过 search_fields / ordering_fields 声明可用字段
+    "DEFAULT_FILTER_BACKENDS": [
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    # 列表接口统一数字分页：默认每页 50 条，客户端可用 ?page_size= 覆盖（上限 500）
+    "DEFAULT_PAGINATION_CLASS": "netops.pagination.StandardPagination",
+    "PAGE_SIZE": 50,
 }

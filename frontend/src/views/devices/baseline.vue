@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import {
   getSnmpConfigs, deleteSnmpConfig,
   getNtpConfigs, deleteNtpConfig,
@@ -11,27 +12,42 @@ import { useCrudApi } from '@/composables/useCrudApi'
 
 const router = useRouter()
 const activeTab = ref('snmp')
-const loading = ref(false)
 
-const snmp = useCrudApi()
-const ntp = useCrudApi()
-const syslog = useCrudApi()
+// 三个 tab 各自持有独立的分页与加载状态
+const {
+  data: snmpList, loading: snmpLoading, page: snmpPage, pageSize: snmpPageSize,
+  total: snmpTotal, fetchData: fetchSnmpData, refetch: refetchSnmp, pageParams: snmpPageParams,
+  handleDelete: deleteSnmpRow,
+} = useCrudApi()
+const {
+  data: ntpList, loading: ntpLoading, page: ntpPage, pageSize: ntpPageSize,
+  total: ntpTotal, fetchData: fetchNtpData, refetch: refetchNtp, pageParams: ntpPageParams,
+  handleDelete: deleteNtpRow,
+} = useCrudApi()
+const {
+  data: syslogList, loading: syslogLoading, page: syslogPage, pageSize: syslogPageSize,
+  total: syslogTotal, fetchData: fetchSyslogData, refetch: refetchSyslog, pageParams: syslogPageParams,
+  handleDelete: deleteSyslogRow,
+} = useCrudApi()
 
-const fetchAll = async () => {
-  loading.value = true
-  try {
-    const [s, n, l] = await Promise.all([getSnmpConfigs(), getNtpConfigs(), getSyslogConfigs()])
-    snmp.data.value = s.data.results || s.data || []
-    ntp.data.value = n.data.results || n.data || []
-    syslog.data.value = l.data.results || l.data || []
-  } catch {
-    ElMessage.error('加载失败')
-  } finally {
-    loading.value = false
-  }
+// 各 tab 的加载器：fetcher 内用各自的 pageParams 拼装分页参数
+const loaders = {
+  snmp: () => fetchSnmpData(() => getSnmpConfigs(snmpPageParams())),
+  ntp: () => fetchNtpData(() => getNtpConfigs(ntpPageParams())),
+  syslog: () => fetchSyslogData(() => getSyslogConfigs(syslogPageParams())),
 }
 
-onMounted(fetchAll)
+// tab 首次进入时才拉取，之后切换复用已有数据（翻页由 refetch 负责）
+const loadedTabs = ref<Record<string, boolean>>({ snmp: false, ntp: false, syslog: false })
+
+async function loadTab(tab: string) {
+  if (loadedTabs.value[tab]) return
+  loadedTabs.value[tab] = true
+  await loaders[tab as keyof typeof loaders]()
+}
+
+watch(activeTab, tab => { loadTab(tab) })
+onMounted(() => { loadTab(activeTab.value) })
 </script>
 
 <template>
@@ -41,7 +57,7 @@ onMounted(fetchAll)
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/snmp/create')">新增</el-button>
         </div>
-        <DataTable :data="snmp.data.value" :loading="loading" size="small" height="">
+        <DataTable :data="snmpList" :loading="snmpLoading" size="small" height="">
           <el-table-column prop="device_hostname" label="设备" width="150" />
           <el-table-column prop="version" label="版本" width="80" />
           <el-table-column prop="community_read" label="读社区" width="120" show-overflow-tooltip />
@@ -60,17 +76,18 @@ onMounted(fetchAll)
           <el-table-column label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/snmp/${row.id}/edit`)">编辑</el-button>
-              <el-button size="small" link type="danger" @click="snmp.handleDelete('SNMP配置', () => deleteSnmpConfig(row.id), fetchAll)">删除</el-button>
+              <el-button size="small" link type="danger" @click="deleteSnmpRow('SNMP配置', () => deleteSnmpConfig(row.id), refetchSnmp)">删除</el-button>
             </template>
           </el-table-column>
         </DataTable>
+        <DataPagination v-model:page="snmpPage" v-model:page-size="snmpPageSize" :total="snmpTotal" @change="refetchSnmp" />
       </el-tab-pane>
 
       <el-tab-pane label="NTP" name="ntp">
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/ntp/create')">新增</el-button>
         </div>
-        <DataTable :data="ntp.data.value" :loading="loading" size="small" height="">
+        <DataTable :data="ntpList" :loading="ntpLoading" size="small" height="">
           <el-table-column prop="device_hostname" label="设备" width="150" />
           <el-table-column prop="server1" label="NTP服务器1" width="150" />
           <el-table-column prop="server2" label="NTP服务器2" width="150" />
@@ -85,17 +102,18 @@ onMounted(fetchAll)
           <el-table-column label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/ntp/${row.id}/edit`)">编辑</el-button>
-              <el-button size="small" link type="danger" @click="ntp.handleDelete('NTP配置', () => deleteNtpConfig(row.id), fetchAll)">删除</el-button>
+              <el-button size="small" link type="danger" @click="deleteNtpRow('NTP配置', () => deleteNtpConfig(row.id), refetchNtp)">删除</el-button>
             </template>
           </el-table-column>
         </DataTable>
+        <DataPagination v-model:page="ntpPage" v-model:page-size="ntpPageSize" :total="ntpTotal" @change="refetchNtp" />
       </el-tab-pane>
 
       <el-tab-pane label="Syslog" name="syslog">
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/syslog/create')">新增</el-button>
         </div>
-        <DataTable :data="syslog.data.value" :loading="loading" size="small" height="">
+        <DataTable :data="syslogList" :loading="syslogLoading" size="small" height="">
           <el-table-column prop="device_hostname" label="设备" width="150" />
           <el-table-column prop="server1" label="日志服务器1" width="150" />
           <el-table-column prop="server2" label="日志服务器2" width="150" />
@@ -110,10 +128,11 @@ onMounted(fetchAll)
           <el-table-column label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/syslog/${row.id}/edit`)">编辑</el-button>
-              <el-button size="small" link type="danger" @click="syslog.handleDelete('Syslog配置', () => deleteSyslogConfig(row.id), fetchAll)">删除</el-button>
+              <el-button size="small" link type="danger" @click="deleteSyslogRow('Syslog配置', () => deleteSyslogConfig(row.id), refetchSyslog)">删除</el-button>
             </template>
           </el-table-column>
         </DataTable>
+        <DataPagination v-model:page="syslogPage" v-model:page-size="syslogPageSize" :total="syslogTotal" @change="refetchSyslog" />
       </el-tab-pane>
     </el-tabs>
   </PageLayout>

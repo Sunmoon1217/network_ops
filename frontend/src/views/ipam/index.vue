@@ -1,41 +1,61 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { getSubnets, deleteSubnet, getTags } from '@/api/ipam'
+import { getSubnets, deleteSubnet } from '@/api/ipam'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const router = useRouter()
-const { data: subnets, loading, search, filteredData, fetchData, handleDelete } = useCrudApi(['network', 'description'])
+const {
+  data: subnets,
+  loading,
+  search,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  handleDelete,
+} = useCrudApi()
 const filterTag = ref<number | ''>('')
 const tags = ref<any[]>([])
 
-const fetchAll = () => {
-  const params: Record<string, any> = {}
-  if (filterTag.value) params.tag = filterTag.value
-  fetchData(() => getSubnets(params))
-}
+const fetchAll = () => fetchData(() => getSubnets(pageParams({ tag: filterTag.value || undefined })))
 
 const remove = (row: any) => {
   handleDelete(row.network, () => deleteSubnet(row.id), fetchAll)
 }
 
-onMounted(async () => {
+// 标签下拉选项独立拉取全量，避免受网段列表分页影响
+const loadTags = async () => {
+  try {
+    tags.value = await fetchAllPages('/api/assets/tags/', { ordering: 'name' })
+  } catch {
+    /* 选项加载失败不影响主列表 */
+  }
+}
+
+watch(filterTag, resetAndFetch)
+onMounted(() => {
   fetchAll()
-  try { const res = await getTags(); tags.value = res.data.results || res.data || [] } catch {}
+  loadTags()
 })
 </script>
 
 <template>
   <PageLayout title="IP 管理">
     <template #actions>
-      <el-select v-model="filterTag" placeholder="标签" clearable style="width: 120px" @change="fetchAll">
+      <el-select v-model="filterTag" placeholder="标签" clearable style="width: 120px">
         <el-option v-for="t in tags" :key="t.id" :label="t.name" :value="t.id" />
       </el-select>
       <el-input v-model="search" placeholder="搜索网段/描述" clearable style="width: 200px" />
       <el-button type="primary" @click="router.push('/ipam/subnets/create')">新增网段</el-button>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="filteredData" :loading="loading">
+      <DataTable :data="subnets" :loading="loading">
         <el-table-column prop="network" label="网段" width="160" sortable />
         <el-table-column prop="gateway" label="网关" width="140" />
         <el-table-column prop="vlan" label="VLAN" width="80" />
@@ -56,6 +76,7 @@ onMounted(async () => {
         </el-table-column>
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

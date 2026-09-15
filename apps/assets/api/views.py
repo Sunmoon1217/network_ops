@@ -290,7 +290,7 @@ class VlanViewSet(viewsets.ModelViewSet):
     queryset = Vlan.objects.select_related("device").all()
     serializer_class = VlanSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "vid", "device__hostname")
+    search_fields = ("name", "vid", "description", "device__hostname")
     ordering_fields = ("vid", "name")
 
     def get_queryset(self):
@@ -338,7 +338,7 @@ class DeviceAccountViewSet(viewsets.ModelViewSet):
     queryset = DeviceAccount.objects.select_related("device").all()
     serializer_class = DeviceAccountSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("username", "device__hostname")
+    search_fields = ("username", "description", "device__hostname")
     ordering_fields = ("username", "created_at")
 
     def get_queryset(self):
@@ -920,7 +920,7 @@ class NatRuleViewSet(viewsets.ModelViewSet):
     queryset = NatRule.objects.select_related("device").all()
     serializer_class = NatRuleSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "device__hostname")
+    search_fields = ("name", "source_addresses__name", "destination_addresses__name", "device__hostname")
     ordering_fields = ("order", "created_at")
 
     def get_queryset(self):

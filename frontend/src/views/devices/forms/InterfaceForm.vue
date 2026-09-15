@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getInterfaces, updateInterface } from '@/api/interfaces'
+import { getInterface, updateInterface } from '@/api/interfaces'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,9 +18,8 @@ onMounted(async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const res = await getInterfaces()
-    const item = (res.data.results || res.data || []).find((i: any) => i.id === Number(route.params.id))
-    if (item) form.value = { ...item }
+    const res = await getInterface(Number(route.params.id))
+    form.value = { ...res.data }
   } finally { loading.value = false }
 })
 

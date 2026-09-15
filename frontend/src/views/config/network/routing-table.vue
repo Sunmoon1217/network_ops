@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import DeviceFilter from '@/ui/DeviceFilter.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { protocolTagType } from '@/composables/useTagType'
+import api from '@/api/index'
 
-const { data: routes, loading, search, filteredData, fetchData } = useCrudApi(['destination', 'nexthop', 'interface'])
+const { data: routes, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
+  useCrudApi()
 const filterDevice = ref<number | ''>('')
 const filterProtocol = ref('')
 
@@ -16,15 +19,19 @@ const protocolOptions = [
   { label: 'BGP', value: 'bgp' },
 ]
 
-const displayed = computed(() => {
-  let d = filteredData.value
-  if (filterDevice.value) d = d.filter((r: any) => r.device_id === filterDevice.value)
-  if (filterProtocol.value) d = d.filter((r: any) => r.protocol === filterProtocol.value)
-  return d
-})
+const fetchAll = () =>
+  fetchData(() =>
+    api.get('/api/assets/routes/', {
+      params: pageParams({
+        device: filterDevice.value || undefined,
+        protocol: filterProtocol.value || undefined,
+      }),
+    })
+  )
 
-
-onMounted(() => fetchData(() => fetch('/api/trace/routes/').then(r => r.json())))
+watch(filterDevice, resetAndFetch)
+watch(filterProtocol, resetAndFetch)
+onMounted(fetchAll)
 </script>
 
 <template>
@@ -37,9 +44,9 @@ onMounted(() => fetchData(() => fetch('/api/trace/routes/').then(r => r.json()))
       <el-input v-model="search" placeholder="搜索" clearable style="width: 180px" />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="displayed" :loading="loading">
-        <el-table-column prop="device" label="设备" width="140" sortable />
-        <el-table-column prop="vrf" label="VRF" width="100" />
+      <DataTable :data="routes" :loading="loading">
+        <el-table-column prop="device_hostname" label="设备" width="140" sortable />
+        <el-table-column prop="vrf_name" label="VRF" width="100" />
         <el-table-column prop="destination" label="目的网段" width="160" />
         <el-table-column prop="nexthop" label="下一跳" width="140" />
         <el-table-column prop="interface" label="出接口" width="150" />
@@ -51,6 +58,7 @@ onMounted(() => fetchData(() => fetch('/api/trace/routes/').then(r => r.json()))
         <el-table-column prop="metric" label="度量值" width="80" />
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

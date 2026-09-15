@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getTags, deleteTag } from '@/api/ipam'
 
 const router = useRouter()
-const { data: tags, loading, fetchData, handleDelete } = useCrudApi()
+const { data: tags, loading, page, pageSize, total, fetchData, refetch, pageParams, handleDelete } = useCrudApi()
+
+const fetchAll = () => fetchData(() => getTags(pageParams()))
 
 const remove = (row: any) => {
-  handleDelete(row.name, () => deleteTag(row.id), () => fetchData(getTags))
+  handleDelete(row.name, () => deleteTag(row.id), fetchAll)
 }
 
-onMounted(() => fetchData(getTags))
+onMounted(fetchAll)
 </script>
 
 <template>
@@ -37,6 +40,7 @@ onMounted(() => fetchData(getTags))
         </el-table-column>
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

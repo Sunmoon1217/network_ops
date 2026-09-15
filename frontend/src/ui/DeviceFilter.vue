@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getDevices } from '@/api/devices'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const props = defineProps<{ modelValue: number | '' }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: number | ''): void; (e: 'change', v: number | ''): void }>()
@@ -13,8 +13,8 @@ const handleChange = (v: number | '') => {
 
 onMounted(async () => {
   try {
-    const res = await getDevices()
-    devices.value = res.data.results || res.data || []
+    // 该组件被多个列表页复用，下拉选项必须是全量设备，分页会截断选项
+    devices.value = await fetchAllPages('/api/assets/devices/', { ordering: 'hostname' })
   } catch { /* ignore */ }
 })
 </script>

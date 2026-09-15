@@ -1,41 +1,41 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import DeviceFilter from '@/ui/DeviceFilter.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 import api from '@/api/index'
 
-const { data: entries, loading, search, filteredData, fetchData } = useCrudApi(['ip_address', 'mac_address', 'interface', 'vendor', 'device_hostname'])
+const { data: entries, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
+  useCrudApi()
 const filterDevice = ref<number | ''>('')
 const filterVlan = ref('')
 const filterType = ref('')
 
+// VLAN 下拉选项来自 VLAN 表（独立拉取，避免受 ARP 表分页影响）
 const vlanOptions = ref<string[]>([])
 
-const displayed = computed(() => {
-  let d = filteredData.value
-  if (filterDevice.value) d = d.filter((r: any) => r.device === filterDevice.value)
-  if (filterVlan.value) d = d.filter((r: any) => r.vlan === filterVlan.value)
-  if (filterType.value) d = d.filter((r: any) => r.arp_type === filterType.value)
-  return d
-})
-
-const fetchAll = () => {
-  const params: Record<string, any> = {}
-  if (filterDevice.value) params.device = filterDevice.value
-  if (filterVlan.value) params.vlan = filterVlan.value
-  if (filterType.value) params.arp_type = filterType.value
-  fetchData(() => api.get('/api/assets/arp-mac/', { params }))
+const loadVlanOptions = async () => {
+  try {
+    const list = await fetchAllPages('/api/assets/vlans/', { ordering: 'vid' })
+    const vids = list.map((v: any) => String(v.vid)).filter(Boolean)
+    vlanOptions.value = Array.from(new Set(vids)).sort((a, b) => Number(a) - Number(b))
+  } catch {
+    /* 选项加载失败不影响主列表 */
+  }
 }
 
-// 提取唯一 VLAN 列表
-const extractVlans = () => {
-  const set = new Set(entries.value.map((e: any) => e.vlan).filter(Boolean))
-  vlanOptions.value = Array.from(set).sort() as string[]
-}
-
-watch(entries, extractVlans)
-watch(filterDevice, fetchAll)
+const fetchAll = () =>
+  fetchData(() =>
+    api.get('/api/assets/arp-mac/', {
+      params: pageParams({
+        device: filterDevice.value || undefined,
+        vlan: filterVlan.value || undefined,
+        arp_type: filterType.value || undefined,
+      }),
+    })
+  )
 
 const statusTag = (s: string) => {
   const map: Record<string, string> = { normal: 'success', aging: 'warning', conflict: 'danger' }
@@ -44,24 +44,30 @@ const statusTag = (s: string) => {
 
 const statusLabel: Record<string, string> = { normal: '正常', aging: '老化中', conflict: '冲突' }
 
-onMounted(fetchAll)
+watch(filterDevice, resetAndFetch)
+watch(filterVlan, resetAndFetch)
+watch(filterType, resetAndFetch)
+onMounted(() => {
+  fetchAll()
+  loadVlanOptions()
+})
 </script>
 
 <template>
   <PageLayout title="ARP / MAC 表">
     <template #actions>
       <DeviceFilter v-model="filterDevice" />
-      <el-select v-model="filterVlan" placeholder="VLAN" clearable style="width: 120px" @change="fetchAll">
+      <el-select v-model="filterVlan" placeholder="VLAN" clearable style="width: 120px">
         <el-option v-for="v in vlanOptions" :key="v" :label="v" :value="v" />
       </el-select>
-      <el-select v-model="filterType" placeholder="ARP 类型" clearable style="width: 110px" @change="fetchAll">
+      <el-select v-model="filterType" placeholder="ARP 类型" clearable style="width: 110px">
         <el-option label="动态" value="dynamic" />
         <el-option label="静态" value="static" />
       </el-select>
       <el-input v-model="search" placeholder="搜索 IP/MAC/设备/接口" clearable style="width: 220px" />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="displayed" :loading="loading">
+      <DataTable :data="entries" :loading="loading">
         <el-table-column prop="device_hostname" label="设备" width="150" sortable />
         <el-table-column prop="vlan" label="VLAN" width="100" sortable />
         <el-table-column prop="interface" label="接口" width="200" show-overflow-tooltip />
@@ -83,6 +89,7 @@ onMounted(fetchAll)
         </el-table-column>
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

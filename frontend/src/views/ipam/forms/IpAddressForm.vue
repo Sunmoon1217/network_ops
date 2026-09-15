@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getIpAddresses, createIpAddress, updateIpAddress } from '@/api/ipam'
-import { getDevices } from '@/api/devices'
+import { getIpAddress, createIpAddress, updateIpAddress } from '@/api/ipam'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,12 +19,10 @@ const statusOptions = [
 onMounted(async () => {
   loading.value = true
   try {
-    const devRes = await getDevices()
-    devices.value = devRes.data.results || devRes.data || []
+    devices.value = await fetchAllPages('/api/assets/devices/', { ordering: 'hostname' })
     if (route.params.id) {
-      const res = await getIpAddresses()
-      const item = (res.data.results || res.data || []).find((i: any) => i.id === Number(route.params.id))
-      if (item) form.value = { ...item }
+      const res = await getIpAddress(Number(route.params.id))
+      form.value = { ...res.data }
     }
   } finally { loading.value = false }
 })
