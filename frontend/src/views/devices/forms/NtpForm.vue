@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getNtpConfigs, createNtpConfig, updateNtpConfig } from '@/api/baseline'
-import { getDevices } from '@/api/devices'
+import { getNtpConfig, createNtpConfig, updateNtpConfig } from '@/api/baseline'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,12 +13,10 @@ const isNew = computed(() => !route.params.id)
 onMounted(async () => {
   loading.value = true
   try {
-    const devRes = await getDevices()
-    devices.value = devRes.data.results || devRes.data || []
+    devices.value = await fetchAllPages('/api/assets/devices/', { ordering: 'hostname' })
     if (route.params.id) {
-      const res = await getNtpConfigs()
-      const item = (res.data.results || res.data || []).find((n: any) => n.id === Number(route.params.id))
-      if (item) form.value = { ...item }
+      const res = await getNtpConfig(Number(route.params.id))
+      form.value = { ...res.data }
     }
   } finally { loading.value = false }
 })

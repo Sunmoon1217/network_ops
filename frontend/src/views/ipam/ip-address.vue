@@ -1,12 +1,25 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { statusTagType } from '@/composables/useTagType'
 import { getIpAddresses, deleteIpAddress } from '@/api/ipam'
 
 const router = useRouter()
-const { data: ipList, loading, search, filteredData, fetchData, handleDelete } = useCrudApi(['ip_address', 'description'])
+const {
+  data: ipList,
+  loading,
+  search,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  handleDelete,
+} = useCrudApi()
 const filterStatus = ref('')
 
 const statusOptions = [
@@ -15,36 +28,27 @@ const statusOptions = [
   { label: '可用', value: 'available' },
 ]
 
-const displayed = computed(() => {
-  if (!filterStatus.value) return filteredData.value
-  return filteredData.value.filter((i: any) => i.status === filterStatus.value)
-})
-
-const fetchAll = () => {
-  const params: Record<string, any> = {}
-  if (filterStatus.value) params.status = filterStatus.value
-  fetchData(() => getIpAddresses(params))
-}
+const fetchAll = () => fetchData(() => getIpAddresses(pageParams({ status: filterStatus.value || undefined })))
 
 const remove = (row: any) => {
   handleDelete(row.ip_address, () => deleteIpAddress(row.id), fetchAll)
 }
 
-
+watch(filterStatus, resetAndFetch)
 onMounted(fetchAll)
 </script>
 
 <template>
   <PageLayout title="IP 地址管理">
     <template #actions>
-      <el-select v-model="filterStatus" placeholder="状态" clearable style="width: 110px" @change="fetchAll">
+      <el-select v-model="filterStatus" placeholder="状态" clearable style="width: 110px">
         <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
       </el-select>
       <el-input v-model="search" placeholder="搜索 IP/描述" clearable style="width: 200px" />
       <el-button type="primary" @click="router.push('/ipam/ip-addresses/create')">新增 IP</el-button>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="displayed" :loading="loading">
+      <DataTable :data="ipList" :loading="loading">
         <el-table-column prop="ip_address" label="IP 地址" width="150" sortable />
         <el-table-column prop="subnet_network" label="所属网段" width="140" />
         <el-table-column prop="status" label="状态" width="90">
@@ -62,6 +66,7 @@ onMounted(fetchAll)
         </el-table-column>
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

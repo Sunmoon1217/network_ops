@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getTags, createTag, updateTag } from '@/api/ipam'
+import { getTag, createTag, updateTag } from '@/api/ipam'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,9 +12,8 @@ onMounted(async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const res = await getTags()
-    const tag = (res.data.results || res.data || []).find((t: any) => t.id === Number(route.params.id))
-    if (tag) form.value = { ...tag }
+    const res = await getTag(Number(route.params.id))
+    form.value = { ...res.data }
   } finally { loading.value = false }
 })
 

@@ -6,7 +6,8 @@ import TopologyToolbar from '@/ui/topology/TopologyToolbar.vue'
 import DeviceSelector from '@/ui/topology/DeviceSelector.vue'
 import TopologyNodePanel from '@/ui/topology/TopologyNodePanel.vue'
 import TopologyEdgePanel from '@/ui/topology/TopologyEdgePanel.vue'
-import { getTopology, getTopologies, createTopology, updateTopology, deleteTopology } from '@/api/topology'
+import { getTopology, createTopology, updateTopology, deleteTopology } from '@/api/topology'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 import { buildIconDataUri } from '@/ui/topology/device-icons'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -28,10 +29,10 @@ const popoverAnchor = ref<HTMLElement | undefined>(undefined)
 let savedEdgeSnapshot: any = null
 
 // === 加载拓扑列表 ===
+// 该列表用于顶部下拉选择器，必须完整，故走全量分页拉取（后端已启用数字分页）
 async function loadTopologyList() {
   try {
-    const res = await getTopologies()
-    topologyList.value = res.data?.results ?? res.data ?? []
+    topologyList.value = await fetchAllPages('/api/assets/topologies/', { ordering: 'name' })
   } catch {
     ElMessage.error('加载拓扑列表失败')
   }

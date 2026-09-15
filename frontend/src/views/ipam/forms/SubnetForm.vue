@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getSubnets, createSubnet, updateSubnet, getTags } from '@/api/ipam'
+import { getSubnet, createSubnet, updateSubnet } from '@/api/ipam'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,12 +13,10 @@ const isNew = computed(() => !route.params.id)
 onMounted(async () => {
   loading.value = true
   try {
-    const tagRes = await getTags()
-    tags.value = tagRes.data.results || tagRes.data || []
+    tags.value = await fetchAllPages('/api/assets/tags/', { ordering: 'name' })
     if (route.params.id) {
-      const res = await getSubnets()
-      const item = (res.data.results || res.data || []).find((s: any) => s.id === Number(route.params.id))
-      if (item) form.value = { ...item, tags: item.tags || [] }
+      const res = await getSubnet(Number(route.params.id))
+      form.value = { ...res.data, tags: res.data.tags || [] }
     }
   } finally { loading.value = false }
 })

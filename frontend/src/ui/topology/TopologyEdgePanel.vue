@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { getInterfaces } from '@/api/interfaces'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const props = defineProps<{
   edge: any
@@ -53,8 +53,9 @@ async function loadInterfaces(sourceId: string, targetId: string) {
     const promises: Promise<any>[] = []
     if (sourceDeviceId) {
       promises.push(
-        getInterfaces({ device: sourceDeviceId, page_size: 500 })
-          .then(res => { sourceInterfaces.value = res.data?.results ?? res.data ?? [] })
+        // 接口下拉需覆盖该设备全部接口，分页会截断（page_size=500 会被后端上限截断且仅返回第一页）
+        fetchAllPages('/api/assets/interfaces/', { device: sourceDeviceId })
+          .then(list => { sourceInterfaces.value = list })
           .catch(() => { sourceInterfaces.value = [] })
       )
     } else {
@@ -62,8 +63,8 @@ async function loadInterfaces(sourceId: string, targetId: string) {
     }
     if (targetDeviceId) {
       promises.push(
-        getInterfaces({ device: targetDeviceId, page_size: 500 })
-          .then(res => { targetInterfaces.value = res.data?.results ?? res.data ?? [] })
+        fetchAllPages('/api/assets/interfaces/', { device: targetDeviceId })
+          .then(list => { targetInterfaces.value = list })
           .catch(() => { targetInterfaces.value = [] })
       )
     } else {

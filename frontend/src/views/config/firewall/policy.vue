@@ -1,23 +1,19 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
 import DataTable from '@/ui/DataTable.vue'
+import DataPagination from '@/ui/DataPagination.vue'
 import DeviceFilter from '@/ui/DeviceFilter.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
+import api from '@/api/index'
 
-const { data: policies, loading, search, filteredData, fetchData } = useCrudApi(['name', 'policy_id'])
+const { data: policies, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
+  useCrudApi()
 const filterDevice = ref<number | ''>('')
 
-const displayed = computed(() => {
-  if (!filterDevice.value) return filteredData.value
-  return filteredData.value.filter((p: any) => p.device === filterDevice.value)
-})
+const fetchAll = () =>
+  fetchData(() => api.get('/api/assets/policies/', { params: pageParams({ device: filterDevice.value || undefined }) }))
 
-const fetchAll = () => {
-  const params = filterDevice.value ? `?device=${filterDevice.value}` : ''
-  fetchData(() => fetch(`/api/assets/policies/${params}`).then(r => r.json()))
-}
-
-watch(filterDevice, () => fetchAll())
+watch(filterDevice, resetAndFetch)
 onMounted(fetchAll)
 </script>
 
@@ -28,7 +24,7 @@ onMounted(fetchAll)
       <el-input v-model="search" placeholder="搜索策略名称/ID" clearable style="width: 200px" />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="displayed" :loading="loading">
+      <DataTable :data="policies" :loading="loading">
         <el-table-column prop="device_name" label="设备" width="140" />
         <el-table-column prop="policy_id" label="策略ID" width="100" />
         <el-table-column prop="order" label="顺序" width="70" />
@@ -51,6 +47,7 @@ onMounted(fetchAll)
         <el-table-column prop="description" label="描述" min-width="150" show-overflow-tooltip />
       </DataTable>
     </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 

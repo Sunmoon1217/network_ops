@@ -2,8 +2,7 @@
 import PageLayout from '@/ui/PageLayout.vue'
 import ChartCard from '@/ui/ChartCard.vue'
 import { lineOpt } from '@/composables/useEcharts'
-import api from '@/api/index'
-import { getSubnets } from '@/api/ipam'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 const subnets = ref<any[]>([])
 const selectedSubnet = ref<number | ''>('')
@@ -12,7 +11,10 @@ const logs = ref<any[]>([])
 
 const chartOption = computed(() => {
   if (!logs.value.length) return null
-  const sorted = [...logs.value].reverse()
+  // 接口按 ordering=recorded_at 返回升序，这里再兜底排序一次，确保时间轴正序
+  const sorted = [...logs.value].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
+  )
   return lineOpt(
     'IP 使用率趋势',
     sorted.map(l => new Date(l.recorded_at).toLocaleDateString()),
@@ -23,8 +25,8 @@ const chartOption = computed(() => {
 
 async function fetchSubnets() {
   try {
-    const res = await getSubnets()
-    subnets.value = res.data.results || res.data || []
+    // 下拉选项必须完整，使用循环拉全量
+    subnets.value = await fetchAllPages('/api/assets/subnets/', { ordering: 'network' })
   } catch { /* ignore */ }
 }
 
@@ -32,8 +34,11 @@ async function fetchLogs() {
   if (!selectedSubnet.value) { logs.value = []; return }
   loading.value = true
   try {
-    const resp = await api.get('/api/assets/subnet-usage-logs/', { params: { subnet: selectedSubnet.value } })
-    logs.value = resp.data.results || resp.data || []
+    // 趋势图需要完整时间序列，同样循环拉全量
+    logs.value = await fetchAllPages('/api/assets/subnet-usage-logs/', {
+      subnet: selectedSubnet.value,
+      ordering: 'recorded_at',
+    })
   } catch {
     ElMessage.error('加载失败')
   } finally {

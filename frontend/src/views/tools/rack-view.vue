@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import PageLayout from '@/ui/PageLayout.vue'
-import api from '@/api/index'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 import { ElTooltip } from 'element-plus'
 
 const loading = ref(false)
@@ -59,12 +59,14 @@ const utilization = computed(() => totalU.value ? Math.round(usedU.value / total
 onMounted(async () => {
   loading.value = true
   try {
-    const [cRes, dRes] = await Promise.all([
-      api.get('/api/assets/cabinets/', { params: { page_size: 1000 } }),
-      api.get('/api/assets/devices/', { params: { page_size: 1000 } }),
+    // 页面需在前端做设备分组、U 位利用率统计并生成三级下拉选项，
+    // 分页会静默截断数据，故必须循环拉取全量（page_size=1000 会被后端上限截断为 500 且仅返回第一页）
+    const [allCabinets, allDevices] = await Promise.all([
+      fetchAllPages('/api/assets/cabinets/', { ordering: 'name' }),
+      fetchAllPages('/api/assets/devices/', { ordering: 'hostname' }),
     ])
-    cabinets.value = cRes.data.results || cRes.data || []
-    devices.value = dRes.data.results || dRes.data || []
+    cabinets.value = allCabinets
+    devices.value = allDevices
   } finally { loading.value = false }
 })
 </script>

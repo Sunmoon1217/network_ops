@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import FormPage from '@/ui/FormPage.vue'
-import { getDevices } from '@/api/devices'
+import { getDevice } from '@/api/devices'
 import api from '@/api/index'
 
 const route = useRoute()
@@ -13,9 +13,8 @@ onMounted(async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const res = await getDevices()
-    const item = (res.data.results || res.data || []).find((d: any) => d.id === Number(route.params.id))
-    if (item) form.value = { ...item }
+    const res = await getDevice(Number(route.params.id))
+    form.value = { ...res.data }
   } finally { loading.value = false }
 })
 
