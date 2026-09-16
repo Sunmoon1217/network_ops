@@ -426,8 +426,9 @@ CONNECTION_CONFIG_MAP = {
     ("锐捷", "switch"): {"connection_type": "netmiko", "driver": "ruijie_os"},
     ("思科", "firewall"): {"connection_type": "napalm", "driver": "asa"},
     ("山石", "firewall"): {"connection_type": "netmiko", "driver": "hillstone_stoneos"},
-    ("F5", "loadbalancer"): {"connection_type": "netmiko", "driver": "f5_ltm"},
-    ("A10", "loadbalancer"): {"connection_type": "netmiko", "driver": "a10"},
+    ("F5", "slb"): {"connection_type": "netmiko", "driver": "f5_ltm"},
+    ("F5", "gslb"): {"connection_type": "netmiko", "driver": "f5_gtm"},
+    ("A10", "slb"): {"connection_type": "netmiko", "driver": "a10"},
 }
 
 

@@ -575,7 +575,7 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         )
 
         # 2. LB设备检查（无端口时跳过后端查询）
-        if has_port and src_device.device_type == "loadbalancer":
+        if has_port and src_device.device_type == "slb":
             lb_backends = _find_lb_backend(current_dst, current_port)
             if lb_backends:
                 hop.matched_vs = {

@@ -22,7 +22,7 @@ from assets.models import (
 )
 
 
-def _device(hostname: str, device_type: str = "loadbalancer") -> Device:
+def _device(hostname: str, device_type: str = "gslb") -> Device:
     return Device.objects.create(hostname=hostname, device_type=device_type)
 
 

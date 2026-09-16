@@ -127,7 +127,8 @@ class Device(models.Model):
     DEVICE_TYPE_CHOICES = (
         ("firewall", "防火墙"),
         ("switch", "交换机"),
-        ("loadbalancer", "负载均衡"),
+        ("slb", "服务器负载均衡"),
+        ("gslb", "全局负载均衡"),
         ("router", "路由器"),
         ("server", "服务器"),
         ("dns", "域名解析"),

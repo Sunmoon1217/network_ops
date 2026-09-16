@@ -115,7 +115,7 @@ def _extract_ttp_result(result: list) -> dict[str, Any]:
     return {}
 
 
-@ParserFactory.register("A10", "loadbalancer")
+@ParserFactory.register("A10", "slb")
 class A10SLBParser(BaseParser):
     """A10 负载均衡配置解析器。"""
 
@@ -147,7 +147,7 @@ class CiscoFWParser(BaseParser):
         return _extract_ttp_result(self._run_ttp(raw_text))
 
 
-@ParserFactory.register("F5", "loadbalancer")
+@ParserFactory.register("F5", "gslb")
 class F5GTMParser(BaseParser):
     """F5 GTM (DNS) 负载均衡配置解析器。"""
 
@@ -163,7 +163,7 @@ class F5GTMParser(BaseParser):
         return _extract_ttp_result(self._run_ttp(raw_text))
 
 
-@ParserFactory.register("F5", "loadbalancer_ltm")
+@ParserFactory.register("F5", "slb")
 class F5LTMParser(BaseParser):
     """F5 LTM (Local Traffic Manager) 负载均衡配置解析器。"""
 

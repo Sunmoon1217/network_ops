@@ -23,7 +23,7 @@ def _as_list(value: Any) -> list:
 
 
 class LBVirtualServerSaver(BaseSaver):
-    device_types = ["loadbalancer"]
+    device_types = ["slb"]
     keys = ["virtuals"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
@@ -77,7 +77,7 @@ class LBVirtualServerSaver(BaseSaver):
 
 
 class LBPoolSaver(BaseSaver):
-    device_types = ["loadbalancer"]
+    device_types = ["slb"]
     keys = ["pools"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
@@ -117,7 +117,7 @@ class LBPoolSaver(BaseSaver):
 
 
 class LBSnatSaver(BaseSaver):
-    device_types = ["loadbalancer"]
+    device_types = ["slb"]
     keys = ["snat_pools", "snat"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
@@ -142,7 +142,7 @@ class LBSnatSaver(BaseSaver):
 
 
 class GTMWideipSaver(BaseSaver):
-    device_types = ["loadbalancer"]
+    device_types = ["gslb"]
     keys = ["wideips"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:

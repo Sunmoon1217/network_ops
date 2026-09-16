@@ -12,11 +12,8 @@ KNOWN_MISSING_PRODUCER: dict[tuple[str, str], str] = {
     # 模板产出 acl（cisco）/ rules（hillstone），都不是 policies
     ("firewall", "policies"): "模板产出 acl（cisco）/ rules（hillstone）",
     # f5_ltm.ttp 里 snat 是 virtuals 的子 group，不是顶层键
-    ("loadbalancer", "snat"): "snat 是 f5_ltm.ttp 中 virtuals 的子 group",
-    ("loadbalancer", "snat_pools"): "同上",
-    # virtuals 由 F5LTMParser 产出，但它注册在 loadbalancer_ltm；
-    # 而 LBVirtualServerSaver 注册在 loadbalancer —— 双方对不上，Saver 永不触发
-    ("loadbalancer", "virtuals"): "Saver 注册在 loadbalancer，但该键由 loadbalancer_ltm 产出",
+    ("slb", "snat"): "snat 是 f5_ltm.ttp 中 virtuals 的子 group",
+    ("slb", "snat_pools"): "同上",
     # 模板只产出 vpn_instances
     ("router", "vrfs"): "模板产出 vpn_instances",
     ("switch", "vrfs"): "模板产出 vpn_instances",
@@ -36,18 +33,9 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "vswitches",
         "zones",
     },
-    "loadbalancer": {
-        "account",
-        "datacenters",
-        "monitors",
-        "regions",
-        "servers",
-        "service_groups",
-        "topologies",
-        "virtual_server",
-    },
-    "loadbalancer_ltm": {"nodes", "pools", "virtuals"},
+    "gslb": {"datacenters", "monitors", "pools", "regions", "servers", "topologies"},
     "router": {"bgp", "hostname", "ospf", "snmp", "ssh", "static_routes", "version"},
+    "slb": {"account", "nodes", "servers", "service_groups", "virtual_server"},
     "switch": {
         "dhcp",
         "dhcp_pools",
