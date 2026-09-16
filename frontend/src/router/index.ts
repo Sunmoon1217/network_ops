@@ -91,6 +91,8 @@ const router = createRouter({
         { path: 'rack-view', name: 'tools-rack-view', component: () => import('@/views/tools/rack-view.vue') },
         { path: 'subnet-calc', name: 'tools-subnet-calc', component: () => import('@/views/tools/subnet-calc.vue') },
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@/views/tools/dns-query.vue') },
+        { path: 'internet-asset', name: 'tools-internet-asset', component: () => import('@/views/tools/internet-asset.vue') },
+        { path: 'parser-mapping', name: 'tools-parser-mapping', component: () => import('@/views/tools/parser-mapping.vue') },
 
       ],
     },
