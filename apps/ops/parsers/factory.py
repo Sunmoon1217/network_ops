@@ -270,3 +270,35 @@ class HuaweiSwitchParser(BaseParser):
             包含 interfaces, vlans, static_routes 等键的字典
         """
         return _extract_ttp_result(self._run_ttp(raw_text))
+
+
+@ParserFactory.register("Maipu", "switch")
+class MaipuSwitchParser(BaseParser):
+    """迈普交换机配置解析器。"""
+
+    template_name = "maipu_switch.ttp"
+    provides_keys = ["hostname", "version", "vlans", "interfaces", "static_routes", "snmp", "ssh"]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析迈普交换机配置文本。
+
+        Returns:
+            包含 interfaces, vlans, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))
+
+
+@ParserFactory.register("Ruijie", "switch")
+class RuijieSwitchParser(BaseParser):
+    """锐捷交换机配置解析器。"""
+
+    template_name = "ruijie_switch.ttp"
+    provides_keys = ["hostname", "version", "vlans", "interfaces", "static_routes", "snmp", "ssh"]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析锐捷交换机配置文本。
+
+        Returns:
+            包含 interfaces, vlans, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))

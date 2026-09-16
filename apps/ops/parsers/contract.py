@@ -23,7 +23,6 @@ KNOWN_MISSING_PRODUCER: dict[tuple[str, str], str] = {
 KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
     "firewall": {
         "hostname",
-        "nat",
         "object_groups",
         "rules",
         "rules2",
@@ -33,7 +32,8 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "vswitches",
         "zones",
     },
-    "gslb": {"datacenters", "monitors", "pools", "regions", "servers", "topologies"},
+    # regions / topologies / monitors 尚无对应模型（datacenters / servers / pools 已由 GTM Saver 消费）
+    "gslb": {"monitors", "regions", "topologies"},
     "router": {"bgp", "hostname", "ospf", "snmp", "ssh", "static_routes", "version"},
     "slb": {"account", "nodes", "servers", "service_groups", "virtual_server"},
     "switch": {
@@ -44,7 +44,6 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "hostname",
         "irf",
         "lldp",
-        "local_users",
         "radius",
         "roles",
         "snmp",

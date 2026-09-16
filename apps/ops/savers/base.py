@@ -1,9 +1,26 @@
 """Saver 基类 - 自动注册"""
+
+import ipaddress
 from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Any
 
 logger = getLogger(__name__)
+
+
+def as_list(value: Any) -> list:
+    """统一成列表。
+
+    TTP 只解析到一条记录时给出的是 dict 而不是 list，直接遍历会拿到 key 字符串，
+    导致 saver 里 item.get(...) 抛 AttributeError。
+    """
+    if not value:
+        return []
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return value
+    return []
 
 
 class BaseSaver(ABC):
@@ -16,6 +33,7 @@ class BaseSaver(ABC):
         super().__init_subclass__(**kwargs)
         if cls.device_types and cls.keys:
             from .registry import _registry
+
             for dt in cls.device_types:
                 for key in cls.keys:
                     _registry[(dt, key)] = cls
@@ -31,3 +49,29 @@ class BaseSaver(ABC):
             return int(value)
         except (ValueError, TypeError):
             return None
+
+    def _safe_ip(self, value: Any) -> str | None:
+        """GenericIPAddressField 不接受空串和非法值，统一在这里清洗"""
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return str(ipaddress.ip_address(text))
+        except ValueError:
+            return None
+
+    def upsert(self, serializer_cls, model, device, lookup: dict, payload: dict) -> bool:
+        """用序列化器 upsert 一条记录，返回是否为新建。
+
+        Saver 调用序列化器的统一入口（序列化器见 ``apps/assets/serializers/views.py``）：
+
+        - ``partial=True``：解析结果只覆盖配置里出现的字段，模型上的必填项不必凑齐。
+        - ``device`` 必须放进 payload：带 ``unique_together(device, ...)`` 的模型，DRF 的
+          ``UniqueTogetherValidator`` 在 ``instance is None``（create）时会强制要求这些
+          字段，仅靠 ``save(device=device)`` 注入过不了校验。
+        """
+        instance = model.objects.filter(device=device, **lookup).first()
+        serializer = serializer_cls(instance, data={**payload, "device": device.pk}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return instance is None

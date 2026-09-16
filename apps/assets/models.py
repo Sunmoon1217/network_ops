@@ -263,6 +263,10 @@ class DeviceGroup(models.Model):
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
+    if TYPE_CHECKING:
+
+        def get_group_type_display(self) -> str: ...
+
     class Meta:
         verbose_name = "设备组"
         verbose_name_plural = verbose_name
@@ -822,11 +826,15 @@ class NatRule(ConfigBase):
     name = models.CharField(max_length=255, verbose_name="规则名称")
     nat_type = models.CharField(max_length=10, choices=NAT_TYPE_CHOICES, verbose_name="转换类型")
     enabled = models.BooleanField(default=True, verbose_name="启用")
-    source_addresses = models.ManyToManyField(AddressBook, related_name="source_nat_rules", verbose_name="匹配源地址")
-    destination_addresses = models.ManyToManyField(
-        AddressBook, related_name="destination_nat_rules", verbose_name="匹配目的地址"
+    # 三个匹配维度都允许为空：不同厂商的 NAT 配置能提供的信息差别很大
+    # （cisco 的 nat group 只有 host/public_ip，完全给不出 service）
+    source_addresses = models.ManyToManyField(
+        AddressBook, blank=True, related_name="source_nat_rules", verbose_name="匹配源地址"
     )
-    services = models.ManyToManyField(Service, related_name="nat_rules", verbose_name="匹配服务")
+    destination_addresses = models.ManyToManyField(
+        AddressBook, blank=True, related_name="destination_nat_rules", verbose_name="匹配目的地址"
+    )
+    services = models.ManyToManyField(Service, blank=True, related_name="nat_rules", verbose_name="匹配服务")
     translated_source = models.ForeignKey(
         AddressBook,
         on_delete=models.SET_NULL,
@@ -901,11 +909,6 @@ class Subnet(models.Model):
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
-
-    if TYPE_CHECKING:
-        from assets.models import IPAddress
-
-        ip_addresses: models.QuerySet[IPAddress]
 
     class Meta:
         verbose_name = "网段"
