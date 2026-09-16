@@ -245,7 +245,7 @@ class HillstoneFWParser(BaseParser):
     """山石防火墙配置解析器。"""
 
     template_name = "hillstone_fw.ttp"
-    provides_keys = ["vswitches", "vrouter", "zones", "interfaces", "services", "addresses", "rules", "rules2"]
+    provides_keys = ["vswitches", "vrouter", "zones", "interfaces", "services", "addresses", "rules"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析山石防火墙配置文本。

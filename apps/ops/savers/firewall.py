@@ -7,6 +7,18 @@ from .base import BaseSaver, as_list
 
 logger = getLogger(__name__)
 
+# 各厂商表达"放行/拒绝"的用词不同，统一到 Policy.action 的 choices（allow / deny）
+_ACTION_ALIASES = {
+    "permit": "allow",
+    "allow": "allow",
+    "accept": "allow",
+    "pass": "allow",
+    "deny": "deny",
+    "drop": "deny",
+    "reject": "deny",
+    "discard": "deny",
+}
+
 
 class AddressBookSaver(BaseSaver):
     """地址簿保存器。
@@ -246,33 +258,160 @@ class ServiceSaver(BaseSaver):
 
 
 class PolicySaver(BaseSaver):
+    """防火墙策略保存器。
+
+    三种产出形态共用：
+
+    - ``policies`` / ``acl``（cisco）：带 ``policy_id`` / ``order`` / ``action`` / ``enabled``
+    - ``rules``（hillstone）：扁平的分列地址——``src-ip`` / ``src-addr`` / ``src-range`` /
+      ``dst-ip`` / ``dst-addr`` / ``dst-range`` / ``dst-host`` / ``service`` / ``rule_status``
+
+    hillstone 的地址按来源分列，转换约定：
+
+    - ``-ip``：带 ``/`` 是子网（顺带拆出 ``ip_netmask``），不带是主机
+    - ``-addr``：**地址簿引用**，按名字取用；地址簿不存在时先建占位记录，内容留给
+      AddressBookSaver 去填
+    - ``-range``：``"起始 结束"`` 形式，拆成 ``ip_start`` / ``ip_end``
+    - ``-host``：主机地址
+    """
+
     device_types = ["firewall"]
-    keys = ["policies", "acl"]
+    keys = ["policies", "acl", "rules"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Policy
+        from assets.serializers.views import PolicySerializer
 
-        policies = parsed_data.get("policies", parsed_data.get("acl", []))
+        policies = parsed_data.get("policies") or parsed_data.get("acl") or parsed_data.get("rules")
         if not policies:
             return (0, 0)
 
         created, updated = 0, 0
-        for p in policies:
-            policy_id = p.get("policy_id", p.get("name", ""))
+        for index, item in enumerate(as_list(policies)):
+            policy_id = str(item.get("policy_id") or item.get("rule_id") or item.get("name") or "").strip()
             if not policy_id:
                 continue
-            _, is_created = Policy.objects.update_or_create(
-                device=device,
-                policy_id=policy_id,
-                defaults={
-                    "order": p.get("order", 0),
-                    "name": p.get("name", policy_id),
-                    "action": p.get("action", "allow"),
-                    "enabled": p.get("enabled", True),
-                    "log": p.get("log", False),
-                    "description": p.get("description", ""),
-                },
-            )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
+
+            payload = {
+                "policy_id": policy_id,
+                "order": self._safe_int(item.get("order")) if item.get("order") is not None else index,
+                "name": str(item.get("name") or item.get("rule_name") or policy_id),
+                "action": self._normalize_action(item.get("action")),
+                "enabled": self._is_enabled(item),
+                "log": bool(item.get("log", False)),
+                "description": item.get("description", ""),
+            }
+            source_ids = self._resolve_addresses(device, self._address_entries(item, "src"))
+            if source_ids:
+                payload["source_addresses"] = source_ids
+            destination_ids = self._resolve_addresses(device, self._address_entries(item, "dst"))
+            if destination_ids:
+                payload["destination_addresses"] = destination_ids
+            service_ids = self._resolve_services(device, item)
+            if service_ids:
+                payload["services"] = service_ids
+
+            is_new = self.upsert(PolicySerializer, Policy, device, {"policy_id": policy_id}, payload)
+            created += 1 if is_new else 0
+            updated += 0 if is_new else 1
         return (created, updated)
+
+    def _normalize_action(self, action) -> str:
+        """厂商用 permit / deny 等词，模型 choices 只有 allow / deny"""
+        return _ACTION_ALIASES.get(str(action or "").strip().lower(), "allow")
+
+    def _is_enabled(self, item: dict) -> bool:
+        """hillstone 用 rule_status（enable/disable），其它形态用 enabled"""
+        status = item.get("rule_status")
+        if status is not None:
+            return str(status).strip().lower() not in {"disable", "disabled"}
+        return bool(item.get("enabled", True))
+
+    def _address_entries(self, item: dict, side: str) -> list[dict]:
+        """把分列地址与通用列表两种形态统一成 ``[{kind, value}]``
+
+        地址簿引用在模板里写作 ``src-address`` / ``dst-address``（TTP 变量名即产出键），
+        这里同时兼容 ``-addr`` 写法。
+        """
+        entries = []
+        for key, kind in (
+            (f"{side}-ip", "ip"),
+            (f"{side}-address", "book"),
+            (f"{side}-addr", "book"),
+            (f"{side}-range", "range"),
+            (f"{side}-host", "host"),
+        ):
+            entries.extend({"kind": kind, "value": value} for value in as_list(item.get(key)))
+
+        generic_key = "source_addresses" if side == "src" else "destination_addresses"
+        for value in as_list(item.get(generic_key)):
+            if isinstance(value, dict):
+                value = value.get("name", "")
+            entries.append({"kind": "book", "value": value})
+        return entries
+
+    def _resolve_addresses(self, device, entries: list[dict]) -> list[int]:
+        from assets.models import AddressBook
+        from assets.serializers.views import AddressBookSerializer
+
+        ids = []
+        for entry in entries:
+            payload = self._address_payload(entry)
+            if not payload:
+                continue
+            book = AddressBook.objects.filter(
+                device=device, name=payload["name"], address_type=payload["address_type"]
+            ).first()
+            serializer = AddressBookSerializer(book, data={**payload, "device": device.pk}, partial=True)
+            serializer.is_valid(raise_exception=True)
+            ids.append(serializer.save().pk)
+        return ids
+
+    def _address_payload(self, entry: dict) -> dict | None:
+        kind = entry["kind"]
+        value = str(entry["value"] or "").strip()
+        if not value:
+            return None
+
+        if kind == "book":
+            # 地址簿引用：只记引用关系，内容由 AddressBookSaver 负责填
+            return {"name": value, "address_type": "addressbook"}
+        if kind == "range":
+            parts = value.split()
+            if len(parts) < 2:
+                return None
+            start, end = self._safe_ip(parts[0]), self._safe_ip(parts[1])
+            if not start or not end:
+                return None
+            return {"name": f"{start}-{end}", "address_type": "range", "ip_start": start, "ip_end": end}
+        if kind == "host":
+            address = self._safe_ip(value)
+            return {"name": address, "address_type": "host", "ip_address": address} if address else None
+
+        # kind == "ip"：带 / 当子网，否则当主机
+        if "/" in value:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                return None
+            return {
+                "name": str(network),
+                "address_type": "subnet",
+                "ip_address": str(network.network_address),
+                "ip_netmask": network.prefixlen,
+            }
+        address = self._safe_ip(value)
+        return {"name": address, "address_type": "host", "ip_address": address} if address else None
+
+    def _resolve_services(self, device, item: dict) -> list[int]:
+        """服务名落成 Service 记录；协议未知时记 any，等 ServiceSaver 补全"""
+        from assets.models import Service
+
+        ids = []
+        for value in as_list(item.get("service")):
+            name = str(value or "").strip()
+            if not name:
+                continue
+            service, _ = Service.objects.get_or_create(device=device, name=name, defaults={"protocol": "any"})
+            ids.append(service.pk)
+        return ids

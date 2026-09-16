@@ -24,8 +24,6 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
     "firewall": {
         "hostname",
         "object_groups",
-        "rules",
-        "rules2",
         "version",
         "vrouter",
         "vswitches",
