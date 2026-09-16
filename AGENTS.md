@@ -178,7 +178,7 @@ uv run ruff format
 
 **Saver 实现**：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver
 
-其中 Route / Vlan / SnmpConfig / GTM 三个 / DeviceAccount / AddressBook / NatRule / LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外，还负责同一份 `virtuals` 产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（这三个是设备级清单，没有指向 virtual server 的外键）。`GtmServerSaver` 同理兼写 `GtmVServer`。
+其中 Route / Vlan / SnmpConfig / Policy / GTM 三个 / DeviceAccount / AddressBook / NatRule / LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外，还负责同一份 `virtuals` 产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（这三个是设备级清单，没有指向 virtual server 的外键）。`GtmServerSaver` 同理兼写 `GtmVServer`。
 
 `ConfigBase` 下有 23 个子模型，其中 21 个已配 Saver。几个需要留意的点：
 
@@ -186,6 +186,8 @@ uv run ruff format
 - `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
 - `RouteSaver` 的 `static_routes` 模板键名不统一：Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco 还带 `interface_name` 与 `metric`。
 - `SnmpConfigSaver` 兼容两种产出形态：Huawei / H3C router 的 `community` + `access_type` + `host_ip`，以及 H3C switch（Comware V7）的 `target_hosts[].ip` + `securityname`。
+- `PolicySaver` 消费 `policies` / `acl` / `rules` 三种形态。hillstone 的 `rules` 是扁平的分列地址，会先落成 `AddressBook` 再挂 M2M：带 `/` 的 `-ip` 是子网、不带是主机；`-address` 是**地址簿引用**（按名字取用，不存在则建占位记录，内容留给 AddressBookSaver 填）；`-range` 拆成 `ip_start` / `ip_end`；`-host` 是主机。`action` 各厂商用词不同（`permit` / `drop` ...），Saver 统一归一为模型的 `allow` / `deny`。
+- hillstone 模板原先同时存在 `rules` 与 `rules2` 两套提取规则（同一批 `rule id` 会被解析两遍：`rules` 多一层 `src` / `dst` 嵌套但**完全不提取 range**）。现已合并为单一的 `rules`（扁平形态），并把 `src-range` / `dst-range` 的变量名分开——原先两者都叫 `range`，两个值会混进同一个列表而分不清源/目的。仅为旧 `rules` 服务的 `<vars>` 与 `<macro>` 也已移除。
 
 **尚未覆盖的两处**：
 
