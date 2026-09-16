@@ -43,6 +43,6 @@ def resolve_config_owner(device: "Device"):
         .order_by("pk")
         .first()
     )
-    if not master or master.device_id == device.pk:
+    if not master or master.device == device:
         return device
     return master.device
