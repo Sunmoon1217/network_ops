@@ -233,7 +233,7 @@ class ServiceSaver(BaseSaver):
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Service
 
-        services = parsed_data.get("services", [])
+        services = as_list(parsed_data.get("services"))
         if not services:
             return (0, 0)
 

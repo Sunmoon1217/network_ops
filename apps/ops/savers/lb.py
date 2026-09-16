@@ -211,7 +211,7 @@ class LBSnatSaver(BaseSaver):
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmSNAT
 
-        snats = parsed_data.get("snat_pools", parsed_data.get("snat", []))
+        snats = as_list(parsed_data.get("snat_pools") or parsed_data.get("snat"))
         if not snats:
             return (0, 0)
 

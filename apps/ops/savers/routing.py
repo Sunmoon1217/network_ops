@@ -15,7 +15,7 @@ class VrfSaver(BaseSaver):
     keys = ["vrfs", "vpn_instances"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        vrfs = parsed_data.get("vrfs", parsed_data.get("vpn_instances", []))
+        vrfs = as_list(parsed_data.get("vrfs") or parsed_data.get("vpn_instances"))
         if not vrfs:
             return (0, 0)
 

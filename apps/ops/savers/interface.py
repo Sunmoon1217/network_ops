@@ -1,9 +1,10 @@
 """接口数据保存器"""
+
 from logging import getLogger
 
 from assets.models import Interface
 
-from .base import BaseSaver
+from .base import BaseSaver, as_list
 
 logger = getLogger(__name__)
 
@@ -15,7 +16,7 @@ class InterfaceSaver(BaseSaver):
     keys = ["interfaces"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        interfaces = parsed_data.get("interfaces", [])
+        interfaces = as_list(parsed_data.get("interfaces"))
         if not interfaces:
             return (0, 0)
 
@@ -40,7 +41,8 @@ class InterfaceSaver(BaseSaver):
                 enabled = enabled == 0
 
             _, is_created = Interface.objects.update_or_create(
-                device=device, interface=iface_name,
+                device=device,
+                interface=iface_name,
                 defaults={
                     "description": iface.get("description"),
                     "enabled": bool(enabled),
