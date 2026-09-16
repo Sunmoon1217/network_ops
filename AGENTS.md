@@ -22,13 +22,15 @@ network_ops/
 │   ├── core/            # 用户与认证
 │   │   ├── models.py            # User、Token
 │   │   └── api/{auth.py, urls.py}
-│   ├── assets/          # 全部数据模型（单文件，38 个模型）
+│   ├── assets/          # 全部数据模型（单文件，41 个模型）
 │   │   ├── models.py
+│   │   ├── serializers/{base.py, views.py}   # 序列化器（API 视图与解析入库共用）
 │   │   └── api/{serializers.py, urls.py, views.py}
 │   └── ops/             # 操作层：解析、存储、路径追踪
 │       ├── api/{configs.py, parsers.py, trace.py, urls.py}
-│       ├── parsers/factory.py + tmpls/{configs,running}/
+│       ├── parsers/{factory.py, template_keys.py, contract.py} + tmpls/{configs,running}/
 │       ├── savers/{base,registry,interface,lb,firewall,routing}.py
+│       ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
 │       ├── config_repo.py       # Git 配置仓库管理
 │       ├── path_tracer.py       # 路径追踪算法
 │       ├── signals.py           # DeviceConfig 保存后的解析与入库
@@ -37,6 +39,9 @@ network_ops/
 ├── data/
 │   ├── config_repo/     # Git 配置仓库（含 .git）
 │   └── configs/
+├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
+│   ├── assets/          # analysis / device_group / serializer_migration
+│   └── ops/             # parsers / parser_contract
 ├── docs/compose/
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
@@ -120,7 +125,8 @@ uv run ruff format
 - **前端函数风格**：`.vue` 与 `.ts` 一律使用箭头函数，不使用 `function` 声明——普通函数 `const fn = (a: T) => {}`、异步 `const fn = async () => {}`、泛型 `const fn = <T>(a: T) => {}`。原因是 `function` 声明会被提升，容易掩盖定义顺序问题，也与项目既有写法保持一致。自检命令（应无输出）：
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
 - **Ruff**：`line-length = 120`；`select = ["E","F","I","N","W"]`，忽略 `F405/F403/E402`；`known-first-party = ["assets","core","ops"]`；`**/migrations/*` 忽略 `E501`，并通过 `[tool.ruff.format]` 排除（Django 生成的迁移文件不参与格式化）。
-- **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`。
+- **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`，`testpaths = ["tests"]`。测试统一放项目根 `tests/<应用>/`，不散落在应用目录内；应用下不再保留 Django 脚手架的 `tests.py`（pytest 不收集该文件名，留着只会误导）。各层目录带 `__init__.py`，测试模块路径形如 `tests.assets.test_analysis`。
+- **测试内的资源定位**：用包路径（`Path(ops.__file__).parent / ...`）或 `settings.BASE_DIR`，**不要**用 `Path(__file__).parent.parent`——后者依赖测试文件自身位置，目录一挪动就静默失效（曾导致 `data/configs/` 被解析成 `apps/ops/data/configs`，测试因 `exists()` 判断而长期空跑）。
 
 ## 三层架构
 
@@ -168,9 +174,13 @@ uv run ruff format
 
 **已注册解析器**（`@ParserFactory.register`）：
 
-`A10/slb`、`Cisco/firewall`、`F5/gslb`、`F5/slb`、`H3C/switch`、`H3C/router`、`Hillstone/firewall`、`Huawei/switch`
+`A10/slb`、`Cisco/firewall`、`F5/gslb`、`F5/slb`、`H3C/switch`、`H3C/router`、`Hillstone/firewall`、`Huawei/switch`、`Maipu/switch`、`Ruijie/switch`
 
-**Saver 实现**：InterfaceSaver、VrfSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、AddressBookSaver、ServiceSaver、PolicySaver
+**Saver 实现**：InterfaceSaver、VrfSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver
+
+其中 GTM 侧（GtmDatacenter / GtmServer / GtmPool）以及 DeviceAccount / AddressBook / NatRule / LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外，还负责同一份 `virtuals` 产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（这三个是设备级清单，没有指向 virtual server 的外键）。`GtmServerSaver` 同理兼写 `GtmVServer`。
+
+`ConfigBase` 的 18 个子模型现已**全部**有对应 Saver。注意 `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
 
 ## 配置处理流程（信号驱动）
 
