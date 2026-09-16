@@ -1,10 +1,12 @@
 """Git 配置仓库管理"""
+
 import logging
 import os
 from pathlib import Path
 
 import git
 import git.exc
+import gitdb.exc
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +55,14 @@ def get_config(hostname: str, commit_hash: str | None = None) -> str | None:
     try:
         blob = (repo.commit(commit_hash).tree if commit_hash else repo.head.commit.tree) / fp
         return blob.data_stream.read().decode("utf-8")
-    except (KeyError, git.exc.GitCommandError):
+    except (KeyError, git.exc.GitCommandError, gitdb.exc.BadName):
+        # BadName：commit_hash 在仓库里不存在（例如配置记录残留了已丢弃的提交）
         return None
 
 
 def diff_configs(hostname: str, old_hash: str | None = None, new_hash: str | None = None) -> str | None:
     import difflib
+
     repo = init_repo()
     fp = f"{hostname}/running-config.txt"
     try:
@@ -75,8 +79,10 @@ def diff_configs(hostname: str, old_hash: str | None = None, new_hash: str | Non
         except KeyError:
             return f"+ {new_text}"
         diff = difflib.unified_diff(
-            old_text.splitlines(keepends=True), new_text.splitlines(keepends=True),
-            fromfile=f"old/{fp}", tofile=f"new/{fp}",
+            old_text.splitlines(keepends=True),
+            new_text.splitlines(keepends=True),
+            fromfile=f"old/{fp}",
+            tofile=f"new/{fp}",
         )
         return "".join(diff) or None
     except (KeyError, git.exc.GitCommandError) as e:
@@ -89,9 +95,15 @@ def get_history(hostname: str, limit: int = 20) -> list[dict]:
     fp = f"{hostname}/running-config.txt"
     try:
         commits = list(repo.iter_commits(paths=fp, max_count=limit))
-        return [{"hash": c.hexsha[:8], "full_hash": c.hexsha,
-                 "date": c.committed_datetime.isoformat(), "message": c.message.strip()}
-                for c in commits]
+        return [
+            {
+                "hash": c.hexsha[:8],
+                "full_hash": c.hexsha,
+                "date": c.committed_datetime.isoformat(),
+                "message": c.message.strip(),
+            }
+            for c in commits
+        ]
     except git.exc.GitCommandError:
         return []
 

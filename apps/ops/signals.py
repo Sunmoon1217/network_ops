@@ -35,9 +35,9 @@ def on_device_config_saved(sender, instance, created, **kwargs):
         hostname = device.hostname
         commit_hash = instance.git_commit_hash
 
-        # 1. 如果 config_json 为空，从 Git 读取并解析
-        config_json = instance.config_json
-        if not config_json or config_json == {}:
+        # 1. 如果 config_json 为空或不是字典，从 Git 读取并解析
+        config_json = instance.config_json if isinstance(instance.config_json, dict) else {}
+        if not config_json:
             from ops.config_repo import get_config
 
             raw_text = get_config(hostname, commit_hash)
@@ -61,18 +61,20 @@ def on_device_config_saved(sender, instance, created, **kwargs):
             logger.info("设备 %s 配置解析完成", hostname)
 
         # 2. config_json 有数据 → 分发到 Saver
-        if config_json and config_json != {}:
+        if config_json:
             from ops.savers.registry import get_savers_for_config
 
             savers = get_savers_for_config(device.device_type, config_json)
-            for key, saver in savers:
+            for keys, saver in savers:
+                label = ",".join(keys)
                 try:
-                    data = config_json.get(key)
-                    if data:
-                        created_n, updated_n = saver.save(device, {key: data})
-                        logger.info("设备 %s [%s] 保存完成: +%d ~%d", hostname, key, created_n, updated_n)
+                    # 命中同一 Saver 的多个键要一起传，否则 Saver 内的兜底链只看到第一个
+                    payload = {key: config_json[key] for key in keys if config_json.get(key)}
+                    if payload:
+                        created_n, updated_n = saver.save(device, payload)
+                        logger.info("设备 %s [%s] 保存完成: +%d ~%d", hostname, label, created_n, updated_n)
                 except Exception as e:
-                    logger.error("设备 %s [%s] 保存失败: %s", hostname, key, e, exc_info=True)
+                    logger.error("设备 %s [%s] 保存失败: %s", hostname, label, e, exc_info=True)
 
     except Exception as e:
         logger.error("DeviceConfig %s 处理失败: %s", instance.pk, e, exc_info=True)

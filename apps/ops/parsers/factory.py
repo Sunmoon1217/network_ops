@@ -85,6 +85,10 @@ class ParserFactory:
 
     @classmethod
     def get_parser(cls, device) -> BaseParser:
+        # 先查型号：没有型号就拿不到厂商。不拦住的话会抛 AttributeError，
+        # 而调用方是按 ValueError 处理"无匹配解析器"的，两条路径的诊断信息完全不同。
+        if not device.device_model_id:
+            raise ValueError(f"设备 {device.hostname} 未设置型号，无法确定厂商")
         vendor = device.device_model.vendor.name
         device_type = device.device_type
         normalized = cls._normalize_vendor(vendor)
