@@ -20,6 +20,9 @@ class BaseParser(ABC):
     """解析器基类，纯函数，无 Django 依赖"""
 
     template_name: str = ""
+    # 模板产出的顶层数据键（对应 TTP 模板的顶层 group 名）。
+    # 契约测试会校验它与模板是否一致；映射清单接口用它判断"产出但无人消费"。
+    provides_keys: list[str] = []
 
     @abstractmethod
     def parse(self, raw_text: str) -> dict[str, Any]:
@@ -117,6 +120,7 @@ class A10SLBParser(BaseParser):
     """A10 负载均衡配置解析器。"""
 
     template_name = "a10_slb.ttp"
+    provides_keys = ["servers", "service_groups", "virtual_server", "account"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析 A10 SLB 配置文本。
@@ -132,6 +136,7 @@ class CiscoFWParser(BaseParser):
     """思科 ASA 防火墙配置解析器。"""
 
     template_name = "cisco_fw.ttp"
+    provides_keys = ["hostname", "version", "interfaces", "static_routes", "acl", "nat", "object_groups"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析思科 ASA 防火墙配置文本。
@@ -147,6 +152,7 @@ class F5GTMParser(BaseParser):
     """F5 GTM (DNS) 负载均衡配置解析器。"""
 
     template_name = "f5_gtm.ttp"
+    provides_keys = ["datacenters", "regions", "servers", "topologies", "monitors", "pools", "wideips"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析 F5 GTM 配置文本。
@@ -162,6 +168,7 @@ class F5LTMParser(BaseParser):
     """F5 LTM (Local Traffic Manager) 负载均衡配置解析器。"""
 
     template_name = "f5_ltm.ttp"
+    provides_keys = ["nodes", "pools", "virtuals"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析 F5 LTM 配置文本。
@@ -177,6 +184,26 @@ class H3CSwitchParser(BaseParser):
     """H3C Comware 交换机配置解析器。"""
 
     template_name = "h3c_switch.ttp"
+    provides_keys = [
+        "hostname",
+        "version",
+        "vpn_instances",
+        "irf",
+        "dhcp",
+        "lldp",
+        "vlans",
+        "stp",
+        "dhcp_pools",
+        "interfaces",
+        "static_routes",
+        "snmp",
+        "ssh",
+        "radius",
+        "domains",
+        "domain_default",
+        "roles",
+        "local_users",
+    ]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析 H3C 交换机配置文本。
@@ -192,6 +219,17 @@ class H3CRouterParser(BaseParser):
     """H3C Comware 路由器配置解析器。"""
 
     template_name = "h3c_router.ttp"
+    provides_keys = [
+        "hostname",
+        "version",
+        "vpn_instances",
+        "interfaces",
+        "static_routes",
+        "ospf",
+        "bgp",
+        "snmp",
+        "ssh",
+    ]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析 H3C 路由器配置文本。
@@ -207,6 +245,7 @@ class HillstoneFWParser(BaseParser):
     """山石防火墙配置解析器。"""
 
     template_name = "hillstone_fw.ttp"
+    provides_keys = ["vswitches", "vrouter", "zones", "interfaces", "services", "addresses", "rules", "rules2"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析山石防火墙配置文本。
@@ -222,6 +261,7 @@ class HuaweiSwitchParser(BaseParser):
     """华为交换机配置解析器。"""
 
     template_name = "huawei_switch.ttp"
+    provides_keys = ["hostname", "version", "vlans", "interfaces", "static_routes", "snmp", "ssh"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析华为交换机配置文本。

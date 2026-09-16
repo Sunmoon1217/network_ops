@@ -1,4 +1,5 @@
 """Saver 注册表 - 基于 __init_subclass__ 自动注册"""
+
 from __future__ import annotations
 
 import logging
@@ -10,6 +11,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _registry: dict[tuple[str, str], type[BaseSaver]] = {}
+
+
+def all_savers() -> dict[tuple[str, str], type[BaseSaver]]:
+    """返回注册表快照，供映射清单接口与契约测试使用"""
+    return dict(_registry)
 
 
 def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[str, BaseSaver]]:
@@ -33,9 +39,11 @@ def register(device_types: list[str], keys: list[str]):
         class InterfaceSaver(BaseSaver):
             ...
     """
+
     def decorator(cls):
         for dt in device_types:
             for key in keys:
                 _registry[(dt, key)] = cls
         return cls
+
     return decorator
