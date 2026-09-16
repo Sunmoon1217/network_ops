@@ -140,11 +140,11 @@ uv run ruff format
 | 领域 | 模型 |
 |------|------|
 | DCIM | SecurityZone, DataCenter, Room, Cabinet |
-| 设备 | Vendor, DeviceModel, Device, DeviceConnection, DeviceConfig, DeviceAccount |
+| 设备 | Vendor, DeviceModel, Device, DeviceConnection, DeviceConfig, DeviceAccount, DeviceGroup, DeviceGroupMember |
 | 配置基类 | `ConfigBase`（被 Vrf/Interface/LTM/GTM/防火墙等模型继承） |
 | 网络 | Vlan, Vrf, Interface, SnmpConfig, NtpConfig, SyslogConfig |
 | 负载均衡 LTM | LtmVirtualServer, LtmPool, LtmPoolMember, LtmProfile, LtmIRule, LtmSNAT, LtmPersist |
-| 全局负载均衡 GTM | GtmDatacenter, GtmWideip, GtmPool |
+| 全局负载均衡 GTM | GtmDatacenter, GtmWideip, GtmPool, GtmServer, GtmVServer |
 | 防火墙 | AddressBook, Service, Policy, NatRule |
 | IPAM | Tag, Subnet, IPAddress, SubnetUsageLog |
 | 路由与其它 | Route, Topology, ArpMac |
@@ -162,10 +162,13 @@ uv run ruff format
 | `config_repo.py` | Git 配置仓库的读取、历史、diff |
 | `path_tracer.py` | 路径追踪（模拟报文逐跳转发） |
 | `signals.py` | `DeviceConfig` 保存后触发解析与入库 |
+| `config_owner.py` | 配置属主解析（堆叠组备机归属主设备） |
+| `parsers/template_keys.py` | 从 TTP 模板静态提取顶层数据键 |
+| `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
 
 **已注册解析器**（`@ParserFactory.register`）：
 
-`A10/loadbalancer`、`Cisco/firewall`、`F5/loadbalancer`、`F5/loadbalancer_ltm`、`H3C/switch`、`H3C/router`、`Hillstone/firewall`、`Huawei/switch`
+`A10/slb`、`Cisco/firewall`、`F5/gslb`、`F5/slb`、`H3C/switch`、`H3C/router`、`Hillstone/firewall`、`Huawei/switch`
 
 **Saver 实现**：InterfaceSaver、VrfSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、AddressBookSaver、ServiceSaver、PolicySaver
 
@@ -204,10 +207,11 @@ DRF `SimpleRouter`（`trailing_slash=True`），资源列表：
 ```
 security-zones, datacenters, rooms, cabinets,
 vendors, device-models, devices, device-configs, device-connections, device-accounts,
+device-groups, device-group-members,
 vlans, vrfs, interfaces,
 snmp-configs, ntp-configs, syslog-configs,
 ltm-virtual-servers, ltm-pools, ltm-pool-members, ltm-profiles, ltm-irules, ltm-snats, ltm-persists,
-gtm-datacenters, gtm-wideips, gtm-pools,
+gtm-datacenters, gtm-wideips, gtm-pools, gtm-servers, gtm-vservers,
 address-books, services, policies, nat-rules,
 routes, topologies, arp-mac, subnet-usage-logs,
 tags, subnets, ip-addresses
@@ -219,6 +223,7 @@ tags, subnets, ip-addresses
 |------|------|
 | `/api/assets/overview/` | 总览聚合统计 |
 | `/api/assets/import-devices/` | Excel 导入设备 |
+| `/api/assets/internet-analysis/` | 互联网资产分析（GSLB → GTM → LTM 链路） |
 
 **ops**（`ops/api/urls.py`）
 

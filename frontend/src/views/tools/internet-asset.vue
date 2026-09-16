@@ -213,11 +213,11 @@ const deviceLabel = (device: DeviceOption) => {
   return `${device.hostname}${zone}`
 }
 
-/** 加载 GSLB 设备下拉（仅 loadbalancer 类型） */
+/** 加载 GSLB 设备下拉（仅 gslb 类型） */
 const fetchDevices = async () => {
   devicesLoading.value = true
   try {
-    const res = await api.get('/api/assets/devices/', { params: { device_type: 'loadbalancer', page_size: 500 } })
+    const res = await api.get('/api/assets/devices/', { params: { device_type: 'gslb', page_size: 500 } })
     devices.value = res.data?.results ?? res.data ?? []
   } catch (e: any) {
     devices.value = []

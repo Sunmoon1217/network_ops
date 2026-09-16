@@ -30,7 +30,7 @@ const buildCharts = () => {
   if (d.cabinets_by_status?.length)
     list.push({ title: '机柜状态', option: pieOpt('机柜状态', mapItems(d.cabinets_by_status.map((i: any) => ({ name: i.status === 'active' ? '在用' : '空闲', value: i.count })))) })
   if (d.device_types?.length)
-    list.push({ title: '设备类型', option: pieOpt('设备类型', mapItems(d.device_types.map((i: any) => ({ name: lookup({ firewall: '防火墙', switch: '交换机', loadbalancer: '负载均衡', router: '路由器', server: '服务器', dns: '域名解析', dwdm: '波分复用', internalac: '上网行为管理', wirelessac: '无线控制器' }, i.device_type, i.device_type), value: i.count })))) })
+    list.push({ title: '设备类型', option: pieOpt('设备类型', mapItems(d.device_types.map((i: any) => ({ name: lookup({ firewall: '防火墙', switch: '交换机', slb: '服务器负载均衡', gslb: '全局负载均衡', router: '路由器', server: '服务器', dns: '域名解析', dwdm: '波分复用', internalac: '上网行为管理', wirelessac: '无线控制器' }, i.device_type, i.device_type), value: i.count })))) })
   if (d.devices_by_vendor?.length)
     list.push({ title: '设备 / 厂商', option: barOpt('设备 / 厂商', d.devices_by_vendor.map((i: any) => i.device_model__vendor__name || '未知'), d.devices_by_vendor.map((i: any) => i.count), true) })
   if (d.devices_by_zone?.length)
