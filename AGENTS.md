@@ -229,14 +229,20 @@ tags, subnets, ip-addresses
 | `/api/trace/route-collect-raw/` | 路由采集（原始输出） |
 | `/api/trace/routes/` | 路由列表 |
 | `/api/trace/dns-query/` | DNS 查询 |
+| `/api/configs/git-content/` | 获取指定 commit 的配置内容 |
+| `/api/configs/git-diff/` | 对比两个版本的配置差异 |
+| `/api/configs/history/` | 设备配置变更历史 |
+| `/api/configs/devices/` | 列出有配置的设备 |
+| `/api/parsers/` | 已注册解析器列表 |
+| `/api/parsers/mapping/` | 解析器 → 模板 → 产出键 → Saver 的映射清单与契约缺口 |
+| `/api/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
+| `/api/parsers/templates/<name>/` | 模板文件内容 |
+| `/api/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
 
 ## 注意事项
 
-- **⚠️ 已知缺陷：`ops/api/configs.py` 与 `ops/api/parsers.py` 的视图未注册路由。**
-  两模块定义了 `git_content`、`git_diff`、`config_history`、`config_devices`、`parser_list`、
-  `parser_template_list`、`parser_template_detail`、`parser_template_update` 等视图，但
-  `ops/api/urls.py` 只注册了 trace 相关路由。而前端 `api/config.ts`、`api/parsers.ts` 已在调用
-  `/api/configs/*` 与 `/api/parsers/*`，因此这些功能当前会 404。
+- **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
+- **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`ops/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
 - **`apps/ops/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
 - `apps/ops/models.py` 为空文件。
