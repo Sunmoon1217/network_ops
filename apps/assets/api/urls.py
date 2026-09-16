@@ -69,4 +69,5 @@ urlpatterns = [
     path("assets/overview/", views.overview, name="assets-overview"),
     path("assets/import-devices/", views.import_excel, name="import-devices"),
     path("assets/internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
+    path("assets/internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
 ]
