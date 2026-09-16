@@ -7,6 +7,21 @@ from .base import BaseSaver
 logger = getLogger(__name__)
 
 
+def _as_list(value: Any) -> list:
+    """统一成列表。
+
+    TTP 只解析到一条记录时给出的是 dict 而不是 list，直接遍历会拿到 key 字符串，
+    导致 saver 里 pool.get(...) 抛 AttributeError。
+    """
+    if not value:
+        return []
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return value
+    return []
+
+
 class LBVirtualServerSaver(BaseSaver):
     device_types = ["loadbalancer"]
     keys = ["virtuals"]
@@ -14,7 +29,7 @@ class LBVirtualServerSaver(BaseSaver):
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmVirtualServer
 
-        virtuals = parsed_data.get("virtuals", [])
+        virtuals = _as_list(parsed_data.get("virtuals"))
         if not virtuals:
             return (0, 0)
 
@@ -23,6 +38,7 @@ class LBVirtualServerSaver(BaseSaver):
             name = vs.get("name")
             if not name:
                 continue
+            snat = vs.get("snat") if isinstance(vs.get("snat"), dict) else {}
             _, is_created = LtmVirtualServer.objects.update_or_create(
                 device=device, name=name,
                 defaults={
@@ -30,8 +46,12 @@ class LBVirtualServerSaver(BaseSaver):
                     "vs_port": vs.get("vs_port", ""),
                     "mask": vs.get("mask"),
                     "protocol": vs.get("protocol", ""),
+                    "status": vs.get("status", "enabled"),
+                    "source": vs.get("source"),
                     "pool": vs.get("pool", ""),
-                    "snat_type": vs.get("snat_type", ""),
+                    # 新模板把 snat 收进 source-address-translation 子块，这里兼容旧格式
+                    "snat_type": snat.get("snat_type", vs.get("snat_type", "")),
+                    "snat_pool": snat.get("snat_pool", vs.get("snat_pool")),
                     "persist": self._extract_persist(vs.get("persist")),
                     "profiles": self._normalize_list(vs.get("profiles")),
                     "rules": self._normalize_list(vs.get("rules")),
@@ -63,7 +83,7 @@ class LBPoolSaver(BaseSaver):
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmPool, LtmPoolMember
 
-        pools = parsed_data.get("pools", [])
+        pools = _as_list(parsed_data.get("pools"))
         if not pools:
             return (0, 0)
 
@@ -81,11 +101,16 @@ class LBPoolSaver(BaseSaver):
             )
             created += 1 if is_created else 0
             updated += 0 if is_created else 1
-            members = pool.get("members", [])
+            members = _as_list(pool.get("members"))
             if members:
                 LtmPoolMember.objects.filter(pool_name=name).delete()
                 LtmPoolMember.objects.bulk_create([
-                    LtmPoolMember(pool_name=name, name=m.get("name", ""), address=m.get("address", ""))
+                    LtmPoolMember(
+                        pool_name=name,
+                        name=m.get("name", ""),
+                        address=m.get("address", ""),
+                        port=str(m.get("port") or ""),
+                    )
                     for m in members if m.get("name")
                 ])
         return (created, updated)
@@ -123,7 +148,7 @@ class GTMWideipSaver(BaseSaver):
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import GtmWideip
 
-        wideips = parsed_data.get("wideips", [])
+        wideips = _as_list(parsed_data.get("wideips"))
         if not wideips:
             return (0, 0)
 

@@ -242,6 +242,63 @@ class DeviceConnection(models.Model):
         return ""
 
 
+class DeviceGroup(models.Model):
+    """设备组。
+
+    组类型属于组本身，成员只表达「该设备在这个组里扮演什么角色」。
+    堆叠（stack）组内多台物理设备共用一个配置文件，备机的配置归属主设备。
+    """
+
+    GROUP_TYPE_CHOICES = (
+        ("cluster", "集群"),
+        ("ha", "主备"),
+        ("failover", "故障接管"),
+        ("stack", "堆叠"),
+        ("single", "单机"),
+    )
+
+    name = models.CharField(max_length=100, unique=True, verbose_name="设备组名称")
+    group_type = models.CharField(max_length=20, choices=GROUP_TYPE_CHOICES, default="single", verbose_name="组类型")
+    description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "设备组"
+        verbose_name_plural = verbose_name
+        ordering = ("name",)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_group_type_display()})"
+
+
+class DeviceGroupMember(models.Model):
+    """设备组成员。
+
+    同一设备可加入多个组（不同组表达不同维度的关系，如既在堆叠组又在主备组），
+    因此不对设备做唯一限制。
+    """
+
+    ROLE_CHOICES = (
+        ("master", "主"),
+        ("backup", "备"),
+        ("member", "成员"),
+    )
+
+    group = models.ForeignKey(DeviceGroup, on_delete=models.CASCADE, related_name="members", verbose_name="设备组")
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="group_memberships", verbose_name="设备")
+    device_role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="member", verbose_name="设备角色")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "设备组成员"
+        verbose_name_plural = verbose_name
+        constraints = (models.UniqueConstraint(fields=["group", "device"], name="uni_group_member"),)
+        ordering = ("group", "device", "-pk")
+
+    def __str__(self):
+        return f"{self.group.name} / {self.device.hostname} ({self.device_role})"
+
+
 class DeviceConfig(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="configs", verbose_name="关联设备")
     git_commit_hash = models.CharField(max_length=40, verbose_name="Git Commit Hash")
@@ -485,6 +542,7 @@ class LtmVirtualServer(ConfigBase):
     vs_port = models.CharField(max_length=15, null=True, verbose_name="端口")
     mask = models.CharField(max_length=15, null=True, verbose_name="掩码")
     protocol = models.CharField(max_length=15, null=True, verbose_name="协议")
+    status = models.CharField(max_length=20, default="enabled", verbose_name="状态")
     source = models.CharField(max_length=15, null=True, verbose_name="源地址")
     snat_type = models.CharField(max_length=255, null=True, verbose_name="SNAT类型")
     pool = models.CharField(max_length=255, null=True, verbose_name="关联池")
@@ -523,6 +581,7 @@ class LtmPoolMember(models.Model):
     pool_name = models.CharField(max_length=255, blank=True, default="", verbose_name="关联池名称")
     name = models.CharField(max_length=255, verbose_name="成员名称")
     address = models.CharField(max_length=255, verbose_name="地址")
+    port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
 
     class Meta:
         verbose_name = "LTM Pool Member"
@@ -627,6 +686,41 @@ class GtmPool(ConfigBase):
         verbose_name = "GTM Pool"
         verbose_name_plural = verbose_name
         ordering = ("device", "name", "-pk")
+
+
+class GtmServer(ConfigBase):
+    """GTM 服务器：gtm server，承载若干 virtual server"""
+
+    name = models.CharField(max_length=255, verbose_name="服务器名称")
+    datacenter = models.CharField(max_length=255, blank=True, default="", verbose_name="数据中心")
+    monitor = models.CharField(max_length=255, blank=True, default="", verbose_name="监控")
+    server_type = models.CharField(max_length=255, blank=True, default="", verbose_name="产品类型")
+
+    class Meta:
+        verbose_name = "GTM Server"
+        verbose_name_plural = verbose_name
+        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_gtmserver_device_name"),)
+        ordering = ("device", "name", "-pk")
+
+
+class GtmVServer(ConfigBase):
+    """GTM 虚拟服务器：gtm server 下的 virtual-servers，记录地址与端口"""
+
+    server = models.ForeignKey(
+        GtmServer, on_delete=models.CASCADE, related_name="virtual_servers", verbose_name="所属服务器"
+    )
+    name = models.CharField(max_length=255, verbose_name="虚拟服务器名称")
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="地址")
+    port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
+    monitor = models.CharField(max_length=255, blank=True, default="", verbose_name="监控")
+
+    class Meta:
+        verbose_name = "GTM Virtual Server"
+        verbose_name_plural = verbose_name
+        constraints = (
+            models.UniqueConstraint(fields=["device", "server", "name"], name="uni_gtmvserver_device_server_name"),
+        )
+        ordering = ("device", "server", "name", "-pk")
 
 
 # ---------------------------------------------------------------------------
