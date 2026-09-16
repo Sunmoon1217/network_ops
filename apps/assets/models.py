@@ -333,12 +333,9 @@ class ConfigBase(models.Model):
         abstract = True
 
 
-class Vlan(models.Model):
+class Vlan(ConfigBase):
     """VLAN"""
 
-    device = models.ForeignKey(
-        Device, on_delete=models.CASCADE, related_name="vlans", null=True, blank=True, verbose_name="所属设备"
-    )
     vid = models.PositiveIntegerField(verbose_name="VLAN ID")
     name = models.CharField(max_length=100, blank=True, default="", verbose_name="VLAN名称")
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
@@ -350,8 +347,7 @@ class Vlan(models.Model):
         constraints = (models.UniqueConstraint(fields=["device", "vid"], name="uni_vlan_device_vid"),)
 
     def __str__(self):
-        prefix = f"{self.device.hostname} - " if self.device else ""
-        return f"{prefix}VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
+        return f"{self.device.hostname} - VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
 
 
 class Vrf(ConfigBase):
@@ -443,10 +439,9 @@ class DeviceAccount(ConfigBase):
         return f"{self.device.hostname} / {self.username}"
 
 
-class SnmpConfig(models.Model):
+class SnmpConfig(ConfigBase):
     """SNMP配置基线"""
 
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="snmp_config", verbose_name="关联设备")
     version = models.CharField(
         max_length=10, choices=[("v1", "v1"), ("v2c", "v2c"), ("v3", "v3")], default="v2c", verbose_name="SNMP版本"
     )
@@ -457,8 +452,6 @@ class SnmpConfig(models.Model):
     trap_server = models.GenericIPAddressField(blank=True, null=True, verbose_name="Trap服务器")
     trap_port = models.PositiveIntegerField(default=162, verbose_name="Trap端口")
     enabled = models.BooleanField(default=True, verbose_name="启用SNMP")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "SNMP配置"
@@ -932,7 +925,7 @@ class Subnet(models.Model):
     def used_ips(self):
         if not self.pk:
             return 0
-        return self.ip_addresses.filter(status="used").count()
+        return self.ip_addresses.filter(status="used").count()  # type: ignore
 
     @property
     def utilization(self):
@@ -980,8 +973,12 @@ class IPAddress(models.Model):
         return self.ip_address
 
 
-class Route(models.Model):
-    """路由"""
+class Route(ConfigBase):
+    """路由
+
+    ``vrf`` 与继承来的 ``device`` 是冗余的——``Route`` 通过 ``vrf`` 表达归属，
+    ``device`` 便于直接按设备查询。Saver 入库时会用 ``vrf.device`` 保持两者一致。
+    """
 
     PROTOCOL_CHOICES = (
         ("static", "静态"),
