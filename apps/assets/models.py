@@ -462,18 +462,15 @@ class SnmpConfig(ConfigBase):
         return f"{self.device.hostname} SNMP"
 
 
-class NtpConfig(models.Model):
+class NtpConfig(ConfigBase):
     """NTP配置基线"""
 
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="ntp_config", verbose_name="关联设备")
     server1 = models.GenericIPAddressField(verbose_name="NTP服务器1")
     server2 = models.GenericIPAddressField(blank=True, null=True, verbose_name="NTP服务器2")
     server3 = models.GenericIPAddressField(blank=True, null=True, verbose_name="NTP服务器3")
     timezone = models.CharField(max_length=50, default="UTC", verbose_name="时区")
     sync_interval = models.PositiveIntegerField(default=64, verbose_name="同步间隔(秒)")
     enabled = models.BooleanField(default=True, verbose_name="启用NTP")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "NTP配置"
@@ -484,12 +481,9 @@ class NtpConfig(models.Model):
         return f"{self.device.hostname} NTP"
 
 
-class SyslogConfig(models.Model):
+class SyslogConfig(ConfigBase):
     """Syslog配置基线"""
 
-    device = models.OneToOneField(
-        Device, on_delete=models.CASCADE, related_name="syslog_config", verbose_name="关联设备"
-    )
     server1 = models.GenericIPAddressField(verbose_name="日志服务器1")
     server2 = models.GenericIPAddressField(blank=True, null=True, verbose_name="日志服务器2")
     port = models.PositiveIntegerField(default=514, verbose_name="端口")
@@ -515,8 +509,6 @@ class SyslogConfig(models.Model):
         verbose_name="日志级别",
     )
     enabled = models.BooleanField(default=True, verbose_name="启用Syslog")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "Syslog配置"
