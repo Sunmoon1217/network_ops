@@ -70,18 +70,38 @@ class TraceResult:
 # ---------------------------------------------------------------------------
 
 
-def _ip_in_addressbook(ip_str: str, ab: AddressBook, _visited: set[int] | None = None, _depth: int = 0) -> bool:
-    """判断IP是否在地址簿中"""
-    if _visited is None:
-        _visited = set()
-    if _depth > MAX_ADDRESSBOOK_RECURSION or ab.pk in _visited:
-        return False
-    _visited.add(ab.pk)
+# 地址簿索引：parent_id -> 直接子节点列表（None 键为顶层地址簿）
+AddressBookIndex = dict[int | None, list[AddressBook]]
 
-    try:
-        ip = ipaddress.ip_address(ip_str)
-    except ValueError:
+
+def _load_addressbook_index() -> AddressBookIndex:
+    """一次性把所有地址簿读入内存并按 parent_id 分组。
+
+    地址簿匹配是递归的，逐层调用 children.all() 会每层产生一次查询（N+1），
+    而调用次数是「策略数 × 地址列表数」量级，累计开销很大。
+    这里一次性加载，使整个匹配过程不再访问数据库。
+    """
+    index: AddressBookIndex = {}
+    # order_by("pk") 保证子节点顺序与原 order_by("pk").first() 的语义一致
+    for ab in AddressBook.objects.only(
+        "id", "name", "address_type", "ip_address", "ip_netmask", "ip_start", "ip_end", "parent_id"
+    ).order_by("pk"):
+        index.setdefault(ab.parent_id, []).append(ab)
+    return index
+
+
+def _ip_in_addressbook(
+    ip, ab: AddressBook, index: AddressBookIndex, _visited: frozenset[int] | None = None, _depth: int = 0
+) -> bool:
+    """判断 IP 是否在地址簿中（ip 为已解析的 ipaddress 对象，避免每个节点重复解析）
+
+    _visited 以不可变集合按分支传递：若共享同一个可变集合，菱形引用
+    （多个上级地址簿引用同一个下级）在第二次遍历时会被跳过而漏匹配。
+    """
+    visited = _visited or frozenset()
+    if _depth > MAX_ADDRESSBOOK_RECURSION or ab.pk in visited:
         return False
+    visited = visited | {ab.pk}
 
     if ab.address_type == "host" and ab.ip_address:
         return ip == ipaddress.ip_address(ab.ip_address)
@@ -91,60 +111,67 @@ def _ip_in_addressbook(ip_str: str, ab: AddressBook, _visited: set[int] | None =
     elif ab.address_type == "range" and ab.ip_start and ab.ip_end:
         return int(ipaddress.ip_address(ab.ip_start)) <= int(ip) <= int(ipaddress.ip_address(ab.ip_end))
     elif ab.address_type == "addressbook":
-        return any(_ip_in_addressbook(ip_str, child, _visited, _depth + 1) for child in ab.children.all())
+        return any(_ip_in_addressbook(ip, child, index, visited, _depth + 1) for child in index.get(ab.pk, []))
     return False
 
 
-def _match_address_list(ip_str: str, address_book) -> bool:
-    """匹配地址列表"""
-    return any(_ip_in_addressbook(ip_str, ab) for ab in address_book.all())
+def _match_address_list(ip_str: str, address_book, index: AddressBookIndex) -> bool:
+    """匹配地址列表（IP 只解析一次，供所有顶层地址簿复用）"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    return any(_ip_in_addressbook(ip, ab, index) for ab in address_book.all())
+
+
+def _parse_port(value) -> int | None:
+    """把端口文本转为整数；非数字（如 any/http）或越界时返回 None"""
+    try:
+        port = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return port if 0 <= port <= 65535 else None
 
 
 def _match_service(port_str: str, services) -> bool:
-    """匹配服务端口"""
-    if not port_str:
+    """匹配服务端口（端口非法或服务写成非数字时按不匹配处理，不再抛异常）"""
+    target = _parse_port(port_str)
+    if target is None:
         return False
     for svc in services.all():
-        port_range = svc.port or svc.port2
         if svc.port and svc.port2:
             port_range = f"{svc.port}-{svc.port2}"
+        else:
+            port_range = svc.port or svc.port2
         if not port_range:
             continue
-        for part in port_range.split(","):
+        for part in str(port_range).split(","):
             part = part.strip()
+            if not part:
+                continue
             if "-" in part:
-                start, end = part.split("-", 1)
-                if int(start) <= int(port_str) <= int(end):
+                start_text, _, end_text = part.partition("-")
+                start, end = _parse_port(start_text), _parse_port(end_text)
+                if start is not None and end is not None and start <= target <= end:
                     return True
-            elif int(port_str) == int(part):
+            elif _parse_port(part) == target:
                 return True
     return False
 
 
-def _subnet_cache() -> list:
-    """加载所有子网（同一请求内缓存）"""
-    if not hasattr(_subnet_cache, "_data"):
-        setattr(_subnet_cache, "_data", list(Subnet.objects.all()))
-        return getattr(_subnet_cache, "_data")
-    else:
-        return getattr(_subnet_cache, "_data")
-
-
-def _clear_subnet_cache():
-    """清除子网缓存（测试用）"""
-    if hasattr(_subnet_cache, "_data"):
-        delattr(_subnet_cache, "_data")
-
-
 def _find_subnet_for_ip(ip_str: str) -> Subnet | None:
-    """查找IP所属子网"""
+    """查找IP所属子网
+
+    不使用模块级缓存：进程内缓存会在数据变更后读到过期结果（长驻进程尤其明显），
+    而子网表数据量小，每次直接查询的代价可以接受。
+    """
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return None
 
     best_match, best_prefix = None, -1
-    for subnet in _subnet_cache():
+    for subnet in Subnet.objects.all():
         try:
             network = ipaddress.ip_network(subnet.network, strict=False)
             if ip in network and network.prefixlen > best_prefix:
@@ -209,8 +236,8 @@ def _find_vrf_for_ip(ip_str: str) -> str:
     if not subnet:
         return "default"
 
-    # 1. Subnet指定了VRF → 直接返回
-    if subnet.vrf:
+    # 1. Subnet 指定了 VRF → 校验名字确实存在于 Vrf 表，避免拼写错误把追踪带偏
+    if subnet.vrf and Vrf.objects.filter(name=subnet.vrf).exists():
         return subnet.vrf
 
     # 2. 专线 → 合作方名称作为VRF
@@ -267,6 +294,9 @@ def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
     for route in Route.objects.filter(enabled=True, destination__isnull=False).select_related("vrf__device"):
         try:
             route_network = ipaddress.ip_network(route.destination, strict=False)
+            # IPv4 与 IPv6 的网络做 subnet_of 会抛 TypeError，先比对版本
+            if route_network.version != subnet_network.version:
+                continue
             if (
                 route_network.subnet_of(subnet_network)  # type: ignore[reportArgumentType]
                 and subnet_network.prefixlen == route_network.prefixlen
@@ -286,8 +316,12 @@ def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
         if device_id not in device_routes or prefixlen > device_routes[device_id][1]:
             device_routes[device_id] = (route, prefixlen)
 
-    # 从任意设备开始跟踪路由链
+    # 起点优先取子网网关所在设备（与报文实际入口一致），避免依赖字典顺序导致结果漂移
     current_device_id = next(iter(device_routes))
+    if subnet.gateway:
+        gw_device = _find_device_for_ip(subnet.gateway)
+        if gw_device and gw_device.pk in device_routes:
+            current_device_id = gw_device.pk
 
     for _ in range(20):  # 最多跟踪20跳
         if current_device_id in visited:
@@ -383,12 +417,20 @@ def _find_best_route(device: Device, dst_ip: str, vrf_name: str = "default") -> 
     return best_route, vrf_name
 
 
-def _match_policy(src_ip: str, dst_ip: str, port: str, device: Device) -> dict | None:
-    """匹配访问策略"""
-    for policy in Policy.objects.filter(device=device, enabled=True).order_by("order"):
-        src_ok = not policy.source_addresses.exists() or _match_address_list(src_ip, policy.source_addresses)
-        dst_ok = not policy.destination_addresses.exists() or _match_address_list(dst_ip, policy.destination_addresses)
-        port_ok = not policy.services.exists() or _match_service(port, policy.services)
+def _match_policy(src_ip: str, dst_ip: str, port: str, device: Device, index: AddressBookIndex) -> dict | None:
+    """匹配访问策略（预取 M2M，避免每条策略重复查库）"""
+    policies = (
+        Policy.objects.filter(device=device, enabled=True)
+        .prefetch_related("source_addresses", "destination_addresses", "services")
+        .order_by("order")
+    )
+    for policy in policies:
+        src_ok = not policy.source_addresses.exists() or _match_address_list(src_ip, policy.source_addresses, index)
+        dst_ok = not policy.destination_addresses.exists() or _match_address_list(
+            dst_ip, policy.destination_addresses, index
+        )
+        # 未提供端口时视作匹配任意端口，避免漏判拦截策略
+        port_ok = not port or not policy.services.exists() or _match_service(port, policy.services)
         if src_ok and dst_ok and port_ok:
             return {
                 "id": policy.pk,
@@ -399,12 +441,18 @@ def _match_policy(src_ip: str, dst_ip: str, port: str, device: Device) -> dict |
     return None
 
 
-def _match_nat(src: str, dst: str, port: str, device: Device) -> dict | None:
-    """匹配NAT规则"""
-    for rule in NatRule.objects.filter(device=device, enabled=True).order_by("order"):
-        src_ok = not rule.source_addresses.exists() or _match_address_list(src, rule.source_addresses)
-        dst_ok = not rule.destination_addresses.exists() or _match_address_list(dst, rule.destination_addresses)
-        port_ok = not rule.services.exists() or _match_service(port, rule.services)
+def _match_nat(src: str, dst: str, port: str, device: Device, index: AddressBookIndex) -> dict | None:
+    """匹配NAT规则（预取 M2M，避免每条规则重复查库）"""
+    rules = (
+        NatRule.objects.filter(device=device, enabled=True)
+        .prefetch_related("source_addresses", "destination_addresses", "services")
+        .order_by("order")
+    )
+    for rule in rules:
+        src_ok = not rule.source_addresses.exists() or _match_address_list(src, rule.source_addresses, index)
+        dst_ok = not rule.destination_addresses.exists() or _match_address_list(dst, rule.destination_addresses, index)
+        # 未提供端口时视作匹配任意端口
+        port_ok = not port or not rule.services.exists() or _match_service(port, rule.services)
         if src_ok and dst_ok and port_ok:
             result = {"id": rule.pk, "name": rule.name, "nat_type": rule.nat_type}
             if rule.translated_source:
@@ -417,7 +465,7 @@ def _match_nat(src: str, dst: str, port: str, device: Device) -> dict | None:
     return None
 
 
-def _resolve_translated_ip(name: str) -> str | None:
+def _resolve_translated_ip(name: str, index: AddressBookIndex) -> str | None:
     """解析NAT转换后的IP"""
     ab = AddressBook.objects.filter(name=name).order_by("pk").first()
     if not ab:
@@ -426,22 +474,32 @@ def _resolve_translated_ip(name: str) -> str | None:
         return ab.ip_address
     if ab.ip_start:
         return ab.ip_start
-    if ab.children.exists():
-        child = ab.children.order_by("pk").first()
-        if child and child.ip_address:
+    for child in index.get(ab.pk, []):
+        if child.ip_address:
             return child.ip_address
     return None
 
 
 def _resolve_translated_port(name: str) -> str | None:
-    """解析NAT转换后的端口"""
+    """解析 NAT 转换后的端口：多值/范围配置时取首个可用端口"""
     svc = Service.objects.filter(name=name).first()
-    return svc.port if svc and svc.port else None
+    if not svc:
+        return None
+    raw = svc.port or svc.port2
+    if not raw:
+        return None
+    for part in str(raw).split(","):
+        first = part.strip().split("-", 1)[0].strip()
+        if _parse_port(first) is not None:
+            return first
+    return None
 
 
-def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
-    """查找负载均衡后端"""
+def _find_lb_backend(dst_ip: str, dst_port: str, device: Device | None = None) -> list[dict]:
+    """查找负载均衡后端（限定在命中的 LB 设备上，避免多台 LB 同名 VIP 张冠李戴）"""
     vs = LtmVirtualServer.objects.filter(vs_address=dst_ip)
+    if device is not None:
+        vs = vs.filter(device=device)
     if dst_port:
         vs = vs.filter(vs_port=dst_port)
     vs = vs.order_by("pk").first()
@@ -480,12 +538,18 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
     """
     result = TraceResult(final_src=src_ip, final_dst=dst_ip, final_port=dst_port)
     max_hops = min(max_hops, MAX_HOPS)
+    # 路由缓存在单次追踪内有效，避免同一次追踪里反复查同一张 VRF 路由表
     _clear_route_cache()
+    # 地址簿一次性载入内存：策略/NAT 匹配期间不再访问数据库
+    addressbook_index = _load_addressbook_index()
     has_port = bool(dst_port)
 
     current_src, current_dst, current_port = src_ip, dst_ip, dst_port
     original_src = src_ip  # 原始源IP用于策略匹配
-    visited_vrfs: set[str] = set()
+    # 环路检测按 (设备, VRF) 组合判断：同名 VRF（如 default）会出现在多台设备上，
+    # 只比较名字会把正常的多跳转发误判为环路
+    visited_hops: set[tuple[int, str]] = set()
+    entry_ip = ""  # 到达当前设备的入接口地址，用于子网/安全区判定
 
     # 查找源目设备
     src_device = _find_gateway_device_for_ip(src_ip) or _find_device_for_ip(src_ip)
@@ -546,15 +610,16 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
 
     # 主循环
     for hop_count in range(max_hops):
-        # VRF环路检测
-        if vrf_name in visited_vrfs:
-            result.error = f"VRF环路: {vrf_name}"
+        # 环路检测：同一台设备 + 同一个 VRF 再次出现才算环路
+        hop_key = (src_device.pk, str(vrf_name))
+        if hop_key in visited_hops:
+            result.error = f"VRF环路: {src_device.hostname} / {vrf_name}"
             break
-        visited_vrfs.add(vrf_name)
+        visited_hops.add(hop_key)
 
-        # 1. 获取设备信息
-        device_addr = ""
-        if hop_count > 0:
+        # 1. 获取设备信息：优先用实际入接口地址，其次回退到设备任一接口
+        device_addr = current_src if hop_count == 0 else entry_ip
+        if not device_addr:
             conn_intf = Interface.objects.filter(device=src_device, ip_address__isnull=False).order_by("pk").first()
             device_addr = conn_intf.ip_address if conn_intf else ""
 
@@ -576,7 +641,7 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
 
         # 2. LB设备检查（无端口时跳过后端查询）
         if has_port and src_device.device_type == "loadbalancer":
-            lb_backends = _find_lb_backend(current_dst, current_port)
+            lb_backends = _find_lb_backend(current_dst, current_port, src_device)
             if lb_backends:
                 hop.matched_vs = {
                     "vs_address": current_dst,
@@ -592,9 +657,9 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
                 result.lb_backend = lb_backends
                 return result
 
-        # 3. 防火墙策略匹配（无端口时跳过）
-        if has_port and src_device.device_type == "firewall":
-            policy = _match_policy(original_src, current_dst, current_port, src_device)
+        # 3. 防火墙策略匹配（未提供端口时按任意端口处理，不再跳过）
+        if src_device.device_type == "firewall":
+            policy = _match_policy(original_src, current_dst, current_port, src_device, addressbook_index)
             if policy:
                 hop.matched_policy = policy
                 hop.action = policy["action"]
@@ -609,18 +674,18 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
                     )
                     return result
 
-        # 4. NAT匹配（无端口时跳过）
-        nat = _match_nat(current_src, current_dst, current_port, src_device) if has_port else None
+        # 4. NAT匹配
+        nat = _match_nat(current_src, current_dst, current_port, src_device, addressbook_index)
         if nat:
             hop.matched_nat = nat
             if nat["nat_type"] == "snat" and "translated_source" in nat:
-                new_src = _resolve_translated_ip(nat["translated_source"])
+                new_src = _resolve_translated_ip(nat["translated_source"], addressbook_index)
                 if new_src:
                     hop.src_after = new_src
                     current_src = new_src
             elif nat["nat_type"] == "dnat":
                 if "translated_destination" in nat:
-                    new_dst = _resolve_translated_ip(nat["translated_destination"])
+                    new_dst = _resolve_translated_ip(nat["translated_destination"], addressbook_index)
                     if new_dst:
                         hop.dst_after = new_dst
                         current_dst = new_dst
@@ -671,13 +736,23 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
             break
 
         # 7. 更新VRF（使用接收接口VRF，避免被覆盖）
-        recv_intf_vrf = Interface.objects.filter(device=next_device, ip_address=route.nexthop).first()
+        # Interface.vrf 是外键，必须取 .name：直接赋对象会让后续
+        # Vrf.objects.filter(name=...) 查不到而中断追踪，并把对象泄漏到响应里
+        recv_intf_vrf = None
+        if route.nexthop and _is_ip_address(route.nexthop):
+            recv_intf_vrf = (
+                Interface.objects.filter(device=next_device, ip_address=route.nexthop).select_related("vrf").first()
+            )
         if recv_intf_vrf and recv_intf_vrf.vrf:
-            vrf_name = recv_intf_vrf.vrf
+            vrf_name = recv_intf_vrf.vrf.name
         elif current_vrf != "default":
             vrf_name = current_vrf
 
-        # 8. 跳转
+        # 8. 跳转（记录入接口地址，供下一跳判定安全区）
+        if route.nexthop and _is_ip_address(route.nexthop):
+            entry_ip = route.nexthop
+        elif recv_intf_vrf and recv_intf_vrf.ip_address:
+            entry_ip = recv_intf_vrf.ip_address
         result.hops.append(hop)
         src_device = next_device
 
