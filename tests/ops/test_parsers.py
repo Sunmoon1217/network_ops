@@ -6,11 +6,17 @@
 
 from pathlib import Path
 
+from django.conf import settings
 from django.test import TestCase
 
+import ops
 from ops.parsers.factory import ParserFactory
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "configs"
+# 模板目录基于 ops 包定位、数据目录基于项目根：都不依赖测试文件自身位置。
+# 原先两者都用 Path(__file__).parent.parent，测试目录一挪动就失效；
+# 其中 DATA_DIR 本来就是错的（指向 apps/ops/data/configs），靠 exists() 静默跳过。
+TMPLS_DIR = Path(ops.__file__).resolve().parent / "parsers" / "tmpls"
+DATA_DIR = Path(settings.BASE_DIR) / "data" / "configs"
 
 REGISTERED_PARSERS = ParserFactory.available_parsers()
 
@@ -37,7 +43,7 @@ class ParserRegistryTest(TestCase):
                 self.assertTrue(parser.template_name, f"{vendor}/{device_type} 未设置 template_name")
 
     def test_all_templates_exist(self):
-        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        tmpls_dir = TMPLS_DIR
         for vendor, device_type in REGISTERED_PARSERS:
             with self.subTest(vendor=vendor, device_type=device_type):
                 parser = ParserFactory.get_parser_by_keys(vendor, device_type)
@@ -96,15 +102,15 @@ class TemplateTest(TestCase):
     """模板文件完整性测试"""
 
     def test_configs_dir_exists(self):
-        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        tmpls_dir = TMPLS_DIR
         self.assertTrue((tmpls_dir / "configs").is_dir())
 
     def test_running_dir_exists(self):
-        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        tmpls_dir = TMPLS_DIR
         self.assertTrue((tmpls_dir / "running").is_dir())
 
     def test_templates_not_empty(self):
-        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        tmpls_dir = TMPLS_DIR
         for subdir in ("configs", "running"):
             for ttp_file in (tmpls_dir / subdir).glob("*.ttp"):
                 with self.subTest(template=ttp_file.name):
