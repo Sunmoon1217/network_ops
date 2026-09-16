@@ -698,7 +698,10 @@ def _import_configs(ws):
             errors.append(f"行 {row_idx}: 保存到 Git 失败: {e}")
             continue
 
-        DeviceConfig.objects.update_or_create(
+        # 用 get_or_create 而不是 update_or_create：这条记录代表"某设备在某 commit 上的
+        # 配置快照"，重复导入同一版本时不该动它。用 update_or_create 会把已经解析好的
+        # config_json 清空，而 created=False 又不会触发重新解析，解析结果就永久丢了。
+        DeviceConfig.objects.get_or_create(
             device=device,
             git_commit_hash=commit_hash,
             defaults={"config_json": {}},
