@@ -20,8 +20,9 @@ from .lb import (
     LBSnatSaver,
     LBVirtualServerSaver,
 )
+from .network import SnmpConfigSaver, VlanSaver
 from .registry import get_savers_for_config
-from .routing import VrfSaver
+from .routing import RouteSaver, VrfSaver
 
 __all__ = [
     "BaseSaver",
@@ -39,6 +40,9 @@ __all__ = [
     "GtmDatacenterSaver",
     "GtmServerSaver",
     "GtmPoolSaver",
+    "VlanSaver",
+    "SnmpConfigSaver",
+    "RouteSaver",
     "VrfSaver",
     "get_savers_for_config",
 ]

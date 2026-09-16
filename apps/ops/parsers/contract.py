@@ -26,15 +26,14 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "object_groups",
         "rules",
         "rules2",
-        "static_routes",
         "version",
         "vrouter",
         "vswitches",
         "zones",
     },
-    # regions / topologies / monitors 尚无对应模型（datacenters / servers / pools 已由 GTM Saver 消费）
+    # regions / topologies / monitors 尚无对应模型
     "gslb": {"monitors", "regions", "topologies"},
-    "router": {"bgp", "hostname", "ospf", "snmp", "ssh", "static_routes", "version"},
+    "router": {"bgp", "hostname", "ospf", "ssh", "version"},
     "slb": {"account", "nodes", "servers", "service_groups", "virtual_server"},
     "switch": {
         "dhcp",
@@ -46,11 +45,8 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "lldp",
         "radius",
         "roles",
-        "snmp",
         "ssh",
-        "static_routes",
         "stp",
         "version",
-        "vlans",
     },
 }
