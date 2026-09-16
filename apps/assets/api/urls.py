@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from . import views
+from . import analysis, views
 
 router = SimpleRouter(trailing_slash=True)
 
@@ -18,6 +18,8 @@ router.register(r"devices", views.DeviceViewSet, basename="device")
 router.register(r"device-configs", views.DeviceConfigViewSet, basename="device-config")
 router.register(r"device-connections", views.DeviceConnectionViewSet, basename="device-connection")
 router.register(r"device-accounts", views.DeviceAccountViewSet, basename="device-account")
+router.register(r"device-groups", views.DeviceGroupViewSet, basename="device-group")
+router.register(r"device-group-members", views.DeviceGroupMemberViewSet, basename="device-group-member")
 
 # Network
 router.register(r"vlans", views.VlanViewSet, basename="vlan")
@@ -42,6 +44,8 @@ router.register(r"ltm-persists", views.LtmPersistViewSet, basename="ltm-persist"
 router.register(r"gtm-datacenters", views.GtmDatacenterViewSet, basename="gtm-dc")
 router.register(r"gtm-wideips", views.GtmWideipViewSet, basename="gtm-wideip")
 router.register(r"gtm-pools", views.GtmPoolViewSet, basename="gtm-pool")
+router.register(r"gtm-servers", views.GtmServerViewSet, basename="gtm-server")
+router.register(r"gtm-vservers", views.GtmVServerViewSet, basename="gtm-vserver")
 
 # Firewall Policy
 router.register(r"address-books", views.AddressBookViewSet, basename="address-book")
@@ -64,4 +68,5 @@ urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),
     path("assets/import-devices/", views.import_excel, name="import-devices"),
+    path("assets/internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
 ]

@@ -234,6 +234,40 @@ class DeviceModelViewSet(viewsets.ModelViewSet):
     ordering_fields = ("name",)
 
 
+class DeviceGroupViewSet(viewsets.ModelViewSet):
+    from assets.models import DeviceGroup
+
+    from .serializers import DeviceGroupSerializer
+
+    queryset = DeviceGroup.objects.prefetch_related("members").all()
+    serializer_class = DeviceGroupSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "description")
+    ordering_fields = ("name", "created_at")
+
+
+class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
+    from assets.models import DeviceGroupMember
+
+    from .serializers import DeviceGroupMemberSerializer
+
+    queryset = DeviceGroupMember.objects.select_related("group", "device").all()
+    serializer_class = DeviceGroupMemberSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("device__hostname", "group__name")
+    ordering_fields = ("created_at",)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        group_id = self.request.query_params.get("group")
+        if group_id:
+            qs = qs.filter(group_id=group_id)
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
+
+
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related("idc", "cabinet", "security_zone", "device_model").all()
     serializer_class = DeviceSerializer
@@ -262,7 +296,14 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         device_id = self.request.query_params.get("device")
         if device_id:
-            qs = qs.filter(device_id=device_id)
+            # 堆叠组备机没有自己的配置记录，查询统一回退到组内主设备
+            device = Device.objects.filter(pk=device_id).first()
+            if device:
+                from ops.config_owner import resolve_config_owner
+
+                qs = qs.filter(device_id=resolve_config_owner(device).pk)
+            else:
+                qs = qs.filter(device_id=device_id)
         return qs
 
 
@@ -849,6 +890,47 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
         device_id = self.request.query_params.get("device")
         if device_id:
             qs = qs.filter(device_id=device_id)
+        return qs
+
+
+class GtmServerViewSet(viewsets.ModelViewSet):
+    from assets.models import GtmServer
+
+    from .serializers import GtmServerSerializer
+
+    queryset = GtmServer.objects.select_related("device").all()
+    serializer_class = GtmServerSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "datacenter", "device__hostname")
+    ordering_fields = ("name", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
+
+
+class GtmVServerViewSet(viewsets.ModelViewSet):
+    from assets.models import GtmVServer
+
+    from .serializers import GtmVServerSerializer
+
+    queryset = GtmVServer.objects.select_related("device", "server").all()
+    serializer_class = GtmVServerSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "ip_address", "server__name", "device__hostname")
+    ordering_fields = ("name", "port", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        server_id = self.request.query_params.get("server")
+        if server_id:
+            qs = qs.filter(server_id=server_id)
         return qs
 
 
