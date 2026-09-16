@@ -176,11 +176,18 @@ uv run ruff format
 
 `A10/slb`、`Cisco/firewall`、`F5/gslb`、`F5/slb`、`H3C/switch`、`H3C/router`、`Hillstone/firewall`、`Huawei/switch`、`Maipu/switch`、`Ruijie/switch`
 
-**Saver 实现**：InterfaceSaver、VrfSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver
+**Saver 实现**：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver
 
-其中 GTM 侧（GtmDatacenter / GtmServer / GtmPool）以及 DeviceAccount / AddressBook / NatRule / LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外，还负责同一份 `virtuals` 产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（这三个是设备级清单，没有指向 virtual server 的外键）。`GtmServerSaver` 同理兼写 `GtmVServer`。
+其中 Route / Vlan / SnmpConfig / GTM 三个 / DeviceAccount / AddressBook / NatRule / LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外，还负责同一份 `virtuals` 产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（这三个是设备级清单，没有指向 virtual server 的外键）。`GtmServerSaver` 同理兼写 `GtmVServer`。
 
-`ConfigBase` 的 18 个子模型现已**全部**有对应 Saver。注意 `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
+`ConfigBase` 下有 21 个子模型，均已配 Saver。几个需要留意的点：
+
+- `Vlan` / `Route` / `SnmpConfig` 原为裸 `models.Model`，已改为继承 `ConfigBase`（migration `0023`）。代价与收益：`SnmpConfig.device` 由一对一变成外键（基数 1:1 → 1:N）；`Vlan.device` 由可空变为必填，`related_name` 由 `vlans` 变为默认的 `vlan_set`；`Route` 新增 `device`，与 `vrf.device` 冗余，Saver 入库时用 `vrf` 保证一致，缺失时挂到设备的 `default` VRF。
+- `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
+- `RouteSaver` 的 `static_routes` 模板键名不统一：Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco 还带 `interface_name` 与 `metric`。
+- `SnmpConfigSaver` 兼容两种产出形态：Huawei / H3C router 的 `community` + `access_type` + `host_ip`，以及 H3C switch（Comware V7）的 `target_hosts[].ip` + `securityname`。
+
+**仍未覆盖**：`NtpConfig`、`SyslogConfig`、`SecurityZone` 也是裸 `models.Model` 且无 Saver（模板侧同样没有 ntp / syslog 产出）。
 
 ## 配置处理流程（信号驱动）
 
