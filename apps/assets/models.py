@@ -768,7 +768,7 @@ class Service(ConfigBase):
     class Meta:
         verbose_name = "服务"
         verbose_name_plural = verbose_name
-        constraints = (models.UniqueConstraint(fields=["name"], name="uni_service_name"),)
+        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_service_name"),)
         ordering = ("name",)
 
 
