@@ -898,7 +898,8 @@ class Tag(models.Model):
 class Subnet(models.Model):
     """网段"""
 
-    network = models.CharField(max_length=18, unique=True, verbose_name="网段 (CIDR)")
+    # IPv6 CIDR 全展开最长 43 字符（ffff:...:ffff/128），18 只够 IPv4，故取 45
+    network = models.CharField(max_length=45, unique=True, verbose_name="网段 (CIDR)")
     tags = models.ManyToManyField(Tag, blank=True, related_name="subnets", verbose_name="标签")
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children", verbose_name="父网段"
@@ -1003,7 +1004,8 @@ class Route(ConfigBase):
     )
 
     vrf = models.ForeignKey(Vrf, on_delete=models.CASCADE, related_name="routes", verbose_name="VRF")
-    destination = models.CharField(max_length=18, verbose_name="目的网段 (CIDR)")
+    # 同 Subnet.network：IPv6 CIDR 全展开最长 43 字符，18 不够
+    destination = models.CharField(max_length=45, verbose_name="目的网段 (CIDR)")
     nexthop = models.GenericIPAddressField(null=True, blank=True, verbose_name="下一跳地址")
     interface = models.CharField(max_length=255, blank=True, default="", verbose_name="出接口")
     protocol = models.CharField(max_length=20, choices=PROTOCOL_CHOICES, default="static", verbose_name="协议")
