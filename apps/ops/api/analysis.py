@@ -48,11 +48,11 @@ MAX_NESTED_DEPTH = 3
 # 所以合并成 LLB_VS / SLB_VS / 服务器 三段。字段来源见每列注释。
 EXPORT_HEADERS = [
     "域名",  # GtmWideip.name
-    "LLB_VS地址:端口",  # LtmVirtualServer.vs_address:vs_port
+    "LLB_VS地址#端口",  # LtmVirtualServer.vs_address#vs_port
     "LLB_Rule规则",  # LtmVirtualServer.rules
-    "SLB_VS地址:端口",  # 级联下一级的 LtmVirtualServer.vs_address:vs_port
+    "SLB_VS地址#端口",  # 级联下一级的 LtmVirtualServer.vs_address#vs_port
     "SLB_Rule规则",  # 级联下一级的 LtmVirtualServer.rules
-    "服务器地址:端口",  # 链路最后一跳的池成员地址:端口
+    "服务器地址#端口",  # 链路最后一跳的池成员地址#端口
     "负责人",  # ServerOwner.owner，按服务器地址反查
 ]
 EXPORT_COLUMN_WIDTHS = (28, 26, 30, 26, 30, 26, 16)
@@ -99,11 +99,20 @@ def _normalize_ip(value) -> str:
         return text.lower()
 
 
+# 地址与端口之间的分隔符。
+#
+# **不要用 ":"**：IPv6 地址本身就带冒号，``2001:db8::1:80`` 分不清哪一段是端口
+# （回退写法 ``[...]:80`` 虽然标准，但 IPv4 用方括号又显得多余）。
+# 用 "#"：它不可能出现在 IPv4/IPv6 里，含义唯一且紧凑。
+# 前端 internet-asset.vue 里的 TARGET_SEPARATOR 要与这里保持一致。
+TARGET_SEPARATOR = "#"
+
+
 def _join_ip_port(ip: str | None, port: str | None) -> str:
-    """拼成 "ip:port"，端口缺失时只返回 IP"""
+    """拼成 "地址#端口"，端口缺失时只返回地址"""
     if not ip:
         return ""
-    return f"{ip}:{port}" if port else str(ip)
+    return f"{ip}{TARGET_SEPARATOR}{port}" if port else str(ip)
 
 
 class _AssetIndex:

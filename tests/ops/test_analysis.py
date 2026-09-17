@@ -69,7 +69,7 @@ def test_ltm_not_found_returns_vserver_ip_port():
 
     assert member["status"] == "ltm_not_found"
     assert member["vserver"]["ip_address"] == "10.1.1.1"
-    assert member["fallback_ip_port"] == "10.1.1.1:80"
+    assert member["fallback_ip_port"] == "10.1.1.1#80"
     assert member["ltm"] is None
 
 
@@ -92,7 +92,7 @@ def test_resolved_to_ltm_pool_members():
     assert ltm_node["device"] == "ia-ltm"
     assert ltm_node["pool"] == "ltm_pool"
     assert ltm_node["pool_found"] is True
-    assert ltm_node["members"][0]["ip_port"] == "10.2.2.2:8080"
+    assert ltm_node["members"][0]["ip_port"] == "10.2.2.2#8080"
     assert ltm_node["members"][0]["nested"] is None
 
 
@@ -119,7 +119,7 @@ def test_nested_cascade_returns_member_ip_port():
 
     assert member["status"] == "resolved"
     nested_member = member["ltm"]["members"][0]
-    assert nested_member["matched_ip_port"] == "10.2.2.2:8080"
+    assert nested_member["matched_ip_port"] == "10.2.2.2#8080"
     assert nested_member["nested"]["device"] == "ia-ltm2"
     assert nested_member["nested"]["members"][0]["address"] == "10.3.3.3"
 

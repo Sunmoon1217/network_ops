@@ -96,11 +96,11 @@ def test_export_headers_shape():
     """
     assert EXPORT_HEADERS == [
         "域名",
-        "LLB_VS地址:端口",
+        "LLB_VS地址#端口",
         "LLB_Rule规则",
-        "SLB_VS地址:端口",
+        "SLB_VS地址#端口",
         "SLB_Rule规则",
-        "服务器地址:端口",
+        "服务器地址#端口",
         "负责人",
     ]
     # 列宽数量必须与表头一致，否则导出会静默少设宽度
@@ -247,11 +247,11 @@ def test_export_returns_xlsx_workbook():
     values = [sheet.cell(row=2, column=index).value for index in range(1, 8)]
     assert values == [
         "www.example.com",
-        "10.1.1.1:80",  # LLB_VS，地址与端口合并
+        "10.1.1.1#80",  # LLB_VS，地址与端口合并
         "irule_llb",
-        "10.2.2.2:8080",  # SLB_VS（也就是 LLB 的池成员）
+        "10.2.2.2#8080",  # SLB_VS（也就是 LLB 的池成员）
         "irule_slb",
-        "10.9.9.9:9090",  # 服务器，即 SLB 的池成员
+        "10.9.9.9#9090",  # 服务器，即 SLB 的池成员
         "张三",
     ]
 
@@ -390,3 +390,25 @@ def test_single_level_chain_leaves_slb_and_server_columns_empty_in_export():
     assert row["slb_address"] == ""
     # 一级链路的「服务器」就是 LLB 的池成员
     assert (row["llb_member_address"], row["llb_member_port"]) == ("10.5.5.5", "8080")
+
+
+def test_target_separator_is_unambiguous_for_ipv6():
+    """地址与端口之间不能用 ":"：IPv6 地址自带冒号，2001:db8::1:80 分不清端口从哪开始。
+
+    换成分隔符之后必须能唯一地切回来，并且这个字符不可能出现在 IP 里。
+    """
+    from ops.api.analysis import TARGET_SEPARATOR, _join_ip_port
+
+    assert TARGET_SEPARATOR == "#"
+    assert TARGET_SEPARATOR not in "2001:db8::1"  # IP 里不可能出现
+    assert TARGET_SEPARATOR not in "10.0.0.1"
+
+    joined = _join_ip_port("2001:db8::1", "80")
+    assert joined == "2001:db8::1#80"
+
+    address, _, port = joined.rpartition(TARGET_SEPARATOR)
+    assert (address, port) == ("2001:db8::1", "80")
+
+    # 端口缺失时只留地址
+    assert _join_ip_port("2001:db8::1", "") == "2001:db8::1"
+    assert _join_ip_port("", "80") == ""

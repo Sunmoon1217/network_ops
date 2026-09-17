@@ -205,9 +205,16 @@ const ltmRules = (path: LtmStep[], index: number): string => {
   return (step[0].rules ?? []).join(', ')
 }
 
-/** 拼成「地址:端口」，端口缺失时只显示地址（与后端 _join_ip_port 一致） */
+/**
+ * 地址与端口的分隔符，与后端 `analysis.py` 的 TARGET_SEPARATOR 保持一致。
+ *
+ * 不用 ":"：IPv6 地址自带冒号，2001:db8::1:80 分不清哪段是端口。
+ */
+const TARGET_SEPARATOR = '#'
+
+/** 拼成「地址#端口」，端口缺失时只显示地址 */
 const formatTarget = (address: string, port: string): string =>
-  address ? (port ? `${address}:${port}` : address) : ''
+  address ? (port ? `${address}${TARGET_SEPARATOR}${port}` : address) : ''
 
 /** 链路最后一跳的服务器「地址:端口」：两级取 SLB 池成员，一级取 LLB 池成员，断链时回退到 GTM */
 const serverTargetOf = (row: PathRow): string => {
@@ -471,7 +478,7 @@ onMounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="LLB_VS地址:端口" width="200">
+          <el-table-column label="LLB_VS地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.llbTarget" class="mono">{{ row.llbTarget }}</span>
               <span v-else class="muted">-</span>
@@ -485,7 +492,7 @@ onMounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="SLB_VS地址:端口" width="200">
+          <el-table-column label="SLB_VS地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.slbTarget" class="mono">{{ row.slbTarget }}</span>
               <span v-else class="muted">-</span>
@@ -499,7 +506,7 @@ onMounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="服务器地址:端口" width="200">
+          <el-table-column label="服务器地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.serverTarget" class="mono">{{ row.serverTarget }}</span>
               <span v-else class="muted">-</span>
