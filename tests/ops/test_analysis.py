@@ -134,3 +134,59 @@ def test_pool_not_found_is_reported():
 
     assert pool_node["found"] is False
     assert pool_node["members"] == []
+
+
+# ---------- 池成员 key 的兼容性 ----------
+
+
+def test_parse_member_entry_accepts_template_shape():
+    """模板解析产出的形态"""
+    from ops.api.analysis import _parse_member_entry
+
+    assert _parse_member_entry({"server_name": "s1", "vs_name": "vs1"})[:2] == ("s1", "vs1")
+
+
+def test_parse_member_entry_accepts_saver_shape():
+    """GtmPoolSaver 入库后 key 改名为 server / vserver，分析侧必须认。
+
+    这条曾经不成立：Saver 写 "vserver"，分析侧只读 "vs_name" / "virtual_server"，
+    于是 vs_name 恒为空，find_vserver 找不到 GTM 虚拟服务器，整条链路在第一步
+    就被判成「GTM 虚拟服务器未找到」（member_ref 也会退化成 "s1:"）。
+    """
+    from ops.api.analysis import _parse_member_entry
+
+    assert _parse_member_entry({"server": "s1", "vserver": "vs1"})[:2] == ("s1", "vs1")
+
+
+def test_parse_member_entry_falls_back_to_name():
+    """缺哪一半就用 "server:vs" 形式的 name 补哪一半"""
+    from ops.api.analysis import _parse_member_entry
+
+    assert _parse_member_entry({"server": "s1", "name": "s1:vs1"})[:2] == ("s1", "vs1")
+    assert _parse_member_entry({"name": "s1:vs1"})[:2] == ("s1", "vs1")
+    assert _parse_member_entry("s1:vs1")[:2] == ("s1", "vs1")
+
+
+@pytest.mark.django_db
+def test_members_written_by_saver_are_resolvable():
+    """端到端：经 GtmPoolSaver 入库的池成员，分析时必须能解析到 GTM 虚拟服务器。"""
+    from ops.savers.lb import GtmPoolSaver
+
+    gslb = _device("ia-saver-keys")
+    server = GtmServer.objects.create(device=gslb, name="s1")
+    GtmVServer.objects.create(device=gslb, server=server, name="vs1", ip_address="10.1.1.1", port="80")
+    _wideip(gslb, "www.example.com", ["pool_web"])
+
+    GtmPoolSaver().save(
+        gslb,
+        {"pools": {"pool_name": "pool_web", "members": [{"server_name": "/Common/s1", "vs_name": "vs1"}]}},
+    )
+
+    # 库里存的是 Saver 口径的 key
+    stored = GtmPool.objects.get(device=gslb).members[0]
+    assert {"server", "vserver"} <= set(stored)
+
+    member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
+    assert member["member_ref"] == "s1:vs1"
+    assert member["status"] == "ltm_not_found"  # 只造了 GTM 侧，止步于第二步
+    assert member["vserver"]["name"] == "vs1"

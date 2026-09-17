@@ -63,15 +63,21 @@ EXPORT_COLUMN_WIDTHS = (28, 8, 20, 18, 22, 12, 20, 18, 22, 12, 20, 18, 34)
 def _parse_member_entry(entry) -> tuple[str, str, dict]:
     """把 GTM 池成员条目规范化为 (server_name, vs_name, 原始信息)。
 
-    模板解析出的形态是 {"server_name": ..., "vs_name": ..., ...}；
-    同时兼容手工录入的 "server:vs" 字符串。
+    要兼容三种形态：
+    - 模板解析产出：``{"server_name": ..., "vs_name": ...}``
+    - **GtmPoolSaver 入库后的口径**：``{"server": ..., "vserver": ...}``
+      （``_normalize_members`` 会把 key 改名，这里必须认，否则 vs_name 恒为空，
+      链路在第一步就被判成「GTM 虚拟服务器未找到」）
+    - 手工录入的 ``"server:vs"`` 字符串
     """
     if isinstance(entry, dict):
         server_name = str(entry.get("server_name") or entry.get("server") or "")
-        vs_name = str(entry.get("vs_name") or entry.get("virtual_server") or "")
-        if not server_name and not vs_name:
-            raw = str(entry.get("name") or "")
-            server_name, _, vs_name = raw.partition(":")
+        vs_name = str(entry.get("vs_name") or entry.get("vserver") or entry.get("virtual_server") or "")
+        # 缺哪一半就用 "server:vs" 形式的 name 补哪一半
+        if not server_name or not vs_name:
+            left, _, right = str(entry.get("name") or "").partition(":")
+            server_name = server_name or left
+            vs_name = vs_name or right
         return server_name, vs_name, entry
     raw = str(entry or "")
     server_name, _, vs_name = raw.partition(":")
