@@ -72,6 +72,11 @@ class BaseSaver(ABC):
         """
         return str(value or "").strip().strip('"').rstrip("/").rsplit("/", 1)[-1]
 
+    def _leaf_list(self, value: Any) -> list[str]:
+        """对名字列表逐个取末段；单值也接受。"""
+        items = [value] if isinstance(value, str) else as_list(value)
+        return [self._leaf(item) for item in items if item]
+
     def upsert(self, serializer_cls, model, device, lookup: dict, payload: dict) -> bool:
         """用序列化器 upsert 一条记录，返回是否为新建。
 

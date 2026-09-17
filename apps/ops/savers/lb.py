@@ -28,7 +28,7 @@ class LBVirtualServerSaver(BaseSaver):
 
         created, updated = 0, 0
         for vs in virtuals:
-            name = vs.get("name")
+            name = self._leaf(vs.get("name"))
             if not name:
                 continue
             snat = vs.get("snat") if isinstance(vs.get("snat"), dict) else {}
@@ -42,10 +42,10 @@ class LBVirtualServerSaver(BaseSaver):
                     "protocol": vs.get("protocol", ""),
                     "status": vs.get("status", "enabled"),
                     "source": vs.get("source"),
-                    "pool": vs.get("pool", ""),
+                    "pool": self._leaf(vs.get("pool")),
                     # 新模板把 snat 收进 source-address-translation 子块，这里兼容旧格式
                     "snat_type": snat.get("snat_type", vs.get("snat_type", "")),
-                    "snat_pool": snat.get("snat_pool", vs.get("snat_pool")),
+                    "snat_pool": self._leaf(snat.get("snat_pool") or vs.get("snat_pool")),
                     "persist": self._extract_persist(vs.get("persist")),
                     "profiles": self._flatten_names(vs.get("profiles")),
                     "rules": self._flatten_names(vs.get("rules")),
@@ -69,7 +69,7 @@ class LBVirtualServerSaver(BaseSaver):
 
         created, updated = 0, 0
         for raw in self._named_entries(value):
-            profile_name = raw.get("name")
+            profile_name = self._leaf(raw.get("name"))
             is_new = self.upsert(
                 LtmProfileSerializer,
                 LtmProfile,
@@ -108,7 +108,7 @@ class LBVirtualServerSaver(BaseSaver):
 
         created, updated = 0, 0
         for raw in self._named_entries(value):
-            persist_name = raw.get("name")
+            persist_name = self._leaf(raw.get("name"))
             is_new = self.upsert(
                 LtmPersistSerializer,
                 LtmPersist,
@@ -137,7 +137,7 @@ class LBVirtualServerSaver(BaseSaver):
         for item in as_list(value):
             name = item.get("name") if isinstance(item, dict) else item
             candidates = [name] if isinstance(name, str) else as_list(name)
-            names.extend(str(candidate) for candidate in candidates if candidate)
+            names.extend(self._leaf(candidate) for candidate in candidates if candidate)
         return names
 
     def _named_entries(self, value: Any) -> list[dict]:
@@ -157,7 +157,8 @@ class LBVirtualServerSaver(BaseSaver):
     def _extract_persist(self, value: Any) -> str | None:
         if not value:
             return None
-        return value.get("name") if isinstance(value, dict) else str(value)
+        name = value.get("name") if isinstance(value, dict) else value
+        return self._leaf(name) or None
 
 
 class LBPoolSaver(BaseSaver):
@@ -173,7 +174,7 @@ class LBPoolSaver(BaseSaver):
 
         created, updated = 0, 0
         for pool in pools:
-            name = pool.get("name")
+            name = self._leaf(pool.get("name"))
             if not name:
                 continue
             _, is_created = LtmPool.objects.update_or_create(
@@ -181,7 +182,7 @@ class LBPoolSaver(BaseSaver):
                 name=name,
                 defaults={
                     "mode": pool.get("mode", pool.get("load-balancing-mode", "")),
-                    "monitors": pool.get("monitors", pool.get("monitor", [])),
+                    "monitors": self._leaf_list(pool.get("monitors") or pool.get("monitor")),
                 },
             )
             created += 1 if is_created else 0
@@ -193,7 +194,7 @@ class LBPoolSaver(BaseSaver):
                     [
                         LtmPoolMember(
                             pool_name=name,
-                            name=m.get("name", ""),
+                            name=self._leaf(m.get("name")),
                             address=m.get("address", ""),
                             port=str(m.get("port") or ""),
                         )
@@ -217,13 +218,13 @@ class LBSnatSaver(BaseSaver):
 
         created, updated = 0, 0
         for snat in snats:
-            name = snat.get("name")
+            name = self._leaf(snat.get("name"))
             if not name:
                 continue
             _, is_created = LtmSNAT.objects.update_or_create(
                 device=device,
                 name=name,
-                defaults={"address": snat.get("address", "")},
+                defaults={"address": self._leaf(snat.get("address"))},
             )
             created += 1 if is_created else 0
             updated += 0 if is_created else 1
