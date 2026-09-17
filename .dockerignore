@@ -1,0 +1,49 @@
+# 构建上下文瘦身：只保留 pyproject.toml / uv.lock / 项目源码。
+# 环境镜像只依赖锁文件，项目镜像只复制源码，其余一律不进上下文。
+
+# 虚拟环境与包缓存（uv 在镜像内重新安装）
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+.pnpm-store/
+
+# 运行时数据与产物（配置仓库、上传、静态收集）
+data/
+www/
+media/
+logs/
+tmp/
+
+# 反向代理资源（由 nginx 容器挂载，不进应用镜像）
+nginx/ssl/
+
+# 版本控制与本地环境
+.git/
+.gitignore
+.vscode/
+.idea/
+.env
+.env.*
+*.log
+nohup.out
+
+# 文档与 AI 工具
+docs/
+.mimocode/
+.django-stub-gen/
+README.md
+AGENTS.md
+
+# 容器编排与容器文件自身（COPY . . 时不需要）
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile*
+.dockerignore

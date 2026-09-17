@@ -1,2 +1,87 @@
-FROM alpine:3.20
+# syntax=docker/dockerfile:1
+#
+# 基础（环境）镜像 —— 只装 Python 运行时与依赖，不含任何项目代码。
+#
+# 设计要点：
+#   1. 只 COPY 依赖清单（pyproject.toml + uv.lock），不 COPY 源码。
+#      这样源码怎么改都不会让这一层缓存失效，基础镜像内容完全由锁文件决定。
+#   2. 依赖装进独立的 /opt/venv（而非 /app/.venv），与项目代码彻底解耦。
+#   3. 不装 gcc/musl-dev 等编译链：psycopg2-binary、cffi 等都有 cp312
+#      musllinux_1_2 轮子，本镜像的 musl 1.2.6 可直接使用。
+#
+# 构建：
+#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
+#
+# 该镜像构建一次后即固定不变；项目镜像只需 FROM 它并复制源码。
 
+FROM python:3.12-alpine
+
+# ---- 镜像源（可用 --build-arg 覆盖） ----------------------------------------
+# 国内构建环境下官方源不可达：dl-cdn.alpinelinux.org 报 I/O error、
+# pypi.org 极慢。apk 与 pip 都必须换镜像，且不从宿主机 ~/.config 继承。
+ARG APK_MIRROR=mirrors.aliyun.com
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+# ---- 构建网络说明 ------------------------------------------------------------
+# daemon.json 里的 proxies 只作用于「拉取基础镜像」，不作用于构建容器：
+# 构建容器里的 apk/pip 走的是 Docker 自己的网络栈，可能比宿主机更慢甚至超时。
+# 若构建时抓包缓慢，让构建容器直接复用宿主机网络栈即可：
+#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
+# 注意此时不要再用 --build-arg 传 http_proxy：--network=host 下
+# 172.17.0.1 不再是容器网关，代理地址会不可达。
+
+# ---- 运行期系统依赖（各自独立成层） -----------------------------------------
+# 拆成两层是有意的：libpq 只有一个包、秒级完成；git 会带 10 来个依赖，
+# 在受限网络下更容易超时。分开后成功的那层可被缓存复用，失败时只需重试 git。
+RUN sed -i "s#dl-cdn.alpinelinux.org#${APK_MIRROR}#g" /etc/apk/repositories \
+    && apk add --no-cache --timeout 120 libpq
+
+# git：`apps/ops/config_repo.py` 用 GitPython 操作 data/config_repo 仓库，
+# 运行期必须有 git 可执行文件。
+RUN apk add --no-cache --timeout 300 git
+
+# 虚拟环境独立于项目目录，项目代码挂载/覆盖时不会影响它
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH=${VIRTUAL_ENV}/bin:${PATH}
+# 只用镜像内的 Python，禁止 uv 联网下载解释器（容器里没必要，也会拖慢构建）
+ENV UV_PYTHON_DOWNLOADS=never
+
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
+    uv venv --python python3 "${VIRTUAL_ENV}" \
+    && uv --version
+
+WORKDIR /opt/app
+
+# ---- 只复制依赖清单，安装到独立 venv -----------------------------------------
+COPY pyproject.toml uv.lock ./
+
+# --frozen            : 严格按 uv.lock 安装，不做解析/升级
+# --no-dev            : 不装 pytest / ruff 等开发依赖
+# --no-install-project: 本镜像只提供环境，不安装项目本身（源码根本不在上下文里）
+# --active            : 装进已激活的 ${VIRTUAL_ENV}
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
+    uv sync --frozen --no-dev --no-install-project --active
+
+# ---- 补装 INSTALLED_APPS 需要、却不在主依赖组里的两个包 ----------------------
+# netops/settings.py 的 INSTALLED_APPS 里有 `django_extensions` 和
+# `django_stubs_ext`，但 pyproject.toml 把 django-extensions / django-stubs
+# 放在 dev 组，`--no-dev` 不会装它们 —— 缺了这两个模块，Django 连 settings
+# 都加载不了（ModuleNotFoundError: django_extensions）。
+# 版本直接取自 uv.lock，保证与锁文件一致；只补模块，不引它们的依赖树
+# （typing-extensions 是 django_stubs_ext 运行时真正 import 的，单独列出）。
+# 更干净的做法是把 django-extensions 提升为主依赖，那属于项目依赖声明的事。
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --python "${VIRTUAL_ENV}" --no-deps \
+    "django-extensions==4.1" "django-stubs-ext==6.1.0" "typing-extensions==4.16.0"
+
+# 冒烟自检：构建即验证依赖真正可导入，镜像不可用则构建失败。
+# 版本号统一用 importlib.metadata 取：不是每个包都暴露 __version__（ttp 就没有）。
+RUN python -c "import importlib.metadata as m; \
+[__import__(name) for name in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','django_extensions','django_stubs_ext')]; \
+print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','django-extensions','django-stubs-ext')})"
+
+# 项目镜像在此之上 COPY 源码即可，这里给一个默认工作目录
+WORKDIR /app
+
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
