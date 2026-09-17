@@ -320,6 +320,9 @@ class DeviceConfig(models.Model):
     def __str__(self):
         return f"{self.device.hostname} - {self.collected_at}"
 
+    if TYPE_CHECKING:
+        device_id: int
+
 
 class ConfigBase(models.Model):
     """配置模型基类"""
@@ -328,6 +331,9 @@ class ConfigBase(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="是否生效")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    if TYPE_CHECKING:
+        device_id: int
 
     class Meta:
         abstract = True

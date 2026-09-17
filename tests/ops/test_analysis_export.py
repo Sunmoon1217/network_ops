@@ -219,7 +219,11 @@ def test_export_returns_xlsx_workbook():
     assert "attachment" in res["Content-Disposition"]
     assert "ia-xlsx" in res["Content-Disposition"]
 
-    sheet = load_workbook(BytesIO(res.content)).active
+    wb = load_workbook(BytesIO(res.content))
+    sheet = wb.active
+    if sheet is None:
+        sheet = wb.create_sheet()
+
     assert sheet.title == "互联网资产分析"
     assert [cell.value for cell in sheet[1]] == EXPORT_HEADERS
     assert sheet.max_row == 2

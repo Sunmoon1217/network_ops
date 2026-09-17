@@ -42,8 +42,7 @@ def _run_one(config_pk: int, force_parse: bool) -> dict:
         "key_count": len(result.config_json),
         "skipped": result.skipped,
         "outcomes": [
-            {"label": o.label, "created": o.created, "updated": o.updated, "error": o.error}
-            for o in result.outcomes
+            {"label": o.label, "created": o.created, "updated": o.updated, "error": o.error} for o in result.outcomes
         ],
     }
 
@@ -182,9 +181,11 @@ class Command(BaseCommand):
             device = Device.objects.filter(hostname=hostname).first()
             if not device:
                 raise CommandError(f"设备不存在: {hostname}")
-            config = queryset.filter(device=device).first()
-            if not config:
+            # 换个名字：上面 --all 分支的循环变量 config 已被收窄成 DeviceConfig，
+            # 复用同名会把 .first() 的 Optional 结果赋给非 Optional 变量
+            matched = queryset.filter(device=device).first()
+            if not matched:
                 raise CommandError(f"设备 {hostname} 没有 DeviceConfig 记录（配置还没保存到 Git？）")
-            found[hostname] = config
+            found[hostname] = matched
             ordered.append(hostname)
         return [found[hostname] for hostname in ordered]

@@ -31,7 +31,7 @@ def test_switch_savers_accept_single_dict_payload():
     assert InterfaceSaver().save(device, {"interfaces": {"interface": "GE1/0/1", "mode": "access"}}) == (1, 0)
     assert VrfSaver().save(device, {"vpn_instances": {"vrf": "VPN-A"}}) == (1, 0)
 
-    assert device.interface_set.count() == 1
+    assert device.interface_set.count() == 1  # type: ignore
     assert Vrf.objects.get(device=device).name == "VPN-A"
 
 

@@ -137,7 +137,7 @@ def test_route_reuses_existing_default_vrf():
     RouteSaver().save(device, parsed)
 
     assert Vrf.objects.filter(device=device).count() == 1
-    assert Route.objects.get(device=device).vrf_id == vrf.pk
+    assert Route.objects.get(device=device).vrf_id == vrf.pk  # type: ignore
 
 
 @pytest.mark.django_db

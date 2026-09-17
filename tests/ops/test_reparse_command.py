@@ -118,7 +118,7 @@ def test_reparse_all_takes_latest_config_per_device(monkeypatch, h3c_model):
 
     # 只有最新那条参与（沿用已有 config_json，所以不会去读 Git）
     assert "rp-sw-06" in output
-    assert latest.pk == DeviceConfig.objects.filter(device=device).order_by("-pk").first().pk
+    assert latest.pk == DeviceConfig.objects.filter(device=device).order_by("-pk").first().pk  # type: ignore
 
 
 @pytest.mark.django_db

@@ -24,6 +24,7 @@
 import ipaddress
 import time
 from io import BytesIO
+from typing import cast
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -309,7 +310,7 @@ def internet_analysis(request):
     cached, error = _get_cached_or_404(device)
     if error:
         return error
-    return Response(_cached_response(cached))
+    return Response(_cached_response(cast(InternetAnalysis, cached)))
 
 
 @api_view(["POST"])
@@ -321,7 +322,7 @@ def internet_analysis_run(request):
         return error
 
     started = time.monotonic()
-    result = analyze_device(device)
+    result = analyze_device(cast(Device, device))
     duration_ms = int((time.monotonic() - started) * 1000)
 
     cached, _ = InternetAnalysis.objects.update_or_create(
@@ -480,15 +481,18 @@ def internet_analysis_export(request):
     device, error = _resolve_device(request)
     if error:
         return error
+    device = cast(Device, device)
 
     cached, error = _get_cached_or_404(device)
     if error:
         return error
-
+    cached = cast(InternetAnalysis, cached)
     rows = build_path_rows(cached.result or {})
 
     workbook = Workbook()
     sheet = workbook.active
+    if sheet is None:
+        sheet = workbook.create_sheet()
     sheet.title = "互联网资产分析"
     sheet.append(EXPORT_HEADERS)
     for row in rows:

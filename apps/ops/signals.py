@@ -13,7 +13,7 @@ from django.dispatch import receiver
 logger = logging.getLogger(__name__)
 
 # 解析完成后写回 config_json 会再次触发 post_save，靠这里防重入
-_processing = set()
+_processing: set[int] = set()
 
 
 @receiver(post_save, sender="assets.DeviceConfig")

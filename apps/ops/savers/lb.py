@@ -102,7 +102,7 @@ class LBVirtualServerSaver(BaseSaver):
             rules    -> {"name": ["/Common/irule_redirect"]}
             persist  -> {"name": "/Common/cookie"}
         """
-        names = []
+        names: list[str] = []
         for item in as_list(value):
             name = item.get("name") if isinstance(item, dict) else item
             candidates = [name] if isinstance(name, str) else as_list(name)

@@ -2,6 +2,7 @@
 
 import ipaddress
 from logging import getLogger
+from typing import Any
 
 from .base import BaseSaver, as_list
 
@@ -80,7 +81,7 @@ class AddressBookSaver(BaseSaver):
         )
         return (created + sub_created, updated + sub_updated)
 
-    def _entries(self, raw) -> list[tuple[str, dict]]:
+    def _entries(self, raw) -> list[tuple[str | None, dict[str, Any]]]:
         """把产出归一成 ``[(地址簿名, 记录体)]``。
 
         主要形态是 ``{名字: 内容}`` 的字典；同时兼容带 ``name`` 字段的列表。
@@ -419,7 +420,7 @@ class PolicySaver(BaseSaver):
         地址簿引用在模板里写作 ``src-address`` / ``dst-address``（TTP 变量名即产出键），
         这里同时兼容 ``-addr`` 写法。
         """
-        entries = []
+        entries: list[dict[str, Any]] = []
         for key, kind in (
             (f"{side}-ip", "ip"),
             (f"{side}-address", "book"),
