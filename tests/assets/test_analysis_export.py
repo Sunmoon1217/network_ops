@@ -1,7 +1,11 @@
-"""互联网资产分析扁平表格与 xlsx 导出测试。
+"""互联网资产分析链路的扁平列与 xlsx 导出测试。
 
-表格形态是「一行一条从 WideIP 到最终后端的完整链路」，各层级横向铺成列，
-不再是带缩进的树形。导出用后端的 openpyxl 生成，前端不引入 xlsx 依赖。
+列结构固定为：GTM 四列（域名 / 类型 / GTM VS 的 IP / 端口）
++ LTM 两级各四列（LLB、SLB 的虚拟服务器与后端成员）+ 说明。
+
+注意 LTM 的两级不是数据库外键关系：GTM 虚拟服务器的 ip:port 命中某个
+LtmVirtualServer 即为 LLB，LLB 池成员的 address:port 再命中一个 LtmVirtualServer
+即为 SLB。所以测试要造出能"命中"的地址。
 """
 
 from io import BytesIO
@@ -46,58 +50,124 @@ def _ltm_virtual(device: Device, name: str, ip: str, port: str, pool: str = "") 
     return LtmVirtualServer.objects.create(device=device, name=name, vs_address=ip, vs_port=port, pool=pool)
 
 
-def _build_resolved_chain(hostname: str = "ia-exp") -> Device:
-    """搭一条能完整解析到后端成员的链路"""
+def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
+    """GTM VS → LLB → SLB 两级都能命中的链路。
+
+    GTM VS 10.1.1.1:80  →  命中 LLB 虚拟服务器 vs_llb(10.1.1.1:80)
+        LLB 池 pool_llb 的成员 10.2.2.2:8080
+                            →  命中 SLB 虚拟服务器 vs_slb(10.2.2.2:8080)
+                                SLB 池 pool_slb 的成员 10.9.9.9:9090
+    """
     gslb = _device(hostname)
     _wideip(gslb, "www.example.com", ["pool_web"])
     _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
     _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
 
     ltm = _device(f"{hostname}-ltm", "slb")
-    _ltm_virtual(ltm, "vs_web", "10.1.1.1", "80", pool="pool_backend")
-    LtmPool.objects.create(device=ltm, name="pool_backend", mode="http")
-    LtmPoolMember.objects.create(pool_name="pool_backend", name="m1", address="10.9.9.9", port="8080")
+    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
+    LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
+    LtmPoolMember.objects.create(pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
+
+    _ltm_virtual(ltm, "vs_slb", "10.2.2.2", "8080", pool="pool_slb")
+    LtmPool.objects.create(device=ltm, name="pool_slb", mode="http")
+    LtmPoolMember.objects.create(pool_name="pool_slb", name="m_slb", address="10.9.9.9", port="9090")
     return gslb
 
 
-# ---------- 扁平结构 ----------
+# ---------- 列结构 ----------
+
+
+def test_export_headers_shape():
+    """13 列：GTM 四列 + LTM 两级各四列 + 说明"""
+    assert len(EXPORT_HEADERS) == 13
+    assert EXPORT_HEADERS[0] == "域名"
+    assert EXPORT_HEADERS[2:4] == ["GTM 虚拟服务器 IP", "GTM 虚拟服务器端口"]
+    assert EXPORT_HEADERS[4:8] == ["LLB 虚拟服务器地址", "LLB 端口", "LLB 后端成员地址", "LLB 后端成员端口"]
+    assert EXPORT_HEADERS[8:12] == ["SLB 虚拟服务器地址", "SLB 端口", "SLB 后端成员地址", "SLB 后端成员端口"]
+    assert EXPORT_HEADERS[12] == "说明"
 
 
 @pytest.mark.django_db
-def test_path_rows_carry_every_level_in_one_row():
-    """一行就是一条完整链路，各层级横向铺在列里"""
-    gslb = _build_resolved_chain("ia-flat")
+def test_two_level_chain_fills_all_twelve_columns():
+    """两级都命中时，GTM 与 LLB / SLB 的列应全部填满"""
+    gslb = _build_two_level_chain("ia-two")
     rows = build_path_rows(analyze_device(gslb))
 
     assert len(rows) == 1
     row = rows[0]
     assert row["wideip"] == "www.example.com"
-    assert row["wideip_type"] == "A"
-    assert row["pool"] == "pool_web"
-    assert row["pool_found"] is True
-    assert row["member"] == "s1:vs1"
-    assert "vs1" in row["gtm_vserver"] and "10.1.1.1:80" in row["gtm_vserver"]
-    assert row["ltm_chain"] == "vs_web"
-    assert row["backend_member"] == "m1"
-    assert row["final_address"] == "10.9.9.9:8080"
-    assert row["status_code"] == "resolved"
+    assert row["rtype"] == "A"
+    # GTM 侧
+    assert (row["gtm_ip"], row["gtm_port"]) == ("10.1.1.1", "80")
+    # LLB：GTM VS 的 ip:port 命中的那一级
+    assert (row["llb_address"], row["llb_port"]) == ("10.1.1.1", "80")
+    assert (row["llb_member_address"], row["llb_member_port"]) == ("10.2.2.2", "8080")
+    # SLB：LLB 池成员的 address:port 再命中的那一级
+    assert (row["slb_address"], row["slb_port"]) == ("10.2.2.2", "8080")
+    assert (row["slb_member_address"], row["slb_member_port"]) == ("10.9.9.9", "9090")
+    assert row["note"] == ""
 
 
 @pytest.mark.django_db
-def test_path_rows_are_not_tree_shaped():
-    """扁平行不含 depth / kind 这类树形字段"""
-    gslb = _build_resolved_chain("ia-notree")
+def test_single_level_chain_leaves_slb_columns_empty():
+    """只有一级 LTM 时 SLB 四列为空，并在说明里标注"""
+    gslb = _device("ia-one")
+    _wideip(gslb, "one.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    ltm = _device("ia-one-ltm", "slb")
+    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
+    LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
+    LtmPoolMember.objects.create(pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
+
     row = build_path_rows(analyze_device(gslb))[0]
 
-    assert "depth" not in row
-    assert "kind" not in row
+    assert (row["llb_address"], row["llb_port"]) == ("10.1.1.1", "80")
+    assert (row["llb_member_address"], row["llb_member_port"]) == ("10.2.2.2", "8080")
+    assert (row["slb_address"], row["slb_port"]) == ("", "")
+    assert (row["slb_member_address"], row["slb_member_port"]) == ("", "")
+    assert row["note"] == "仅一级 LTM"
 
 
 @pytest.mark.django_db
-def test_multiple_members_produce_multiple_rows():
+def test_ltm_not_found_leaves_ltm_columns_empty():
+    """GTM 有虚拟服务器但没有对应 LTM 时，LTM 两级的八列全空"""
+    gslb = _device("ia-noltm")
+    _wideip(gslb, "noltm.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert (row["gtm_ip"], row["gtm_port"]) == ("10.1.1.1", "80")
+    assert row["llb_address"] == ""
+    assert row["llb_member_address"] == ""
+    assert row["slb_address"] == ""
+    assert "无对应 LTM 虚拟服务器" in row["note"]
+
+
+@pytest.mark.django_db
+def test_vserver_not_found_leaves_everything_but_wideip_empty():
+    """GTM 虚拟服务器都没找到时，只有域名与类型有值"""
+    gslb = _device("ia-novs")
+    _wideip(gslb, "novs.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["wideip"] == "novs.example.com"
+    assert row["rtype"] == "A"
+    assert row["gtm_ip"] == ""
+    assert row["llb_address"] == ""
+    assert row["note"] == "GTM 虚拟服务器未找到"
+
+
+@pytest.mark.django_db
+def test_members_expand_into_multiple_rows():
     """同一池的多个成员各占一行"""
     gslb = _device("ia-multi")
-    _wideip(gslb, "www.example.com", ["pool_web"])
+    _wideip(gslb, "multi.example.com", ["pool_web"])
     _gtm_pool(
         gslb,
         "pool_web",
@@ -111,22 +181,20 @@ def test_multiple_members_produce_multiple_rows():
 
     rows = build_path_rows(analyze_device(gslb))
 
-    assert [row["member"] for row in rows] == ["s1:vs1", "s2:vs2"]
-    assert {row["status_code"] for row in rows} == {"ltm_not_found"}
+    assert [row["gtm_ip"] for row in rows] == ["10.1.1.1", "10.1.1.2"]
 
 
 @pytest.mark.django_db
 def test_empty_pool_still_produces_a_row():
     """池没有成员时也要留一行，否则这条记录会从表里消失"""
     gslb = _device("ia-empty")
-    _wideip(gslb, "www.example.com", ["pool_missing"])
+    _wideip(gslb, "empty.example.com", ["pool_missing"])
 
     rows = build_path_rows(analyze_device(gslb))
 
     assert len(rows) == 1
-    assert rows[0]["pool"] == "pool_missing"
-    assert rows[0]["pool_found"] is False
-    assert rows[0]["member"] == ""
+    assert rows[0]["wideip"] == "empty.example.com"
+    assert rows[0]["note"] == "池未找到"
 
 
 # ---------- xlsx 导出 ----------
@@ -134,7 +202,7 @@ def test_empty_pool_still_produces_a_row():
 
 @pytest.mark.django_db
 def test_export_returns_xlsx_workbook():
-    gslb = _build_resolved_chain("ia-xlsx")
+    gslb = _build_two_level_chain("ia-xlsx")
 
     res = Client().get(EXPORT_URL, {"device": gslb.pk})
 
@@ -146,15 +214,25 @@ def test_export_returns_xlsx_workbook():
     sheet = load_workbook(BytesIO(res.content)).active
     assert sheet.title == "互联网资产分析"
     assert [cell.value for cell in sheet[1]] == EXPORT_HEADERS
-
-    # 表头 + 一行链路
     assert sheet.max_row == 2
-    values = [sheet.cell(row=2, column=index).value for index in range(1, len(EXPORT_HEADERS) + 1)]
-    assert values[0] == "www.example.com"
-    assert values[2] == "pool_web"
-    assert values[3] == "已找到"
-    assert values[8] == "10.9.9.9:8080"
-    assert values[9] == "已解析到后端"
+
+    # 导出列顺序要与字段一一对应（空说明单元格 openpyxl 写的是 None）
+    values = [sheet.cell(row=2, column=index).value for index in range(1, 14)]
+    assert values == [
+        "www.example.com",
+        "A",
+        "10.1.1.1",
+        "80",
+        "10.1.1.1",
+        "80",
+        "10.2.2.2",
+        "8080",
+        "10.2.2.2",
+        "8080",
+        "10.9.9.9",
+        "9090",
+        None,
+    ]
 
 
 @pytest.mark.django_db

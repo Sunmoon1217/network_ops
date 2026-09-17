@@ -32,28 +32,26 @@ from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPo
 # 级联展开层数上限，防止 LTM 之间互相指向造成死循环
 MAX_NESTED_DEPTH = 3
 
-# 链路三态的展示文案
-STATUS_LABEL = {
-    "resolved": "已解析到后端",
-    "vserver_not_found": "GTM VS 未找到",
-    "ltm_not_found": "无对应 LTM VS",
-}
-
 # 扁平表格的列：一行就是一条从域名到最终后端的完整链路
+#
+# 前四列来自 GTM 侧；LTM 侧分两段，第一段是 LLB（本地负载均衡，GTM 直接指向的那一级），
+# 第二段是它级联到的下一级 SLB。字段来源见每列注释。
 EXPORT_HEADERS = [
-    "WideIP",
-    "类型",
-    "GTM 池",
-    "池状态",
-    "GTM 成员",
-    "GTM 虚拟服务器",
-    "LTM 链路",
-    "后端成员",
-    "最终地址",
-    "状态",
+    "域名",  # GtmWideip.name
+    "类型",  # GtmWideip.rtype
+    "GTM 虚拟服务器 IP",  # GtmVServer.ip_address
+    "GTM 虚拟服务器端口",  # GtmVServer.port
+    "LLB 虚拟服务器地址",  # LtmVirtualServer.vs_address
+    "LLB 端口",  # LtmVirtualServer.vs_port
+    "LLB 后端成员地址",  # LtmPoolMember.address
+    "LLB 后端成员端口",  # LtmPoolMember.port
+    "SLB 虚拟服务器地址",  # LtmVirtualServer.vs_address（级联的下一级）
+    "SLB 端口",  # LtmVirtualServer.vs_port
+    "SLB 后端成员地址",  # LtmPoolMember.address
+    "SLB 后端成员端口",  # LtmPoolMember.port
     "说明",
 ]
-EXPORT_COLUMN_WIDTHS = (28, 8, 22, 10, 34, 34, 40, 20, 22, 18, 30)
+EXPORT_COLUMN_WIDTHS = (28, 8, 20, 18, 22, 12, 20, 18, 22, 12, 20, 18, 34)
 
 
 def _parse_member_entry(entry) -> tuple[str, str, dict]:
@@ -261,116 +259,126 @@ def _note(*parts) -> str:
     return " · ".join(str(part) for part in parts if part)
 
 
-def _walk_ltm_paths(node: dict, prefix: list[str]) -> list[tuple[list[str], dict | None, str]]:
-    """沿 LTM 子树走到叶子，产出 (虚拟服务器链, 叶子成员, 最终地址)。
+def _walk_ltm_paths(node: dict, prefix: list[tuple[dict, dict | None]]) -> list[list[tuple[dict, dict | None]]]:
+    """沿 LTM 子树走到叶子，返回所有路径。
 
-    一个虚拟服务器可能有多个成员，成员又可能级联到下层虚拟服务器，所以这里
-    返回**所有路径**，每条都终止在一个叶子成员上；若某层没有成员，则该虚拟
-    服务器自己就是终点（最终地址取它自己的 ip:port）。
+    每条路径逐级记录 ``(虚拟服务器节点, 指向下一级的池成员)``，调用方就能按级取字段
+    （第 0 级 = LLB，第 1 级 = SLB）。某级没有成员时该虚拟服务器自己就是终点，
+    成员为 ``None``。
     """
-    chain = [*prefix, node.get("name") or ""]
     members = node.get("members") or []
     if not members:
-        return [(chain, None, _join_ip_port(node.get("vs_address"), node.get("vs_port")))]
+        return [[*prefix, (node, None)]]
 
-    paths: list[tuple[list[str], dict | None, str]] = []
+    paths: list[list[tuple[dict, dict | None]]] = []
     for member in members:
-        nested = member.get("nested")
-        if nested:
-            paths.extend(_walk_ltm_paths(nested, chain))
+        step = (node, member)
+        if member.get("nested"):
+            paths.extend(_walk_ltm_paths(member["nested"], [*prefix, step]))
         else:
-            address = member.get("ip_port") or _join_ip_port(member.get("address"), member.get("port"))
-            paths.append((chain, member, address))
+            paths.append([*prefix, step])
     return paths
 
 
-def _member_path_rows(wideip: dict, pool: dict, pool_found: bool, member: dict) -> list[dict]:
+def _ltm_columns(path: list[tuple[dict, dict | None]], index: int) -> tuple[str, str, str, str]:
+    """取路径第 index 级的 (虚拟服务器地址, 端口, 池成员地址, 池成员端口)"""
+    if index >= len(path):
+        return ("", "", "", "")
+    node, member = path[index]
+    if member is None:
+        # 该级没有池成员，虚拟服务器自己就是终点
+        return (str(node.get("vs_address") or ""), str(node.get("vs_port") or ""), "", "")
+    return (
+        str(node.get("vs_address") or ""),
+        str(node.get("vs_port") or ""),
+        str(member.get("address") or ""),
+        str(member.get("port") or ""),
+    )
+
+
+def _blank_row(wideip: dict) -> dict:
+    return {
+        "wideip": wideip.get("name") or "",
+        "rtype": wideip.get("rtype") or "",
+        "gtm_ip": "",
+        "gtm_port": "",
+        "llb_address": "",
+        "llb_port": "",
+        "llb_member_address": "",
+        "llb_member_port": "",
+        "slb_address": "",
+        "slb_port": "",
+        "slb_member_address": "",
+        "slb_member_port": "",
+        "note": "",
+    }
+
+
+def _member_path_rows(wideip: dict, member: dict) -> list[dict]:
     """单个 GTM 池成员展开成 1..N 行（LTM 分叉时一条成员对应多行）"""
     status = member.get("status") or ""
-    ref = member.get("member_ref") or f"{member.get('server_name', '')}:{member.get('vs_name', '')}"
-    base = {
-        "wideip": wideip.get("name") or "",
-        "wideip_type": wideip.get("rtype") or "",
-        "pool": pool.get("name") or "",
-        "pool_found": pool_found,
-        "member": ref,
-        "gtm_vserver": "",
-        "ltm_chain": "",
-        "backend_member": "",
-        "final_address": "",
-        "status": STATUS_LABEL.get(status, ""),
-        "status_code": status,
-        "note": _note(member.get("state"), f"order {member['order']}" if member.get("order") is not None else ""),
-    }
+
+    def _base() -> dict:
+        row = _blank_row(wideip)
+        vserver = member.get("vserver")
+        if vserver:
+            row["gtm_ip"] = str(vserver.get("ip_address") or "")
+            row["gtm_port"] = str(vserver.get("port") or "")
+        return row
 
     # ① GTM 虚拟服务器缺失：链路在此中断
     if status == "vserver_not_found":
-        base["note"] = _note(base["note"], member.get("message") or "未找到")
-        return [base]
+        row = _base()
+        row["note"] = "GTM 虚拟服务器未找到"
+        return [row]
 
-    vserver = member.get("vserver")
-    if vserver:
-        address = _join_ip_port(vserver.get("ip_address"), vserver.get("port"))
-        base["gtm_vserver"] = f"{vserver.get('name') or '-'}（{address}）" if address else (vserver.get("name") or "")
-
-    # ② 无对应 LTM 虚拟服务器：GTM VS 的 ip:port 就是最终地址
+    # ② 无对应 LTM 虚拟服务器：GTM VS 的地址即最终地址，LTM 两段留空
     if status == "ltm_not_found":
-        base["final_address"] = member.get("fallback_ip_port") or ""
-        base["note"] = _note(base["note"], "GTM 虚拟服务器地址即最终地址")
-        return [base]
+        row = _base()
+        row["note"] = _note("无对应 LTM 虚拟服务器", "GTM 虚拟服务器地址即最终地址")
+        return [row]
 
     # ③ 解析成功：LTM 子树的每条路径各占一行
     ltm = member.get("ltm")
-    if not ltm:
-        return [base]
+    paths = _walk_ltm_paths(ltm, []) if ltm else []
+    if not paths:
+        return [_base()]
 
-    rows = []
-    for chain, leaf, address in _walk_ltm_paths(ltm, []):
-        row = dict(base)
-        row["ltm_chain"] = " → ".join(name for name in chain if name)
-        row["backend_member"] = (leaf or {}).get("name") or ""
-        row["final_address"] = address or ""
-        if len(chain) > 1:
-            row["note"] = _note(base["note"], f"级联 {len(chain)} 层")
+    rows: list[dict] = []
+    for path in paths:
+        row = _base()
+        (row["llb_address"], row["llb_port"], row["llb_member_address"], row["llb_member_port"]) = _ltm_columns(path, 0)
+        (row["slb_address"], row["slb_port"], row["slb_member_address"], row["slb_member_port"]) = _ltm_columns(path, 1)
+        notes = []
+        if len(path) < 2:
+            notes.append("仅一级 LTM")
+        elif len(path) > 2:
+            # 表格只留两级，更深的级联在这里说明，避免信息凭空消失
+            notes.append(f"还有 {len(path) - 2} 层级联未展开")
+        row["note"] = _note(*notes)
         rows.append(row)
-    return rows or [base]
+    return rows
 
 
 def build_path_rows(result: dict) -> list[dict]:
     """把 analyze_device 的结果扁平化成「一行一条链路」的表格行。
 
-    与树形展示不同，每行自带全部层级信息（WideIP / 池 / 成员 / GTM VS / LTM 链路 /
-    后端成员 / 最终地址），便于筛选、排序与导出。
+    列固定为 GTM 四列 + LTM 两级（LLB / SLB）各四列 + 说明，便于筛选与导出。
     """
     rows: list[dict] = []
 
     for wideip in result.get("wideips", []):
         for pool in wideip.get("pools", []):
-            pool_found = bool(pool.get("found"))
             members = sorted(pool.get("members") or [], key=_member_sort_key)
-
-            # 池没有成员时也保留一行，避免这条记录从表里凭空消失
             if not members:
-                rows.append(
-                    {
-                        "wideip": wideip.get("name") or "",
-                        "wideip_type": wideip.get("rtype") or "",
-                        "pool": pool.get("name") or "",
-                        "pool_found": pool_found,
-                        "member": "",
-                        "gtm_vserver": "",
-                        "ltm_chain": "",
-                        "backend_member": "",
-                        "final_address": "",
-                        "status": "",
-                        "status_code": "",
-                        "note": "该池没有成员" if pool_found else "池未找到",
-                    }
-                )
+                # 池没有成员时也保留一行，避免这条记录从表里凭空消失
+                row = _blank_row(wideip)
+                row["note"] = "该池没有成员" if pool.get("found") else "池未找到"
+                rows.append(row)
                 continue
 
             for member in members:
-                rows.extend(_member_path_rows(wideip, pool, pool_found, member))
+                rows.extend(_member_path_rows(wideip, member))
 
     return rows
 
@@ -397,19 +405,21 @@ def internet_analysis_export(request):
         sheet.append(
             [
                 row["wideip"],
-                row["wideip_type"],
-                row["pool"],
-                "已找到" if row["pool_found"] else "未找到",
-                row["member"],
-                row["gtm_vserver"],
-                row["ltm_chain"],
-                row["backend_member"],
-                row["final_address"],
-                row["status"],
+                row["rtype"],
+                row["gtm_ip"],
+                row["gtm_port"],
+                row["llb_address"],
+                row["llb_port"],
+                row["llb_member_address"],
+                row["llb_member_port"],
+                row["slb_address"],
+                row["slb_port"],
+                row["slb_member_address"],
+                row["slb_member_port"],
                 row["note"],
             ]
         )
-    for column, width in zip("ABCDEFGHIJK", EXPORT_COLUMN_WIDTHS, strict=False):
+    for column, width in zip("ABCDEFGHIJKLM", EXPORT_COLUMN_WIDTHS, strict=False):
         sheet.column_dimensions[column].width = width
 
     buffer = BytesIO()

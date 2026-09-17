@@ -86,29 +86,49 @@ interface AnalysisResult {
 }
 
 /**
- * 扁平表格的一行：一条从 WideIP 到最终后端的完整链路。
+ * 表格的一行：一条从域名到最终后端的完整链路。
  *
- * 与树形展示不同，每行自带全部层级信息，便于筛选、排序与对照；
- * LTM 分叉时同一条 GTM 成员会展开成多行。
+ * 列固定为 GTM 四列 + LTM 两级（LLB / SLB）各四列 + 说明。
+ * 注意 LTM 的两级并非数据库外键关系：GTM 虚拟服务器的 ip:port 命中某个
+ * LTM 虚拟服务器即为 LLB，LLB 池成员的 address:port 再命中一个 LTM 虚拟服务器
+ * 即为 SLB，任何一跳匹配不上对应的四列就留空。
  */
 interface PathRow {
   key: string
   wideip: string
-  wideipType: string
-  pool: string
-  poolFound: boolean
-  member: string
-  gtmVserver: string
-  ltmChain: string
-  backendMember: string
-  finalAddress: string
-  status: string
-  statusCode: MemberStatus
+  rtype: string
+  gtmIp: string
+  gtmPort: string
+  llbAddress: string
+  llbPort: string
+  llbMemberAddress: string
+  llbMemberPort: string
+  slbAddress: string
+  slbPort: string
+  slbMemberAddress: string
+  slbMemberPort: string
   note: string
 }
 
-/** 状态对应的标签配色 */
-type RowTone = 'success' | 'danger' | 'warning' | 'info'
+/** 路径的一级：本级虚拟服务器 + 指向下一级的池成员（终点时为 null） */
+type LtmStep = [LtmNode, LtmMemberNode | null]
+
+/** 一个空行骨架，避免每处都写全 13 个字段 */
+const blankRow = (wideip: string, rtype: string): Omit<PathRow, 'key'> => ({
+  wideip,
+  rtype,
+  gtmIp: '',
+  gtmPort: '',
+  llbAddress: '',
+  llbPort: '',
+  llbMemberAddress: '',
+  llbMemberPort: '',
+  slbAddress: '',
+  slbPort: '',
+  slbMemberAddress: '',
+  slbMemberPort: '',
+  note: '',
+})
 
 const devices = ref<DeviceOption[]>([])
 const selectedDevice = ref<number | null>(null)
@@ -116,12 +136,6 @@ const result = ref<AnalysisResult | null>(null)
 const devicesLoading = ref(false)
 const analysisLoading = ref(false)
 const exportLoading = ref(false)
-
-/** 拼 "ip:port"，端口为空时只返回 IP */
-const joinIpPort = (ip: string | null | undefined, port: string | number | null | undefined) => {
-  if (!ip) return ''
-  return port ? `${ip}:${port}` : String(ip)
-}
 
 /** GTM 池成员按 order 排序（order 为空的排最后），不修改原数组 */
 const sortMembers = (members: GtmMemberNode[]) =>
@@ -131,43 +145,39 @@ const sortMembers = (members: GtmMemberNode[]) =>
     return orderA - orderB
   })
 
-/** 三态对应的文案 */
-const statusLabel = (status: MemberStatus) => {
-  if (status === 'resolved') return '已解析到后端'
-  if (status === 'vserver_not_found') return 'GTM VS 未找到'
-  if (status === 'ltm_not_found') return '无对应 LTM VS'
-  return ''
-}
-
-/** 三态对应的标签类型 */
-const statusTone = (status: MemberStatus): RowTone => {
-  if (status === 'resolved') return 'success'
-  if (status === 'vserver_not_found') return 'danger'
-  if (status === 'ltm_not_found') return 'warning'
-  return 'info'
-}
-
 /**
- * 沿 LTM 子树走到叶子，产出所有 (虚拟服务器链, 叶子成员, 最终地址)。
+ * 沿 LTM 子树走到叶子，返回所有路径。
  *
- * 一个虚拟服务器可能有多个成员，成员又可能级联到下层虚拟服务器，所以这里返回
- * 的是**所有路径**；若某层没有成员，则该虚拟服务器自己就是终点。
+ * 每条路径逐级记录 [本级虚拟服务器, 指向下一级的池成员]，调用方据此按级取字段
+ * （第 0 级 = LLB，第 1 级 = SLB）。某级没有池成员时，该虚拟服务器自己就是终点。
  */
-const walkLtmPaths = (node: LtmNode | null, prefix: string[]): [string[], LtmMemberNode | null, string][] => {
+const walkLtmPaths = (node: LtmNode | null, prefix: LtmStep[]): LtmStep[][] => {
   if (!node) return []
-  const chain = [...prefix, node.name || '']
   const members = node.members ?? []
-  if (!members.length) return [[chain, null, joinIpPort(node.vs_address, node.vs_port)]]
+  if (!members.length) return [[...prefix, [node, null]]]
 
-  const paths: [string[], LtmMemberNode | null, string][] = []
+  const paths: LtmStep[][] = []
   members.forEach((member) => {
+    const step: LtmStep = [node, member]
     if (member.nested) {
-      paths.push(...walkLtmPaths(member.nested, chain))
+      paths.push(...walkLtmPaths(member.nested, [...prefix, step]))
     } else {
-      paths.push([chain, member, member.ip_port || joinIpPort(member.address, member.port)])
+      paths.push([...prefix, step])
     }
   })
   return paths
+}
+
+/** 取路径第 index 级的（虚拟服务器地址, 端口, 池成员地址, 池成员端口） */
+const ltmColumns = (path: LtmStep[], index: number): [string, string, string, string] => {
+  const step = path[index]
+  if (!step) return ['', '', '', '']
+  const [node, member] = step
+  const address = node.vs_address || ''
+  const port = node.vs_port || ''
+  // 该级没有池成员，虚拟服务器自己就是终点
+  if (!member) return [address, port, '', '']
+  return [address, port, member.address || '', member.port || '']
 }
 
 /** 把分析结果扁平化成「一行一条链路」 */
@@ -176,6 +186,9 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
   const rows: PathRow[] = []
 
   data.wideips.forEach((wideip, wi) => {
+    const wideipName = wideip.name || ''
+    const rtype = wideip.rtype || ''
+
     wideip.pools.forEach((pool, pi) => {
       const members = sortMembers(pool.members ?? [])
       const poolKey = `w${wi}-p${pi}`
@@ -183,68 +196,31 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
       // 池没有成员时也保留一行，避免这条记录从表里凭空消失
       if (!members.length) {
         rows.push({
+          ...blankRow(wideipName, rtype),
           key: `${poolKey}-empty`,
-          wideip: wideip.name || '',
-          wideipType: wideip.rtype || '',
-          pool: pool.name || '',
-          poolFound: pool.found,
-          member: '',
-          gtmVserver: '',
-          ltmChain: '',
-          backendMember: '',
-          finalAddress: '',
-          status: '',
-          statusCode: '',
-          note: pool.found ? '该池没有成员' : '池未找到',
+          note: pool.found ? `池 ${pool.name} 没有成员` : `池 ${pool.name} 未找到`,
         })
         return
       }
 
       members.forEach((member, mi) => {
         const memberKey = `${poolKey}-m${mi}`
-        const ref = member.member_ref || `${member.server_name}:${member.vs_name}`
-        const base = {
-          wideip: wideip.name || '',
-          wideipType: wideip.rtype || '',
-          pool: pool.name || '',
-          poolFound: pool.found,
-          member: ref,
-          gtmVserver: '',
-          ltmChain: '',
-          backendMember: '',
-          finalAddress: '',
-          status: statusLabel(member.status),
-          statusCode: member.status,
-          note: [member.state, member.order !== null && member.order !== undefined ? `order ${member.order}` : '']
-            .filter(Boolean)
-            .join(' · '),
+        const base = blankRow(wideipName, rtype)
+        const vserver = member.vserver
+        if (vserver) {
+          base.gtmIp = vserver.ip_address || ''
+          base.gtmPort = vserver.port || ''
         }
 
         // ① GTM 虚拟服务器缺失：链路在此中断
         if (member.status === 'vserver_not_found') {
-          rows.push({
-            ...base,
-            key: memberKey,
-            note: [base.note, member.message || '未找到'].filter(Boolean).join(' · '),
-          })
+          rows.push({ ...base, key: memberKey, note: 'GTM 虚拟服务器未找到' })
           return
         }
 
-        // GTM 虚拟服务器（下一跳）
-        const vserver = member.vserver
-        if (vserver) {
-          const address = joinIpPort(vserver.ip_address, vserver.port)
-          base.gtmVserver = address ? `${vserver.name || '-'}（${address}）` : vserver.name || ''
-        }
-
-        // ② 无对应 LTM 虚拟服务器：GTM VS 的 ip:port 就是最终地址
+        // ② 无对应 LTM 虚拟服务器：GTM VS 的地址即最终地址，LTM 两级留空
         if (member.status === 'ltm_not_found') {
-          rows.push({
-            ...base,
-            key: `${memberKey}-fallback`,
-            finalAddress: member.fallback_ip_port || '',
-            note: [base.note, 'GTM 虚拟服务器地址即最终地址'].filter(Boolean).join(' · '),
-          })
+          rows.push({ ...base, key: `${memberKey}-fallback`, note: '无对应 LTM 虚拟服务器，GTM 虚拟服务器地址即最终地址' })
           return
         }
 
@@ -254,16 +230,18 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
           rows.push({ ...base, key: memberKey })
           return
         }
-        paths.forEach(([chain, leaf, address], pathIndex) => {
-          const chainNames = chain.filter(Boolean)
-          rows.push({
-            ...base,
-            key: `${memberKey}-path${pathIndex}`,
-            ltmChain: chainNames.join(' → '),
-            backendMember: leaf?.name || '',
-            finalAddress: address || '',
-            note: chainNames.length > 1 ? [base.note, `级联 ${chainNames.length} 层`].filter(Boolean).join(' · ') : base.note,
-          })
+
+        paths.forEach((path, pathIndex) => {
+          const row = { ...base, key: `${memberKey}-path${pathIndex}` }
+          ;[row.llbAddress, row.llbPort, row.llbMemberAddress, row.llbMemberPort] = ltmColumns(path, 0)
+          ;[row.slbAddress, row.slbPort, row.slbMemberAddress, row.slbMemberPort] = ltmColumns(path, 1)
+          if (path.length < 2) {
+            row.note = '仅一级 LTM'
+          } else if (path.length > 2) {
+            // 表格只留两级，更深的级联在这里说明，避免信息凭空消失
+            row.note = `还有 ${path.length - 2} 层级联未展开`
+          }
+          rows.push(row)
         })
       })
     })
@@ -275,13 +253,13 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
 /** 表格数据 */
 const rows = computed<PathRow[]>(() => buildPathRows(result.value))
 
-/** 统计各状态数量，展示在摘要条 */
-const summary = computed(() => ({
-  total: rows.value.length,
-  resolved: rows.value.filter((row) => row.statusCode === 'resolved').length,
-  broken: rows.value.filter((row) => row.statusCode === 'vserver_not_found').length,
-  fallback: rows.value.filter((row) => row.statusCode === 'ltm_not_found').length,
-}))
+/** 状态统计，展示在摘要条 */
+const summary = computed(() => {
+  const broken = rows.value.filter((row) => row.note.includes('GTM 虚拟服务器未找到')).length
+  const fallback = rows.value.filter((row) => row.note.includes('无对应 LTM 虚拟服务器')).length
+  const resolved = rows.value.filter((row) => row.llbAddress && !row.note.includes('未找到')).length
+  return { total: rows.value.length, resolved, broken, fallback }
+})
 
 /** el-table 行 key */
 const rowKey = (row: PathRow) => row.key
@@ -394,71 +372,74 @@ onMounted(() => {
           <el-tag size="small" type="info">{{ result.device.device_type }}</el-tag>
           <span class="muted">WideIP {{ result.wideips.length }} 个 · 链路 {{ summary.total }} 条</span>
           <span class="legend">
-            <el-tag size="small" type="success">已解析 {{ summary.resolved }}</el-tag>
+            <el-tag size="small" type="success">已解析到 LLB {{ summary.resolved }}</el-tag>
             <el-tag size="small" type="danger">GTM VS 未找到 {{ summary.broken }}</el-tag>
             <el-tag size="small" type="warning">无对应 LTM VS {{ summary.fallback }}</el-tag>
           </span>
         </div>
 
         <el-table :data="rows" size="small" :row-key="rowKey" class="asset-table" border>
-          <el-table-column prop="wideip" label="WideIP" min-width="200" fixed show-overflow-tooltip>
+          <el-table-column prop="wideip" label="域名" min-width="200" fixed show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono strong">{{ row.wideip || '-' }}</span>
-              <el-tag v-if="row.wideipType" size="small" type="info" class="inline-tag">{{ row.wideipType }}</el-tag>
             </template>
           </el-table-column>
 
-          <el-table-column prop="pool" label="GTM 池" min-width="170" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.pool" class="mono">{{ row.pool }}</span>
-              <span v-else class="muted">-</span>
-              <el-tag v-if="row.pool && !row.poolFound" size="small" type="warning" class="inline-tag">未找到</el-tag>
-            </template>
+          <el-table-column prop="rtype" label="类型" width="70" />
+
+          <el-table-column label="GTM 虚拟服务器" align="center">
+            <el-table-column prop="gtmIp" label="IP" min-width="130">
+              <template #default="{ row }">
+                <span v-if="row.gtmIp" class="mono">{{ row.gtmIp }}</span>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="gtmPort" label="端口" width="80" />
           </el-table-column>
 
-          <el-table-column prop="member" label="GTM 成员" min-width="200" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.member" class="mono">{{ row.member }}</span>
-              <span v-else class="muted">-</span>
-            </template>
+          <el-table-column label="LLB（第一级 LTM）" align="center">
+            <el-table-column label="虚拟服务器" align="center">
+              <el-table-column prop="llbAddress" label="地址" min-width="130">
+                <template #default="{ row }">
+                  <span v-if="row.llbAddress" class="mono">{{ row.llbAddress }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="llbPort" label="端口" width="80" />
+            </el-table-column>
+            <el-table-column label="后端成员" align="center">
+              <el-table-column prop="llbMemberAddress" label="地址" min-width="130">
+                <template #default="{ row }">
+                  <span v-if="row.llbMemberAddress" class="mono">{{ row.llbMemberAddress }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="llbMemberPort" label="端口" width="80" />
+            </el-table-column>
           </el-table-column>
 
-          <el-table-column prop="gtmVserver" label="GTM 虚拟服务器" min-width="240" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.gtmVserver" class="mono">{{ row.gtmVserver }}</span>
-              <span v-else class="muted">-</span>
-            </template>
+          <el-table-column label="SLB（下级 LTM）" align="center">
+            <el-table-column label="虚拟服务器" align="center">
+              <el-table-column prop="slbAddress" label="地址" min-width="130">
+                <template #default="{ row }">
+                  <span v-if="row.slbAddress" class="mono">{{ row.slbAddress }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="slbPort" label="端口" width="80" />
+            </el-table-column>
+            <el-table-column label="后端成员" align="center">
+              <el-table-column prop="slbMemberAddress" label="地址" min-width="130">
+                <template #default="{ row }">
+                  <span v-if="row.slbMemberAddress" class="mono">{{ row.slbMemberAddress }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="slbMemberPort" label="端口" width="80" />
+            </el-table-column>
           </el-table-column>
 
-          <el-table-column prop="ltmChain" label="LTM 链路" min-width="240" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.ltmChain" class="mono">{{ row.ltmChain }}</span>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="backendMember" label="后端成员" min-width="170" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.backendMember" class="mono">{{ row.backendMember }}</span>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="finalAddress" label="最终地址" min-width="170">
-            <template #default="{ row }">
-              <span v-if="row.finalAddress" class="mono strong">{{ row.finalAddress }}</span>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="status" label="状态" min-width="150">
-            <template #default="{ row }">
-              <el-tag v-if="row.status" size="small" :type="statusTone(row.statusCode)">{{ row.status }}</el-tag>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="note" label="说明" min-width="200" show-overflow-tooltip>
+          <el-table-column prop="note" label="说明" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.note" class="muted">{{ row.note }}</span>
               <span v-else class="muted">-</span>
@@ -492,7 +473,6 @@ onMounted(() => {
 .legend { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
 .asset-table { width: 100%; }
-.inline-tag { margin-left: 6px; }
 
 .mono { font-family: Menlo, Consolas, monospace; font-size: 12px; }
 .strong { font-weight: 600; }
