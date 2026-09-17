@@ -759,10 +759,18 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
 
     from .serializers import LtmPoolMemberSerializer
 
-    queryset = LtmPoolMember.objects.all()
+    queryset = LtmPoolMember.objects.select_related("device").all()
     serializer_class = LtmPoolMemberSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "pool_name")
+    search_fields = ("name", "address", "pool_name", "device__hostname")
+    ordering_fields = ("name", "pool_name", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
 
 
 class LtmProfileViewSet(viewsets.ModelViewSet):

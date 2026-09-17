@@ -146,7 +146,7 @@ class LtmPoolSerializer(DeviceRelatedSerializer):
 
 
 @model(model=models.LtmPoolMember)
-class LtmPoolMemberSerializer(ParentClass):
+class LtmPoolMemberSerializer(DeviceRelatedSerializer):
     pass
 
 

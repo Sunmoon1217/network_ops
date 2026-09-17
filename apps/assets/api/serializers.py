@@ -365,12 +365,24 @@ class LtmPoolSerializer(serializers.ModelSerializer):
 
 
 class LtmPoolMemberSerializer(serializers.ModelSerializer):
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+
     class Meta:
         from assets.models import LtmPoolMember
 
         model = LtmPoolMember
-        fields = ("id", "pool_name", "name", "address")
-        read_only_fields = ("id",)
+        fields = (
+            "id",
+            "device",
+            "device_hostname",
+            "pool_name",
+            "name",
+            "address",
+            "port",
+            "is_active",
+            "created_at",
+        )
+        read_only_fields = ("id", "created_at")
 
 
 class LtmProfileSerializer(serializers.ModelSerializer):

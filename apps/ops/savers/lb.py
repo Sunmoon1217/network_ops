@@ -188,20 +188,35 @@ class LBPoolSaver(BaseSaver):
             created += 1 if is_created else 0
             updated += 0 if is_created else 1
             members = as_list(pool.get("members"))
-            if members:
-                LtmPoolMember.objects.filter(pool_name=name).delete()
-                LtmPoolMember.objects.bulk_create(
-                    [
-                        LtmPoolMember(
-                            pool_name=name,
-                            name=self._leaf(m.get("name")),
-                            address=m.get("address", ""),
-                            port=str(m.get("port") or ""),
-                        )
-                        for m in members
-                        if m.get("name")
-                    ]
+            rows = []
+            seen: set[tuple[str, str]] = set()
+            for member in members:
+                if not isinstance(member, dict):
+                    continue
+                member_name = self._leaf(member.get("name"))
+                if not member_name:
+                    continue
+                port = str(member.get("port") or "")
+                # 同一节点可能在多个端口上做成员，唯一键是
+                # (device, pool_name, name, port)，同组重复要先去掉
+                if (member_name, port) in seen:
+                    continue
+                seen.add((member_name, port))
+                rows.append(
+                    LtmPoolMember(
+                        device=device,
+                        pool_name=name,
+                        name=member_name,
+                        address=member.get("address", ""),
+                        port=port,
+                    )
                 )
+            # 先清后建，范围按「设备 + 池名」圈定：成员没有独立的自然键，
+            # 只按 pool_name 全局匹配会误删其他设备上同名池的成员。
+            # 池在配置里出现过就以配置为准，成员清空也要把旧记录删掉。
+            LtmPoolMember.objects.filter(device=device, pool_name=name).delete()
+            if rows:
+                LtmPoolMember.objects.bulk_create(rows)
         return (created, updated)
 
 

@@ -181,13 +181,13 @@ def test_pool_and_members_drop_common_prefix():
     assert pool.monitors == ["http"]
     assert pool.mode == "least-connections-member"
 
-    members = {m.name: m for m in LtmPoolMember.objects.filter(pool_name=pool.name)}
+    members = {m.name: m for m in LtmPoolMember.objects.filter(device=device, pool_name=pool.name)}
     assert set(members) == {"node_a", "node_b"}
     assert members["node_a"].address == "10.0.0.1"
     assert members["node_a"].port == "80"
     assert members["node_b"].port == "8080"
     # 池名与卡片关联两侧保持一致
-    assert LtmPoolMember.objects.filter(pool_name="pool_web").count() == 2
+    assert LtmPoolMember.objects.filter(device=device, pool_name="pool_web").count() == 2
 
 
 @pytest.mark.django_db
@@ -220,8 +220,8 @@ def test_no_common_prefix_leaks_across_ltm_columns():
 
     columns = {
         "LtmPool.name": LtmPool.objects.filter(device=device).values_list("name", flat=True),
-        "LtmPoolMember.name": LtmPoolMember.objects.values_list("name", flat=True),
-        "LtmPoolMember.pool_name": LtmPoolMember.objects.values_list("pool_name", flat=True),
+        "LtmPoolMember.name": LtmPoolMember.objects.filter(device=device).values_list("name", flat=True),
+        "LtmPoolMember.pool_name": LtmPoolMember.objects.filter(device=device).values_list("pool_name", flat=True),
         "LtmVirtualServer.name": LtmVirtualServer.objects.filter(device=device).values_list("name", flat=True),
         "LtmVirtualServer.pool": LtmVirtualServer.objects.filter(device=device).values_list("pool", flat=True),
         "LtmVirtualServer.snat_pool": LtmVirtualServer.objects.filter(device=device).values_list(
@@ -244,3 +244,124 @@ def test_no_common_prefix_leaks_across_ltm_columns():
     assert vs.profiles == ["http", "tcp"]
     assert vs.rules == ["irule_redirect"]
     assert LtmPool.objects.get(device=device).monitors == ["http"]
+
+
+# ---------- 池成员的设备作用域（LtmPoolMember 继承 ConfigBase 后的约束） ----------
+
+
+def _pool_config(pool_name: str = "pool_web", members: str = "", monitor: bool = True) -> str:
+    """拼一段 F5 pool 配置；members 直接内联以便控制成员形态"""
+    body = [
+        "    load-balancing-mode least-connections-member",
+        "    monitor /Common/http" if monitor else "",
+        "    members {",
+        members,
+        "    }",
+    ]
+    return f"ltm pool /Common/{pool_name} {{\n" + "\n".join(line for line in body if line) + "\n}\n"
+
+
+@pytest.mark.django_db
+def test_same_pool_name_on_two_devices_does_not_mix():
+    """两台设备上的同名池各自保存成员，互不覆盖也互不删除"""
+    dev_a = Device.objects.create(hostname="_t_ltm_scope_a", device_type="slb")
+    dev_b = Device.objects.create(hostname="_t_ltm_scope_b", device_type="slb")
+    parser = ParserFactory.get_parser_by_keys("F5", "slb")
+    saver = LBPoolSaver()
+
+    cfg_a = _pool_config(members="        /Common/node_a:80 {\n            address 10.0.0.1\n        }")
+    cfg_b = _pool_config(members="        /Common/node_b:80 {\n            address 10.0.0.2\n        }")
+
+    saver.save(dev_a, parser.parse(cfg_a))
+    saver.save(dev_b, parser.parse(cfg_b))
+
+    # 各自一条，互不干扰
+    assert LtmPoolMember.objects.filter(device=dev_a).count() == 1
+    assert LtmPoolMember.objects.filter(device=dev_b).count() == 1
+    assert LtmPoolMember.objects.get(device=dev_a).name == "node_a"
+    assert LtmPoolMember.objects.get(device=dev_b).name == "node_b"
+
+    # 再存一次 A：不能把 B 的成员删掉（旧实现按 pool_name 全局删就会误删）
+    saver.save(dev_a, parser.parse(cfg_a))
+    assert LtmPoolMember.objects.filter(device=dev_b).count() == 1
+    assert LtmPoolMember.objects.get(device=dev_b).name == "node_b"
+
+
+@pytest.mark.django_db
+def test_deleting_device_cascades_to_members():
+    """device 是外键，删设备要级联删掉池成员（此前会留下孤儿）"""
+    device = Device.objects.create(hostname="_t_ltm_cascade", device_type="slb")
+    parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(F5_POOL)
+    LBPoolSaver().save(device, parsed)
+
+    assert LtmPoolMember.objects.filter(device=device).count() == 2
+
+    device.delete()
+
+    assert LtmPoolMember.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_empty_members_clears_stale_rows():
+    """池还在但成员被清空时，旧成员不应残留"""
+    device = Device.objects.create(hostname="_t_ltm_clear", device_type="slb")
+    parser = ParserFactory.get_parser_by_keys("F5", "slb")
+    saver = LBPoolSaver()
+    with_members = _pool_config(members="        /Common/node_a:80 {\n            address 10.0.0.1\n        }")
+
+    saver.save(device, parser.parse(with_members))
+    assert LtmPoolMember.objects.filter(device=device).count() == 1
+
+    saver.save(device, parser.parse(_pool_config()))
+    assert LtmPoolMember.objects.filter(device=device).count() == 0
+
+
+@pytest.mark.django_db
+def test_same_node_on_two_ports_is_kept():
+    """同一节点在两个端口上做成员是合法的，唯一约束带 port 才不会误杀"""
+    device = Device.objects.create(hostname="_t_ltm_ports", device_type="slb")
+    members = "\n".join(
+        [
+            "        /Common/node_a:80 {",
+            "            address 10.0.0.1",
+            "        }",
+            "        /Common/node_a:8080 {",
+            "            address 10.0.0.1",
+            "        }",
+        ]
+    )
+    parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(_pool_config(members=members))
+
+    LBPoolSaver().save(device, parsed)
+
+    rows = LtmPoolMember.objects.filter(device=device).order_by("port")
+    assert [row.name for row in rows] == ["node_a", "node_a"]
+    assert [row.port for row in rows] == ["80", "8080"]
+
+
+@pytest.mark.django_db
+def test_duplicate_members_in_one_config_are_collapsed():
+    """同一份配置里重复出现的同一成员（同 name + 同 port）只落一条，不触发唯一约束"""
+    device = Device.objects.create(hostname="_t_ltm_dup", device_type="slb")
+    one = "        /Common/node_a:80 {\n            address 10.0.0.1\n        }"
+    parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(_pool_config(members=f"{one}\n{one}"))
+
+    LBPoolSaver().save(device, parsed)
+
+    assert LtmPoolMember.objects.filter(device=device).count() == 1
+
+
+@pytest.mark.django_db
+def test_unique_constraint_rejects_duplicate_member():
+    """数据库层面兜底：(device, pool_name, name, port) 唯一"""
+    from django.db import IntegrityError, transaction
+
+    device = Device.objects.create(hostname="_t_ltm_uniq", device_type="slb")
+    LtmPoolMember.objects.create(device=device, pool_name="p", name="n", address="10.0.0.1", port="80")
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        LtmPoolMember.objects.create(device=device, pool_name="p", name="n", address="10.0.0.2", port="80")
+
+    # 换端口即合法
+    LtmPoolMember.objects.create(device=device, pool_name="p", name="n", address="10.0.0.1", port="8080")
+    assert LtmPoolMember.objects.filter(device=device).count() == 2

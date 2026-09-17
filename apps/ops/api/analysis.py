@@ -122,11 +122,13 @@ class _AssetIndex:
             key = (_normalize_ip(virtual.vs_address), str(virtual.vs_port or ""))
             self.ltm_virtuals.setdefault(key, []).append(virtual)
 
-        self.ltm_pool_members: dict[str, list[LtmPoolMember]] = {}
+        # 池与成员都按「设备 + 池名」索引：不同设备上可以有同名池，
+        # 只按 pool_name 索引会把它们的成员混到一起
+        self.ltm_pool_members: dict[tuple[int, str], list[LtmPoolMember]] = {}
         for member in LtmPoolMember.objects.all():
-            self.ltm_pool_members.setdefault(member.pool_name, []).append(member)
+            self.ltm_pool_members.setdefault((member.device_id, member.pool_name), []).append(member)
 
-        self.ltm_pools: set[str] = set(LtmPool.objects.values_list("name", flat=True))
+        self.ltm_pools: set[tuple[int, str]] = set(LtmPool.objects.values_list("device_id", "name"))
 
     def find_vserver(self, server_name: str, vs_name: str) -> GtmVServer | None:
         return self.vservers.get((server_name, vs_name))
@@ -154,14 +156,14 @@ def _expand_ltm_virtual(virtual: LtmVirtualServer, index: _AssetIndex, depth: in
         "vs_port": virtual.vs_port or "",
         "status": virtual.status,
         "pool": virtual.pool or "",
-        "pool_found": bool(virtual.pool) and virtual.pool in index.ltm_pools,
+        "pool_found": bool(virtual.pool) and (virtual.device_id, virtual.pool) in index.ltm_pools,
         "members": [],
     }
 
     if not virtual.pool:
         return node
 
-    for member in index.ltm_pool_members.get(virtual.pool, []):
+    for member in index.ltm_pool_members.get((virtual.device_id, virtual.pool), []):
         member_node: dict = {
             "name": member.name,
             "address": member.address or "",

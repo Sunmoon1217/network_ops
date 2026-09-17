@@ -362,8 +362,10 @@ class LtmPoolAdmin(admin.ModelAdmin):
 
 @admin.register(LtmPoolMember)
 class LtmPoolMemberAdmin(admin.ModelAdmin):
-    list_display = ("id", "pool_name", "name", "address")
-    search_fields = ("name",)
+    list_display = ("id", "device", "pool_name", "name", "address", "port", "is_active", "created_at")
+    list_filter = ("device", "is_active", "created_at", "updated_at")
+    search_fields = ("name", "address", "pool_name")
+    date_hierarchy = "created_at"
 
 
 @admin.register(LtmProfile)

@@ -449,7 +449,7 @@ def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
         return []
     return [
         {"name": m.name, "address": m.address}
-        for m in LtmPoolMember.objects.filter(pool_name=vs.pool)
+        for m in LtmPoolMember.objects.filter(device_id=vs.device_id, pool_name=vs.pool)
         if vs.pool
         if m.address
     ]

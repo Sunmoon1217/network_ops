@@ -565,8 +565,14 @@ class LtmPool(ConfigBase):
         ordering = ("device", "name")
 
 
-class LtmPoolMember(models.Model):
-    """LTM 池成员"""
+class LtmPoolMember(ConfigBase):
+    """LTM 池成员
+
+    ``pool_name`` 是池名称而不是外键，归属靠 ``device`` 限定：``LtmPool`` 的
+    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池。此前没有
+    ``device``，不同设备上的同名池成员会互相串（资产分析、路径追踪都按
+    ``pool_name`` 全局匹配，删池成员时也会跨设备误删）。
+    """
 
     pool_name = models.CharField(max_length=255, blank=True, default="", verbose_name="关联池名称")
     name = models.CharField(max_length=255, verbose_name="成员名称")
@@ -576,7 +582,14 @@ class LtmPoolMember(models.Model):
     class Meta:
         verbose_name = "LTM Pool Member"
         verbose_name_plural = verbose_name
-        ordering = ("pool_name", "name", "-pk")
+        ordering = ("device", "pool_name", "name", "-pk")
+        # 唯一性必须带上 port：F5 同一节点可以在多个端口上做成员，剥掉
+        # /Common/node_a:80 的端口后 name 都是 node_a，只约束 name 会误杀
+        constraints = (
+            models.UniqueConstraint(
+                fields=["device", "pool_name", "name", "port"], name="uni_pool_member_device_pool_node_port"
+            ),
+        )
 
 
 class LtmProfile(ConfigBase):

@@ -73,11 +73,11 @@ def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
     ltm = _device(f"{hostname}-ltm", "slb")
     _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
     LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
-    LtmPoolMember.objects.create(pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
 
     _ltm_virtual(ltm, "vs_slb", "10.2.2.2", "8080", pool="pool_slb")
     LtmPool.objects.create(device=ltm, name="pool_slb", mode="http")
-    LtmPoolMember.objects.create(pool_name="pool_slb", name="m_slb", address="10.9.9.9", port="9090")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_slb", name="m_slb", address="10.9.9.9", port="9090")
     return gslb
 
 
@@ -126,7 +126,7 @@ def test_single_level_chain_leaves_slb_columns_empty():
     ltm = _device("ia-one-ltm", "slb")
     _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
     LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
-    LtmPoolMember.objects.create(pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
 
     row = build_path_rows(analyze_device(gslb))[0]
 

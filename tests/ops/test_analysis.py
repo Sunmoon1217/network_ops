@@ -83,7 +83,7 @@ def test_resolved_to_ltm_pool_members():
     _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
     LtmPool.objects.create(device=ltm, name="ltm_pool", mode="round-robin")
     _ltm_virtual(ltm, "vs_web", "10.1.1.1", "80", pool="ltm_pool")
-    LtmPoolMember.objects.create(pool_name="ltm_pool", name="m1", address="10.2.2.2", port="8080")
+    LtmPoolMember.objects.create(device=ltm, pool_name="ltm_pool", name="m1", address="10.2.2.2", port="8080")
 
     member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
 
@@ -108,12 +108,12 @@ def test_nested_cascade_returns_member_ip_port():
 
     LtmPool.objects.create(device=ltm1, name="pool1", mode="round-robin")
     _ltm_virtual(ltm1, "vs1", "10.1.1.1", "80", pool="pool1")
-    LtmPoolMember.objects.create(pool_name="pool1", name="m1", address="10.2.2.2", port="8080")
+    LtmPoolMember.objects.create(device=ltm1, pool_name="pool1", name="m1", address="10.2.2.2", port="8080")
 
     # 下层 LTM：地址端口正好等于上一层的池成员
     LtmPool.objects.create(device=ltm2, name="pool2", mode="round-robin")
     _ltm_virtual(ltm2, "vs2", "10.2.2.2", "8080", pool="pool2")
-    LtmPoolMember.objects.create(pool_name="pool2", name="m2", address="10.3.3.3", port="9090")
+    LtmPoolMember.objects.create(device=ltm2, pool_name="pool2", name="m2", address="10.3.3.3", port="9090")
 
     member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
 
@@ -218,12 +218,62 @@ def test_ipv6_chain_resolves_regardless_of_address_writing(ltm_address):
 
     ltm = _device("ia-v6-ltm", "slb")
     LtmVirtualServer.objects.create(device=ltm, name="vs_v6", vs_address=ltm_address, vs_port="80")
-    LtmPoolMember.objects.filter(pool_name="").delete()
 
     member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
 
     assert member["status"] == "resolved"
     assert member["ltm"]["vs_address"] == ltm_address
+
+
+# ---------- 池成员的设备作用域 ----------
+
+
+@pytest.mark.django_db
+def test_same_pool_name_on_other_device_is_not_mixed_in():
+    """另一台设备上的同名池成员不能被算进来。
+
+    旧实现按 ``pool_name`` 全局索引成员，两台设备都有 ``shared_pool`` 时，
+    A 的虚拟服务器会把 B 的成员一起展开。
+    """
+    gslb = _device("ia-scope-gslb")
+    _wideip(gslb, "www.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    ltm_a = _device("ia-scope-ltm-a", "slb")
+    LtmPool.objects.create(device=ltm_a, name="shared_pool", mode="round-robin")
+    _ltm_virtual(ltm_a, "vs_web", "10.1.1.1", "80", pool="shared_pool")
+    LtmPoolMember.objects.create(device=ltm_a, pool_name="shared_pool", name="from_a", address="10.2.2.2", port="80")
+
+    ltm_b = _device("ia-scope-ltm-b", "slb")
+    LtmPool.objects.create(device=ltm_b, name="shared_pool", mode="round-robin")
+    LtmPoolMember.objects.create(device=ltm_b, pool_name="shared_pool", name="from_b", address="10.9.9.9", port="80")
+
+    ltm_node = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]["ltm"]
+
+    assert ltm_node["device"] == "ia-scope-ltm-a"
+    assert [m["name"] for m in ltm_node["members"]] == ["from_a"]
+
+
+@pytest.mark.django_db
+def test_pool_found_is_scoped_to_device():
+    """``pool_found`` 也要按设备判断：池只存在于别的设备上时不能算找到"""
+    gslb = _device("ia-pf-gslb")
+    _wideip(gslb, "www.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    ltm_a = _device("ia-pf-ltm-a", "slb")
+    _ltm_virtual(ltm_a, "vs_web", "10.1.1.1", "80", pool="only_on_b")
+
+    ltm_b = _device("ia-pf-ltm-b", "slb")
+    LtmPool.objects.create(device=ltm_b, name="only_on_b", mode="round-robin")
+
+    ltm_node = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]["ltm"]
+
+    assert ltm_node["pool"] == "only_on_b"
+    assert ltm_node["pool_found"] is False
+    assert ltm_node["members"] == []
 
 
 @pytest.mark.django_db
