@@ -32,16 +32,6 @@ from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPo
 # 级联展开层数上限，防止 LTM 之间互相指向造成死循环
 MAX_NESTED_DEPTH = 3
 
-# 表格里的对象类型标签，与前端 internet-asset.vue 的 KIND_LABEL 保持一致
-KIND_LABEL = {
-    "wideip": "WideIP",
-    "pool": "GTM Pool",
-    "member": "GTM Member",
-    "vserver": "GTM VS",
-    "ltm_vs": "LTM VS",
-    "ltm_member": "Pool Member",
-}
-
 # 链路三态的展示文案
 STATUS_LABEL = {
     "resolved": "已解析到后端",
@@ -49,8 +39,21 @@ STATUS_LABEL = {
     "ltm_not_found": "无对应 LTM VS",
 }
 
-EXPORT_HEADERS = ["层级 / 对象", "名称", "地址 / 端口", "LTM 设备", "状态", "说明"]
-EXPORT_COLUMN_WIDTHS = (24, 44, 22, 16, 22, 48)
+# 扁平表格的列：一行就是一条从域名到最终后端的完整链路
+EXPORT_HEADERS = [
+    "WideIP",
+    "类型",
+    "GTM 池",
+    "池状态",
+    "GTM 成员",
+    "GTM 虚拟服务器",
+    "LTM 链路",
+    "后端成员",
+    "最终地址",
+    "状态",
+    "说明",
+]
+EXPORT_COLUMN_WIDTHS = (28, 8, 22, 10, 34, 34, 40, 20, 22, 18, 30)
 
 
 def _parse_member_entry(entry) -> tuple[str, str, dict]:
@@ -244,7 +247,7 @@ def internet_analysis(request):
 
 
 # ---------------------------------------------------------------------------
-# 摊平成表格行（xlsx 导出用；口径与前端 internet-asset.vue 的 flattenResult 一致）
+# 扁平化：一行 = 一条从 WideIP 到最终后端的完整链路
 # ---------------------------------------------------------------------------
 
 
@@ -258,142 +261,116 @@ def _note(*parts) -> str:
     return " · ".join(str(part) for part in parts if part)
 
 
-def _flatten_ltm_rows(node: dict, depth: int) -> list[dict]:
-    """LTM 虚拟服务器 → 池成员 → 级联的下层虚拟服务器"""
-    pool_found = bool(node.get("pool_found"))
-    rows = [
-        {
-            "depth": depth,
-            "kind": "ltm_vs",
-            "name": node.get("name") or "(未命名虚拟服务器)",
-            "address": _join_ip_port(node.get("vs_address"), node.get("vs_port")),
-            "device": node.get("device") or "",
-            "status": ("池已找到" if pool_found else "池未找到") if node.get("pool") else "",
-            "note": _note(f"池 {node['pool']}" if node.get("pool") else "", node.get("status")),
-            "is_final": False,
-        }
-    ]
+def _walk_ltm_paths(node: dict, prefix: list[str]) -> list[tuple[list[str], dict | None, str]]:
+    """沿 LTM 子树走到叶子，产出 (虚拟服务器链, 叶子成员, 最终地址)。
 
-    for member in node.get("members") or []:
-        matched = member.get("matched_ip_port") or ""
-        rows.append(
-            {
-                "depth": depth + 1,
-                "kind": "ltm_member",
-                "name": member.get("name") or "(未命名成员)",
-                "address": member.get("ip_port") or _join_ip_port(member.get("address"), member.get("port")),
-                "device": "",
-                "status": "级联命中" if matched else "",
-                "note": f"命中 {matched}" if matched else "",
-                # 没有下级虚拟服务器的成员就是链路终点
-                "is_final": not member.get("nested"),
-            }
-        )
-        if member.get("nested"):
-            rows.extend(_flatten_ltm_rows(member["nested"], depth + 1))
-    return rows
+    一个虚拟服务器可能有多个成员，成员又可能级联到下层虚拟服务器，所以这里
+    返回**所有路径**，每条都终止在一个叶子成员上；若某层没有成员，则该虚拟
+    服务器自己就是终点（最终地址取它自己的 ip:port）。
+    """
+    chain = [*prefix, node.get("name") or ""]
+    members = node.get("members") or []
+    if not members:
+        return [(chain, None, _join_ip_port(node.get("vs_address"), node.get("vs_port")))]
+
+    paths: list[tuple[list[str], dict | None, str]] = []
+    for member in members:
+        nested = member.get("nested")
+        if nested:
+            paths.extend(_walk_ltm_paths(nested, chain))
+        else:
+            address = member.get("ip_port") or _join_ip_port(member.get("address"), member.get("port"))
+            paths.append((chain, member, address))
+    return paths
 
 
-def _flatten_member_rows(member: dict) -> list[dict]:
-    """GTM 池成员 → GTM 虚拟服务器 → LTM 子树"""
+def _member_path_rows(wideip: dict, pool: dict, pool_found: bool, member: dict) -> list[dict]:
+    """单个 GTM 池成员展开成 1..N 行（LTM 分叉时一条成员对应多行）"""
     status = member.get("status") or ""
     ref = member.get("member_ref") or f"{member.get('server_name', '')}:{member.get('vs_name', '')}"
-    rows = [
-        {
-            "depth": 2,
-            "kind": "member",
-            "name": ref or "(未命名成员)",
-            "address": "",
-            "device": "",
-            "status": STATUS_LABEL.get(status, ""),
-            "note": _note(member.get("state"), f"order {member['order']}" if member.get("order") is not None else ""),
-            "is_final": False,
-        }
-    ]
+    base = {
+        "wideip": wideip.get("name") or "",
+        "wideip_type": wideip.get("rtype") or "",
+        "pool": pool.get("name") or "",
+        "pool_found": pool_found,
+        "member": ref,
+        "gtm_vserver": "",
+        "ltm_chain": "",
+        "backend_member": "",
+        "final_address": "",
+        "status": STATUS_LABEL.get(status, ""),
+        "status_code": status,
+        "note": _note(member.get("state"), f"order {member['order']}" if member.get("order") is not None else ""),
+    }
 
     # ① GTM 虚拟服务器缺失：链路在此中断
     if status == "vserver_not_found":
-        return rows
+        base["note"] = _note(base["note"], member.get("message") or "未找到")
+        return [base]
 
     vserver = member.get("vserver")
     if vserver:
-        rows.append(
-            {
-                "depth": 3,
-                "kind": "vserver",
-                "name": vserver.get("name") or "(未命名)",
-                "address": _join_ip_port(vserver.get("ip_address"), vserver.get("port")),
-                "device": "",
-                "status": "",
-                "note": _note(
-                    f"server {vserver['server_name']}" if vserver.get("server_name") else "",
-                    f"monitor {vserver['monitor']}" if vserver.get("monitor") else "",
-                ),
-                "is_final": False,
-            }
-        )
+        address = _join_ip_port(vserver.get("ip_address"), vserver.get("port"))
+        base["gtm_vserver"] = f"{vserver.get('name') or '-'}（{address}）" if address else (vserver.get("name") or "")
 
     # ② 无对应 LTM 虚拟服务器：GTM VS 的 ip:port 就是最终地址
     if status == "ltm_not_found":
-        fallback = member.get("fallback_ip_port")
-        if not fallback and vserver:
-            fallback = _join_ip_port(vserver.get("ip_address"), vserver.get("port"))
-        rows.append(
-            {
-                "depth": 3,
-                "kind": "vserver",
-                "name": "最终地址",
-                "address": fallback or "",
-                "device": "",
-                "status": "未匹配到 LTM 虚拟服务器",
-                "note": member.get("message") or "",
-                "is_final": True,
-            }
-        )
-        return rows
+        base["final_address"] = member.get("fallback_ip_port") or ""
+        base["note"] = _note(base["note"], "GTM 虚拟服务器地址即最终地址")
+        return [base]
 
-    # ③ 解析成功：展开 LTM 子树
+    # ③ 解析成功：LTM 子树的每条路径各占一行
     ltm = member.get("ltm")
-    if ltm:
-        rows.extend(_flatten_ltm_rows(ltm, 3))
-    return rows
+    if not ltm:
+        return [base]
+
+    rows = []
+    for chain, leaf, address in _walk_ltm_paths(ltm, []):
+        row = dict(base)
+        row["ltm_chain"] = " → ".join(name for name in chain if name)
+        row["backend_member"] = (leaf or {}).get("name") or ""
+        row["final_address"] = address or ""
+        if len(chain) > 1:
+            row["note"] = _note(base["note"], f"级联 {len(chain)} 层")
+        rows.append(row)
+    return rows or [base]
 
 
-def flatten_asset_rows(result: dict) -> list[dict]:
-    """把 analyze_device 的结果摊平成表格行（WideIP → Pool → Member → …）"""
+def build_path_rows(result: dict) -> list[dict]:
+    """把 analyze_device 的结果扁平化成「一行一条链路」的表格行。
+
+    与树形展示不同，每行自带全部层级信息（WideIP / 池 / 成员 / GTM VS / LTM 链路 /
+    后端成员 / 最终地址），便于筛选、排序与导出。
+    """
     rows: list[dict] = []
 
     for wideip in result.get("wideips", []):
-        rows.append(
-            {
-                "depth": 0,
-                "kind": "wideip",
-                "name": wideip.get("name") or "(未命名域名)",
-                "address": "",
-                "device": "",
-                "status": f"池 {wideip.get('pool_count', 0)} 个",
-                "note": _note(wideip.get("rtype"), wideip.get("lb_mode")),
-                "is_final": False,
-            }
-        )
-
         for pool in wideip.get("pools", []):
-            members = pool.get("members") or []
-            found = bool(pool.get("found"))
-            rows.append(
-                {
-                    "depth": 1,
-                    "kind": "pool",
-                    "name": pool.get("name") or "(未命名池)",
-                    "address": "",
-                    "device": "",
-                    "status": "池已找到" if found else "池未找到",
-                    "note": _note(pool.get("lb_mode"), f"成员 {len(members)} 个"),
-                    "is_final": False,
-                }
-            )
-            for member in sorted(members, key=_member_sort_key):
-                rows.extend(_flatten_member_rows(member))
+            pool_found = bool(pool.get("found"))
+            members = sorted(pool.get("members") or [], key=_member_sort_key)
+
+            # 池没有成员时也保留一行，避免这条记录从表里凭空消失
+            if not members:
+                rows.append(
+                    {
+                        "wideip": wideip.get("name") or "",
+                        "wideip_type": wideip.get("rtype") or "",
+                        "pool": pool.get("name") or "",
+                        "pool_found": pool_found,
+                        "member": "",
+                        "gtm_vserver": "",
+                        "ltm_chain": "",
+                        "backend_member": "",
+                        "final_address": "",
+                        "status": "",
+                        "status_code": "",
+                        "note": "该池没有成员" if pool_found else "池未找到",
+                    }
+                )
+                continue
+
+            for member in members:
+                rows.extend(_member_path_rows(wideip, pool, pool_found, member))
 
     return rows
 
@@ -410,25 +387,29 @@ def internet_analysis_export(request):
     if not device:
         return Response({"error": "设备不存在"}, status=http_status.HTTP_404_NOT_FOUND)
 
-    rows = flatten_asset_rows(analyze_device(device))
+    rows = build_path_rows(analyze_device(device))
 
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "互联网资产分析"
     sheet.append(EXPORT_HEADERS)
     for row in rows:
-        # 用空格缩进在纯文本单元格里体现层级
         sheet.append(
             [
-                f"{'    ' * row['depth']}{KIND_LABEL.get(row['kind'], row['kind'])}",
-                row["name"],
-                row["address"],
-                row["device"],
+                row["wideip"],
+                row["wideip_type"],
+                row["pool"],
+                "已找到" if row["pool_found"] else "未找到",
+                row["member"],
+                row["gtm_vserver"],
+                row["ltm_chain"],
+                row["backend_member"],
+                row["final_address"],
                 row["status"],
                 row["note"],
             ]
         )
-    for column, width in zip("ABCDEF", EXPORT_COLUMN_WIDTHS, strict=False):
+    for column, width in zip("ABCDEFGHIJK", EXPORT_COLUMN_WIDTHS, strict=False):
         sheet.column_dimensions[column].width = width
 
     buffer = BytesIO()
