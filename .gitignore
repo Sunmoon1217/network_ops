@@ -89,3 +89,6 @@ www/*
 nginx/ssl/*.crt
 nginx/ssl/*.key
 nginx/ssl/*.pem
+
+# 分支数据库配置（由 scripts/switch-branch*.sh 生成）
+.env.db
