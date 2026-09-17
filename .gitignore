@@ -10,6 +10,9 @@ build/
 
 # Virtual environments
 .venv/
+# 本机解释器版本由各人自己定，不入库：uv 会按它选解释器，
+# 写死一个小版本号会让别的机器找不到解释器（且 UV_PYTHON_DOWNLOADS=never 时无法回退下载）
+.python-version
 
 # IDE
 .idea/
@@ -78,8 +81,6 @@ docs/
 # Database init scripts (keep in repo)
 
 # Auto-generated types
-src/auto-imports.d.ts
-src/components.d.ts
 .django-stub-gen/
 data/*
 www/*

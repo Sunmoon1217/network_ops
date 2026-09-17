@@ -29,6 +29,7 @@ from .models import (
     Room,
     Route,
     SecurityZone,
+    ServerOwner,
     Service,
     SnmpConfig,
     Subnet,
@@ -362,8 +363,10 @@ class LtmPoolAdmin(admin.ModelAdmin):
 
 @admin.register(LtmPoolMember)
 class LtmPoolMemberAdmin(admin.ModelAdmin):
-    list_display = ("id", "pool_name", "name", "address")
-    search_fields = ("name",)
+    list_display = ("id", "device", "pool_name", "name", "address", "port", "is_active", "created_at")
+    list_filter = ("device", "is_active", "created_at", "updated_at")
+    search_fields = ("name", "address", "pool_name")
+    date_hierarchy = "created_at"
 
 
 @admin.register(LtmProfile)
@@ -716,3 +719,11 @@ class SubnetUsageLogAdmin(admin.ModelAdmin):
         "recorded_at",
     )
     list_filter = ("subnet", "recorded_at")
+
+
+@admin.register(ServerOwner)
+class ServerOwnerAdmin(admin.ModelAdmin):
+    list_display = ("id", "ip", "hostname", "owner", "status", "created_at")
+    list_filter = ("status", "created_at", "updated_at")
+    search_fields = ("ip", "hostname", "owner")
+    date_hierarchy = "created_at"

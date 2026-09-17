@@ -127,7 +127,8 @@ class Device(models.Model):
     DEVICE_TYPE_CHOICES = (
         ("firewall", "防火墙"),
         ("switch", "交换机"),
-        ("loadbalancer", "负载均衡"),
+        ("slb", "服务器负载均衡"),
+        ("gslb", "全局负载均衡"),
         ("router", "路由器"),
         ("server", "服务器"),
         ("dns", "域名解析"),
@@ -242,6 +243,67 @@ class DeviceConnection(models.Model):
         return ""
 
 
+class DeviceGroup(models.Model):
+    """设备组。
+
+    组类型属于组本身，成员只表达「该设备在这个组里扮演什么角色」。
+    堆叠（stack）组内多台物理设备共用一个配置文件，备机的配置归属主设备。
+    """
+
+    GROUP_TYPE_CHOICES = (
+        ("cluster", "集群"),
+        ("ha", "主备"),
+        ("failover", "故障接管"),
+        ("stack", "堆叠"),
+        ("single", "单机"),
+    )
+
+    name = models.CharField(max_length=100, unique=True, verbose_name="设备组名称")
+    group_type = models.CharField(max_length=20, choices=GROUP_TYPE_CHOICES, default="single", verbose_name="组类型")
+    description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    if TYPE_CHECKING:
+
+        def get_group_type_display(self) -> str: ...
+
+    class Meta:
+        verbose_name = "设备组"
+        verbose_name_plural = verbose_name
+        ordering = ("name",)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_group_type_display()})"
+
+
+class DeviceGroupMember(models.Model):
+    """设备组成员。
+
+    同一设备可加入多个组（不同组表达不同维度的关系，如既在堆叠组又在主备组），
+    因此不对设备做唯一限制。
+    """
+
+    ROLE_CHOICES = (
+        ("master", "主"),
+        ("backup", "备"),
+        ("member", "成员"),
+    )
+
+    group = models.ForeignKey(DeviceGroup, on_delete=models.CASCADE, related_name="members", verbose_name="设备组")
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="group_memberships", verbose_name="设备")
+    device_role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="member", verbose_name="设备角色")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "设备组成员"
+        verbose_name_plural = verbose_name
+        constraints = (models.UniqueConstraint(fields=["group", "device"], name="uni_group_member"),)
+        ordering = ("group", "device", "-pk")
+
+    def __str__(self):
+        return f"{self.group.name} / {self.device.hostname} ({self.device_role})"
+
+
 class DeviceConfig(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="configs", verbose_name="关联设备")
     git_commit_hash = models.CharField(max_length=40, verbose_name="Git Commit Hash")
@@ -258,6 +320,9 @@ class DeviceConfig(models.Model):
     def __str__(self):
         return f"{self.device.hostname} - {self.collected_at}"
 
+    if TYPE_CHECKING:
+        device_id: int
+
 
 class ConfigBase(models.Model):
     """配置模型基类"""
@@ -267,16 +332,16 @@ class ConfigBase(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
+    if TYPE_CHECKING:
+        device_id: int
+
     class Meta:
         abstract = True
 
 
-class Vlan(models.Model):
+class Vlan(ConfigBase):
     """VLAN"""
 
-    device = models.ForeignKey(
-        Device, on_delete=models.CASCADE, related_name="vlans", null=True, blank=True, verbose_name="所属设备"
-    )
     vid = models.PositiveIntegerField(verbose_name="VLAN ID")
     name = models.CharField(max_length=100, blank=True, default="", verbose_name="VLAN名称")
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
@@ -288,8 +353,7 @@ class Vlan(models.Model):
         constraints = (models.UniqueConstraint(fields=["device", "vid"], name="uni_vlan_device_vid"),)
 
     def __str__(self):
-        prefix = f"{self.device.hostname} - " if self.device else ""
-        return f"{prefix}VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
+        return f"{self.device.hostname} - VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
 
 
 class Vrf(ConfigBase):
@@ -381,10 +445,9 @@ class DeviceAccount(ConfigBase):
         return f"{self.device.hostname} / {self.username}"
 
 
-class SnmpConfig(models.Model):
+class SnmpConfig(ConfigBase):
     """SNMP配置基线"""
 
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="snmp_config", verbose_name="关联设备")
     version = models.CharField(
         max_length=10, choices=[("v1", "v1"), ("v2c", "v2c"), ("v3", "v3")], default="v2c", verbose_name="SNMP版本"
     )
@@ -395,8 +458,6 @@ class SnmpConfig(models.Model):
     trap_server = models.GenericIPAddressField(blank=True, null=True, verbose_name="Trap服务器")
     trap_port = models.PositiveIntegerField(default=162, verbose_name="Trap端口")
     enabled = models.BooleanField(default=True, verbose_name="启用SNMP")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "SNMP配置"
@@ -407,18 +468,15 @@ class SnmpConfig(models.Model):
         return f"{self.device.hostname} SNMP"
 
 
-class NtpConfig(models.Model):
+class NtpConfig(ConfigBase):
     """NTP配置基线"""
 
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="ntp_config", verbose_name="关联设备")
     server1 = models.GenericIPAddressField(verbose_name="NTP服务器1")
     server2 = models.GenericIPAddressField(blank=True, null=True, verbose_name="NTP服务器2")
     server3 = models.GenericIPAddressField(blank=True, null=True, verbose_name="NTP服务器3")
     timezone = models.CharField(max_length=50, default="UTC", verbose_name="时区")
     sync_interval = models.PositiveIntegerField(default=64, verbose_name="同步间隔(秒)")
     enabled = models.BooleanField(default=True, verbose_name="启用NTP")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "NTP配置"
@@ -429,12 +487,9 @@ class NtpConfig(models.Model):
         return f"{self.device.hostname} NTP"
 
 
-class SyslogConfig(models.Model):
+class SyslogConfig(ConfigBase):
     """Syslog配置基线"""
 
-    device = models.OneToOneField(
-        Device, on_delete=models.CASCADE, related_name="syslog_config", verbose_name="关联设备"
-    )
     server1 = models.GenericIPAddressField(verbose_name="日志服务器1")
     server2 = models.GenericIPAddressField(blank=True, null=True, verbose_name="日志服务器2")
     port = models.PositiveIntegerField(default=514, verbose_name="端口")
@@ -460,8 +515,6 @@ class SyslogConfig(models.Model):
         verbose_name="日志级别",
     )
     enabled = models.BooleanField(default=True, verbose_name="启用Syslog")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "Syslog配置"
@@ -485,6 +538,7 @@ class LtmVirtualServer(ConfigBase):
     vs_port = models.CharField(max_length=15, null=True, verbose_name="端口")
     mask = models.CharField(max_length=15, null=True, verbose_name="掩码")
     protocol = models.CharField(max_length=15, null=True, verbose_name="协议")
+    status = models.CharField(max_length=20, default="enabled", verbose_name="状态")
     source = models.CharField(max_length=15, null=True, verbose_name="源地址")
     snat_type = models.CharField(max_length=255, null=True, verbose_name="SNAT类型")
     pool = models.CharField(max_length=255, null=True, verbose_name="关联池")
@@ -517,17 +571,31 @@ class LtmPool(ConfigBase):
         ordering = ("device", "name")
 
 
-class LtmPoolMember(models.Model):
-    """LTM 池成员"""
+class LtmPoolMember(ConfigBase):
+    """LTM 池成员
+
+    ``pool_name`` 是池名称而不是外键，归属靠 ``device`` 限定：``LtmPool`` 的
+    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池。此前没有
+    ``device``，不同设备上的同名池成员会互相串（资产分析、路径追踪都按
+    ``pool_name`` 全局匹配，删池成员时也会跨设备误删）。
+    """
 
     pool_name = models.CharField(max_length=255, blank=True, default="", verbose_name="关联池名称")
     name = models.CharField(max_length=255, verbose_name="成员名称")
     address = models.CharField(max_length=255, verbose_name="地址")
+    port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
 
     class Meta:
         verbose_name = "LTM Pool Member"
         verbose_name_plural = verbose_name
-        ordering = ("pool_name", "name", "-pk")
+        ordering = ("device", "pool_name", "name", "-pk")
+        # 唯一性必须带上 port：F5 同一节点可以在多个端口上做成员，剥掉
+        # /Common/node_a:80 的端口后 name 都是 node_a，只约束 name 会误杀
+        constraints = (
+            models.UniqueConstraint(
+                fields=["device", "pool_name", "name", "port"], name="uni_pool_member_device_pool_node_port"
+            ),
+        )
 
 
 class LtmProfile(ConfigBase):
@@ -629,6 +697,41 @@ class GtmPool(ConfigBase):
         ordering = ("device", "name", "-pk")
 
 
+class GtmServer(ConfigBase):
+    """GTM 服务器：gtm server，承载若干 virtual server"""
+
+    name = models.CharField(max_length=255, verbose_name="服务器名称")
+    datacenter = models.CharField(max_length=255, blank=True, default="", verbose_name="数据中心")
+    monitor = models.CharField(max_length=255, blank=True, default="", verbose_name="监控")
+    server_type = models.CharField(max_length=255, blank=True, default="", verbose_name="产品类型")
+
+    class Meta:
+        verbose_name = "GTM Server"
+        verbose_name_plural = verbose_name
+        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_gtmserver_device_name"),)
+        ordering = ("device", "name", "-pk")
+
+
+class GtmVServer(ConfigBase):
+    """GTM 虚拟服务器：gtm server 下的 virtual-servers，记录地址与端口"""
+
+    server = models.ForeignKey(
+        GtmServer, on_delete=models.CASCADE, related_name="virtual_servers", verbose_name="所属服务器"
+    )
+    name = models.CharField(max_length=255, verbose_name="虚拟服务器名称")
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="地址")
+    port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
+    monitor = models.CharField(max_length=255, blank=True, default="", verbose_name="监控")
+
+    class Meta:
+        verbose_name = "GTM Virtual Server"
+        verbose_name_plural = verbose_name
+        constraints = (
+            models.UniqueConstraint(fields=["device", "server", "name"], name="uni_gtmvserver_device_server_name"),
+        )
+        ordering = ("device", "server", "name", "-pk")
+
+
 # ---------------------------------------------------------------------------
 # Firewall Policy
 # ---------------------------------------------------------------------------
@@ -684,7 +787,9 @@ class Service(ConfigBase):
     class Meta:
         verbose_name = "服务"
         verbose_name_plural = verbose_name
-        constraints = (models.UniqueConstraint(fields=["name"], name="uni_service_name"),)
+        # 唯一性按设备隔离：不同设备可以有同名服务。Saver 也是按 (device, name) 做
+        # upsert 的，若用 name 全局唯一，第二台设备入库同名服务时会撞约束。
+        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_service_name"),)
         ordering = ("name",)
 
 
@@ -727,11 +832,15 @@ class NatRule(ConfigBase):
     name = models.CharField(max_length=255, verbose_name="规则名称")
     nat_type = models.CharField(max_length=10, choices=NAT_TYPE_CHOICES, verbose_name="转换类型")
     enabled = models.BooleanField(default=True, verbose_name="启用")
-    source_addresses = models.ManyToManyField(AddressBook, related_name="source_nat_rules", verbose_name="匹配源地址")
-    destination_addresses = models.ManyToManyField(
-        AddressBook, related_name="destination_nat_rules", verbose_name="匹配目的地址"
+    # 三个匹配维度都允许为空：不同厂商的 NAT 配置能提供的信息差别很大
+    # （cisco 的 nat group 只有 host/public_ip，完全给不出 service）
+    source_addresses = models.ManyToManyField(
+        AddressBook, blank=True, related_name="source_nat_rules", verbose_name="匹配源地址"
     )
-    services = models.ManyToManyField(Service, related_name="nat_rules", verbose_name="匹配服务")
+    destination_addresses = models.ManyToManyField(
+        AddressBook, blank=True, related_name="destination_nat_rules", verbose_name="匹配目的地址"
+    )
+    services = models.ManyToManyField(Service, blank=True, related_name="nat_rules", verbose_name="匹配服务")
     translated_source = models.ForeignKey(
         AddressBook,
         on_delete=models.SET_NULL,
@@ -807,11 +916,6 @@ class Subnet(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
-    if TYPE_CHECKING:
-        from assets.models import IPAddress
-
-        ip_addresses: models.QuerySet[IPAddress]
-
     class Meta:
         verbose_name = "网段"
         verbose_name_plural = verbose_name
@@ -834,7 +938,7 @@ class Subnet(models.Model):
     def used_ips(self):
         if not self.pk:
             return 0
-        return self.ip_addresses.filter(status="used").count()
+        return self.ip_addresses.filter(status="used").count()  # type: ignore
 
     @property
     def utilization(self):
@@ -882,8 +986,12 @@ class IPAddress(models.Model):
         return self.ip_address
 
 
-class Route(models.Model):
-    """路由"""
+class Route(ConfigBase):
+    """路由
+
+    ``vrf`` 与继承来的 ``device`` 是冗余的——``Route`` 通过 ``vrf`` 表达归属，
+    ``device`` 便于直接按设备查询。Saver 入库时会用 ``vrf.device`` 保持两者一致。
+    """
 
     PROTOCOL_CHOICES = (
         ("static", "静态"),
@@ -1000,3 +1108,35 @@ class SubnetUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.subnet.network} @ {self.recorded_at:%Y-%m-%d %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# 服务器负责人（人工维护）
+# ---------------------------------------------------------------------------
+
+
+class ServerOwner(models.Model):
+    """服务器 IP 与负责人的对应关系。
+
+    人工维护、不从设备配置提取，所以是裸 ``models.Model``（不进 ``ConfigBase``）。
+    ``ip`` 是查询键：资产分析拿到链路最后的 IP 后按它反查负责人；用
+    ``GenericIPAddressField`` 是为了让 IPv6 统一小写压缩，避免 ``2001:DB8::1``
+    与 ``2001:db8::1`` 匹配不上。
+    """
+
+    STATUS_CHOICES = (("enabled", "启用"), ("disabled", "停用"))
+
+    hostname = models.CharField(max_length=255, blank=True, default="", verbose_name="主机名")
+    ip = models.GenericIPAddressField(unique=True, verbose_name="IP 地址")
+    owner = models.CharField(max_length=255, blank=True, default="", verbose_name="负责人")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="enabled", verbose_name="状态")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "服务器负责人"
+        verbose_name_plural = verbose_name
+        ordering = ("ip",)
+
+    def __str__(self):
+        return f"{self.ip} - {self.owner}" if self.owner else str(self.ip)

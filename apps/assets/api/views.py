@@ -234,6 +234,40 @@ class DeviceModelViewSet(viewsets.ModelViewSet):
     ordering_fields = ("name",)
 
 
+class DeviceGroupViewSet(viewsets.ModelViewSet):
+    from assets.models import DeviceGroup
+
+    from .serializers import DeviceGroupSerializer
+
+    queryset = DeviceGroup.objects.prefetch_related("members").all()
+    serializer_class = DeviceGroupSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "description")
+    ordering_fields = ("name", "created_at")
+
+
+class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
+    from assets.models import DeviceGroupMember
+
+    from .serializers import DeviceGroupMemberSerializer
+
+    queryset = DeviceGroupMember.objects.select_related("group", "device").all()
+    serializer_class = DeviceGroupMemberSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("device__hostname", "group__name")
+    ordering_fields = ("created_at",)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        group_id = self.request.query_params.get("group")
+        if group_id:
+            qs = qs.filter(group_id=group_id)
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
+
+
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related("idc", "cabinet", "security_zone", "device_model").all()
     serializer_class = DeviceSerializer
@@ -262,7 +296,14 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         device_id = self.request.query_params.get("device")
         if device_id:
-            qs = qs.filter(device_id=device_id)
+            # 堆叠组备机没有自己的配置记录，查询统一回退到组内主设备
+            device = Device.objects.filter(pk=device_id).first()
+            if device:
+                from ops.config_owner import resolve_config_owner
+
+                qs = qs.filter(device_id=resolve_config_owner(device).pk)
+            else:
+                qs = qs.filter(device_id=device_id)
         return qs
 
 
@@ -385,8 +426,9 @@ CONNECTION_CONFIG_MAP = {
     ("锐捷", "switch"): {"connection_type": "netmiko", "driver": "ruijie_os"},
     ("思科", "firewall"): {"connection_type": "napalm", "driver": "asa"},
     ("山石", "firewall"): {"connection_type": "netmiko", "driver": "hillstone_stoneos"},
-    ("F5", "loadbalancer"): {"connection_type": "netmiko", "driver": "f5_ltm"},
-    ("A10", "loadbalancer"): {"connection_type": "netmiko", "driver": "a10"},
+    ("F5", "slb"): {"connection_type": "netmiko", "driver": "f5_ltm"},
+    ("F5", "gslb"): {"connection_type": "netmiko", "driver": "f5_gtm"},
+    ("A10", "slb"): {"connection_type": "netmiko", "driver": "a10"},
 }
 
 
@@ -656,7 +698,10 @@ def _import_configs(ws):
             errors.append(f"行 {row_idx}: 保存到 Git 失败: {e}")
             continue
 
-        DeviceConfig.objects.update_or_create(
+        # 用 get_or_create 而不是 update_or_create：这条记录代表"某设备在某 commit 上的
+        # 配置快照"，重复导入同一版本时不该动它。用 update_or_create 会把已经解析好的
+        # config_json 清空，而 created=False 又不会触发重新解析，解析结果就永久丢了。
+        DeviceConfig.objects.get_or_create(
             device=device,
             git_commit_hash=commit_hash,
             defaults={"config_json": {}},
@@ -714,10 +759,18 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
 
     from .serializers import LtmPoolMemberSerializer
 
-    queryset = LtmPoolMember.objects.all()
+    queryset = LtmPoolMember.objects.select_related("device").all()
     serializer_class = LtmPoolMemberSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "pool_name")
+    search_fields = ("name", "address", "pool_name", "device__hostname")
+    ordering_fields = ("name", "pool_name", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
 
 
 class LtmProfileViewSet(viewsets.ModelViewSet):
@@ -849,6 +902,47 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
         device_id = self.request.query_params.get("device")
         if device_id:
             qs = qs.filter(device_id=device_id)
+        return qs
+
+
+class GtmServerViewSet(viewsets.ModelViewSet):
+    from assets.models import GtmServer
+
+    from .serializers import GtmServerSerializer
+
+    queryset = GtmServer.objects.select_related("device").all()
+    serializer_class = GtmServerSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "datacenter", "device__hostname")
+    ordering_fields = ("name", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        return qs
+
+
+class GtmVServerViewSet(viewsets.ModelViewSet):
+    from assets.models import GtmVServer
+
+    from .serializers import GtmVServerSerializer
+
+    queryset = GtmVServer.objects.select_related("device", "server").all()
+    serializer_class = GtmVServerSerializer
+    permission_classes = (AllowAny,)
+    search_fields = ("name", "ip_address", "server__name", "device__hostname")
+    ordering_fields = ("name", "port", "created_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        device_id = self.request.query_params.get("device")
+        if device_id:
+            qs = qs.filter(device_id=device_id)
+        server_id = self.request.query_params.get("server")
+        if server_id:
+            qs = qs.filter(server_id=server_id)
         return qs
 
 

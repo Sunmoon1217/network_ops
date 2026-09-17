@@ -10,8 +10,8 @@ gtm datacenter {{ name }} { }
 gtm region {{ name | _start_ }} {
     <group name="members*">
     region-members { {{ _start_ }}
-        pool {{ pool | to_list | joinmatches }} { }
-        subnet {{ subnet | to_list | joinmatches }} { }
+        pool {{ pool | strip('"') | to_list | joinmatches }} { }
+        subnet {{ subnet | strip('"') | to_list | joinmatches }} { }
     } {{ _end_ }}
     </group>
 } {{ _end_ }}
@@ -20,7 +20,7 @@ gtm region {{ name | _start_ }} {
 <group name="servers*">
 gtm server {{ server_name | _line_ }} {
     datacenter {{ datacenter }}
-    monitor {{ server_monitor | ORPHRASE }}
+    monitor {{ server_monitor | strip('"') | ORPHRASE }}
     product {{ server_type }}
     <group name="virtual_servers*">
     virtual-servers { {{ _start_ }}
@@ -28,7 +28,7 @@ gtm server {{ server_name | _line_ }} {
         {{ vs_name }} {
             destination {{ vs_address | re("IP") }}:{{ vs_port }}
             destination {{ vs_address | re("IPV6") }}.{{ vs_port }}
-            monitor {{ vs_monitor | ORPHRASE }}
+            monitor {{ vs_monitor | strip('"') | ORPHRASE }}
         } {{ _end_ }}
         </group>
     } {{ _end_ }}
@@ -71,12 +71,12 @@ gtm pool {{ pool_type | upper }} {{ pool_name }} {
             {{ member_status | equal("disabled") | default("enabled") }}
             member-order {{ member_order }}
             ratio {{ member_ratio | default(1) }}
-            monitor {{ member_monitor | ORPHRASE }}
+            monitor {{ member_monitor | strip('"') | ORPHRASE }}
         } {{ _end_ }}
         </group>
     } {{ _end_ }}
     </group>
-    monitor {{ pool_monitor | ORPHRASE }}
+    monitor {{ pool_monitor | strip('"') | ORPHRASE }}
     ttl {{ ttl | default(30) }}
 } {{ _end_ }}
 </group>

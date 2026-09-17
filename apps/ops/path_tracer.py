@@ -267,8 +267,14 @@ def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
     for route in Route.objects.filter(enabled=True, destination__isnull=False).select_related("vrf__device"):
         try:
             route_network = ipaddress.ip_network(route.destination, strict=False)
+            # 版本不同的路由不可能是这条目的地址的下一跳，直接跳过。
+            # 这个判断不能省：ipaddress 的 subnet_of 在 IPv4/IPv6 混用时会抛
+            # TypeError（"not of the same version"），原来那句 type: ignore 掩盖的
+            # 正是这个真实崩溃——IPv6 静态路由遇上 IPv4 目的地址会让整个追踪接口 500。
+            if route_network.version != subnet_network.version:
+                continue
             if (
-                route_network.subnet_of(subnet_network)  # type: ignore[reportArgumentType]
+                route_network.subnet_of(subnet_network)  # type: ignore[arg-type, reportArgumentType]
                 and subnet_network.prefixlen == route_network.prefixlen
             ):
                 device_id = route.vrf.device.pk if route.vrf and route.vrf.device else None
@@ -441,15 +447,17 @@ def _resolve_translated_port(name: str) -> str | None:
 
 def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
     """查找负载均衡后端"""
-    vs = LtmVirtualServer.objects.filter(vs_address=dst_ip)
+    # queryset 与最终拿到的实例分开命名：复用 vs 会让类型检查器把后面那个
+    # Optional 实例当成 QuerySet，vs.device_id / vs.pool 就全成了属性错误
+    queryset = LtmVirtualServer.objects.filter(vs_address=dst_ip)
     if dst_port:
-        vs = vs.filter(vs_port=dst_port)
-    vs = vs.order_by("pk").first()
+        queryset = queryset.filter(vs_port=dst_port)
+    vs = queryset.order_by("pk").first()
     if not vs:
         return []
     return [
         {"name": m.name, "address": m.address}
-        for m in LtmPoolMember.objects.filter(pool_name=vs.pool)
+        for m in LtmPoolMember.objects.filter(device_id=vs.device_id, pool_name=vs.pool)
         if vs.pool
         if m.address
     ]
@@ -556,7 +564,8 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         device_addr = ""
         if hop_count > 0:
             conn_intf = Interface.objects.filter(device=src_device, ip_address__isnull=False).order_by("pk").first()
-            device_addr = conn_intf.ip_address if conn_intf else ""
+            # ip_address 可空，直接赋值会把 None 混进 str
+            device_addr = (conn_intf.ip_address or "") if conn_intf else ""
 
         subnet = _find_subnet_for_ip(current_src if hop_count == 0 else device_addr)
         zone = (subnet.security_zone.name if subnet and subnet.security_zone else "") or (
@@ -575,7 +584,7 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         )
 
         # 2. LB设备检查（无端口时跳过后端查询）
-        if has_port and src_device.device_type == "loadbalancer":
+        if has_port and src_device.device_type == "slb":
             lb_backends = _find_lb_backend(current_dst, current_port)
             if lb_backends:
                 hop.matched_vs = {
@@ -673,7 +682,11 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         # 7. 更新VRF（使用接收接口VRF，避免被覆盖）
         recv_intf_vrf = Interface.objects.filter(device=next_device, ip_address=route.nexthop).first()
         if recv_intf_vrf and recv_intf_vrf.vrf:
-            vrf_name = recv_intf_vrf.vrf
+            # 这里要的是 VRF 名字不是 Vrf 对象：vrf_name 后面会被拿去
+            # Vrf.objects.filter(name=...)、放进 visited_vrfs 集合做环路判断、
+            # 以及塞进 HopResult.vrf 直接返回给接口。赋对象的话查询匹配不上、
+            # 环路判断永远不成立、接口序列化还会 500。
+            vrf_name = recv_intf_vrf.vrf.name
         elif current_vrf != "default":
             vrf_name = current_vrf
 

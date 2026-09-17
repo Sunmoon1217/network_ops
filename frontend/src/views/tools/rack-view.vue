@@ -12,7 +12,7 @@ const selectedRow = ref<string | null>(null)
 
 const typeColorMap: Record<string, string> = {
   firewall: '#ef4444', switch: '#3b82f6', router: '#10b981',
-  loadbalancer: '#f59e0b', server: '#8b5cf6', dns: '#6366f1',
+  slb: '#f59e0b', gslb: '#f0abfc', server: '#8b5cf6', dns: '#6366f1',
 }
 const getDeviceColor = (d: any) => typeColorMap[d.device_type] || '#6b7280'
 
