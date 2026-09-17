@@ -9,7 +9,6 @@
 
 import pytest
 
-from assets.api.analysis import analyze_device
 from assets.models import (
     Device,
     GtmPool,
@@ -20,6 +19,7 @@ from assets.models import (
     LtmPoolMember,
     LtmVirtualServer,
 )
+from ops.api.analysis import analyze_device
 
 
 def _device(hostname: str, device_type: str = "gslb") -> Device:

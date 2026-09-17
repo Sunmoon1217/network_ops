@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from . import analysis, views
+from . import views
 
 router = SimpleRouter(trailing_slash=True)
 
@@ -68,6 +68,4 @@ urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),
     path("assets/import-devices/", views.import_excel, name="import-devices"),
-    path("assets/internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
-    path("assets/internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
 ]

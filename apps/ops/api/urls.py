@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import configs, parsers, trace
+from . import analysis, configs, parsers, trace
 
 urlpatterns = [
     path("trace/", trace.path_trace, name="path-trace"),
@@ -19,4 +19,8 @@ urlpatterns = [
     path("parsers/templates/", parsers.parser_template_list, name="parser-template-list"),
     path("parsers/templates/<str:name>/", parsers.parser_template_detail, name="parser-template-detail"),
     path("parsers/templates/<str:name>/update/", parsers.parser_template_update, name="parser-template-update"),
+    # 互联网资产分析：结果走缓存，只有 analyze 才真正触发计算
+    path("internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
+    path("internet-analysis/analyze/", analysis.internet_analysis_run, name="internet-analysis-run"),
+    path("internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
 ]

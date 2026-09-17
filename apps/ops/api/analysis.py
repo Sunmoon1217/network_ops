@@ -15,8 +15,13 @@
 
 整个过程只做 4 次查询（WideIP / GTM VServer / LTM VS / LTM 成员各一次），
 再在内存里索引匹配，避免逐条记录查库。
+
+**结果不实时计算**：分析成本不低而结果变化不频繁，所以只在手动触发
+``POST /api/internet-analysis/analyze/`` 时重算并写入 ``InternetAnalysis`` 缓存表；
+``GET /api/internet-analysis/`` 与导出接口都只读缓存。
 """
 
+import time
 from io import BytesIO
 from urllib.parse import quote
 
@@ -28,6 +33,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
+from ops.models import InternetAnalysis
 
 # 级联展开层数上限，防止 LTM 之间互相指向造成死循环
 MAX_NESTED_DEPTH = 3
@@ -229,19 +235,73 @@ def analyze_device(device: Device) -> dict:
     return result
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def internet_analysis(request):
-    """互联网资产分析: GET /api/assets/internet-analysis/?device=<id>"""
+def _resolve_device(request):
+    """从 query 参数取出设备，返回 ``(device, error_response)``"""
     device_id = request.query_params.get("device")
     if not device_id:
-        return Response({"error": "device 参数必填"}, status=http_status.HTTP_400_BAD_REQUEST)
+        return None, Response({"error": "device 参数必填"}, status=http_status.HTTP_400_BAD_REQUEST)
 
     device = Device.objects.filter(pk=device_id).first()
     if not device:
-        return Response({"error": "设备不存在"}, status=http_status.HTTP_404_NOT_FOUND)
+        return None, Response({"error": "设备不存在"}, status=http_status.HTTP_404_NOT_FOUND)
+    return device, None
 
-    return Response(analyze_device(device))
+
+def _cached_response(cached: InternetAnalysis) -> dict:
+    """把缓存记录拼成响应体：分析结果 + 分析时间与耗时"""
+    return {
+        **(cached.result or {}),
+        "analyzed_at": cached.analyzed_at,
+        "duration_ms": cached.duration_ms,
+    }
+
+
+def _get_cached_or_404(device):
+    """取该设备的分析缓存，没有则返回 404 响应"""
+    cached = InternetAnalysis.objects.filter(device=device).first()
+    if cached:
+        return cached, None
+    return None, Response(
+        {"error": "该设备尚未分析", "device": device.pk, "analyzed_at": None},
+        status=http_status.HTTP_404_NOT_FOUND,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def internet_analysis(request):
+    """读取缓存的分析结果: GET /api/internet-analysis/?device=<id>
+
+    这里不触发分析——分析要遍历 GTM/LTM 多张表并在内存里做关联，只在手动
+    调用 analyze 接口时执行；平时查询直接返回上一次的结果。
+    """
+    device, error = _resolve_device(request)
+    if error:
+        return error
+
+    cached, error = _get_cached_or_404(device)
+    if error:
+        return error
+    return Response(_cached_response(cached))
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def internet_analysis_run(request):
+    """立即分析并刷新缓存: POST /api/internet-analysis/analyze/?device=<id>"""
+    device, error = _resolve_device(request)
+    if error:
+        return error
+
+    started = time.monotonic()
+    result = analyze_device(device)
+    duration_ms = int((time.monotonic() - started) * 1000)
+
+    cached, _ = InternetAnalysis.objects.update_or_create(
+        device=device,
+        defaults={"result": result, "duration_ms": duration_ms},
+    )
+    return Response(_cached_response(cached))
 
 
 # ---------------------------------------------------------------------------
@@ -386,16 +446,19 @@ def build_path_rows(result: dict) -> list[dict]:
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def internet_analysis_export(request):
-    """互联网资产分析导出 xlsx: GET /api/assets/internet-analysis/export/?device=<id>"""
-    device_id = request.query_params.get("device")
-    if not device_id:
-        return Response({"error": "device 参数必填"}, status=http_status.HTTP_400_BAD_REQUEST)
+    """导出缓存的分析结果为 xlsx: GET /api/internet-analysis/export/?device=<id>
 
-    device = Device.objects.filter(pk=device_id).first()
-    if not device:
-        return Response({"error": "设备不存在"}, status=http_status.HTTP_404_NOT_FOUND)
+    与查询接口一致，只读缓存；没分析过就提示先执行分析，不在这里顺手算一遍。
+    """
+    device, error = _resolve_device(request)
+    if error:
+        return error
 
-    rows = build_path_rows(analyze_device(device))
+    cached, error = _get_cached_or_404(device)
+    if error:
+        return error
+
+    rows = build_path_rows(cached.result or {})
 
     workbook = Workbook()
     sheet = workbook.active

@@ -14,7 +14,6 @@ import pytest
 from django.test import Client
 from openpyxl import load_workbook
 
-from assets.api.analysis import EXPORT_HEADERS, analyze_device, build_path_rows
 from assets.models import (
     Device,
     GtmPool,
@@ -25,8 +24,16 @@ from assets.models import (
     LtmPoolMember,
     LtmVirtualServer,
 )
+from ops.api.analysis import EXPORT_HEADERS, analyze_device, build_path_rows
 
-EXPORT_URL = "/api/assets/internet-analysis/export/"
+EXPORT_URL = "/api/internet-analysis/export/"
+ANALYZE_URL = "/api/internet-analysis/analyze/"
+
+
+def _analyze(device) -> None:
+    """触发一次分析，把结果写进缓存（导出接口只读缓存）"""
+    res = Client().post(f"{ANALYZE_URL}?device={device.pk}")
+    assert res.status_code == 200, res.content
 
 
 def _device(hostname: str, device_type: str = "gslb") -> Device:
@@ -203,6 +210,7 @@ def test_empty_pool_still_produces_a_row():
 @pytest.mark.django_db
 def test_export_returns_xlsx_workbook():
     gslb = _build_two_level_chain("ia-xlsx")
+    _analyze(gslb)
 
     res = Client().get(EXPORT_URL, {"device": gslb.pk})
 

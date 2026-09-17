@@ -136,6 +136,7 @@ const result = ref<AnalysisResult | null>(null)
 const devicesLoading = ref(false)
 const analysisLoading = ref(false)
 const exportLoading = ref(false)
+const analyzedAt = ref('')
 
 /** GTM 池成员按 order 排序（order 为空的排最后），不修改原数组 */
 const sortMembers = (members: GtmMemberNode[]) =>
@@ -285,27 +286,57 @@ const fetchDevices = async () => {
 }
 
 /** 加载指定设备的 WideIP → 后端解析链路 */
-const fetchAnalysis = async () => {
+/**
+ * 读取缓存的分析结果。
+ *
+ * 分析成本不低，接口只在手动「立即分析」时才真正计算；这里返回 404
+ * 表示该设备还没分析过，属于正常状态而非错误，所以不弹提示。
+ */
+const loadCached = async () => {
   if (!selectedDevice.value) {
     result.value = null
+    analyzedAt.value = ''
     return
   }
   analysisLoading.value = true
   try {
-    const res = await api.get('/api/assets/internet-analysis/', { params: { device: selectedDevice.value } })
+    const res = await api.get('/api/internet-analysis/', { params: { device: selectedDevice.value } })
     result.value = res.data as AnalysisResult
+    analyzedAt.value = res.data?.analyzed_at ?? ''
   } catch (e: any) {
     result.value = null
-    ElMessage.error(e?.response?.data?.error || '获取互联网资产分析失败')
+    analyzedAt.value = ''
+    // 404 = 尚未分析过，交给空状态提示；其余错误才弹窗
+    if (e?.response?.status !== 404) {
+      ElMessage.error(e?.response?.data?.error || '获取互联网资产分析失败')
+    }
   } finally {
     analysisLoading.value = false
   }
 }
 
-/** 刷新：设备列表与当前设备的分析结果一起重新拉取 */
+/** 立即分析：触发后端重新计算并刷新缓存，然后展示新结果 */
+const runAnalysis = async () => {
+  if (!selectedDevice.value) return
+  analysisLoading.value = true
+  try {
+    const res = await api.post('/api/internet-analysis/analyze/', null, {
+      params: { device: selectedDevice.value },
+    })
+    result.value = res.data as AnalysisResult
+    analyzedAt.value = res.data?.analyzed_at ?? ''
+    ElMessage.success('分析完成')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || '分析失败')
+  } finally {
+    analysisLoading.value = false
+  }
+}
+
+/** 刷新：重拉设备列表，并重新读取当前设备的缓存结果（不触发分析） */
 const handleRefresh = async () => {
   await fetchDevices()
-  await fetchAnalysis()
+  await loadCached()
 }
 
 /**
@@ -318,7 +349,7 @@ const handleExport = async () => {
   if (!selectedDevice.value) return
   exportLoading.value = true
   try {
-    const res = await api.get('/api/assets/internet-analysis/export/', {
+    const res = await api.get('/api/internet-analysis/export/', {
       params: { device: selectedDevice.value },
       responseType: 'blob',
     })
@@ -337,7 +368,7 @@ const handleExport = async () => {
 }
 
 watch(selectedDevice, () => {
-  fetchAnalysis()
+  loadCached()
 })
 
 onMounted(() => {
@@ -358,19 +389,24 @@ onMounted(() => {
       >
         <el-option v-for="device in devices" :key="device.id" :label="deviceLabel(device)" :value="device.id" />
       </el-select>
+      <el-button type="primary" :disabled="!selectedDevice" :loading="analysisLoading" @click="runAnalysis">
+        立即分析
+      </el-button>
       <el-button :disabled="!result" :loading="exportLoading" @click="handleExport">导出 xlsx</el-button>
       <el-button :loading="analysisLoading" @click="handleRefresh">刷新</el-button>
     </template>
 
     <div v-loading="analysisLoading" class="analysis-body">
       <el-empty v-if="!selectedDevice" description="请选择一个 GSLB 设备，查看域名到最终后端的解析链路" />
-      <el-empty v-else-if="result && !result.wideips.length" description="该设备没有配置 WideIP" />
+      <el-empty v-else-if="!result" description="该设备尚未分析，点击右上角「立即分析」生成结果" />
+      <el-empty v-else-if="!result.wideips.length" description="该设备没有配置 WideIP" />
 
       <template v-else-if="result">
         <div class="summary-bar">
           <span class="summary-host">{{ result.device.hostname }}</span>
           <el-tag size="small" type="info">{{ result.device.device_type }}</el-tag>
           <span class="muted">WideIP {{ result.wideips.length }} 个 · 链路 {{ summary.total }} 条</span>
+          <span class="muted">分析于 {{ analyzedAt ? new Date(analyzedAt).toLocaleString() : "—" }}</span>
           <span class="legend">
             <el-tag size="small" type="success">已解析到 LLB {{ summary.resolved }}</el-tag>
             <el-tag size="small" type="danger">GTM VS 未找到 {{ summary.broken }}</el-tag>
@@ -448,7 +484,7 @@ onMounted(() => {
         </el-table>
       </template>
 
-      <el-empty v-else description="暂无分析结果，请点击刷新重试" />
+      <el-empty v-else description="暂无分析结果，请点击「立即分析」" />
     </div>
   </PageLayout>
 </template>

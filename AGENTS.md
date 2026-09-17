@@ -33,15 +33,17 @@ network_ops/
 │       ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
 │       ├── config_repo.py       # Git 配置仓库管理
 │       ├── path_tracer.py       # 路径追踪算法
-│       ├── signals.py           # DeviceConfig 保存后的解析与入库
-│       ├── models.py            # 空文件
+│       ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
+│       ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
+│       ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
+│       ├── models.py            # InternetAnalysis（分析结果缓存）
 │       └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
 ├── data/
 │   ├── config_repo/     # Git 配置仓库（含 .git）
 │   └── configs/
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
-│   ├── assets/          # analysis / device_group / serializer_migration
-│   └── ops/             # parsers / parser_contract
+│   ├── assets/          # device_group / serializer_migration / service_unique
+│   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
 ├── docs/compose/
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
@@ -171,6 +173,9 @@ uv run ruff format
 | `config_owner.py` | 配置属主解析（堆叠组备机归属主设备） |
 | `parsers/template_keys.py` | 从 TTP 模板静态提取顶层数据键 |
 | `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
+| `pipeline.py` | 配置处理流水线，信号与 `reparse` 命令共用 |
+| `models.py` | `InternetAnalysis`：互联网资产分析结果缓存 |
+| `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
 
 **已注册解析器**（`@ParserFactory.register`）：
 
@@ -245,7 +250,6 @@ tags, subnets, ip-addresses
 |------|------|
 | `/api/assets/overview/` | 总览聚合统计 |
 | `/api/assets/import-devices/` | Excel 导入设备 |
-| `/api/assets/internet-analysis/` | 互联网资产分析（GSLB → GTM → LTM 链路） |
 
 **ops**（`ops/api/urls.py`）
 
@@ -265,6 +269,9 @@ tags, subnets, ip-addresses
 | `/api/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
 | `/api/parsers/templates/<name>/` | 模板文件内容 |
 | `/api/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
+| `/api/internet-analysis/` | 互联网资产分析结果（**只读缓存**，未分析过返回 404） |
+| `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
+| `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
 
 ## 注意事项
 
@@ -272,7 +279,8 @@ tags, subnets, ip-addresses
 - **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`ops/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
 - **`apps/ops/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
-- `apps/ops/models.py` 为空文件。
+- `ops` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ops`。
+- **互联网资产分析走缓存**：结果存 `ops.models.InternetAnalysis`，只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
 - `Topology` 是单模型，图数据存于 `graph_data` JSON 字段，没有独立的节点/边表。
 - `Device` 没有 `address` 字段，地址信息在 `DeviceConnection` 中。
 - 操作层应用目录名为 `ops`（避免与 Python 标准库 `operator` 冲突）。
