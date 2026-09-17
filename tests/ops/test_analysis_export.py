@@ -90,26 +90,19 @@ def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
 
 
 def test_export_headers_shape():
-    """16 列：GTM 四列 + LTM 两级各五列（含 rules）+ 负责人 + 说明"""
-    assert len(EXPORT_HEADERS) == 16
-    assert EXPORT_HEADERS[0] == "域名"
-    assert EXPORT_HEADERS[2:4] == ["GTM 虚拟服务器 IP", "GTM 虚拟服务器端口"]
-    assert EXPORT_HEADERS[4:9] == [
-        "LLB 虚拟服务器地址",
-        "LLB 端口",
-        "LLB rules",
-        "LLB 后端成员地址",
-        "LLB 后端成员端口",
+    """7 列：LLB_VS / SLB_VS / 服务器 三段 + 各级规则 + 负责人。
+
+    LLB 的池成员就是 SLB 的虚拟服务器（同一份地址:端口），所以不重复占列。
+    """
+    assert EXPORT_HEADERS == [
+        "域名",
+        "LLB_VS地址:端口",
+        "LLB_Rule规则",
+        "SLB_VS地址:端口",
+        "SLB_Rule规则",
+        "服务器地址:端口",
+        "负责人",
     ]
-    assert EXPORT_HEADERS[9:14] == [
-        "SLB 虚拟服务器地址",
-        "SLB 端口",
-        "SLB rules",
-        "SLB 后端成员地址",
-        "SLB 后端成员端口",
-    ]
-    assert EXPORT_HEADERS[14] == "负责人"
-    assert EXPORT_HEADERS[15] == "说明"
     # 列宽数量必须与表头一致，否则导出会静默少设宽度
     assert len(EXPORT_COLUMN_WIDTHS) == len(EXPORT_HEADERS)
 
@@ -251,24 +244,15 @@ def test_export_returns_xlsx_workbook():
     assert sheet.max_row == 2
 
     # 导出列顺序要与字段一一对应（空说明单元格 openpyxl 写的是 None）
-    values = [sheet.cell(row=2, column=index).value for index in range(1, 17)]
+    values = [sheet.cell(row=2, column=index).value for index in range(1, 8)]
     assert values == [
         "www.example.com",
-        "A",
-        "10.1.1.1",
-        "80",
-        "10.1.1.1",
-        "80",
+        "10.1.1.1:80",  # LLB_VS，地址与端口合并
         "irule_llb",
-        "10.2.2.2",
-        "8080",
-        "10.2.2.2",
-        "8080",
+        "10.2.2.2:8080",  # SLB_VS（也就是 LLB 的池成员）
         "irule_slb",
-        "10.9.9.9",
-        "9090",
+        "10.9.9.9:9090",  # 服务器，即 SLB 的池成员
         "张三",
-        None,
     ]
 
 
@@ -370,3 +354,39 @@ def test_owner_matches_ipv6_regardless_of_writing():
 
     assert row["llb_member_address"] == "2001:DB8::99"
     assert row["owner"] == "v6 负责人"
+
+
+# ---------- 列合并的依据 ----------
+
+
+@pytest.mark.django_db
+def test_llb_member_equals_slb_virtual_server():
+    """合并列的依据：LLB 的池成员地址:端口 恰好就是 SLB 虚拟服务器的地址:端口。
+
+    两者本来就是同一份数据（LLB 池成员指向下一级 SLB 的虚拟服务器），
+    所以表格里不需要各占一列。
+    """
+    gslb = _build_two_level_chain("ia-merge")
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert (row["llb_member_address"], row["llb_member_port"]) == (row["slb_address"], row["slb_port"])
+
+
+@pytest.mark.django_db
+def test_single_level_chain_leaves_slb_and_server_columns_empty_in_export():
+    """只有一级 LTM 时，SLB 与「服务器」两段都空——服务器其实就是那个池成员"""
+    gslb = _device("ia-merge-one")
+    _wideip(gslb, "one.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    ltm = _device("ia-merge-one-ltm", "slb")
+    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
+    LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m", address="10.5.5.5", port="8080")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["slb_address"] == ""
+    # 一级链路的「服务器」就是 LLB 的池成员
+    assert (row["llb_member_address"], row["llb_member_port"]) == ("10.5.5.5", "8080")

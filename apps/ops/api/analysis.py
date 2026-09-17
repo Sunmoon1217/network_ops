@@ -43,27 +43,19 @@ MAX_NESTED_DEPTH = 3
 
 # 扁平表格的列：一行就是一条从域名到最终后端的完整链路
 #
-# 前四列来自 GTM 侧；LTM 侧分两段，第一段是 LLB（本地负载均衡，GTM 直接指向的那一级），
-# 第二段是它级联到的下一级 SLB。字段来源见每列注释。
+# 只保留 LLB / SLB 两级虚拟服务器与最后一跳的服务器：
+# **LLB 的池成员就是 SLB 的虚拟服务器**（同一份地址:端口），占两组列是重复的，
+# 所以合并成 LLB_VS / SLB_VS / 服务器 三段。字段来源见每列注释。
 EXPORT_HEADERS = [
     "域名",  # GtmWideip.name
-    "类型",  # GtmWideip.rtype
-    "GTM 虚拟服务器 IP",  # GtmVServer.ip_address
-    "GTM 虚拟服务器端口",  # GtmVServer.port
-    "LLB 虚拟服务器地址",  # LtmVirtualServer.vs_address
-    "LLB 端口",  # LtmVirtualServer.vs_port
-    "LLB rules",  # LtmVirtualServer.rules
-    "LLB 后端成员地址",  # LtmPoolMember.address
-    "LLB 后端成员端口",  # LtmPoolMember.port
-    "SLB 虚拟服务器地址",  # LtmVirtualServer.vs_address（级联的下一级）
-    "SLB 端口",  # LtmVirtualServer.vs_port
-    "SLB rules",  # LtmVirtualServer.rules（级联的下一级）
-    "SLB 后端成员地址",  # LtmPoolMember.address
-    "SLB 后端成员端口",  # LtmPoolMember.port
-    "负责人",  # ServerOwner.owner，按链路最后的 IP 反查
-    "说明",
+    "LLB_VS地址:端口",  # LtmVirtualServer.vs_address:vs_port
+    "LLB_Rule规则",  # LtmVirtualServer.rules
+    "SLB_VS地址:端口",  # 级联下一级的 LtmVirtualServer.vs_address:vs_port
+    "SLB_Rule规则",  # 级联下一级的 LtmVirtualServer.rules
+    "服务器地址:端口",  # 链路最后一跳的池成员地址:端口
+    "负责人",  # ServerOwner.owner，按服务器地址反查
 ]
-EXPORT_COLUMN_WIDTHS = (28, 8, 20, 18, 22, 12, 30, 20, 18, 22, 12, 30, 20, 18, 16, 34)
+EXPORT_COLUMN_WIDTHS = (28, 26, 30, 26, 30, 26, 16)
 
 
 def _parse_member_entry(entry) -> tuple[str, str, dict]:
@@ -386,9 +378,26 @@ def _ltm_rules(path: list[tuple[dict, dict | None]], index: int) -> str:
     return ", ".join(str(rule) for rule in (node.get("rules") or []))
 
 
+def _final_target(row: dict) -> tuple[str, str]:
+    """链路最后一跳的 (地址, 端口)。
+
+    两级链路取 SLB 的池成员，一级链路取 LLB 的池成员；链路中断（没有对应的 LTM
+    虚拟服务器）时回退到 GTM 虚拟服务器——那种情况下它的地址就是最终地址。
+    """
+    for address_key, port_key in (
+        ("slb_member_address", "slb_member_port"),
+        ("llb_member_address", "llb_member_port"),
+        ("gtm_ip", "gtm_port"),
+    ):
+        address = row.get(address_key) or ""
+        if address:
+            return str(address), str(row.get(port_key) or "")
+    return "", ""
+
+
 def _final_ip(row: dict) -> str:
-    """链路最后的 IP：两级取 SLB 成员地址，一级取 LLB 成员地址，链路中断时回退到 GTM 地址"""
-    return row.get("slb_member_address") or row.get("llb_member_address") or row.get("gtm_ip") or ""
+    """只取链路最后的 IP，用于反查负责人"""
+    return _final_target(row)[0]
 
 
 def _load_owner_index() -> dict[str, str]:
@@ -561,21 +570,12 @@ def internet_analysis_export(request):
         sheet.append(
             [
                 row["wideip"],
-                row["rtype"],
-                row["gtm_ip"],
-                row["gtm_port"],
-                row["llb_address"],
-                row["llb_port"],
+                _join_ip_port(row["llb_address"], row["llb_port"]),
                 row["llb_rules"],
-                row["llb_member_address"],
-                row["llb_member_port"],
-                row["slb_address"],
-                row["slb_port"],
+                _join_ip_port(row["slb_address"], row["slb_port"]),
                 row["slb_rules"],
-                row["slb_member_address"],
-                row["slb_member_port"],
+                _join_ip_port(*_final_target(row)),
                 row["owner"],
-                row["note"],
             ]
         )
     # 列宽跟着表头走：写死 "ABCDEFGHIJKLM" 在加列时会静默少设宽度

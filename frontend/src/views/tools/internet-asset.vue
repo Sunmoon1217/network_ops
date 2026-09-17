@@ -104,14 +104,19 @@ interface PathRow {
   gtmPort: string
   llbAddress: string
   llbPort: string
+  /** 拼好的「地址:端口」，表格直接展示 */
+  llbTarget: string
   llbRules: string
   llbMemberAddress: string
   llbMemberPort: string
   slbAddress: string
   slbPort: string
+  slbTarget: string
   slbRules: string
   slbMemberAddress: string
   slbMemberPort: string
+  /** 链路最后一跳的服务器「地址:端口」 */
+  serverTarget: string
   owner: string
   note: string
 }
@@ -127,14 +132,17 @@ const blankRow = (wideip: string, rtype: string): Omit<PathRow, 'key'> => ({
   gtmPort: '',
   llbAddress: '',
   llbPort: '',
+  llbTarget: '',
   llbRules: '',
   llbMemberAddress: '',
   llbMemberPort: '',
   slbAddress: '',
   slbPort: '',
+  slbTarget: '',
   slbRules: '',
   slbMemberAddress: '',
   slbMemberPort: '',
+  serverTarget: '',
   owner: '',
   note: '',
 })
@@ -197,7 +205,18 @@ const ltmRules = (path: LtmStep[], index: number): string => {
   return (step[0].rules ?? []).join(', ')
 }
 
-/** 链路最后的 IP：两级取 SLB 成员地址，一级取 LLB 成员地址，链路中断时回退到 GTM 地址 */
+/** 拼成「地址:端口」，端口缺失时只显示地址（与后端 _join_ip_port 一致） */
+const formatTarget = (address: string, port: string): string =>
+  address ? (port ? `${address}:${port}` : address) : ''
+
+/** 链路最后一跳的服务器「地址:端口」：两级取 SLB 池成员，一级取 LLB 池成员，断链时回退到 GTM */
+const serverTargetOf = (row: PathRow): string => {
+  if (row.slbMemberAddress) return formatTarget(row.slbMemberAddress, row.slbMemberPort)
+  if (row.llbMemberAddress) return formatTarget(row.llbMemberAddress, row.llbMemberPort)
+  return formatTarget(row.gtmIp, row.gtmPort)
+}
+
+/** 链路最后的 IP（只取地址），用于反查负责人 */
 const finalIp = (row: PathRow): string =>
   row.slbMemberAddress || row.llbMemberAddress || row.gtmIp || ''
 
@@ -273,6 +292,9 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
   // 负责人按链路最后的 IP 反查，与后端 build_path_rows 的回退顺序保持一致
   const owners = data.owners ?? {}
   rows.forEach((row) => {
+    row.llbTarget = formatTarget(row.llbAddress, row.llbPort)
+    row.slbTarget = formatTarget(row.slbAddress, row.slbPort)
+    row.serverTarget = serverTargetOf(row)
     row.owner = owners[finalIp(row)] ?? ''
   })
 
@@ -443,88 +465,50 @@ onMounted(() => {
         </div>
 
         <el-table :data="rows" size="small" :row-key="rowKey" class="asset-table" border>
-          <el-table-column prop="wideip" label="域名" width="220" fixed show-overflow-tooltip>
+          <el-table-column prop="wideip" label="域名" width="240" fixed show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono strong">{{ row.wideip || '-' }}</span>
             </template>
           </el-table-column>
 
-          <el-table-column prop="rtype" label="类型" width="70" />
-
-          <el-table-column label="GTM 虚拟服务器" align="center">
-            <el-table-column prop="gtmIp" label="IP" width="135">
-              <template #default="{ row }">
-                <span v-if="row.gtmIp" class="mono">{{ row.gtmIp }}</span>
-                <span v-else class="muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="gtmPort" label="端口" width="80" />
+          <el-table-column label="LLB_VS地址:端口" width="200">
+            <template #default="{ row }">
+              <span v-if="row.llbTarget" class="mono">{{ row.llbTarget }}</span>
+              <span v-else class="muted">-</span>
+            </template>
           </el-table-column>
 
-          <el-table-column label="LLB（第一级 LTM）" align="center">
-            <el-table-column label="虚拟服务器" align="center">
-              <el-table-column prop="llbAddress" label="地址" width="135">
-                <template #default="{ row }">
-                  <span v-if="row.llbAddress" class="mono">{{ row.llbAddress }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="llbPort" label="端口" width="80" />
-              <el-table-column prop="llbRules" label="rules" width="160" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span v-if="row.llbRules" class="mono">{{ row.llbRules }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-            </el-table-column>
-            <el-table-column label="后端成员" align="center">
-              <el-table-column prop="llbMemberAddress" label="地址" width="135">
-                <template #default="{ row }">
-                  <span v-if="row.llbMemberAddress" class="mono">{{ row.llbMemberAddress }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="llbMemberPort" label="端口" width="80" />
-            </el-table-column>
+          <el-table-column prop="llbRules" label="LLB_Rule规则" width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.llbRules" class="mono">{{ row.llbRules }}</span>
+              <span v-else class="muted">-</span>
+            </template>
           </el-table-column>
 
-          <el-table-column label="SLB（下级 LTM）" align="center">
-            <el-table-column label="虚拟服务器" align="center">
-              <el-table-column prop="slbAddress" label="地址" width="135">
-                <template #default="{ row }">
-                  <span v-if="row.slbAddress" class="mono">{{ row.slbAddress }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="slbPort" label="端口" width="80" />
-              <el-table-column prop="slbRules" label="rules" width="160" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span v-if="row.slbRules" class="mono">{{ row.slbRules }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-            </el-table-column>
-            <el-table-column label="后端成员" align="center">
-              <el-table-column prop="slbMemberAddress" label="地址" width="135">
-                <template #default="{ row }">
-                  <span v-if="row.slbMemberAddress" class="mono">{{ row.slbMemberAddress }}</span>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="slbMemberPort" label="端口" width="80" />
-            </el-table-column>
+          <el-table-column label="SLB_VS地址:端口" width="200">
+            <template #default="{ row }">
+              <span v-if="row.slbTarget" class="mono">{{ row.slbTarget }}</span>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="slbRules" label="SLB_Rule规则" width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.slbRules" class="mono">{{ row.slbRules }}</span>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="服务器地址:端口" width="200">
+            <template #default="{ row }">
+              <span v-if="row.serverTarget" class="mono">{{ row.serverTarget }}</span>
+              <span v-else class="muted">-</span>
+            </template>
           </el-table-column>
 
           <el-table-column prop="owner" label="负责人" width="120">
             <template #default="{ row }">
               <span v-if="row.owner">{{ row.owner }}</span>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="note" label="说明" width="220" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span v-if="row.note" class="muted">{{ row.note }}</span>
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
