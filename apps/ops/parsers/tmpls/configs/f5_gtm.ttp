@@ -39,6 +39,7 @@ gtm server {{ server_name | _line_ }} {
 <group name="topologies*">
 gtm topology ldns: {{ ldns_type }} {{ ldns }} server: {{ server_type }} {{ server }} {
     order {{ order }}
+} {{ _end_ }}
 </group>
 
 <group name="monitors*">

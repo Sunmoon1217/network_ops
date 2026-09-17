@@ -57,7 +57,7 @@ ltm virtual {{ name | _start_ }} {
     } {{ _end_ }}
     </group>
     pool {{ pool }}
-    <group name="profiles" method="table">
+    <group name="profiles">
     profiles { {{ _start_ }}
         <group>
         {{ name }} { }
@@ -67,7 +67,7 @@ ltm virtual {{ name | _start_ }} {
         </group>
     } {{ _end_ }}
     </group>
-    <group name="rules" method="table">
+    <group name="rules">
     rules { {{ _start_ }}
         {{ name | joinmatches | to_list}}
     } {{ _end_ }}
