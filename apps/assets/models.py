@@ -768,7 +768,9 @@ class Service(ConfigBase):
     class Meta:
         verbose_name = "服务"
         verbose_name_plural = verbose_name
-        constraints = (models.UniqueConstraint(fields=["name"], name="uni_service_name"),)
+        # 唯一性按设备隔离：不同设备可以有同名服务。Saver 也是按 (device, name) 做
+        # upsert 的，若用 name 全局唯一，第二台设备入库同名服务时会撞约束。
+        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_service_name"),)
         ordering = ("name",)
 
 
