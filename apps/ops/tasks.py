@@ -54,6 +54,9 @@ def run_collection_stage(self, stage_id):
     except Exception as e:
         logger.exception("Collection stage %s failed", stage_id)
         _update_stage_status(stage_id, "failed", error_message=str(e))
+        # 必须向上抛：否则 Celery 会把失败任务记为 SUCCESS，
+        # 导致 AsyncResult / Flower 的失败告警与重试全部失效
+        raise
 
 
 @shared_task(bind=True, name="ops.run_parsing_stage")
@@ -87,6 +90,8 @@ def run_parsing_stage(self, stage_id):
     except Exception as e:
         logger.exception("Parsing stage %s failed", stage_id)
         _update_stage_status(stage_id, "failed", error_message=str(e))
+        # 同采集阶段：不抛出会让 Celery 记成 SUCCESS
+        raise
 
 
 @shared_task(bind=True, name="ops.run_storage_stage")
@@ -120,6 +125,8 @@ def run_storage_stage(self, stage_id):
     except Exception as e:
         logger.exception("Storage stage %s failed", stage_id)
         _update_stage_status(stage_id, "failed", error_message=str(e))
+        # 同采集/解析阶段：不抛出会让 Celery 记成 SUCCESS
+        raise
 
 
 # ---------------------------------------------------------------------------
