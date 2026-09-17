@@ -22,9 +22,14 @@ ltm pool {{ name | _start_ }} {
 } {{ _end_ }}
 </group>
 
+# 注意 destination 要区分 IPv4 / IPv6：IPv6 用「点号」分隔端口
+# （/Common/2001:db8::1.80），与 IPv4 的冒号写法不同。不区分的话 IPv6 会被按
+# 冒号切坏，解析出 "2001:db8:" + 端口 "1.80" 这种残值，查不到对应虚拟服务器。
+# 注释必须写在 group 标签之外，否则 TTP 会把它当成待匹配的行并报 variable not found。
 <group name="virtuals">
 ltm virtual {{ name | _start_ }} {
-    destination /Common/{{ vs_address }}:{{ vs_port }}
+    destination /Common/{{ vs_address | re("IP") }}:{{ vs_port }}
+    destination /Common/{{ vs_address | re("IPV6") }}.{{ vs_port }}
     {{ status | equal("disabled") | default("enabled") }}
     ip-protocol {{ protocol }}
     mask {{ mask }}

@@ -190,3 +190,59 @@ def test_members_written_by_saver_are_resolvable():
     assert member["member_ref"] == "s1:vs1"
     assert member["status"] == "ltm_not_found"  # 只造了 GTM 侧，止步于第二步
     assert member["vserver"]["name"] == "vs1"
+
+
+# ---------- IPv6 链路 ----------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "ltm_address",
+    [
+        "2001:db8::1",  # 与 GTM 侧写法一致
+        "2001:DB8::1",  # 大写
+        "2001:0db8:0000:0000:0000:0000:0000:0001",  # 前导零 + 未压缩
+    ],
+)
+def test_ipv6_chain_resolves_regardless_of_address_writing(ltm_address):
+    """IPv6 地址的大小写 / 前导零 / 压缩写法不同，不应影响 LLB 匹配。
+
+    GtmVServer.ip_address 是 GenericIPAddressField（Django 规范化），而
+    LtmVirtualServer.vs_address 是 CharField（原样存），按字符串直接比较会漏。
+    """
+    gslb = _device("ia-v6")
+    GtmWideip.objects.create(device=gslb, name="v6.example.com", rtype="AAAA", pools=["pool_v6"])
+    GtmPool.objects.create(device=gslb, name="pool_v6", members=[{"server": "s1", "vserver": "vs_v6"}])
+    server = GtmServer.objects.create(device=gslb, name="s1")
+    GtmVServer.objects.create(device=gslb, server=server, name="vs_v6", ip_address="2001:db8::1", port="80")
+
+    ltm = _device("ia-v6-ltm", "slb")
+    LtmVirtualServer.objects.create(device=ltm, name="vs_v6", vs_address=ltm_address, vs_port="80")
+    LtmPoolMember.objects.filter(pool_name="").delete()
+
+    member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
+
+    assert member["status"] == "resolved"
+    assert member["ltm"]["vs_address"] == ltm_address
+
+
+@pytest.mark.django_db
+def test_f5_ltm_parses_ipv4_and_ipv6_destination():
+    """F5 的 IPv6 destination 用点号分隔端口，模板必须区分两种写法"""
+    from ops.parsers.factory import ParserFactory
+
+    config = """ltm virtual /Common/vs_v4 {
+    destination /Common/10.0.0.1:443
+    ip-protocol tcp
+}
+ltm virtual /Common/vs_v6 {
+    destination /Common/2001:db8::1.80
+    ip-protocol tcp
+}
+"""
+    parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(config)["virtuals"]
+
+    by_name = {item["name"]: item for item in parsed}
+    assert (by_name["/Common/vs_v4"]["vs_address"], by_name["/Common/vs_v4"]["vs_port"]) == ("10.0.0.1", "443")
+    # 不区分的话这里会是 "2001:db8:" + "1.80"
+    assert (by_name["/Common/vs_v6"]["vs_address"], by_name["/Common/vs_v6"]["vs_port"]) == ("2001:db8::1", "80")

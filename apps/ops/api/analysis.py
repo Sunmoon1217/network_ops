@@ -21,6 +21,7 @@
 ``GET /api/internet-analysis/`` 与导出接口都只读缓存。
 """
 
+import ipaddress
 import time
 from io import BytesIO
 from urllib.parse import quote
@@ -84,6 +85,23 @@ def _parse_member_entry(entry) -> tuple[str, str, dict]:
     return server_name, vs_name, {}
 
 
+def _normalize_ip(value) -> str:
+    """把地址规范化为可比较形式：IPv6 统一小写压缩，非法值退化为小写文本。
+
+    两边字段类型不同：``GtmVServer.ip_address`` 是 GenericIPAddressField，Django 会
+    规范化（小写 + 压缩）；而 ``LtmVirtualServer.vs_address`` 是 CharField，原样存。
+    直接按字符串比较时，``2001:DB8::1`` / ``2001:0db8::1`` / 展开写法都匹配不上
+    同一个地址，IPv6 的链路就会断在"找不到对应的 LLB 虚拟服务器"。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return text.lower()
+
+
 def _join_ip_port(ip: str | None, port: str | None) -> str:
     """拼成 "ip:port"，端口缺失时只返回 IP"""
     if not ip:
@@ -101,7 +119,7 @@ class _AssetIndex:
 
         self.ltm_virtuals: dict[tuple[str, str], list[LtmVirtualServer]] = {}
         for virtual in LtmVirtualServer.objects.select_related("device").all():
-            key = (virtual.vs_address or "", str(virtual.vs_port or ""))
+            key = (_normalize_ip(virtual.vs_address), str(virtual.vs_port or ""))
             self.ltm_virtuals.setdefault(key, []).append(virtual)
 
         self.ltm_pool_members: dict[str, list[LtmPoolMember]] = {}
@@ -117,10 +135,11 @@ class _AssetIndex:
         """按 IP:端口 找 LTM 虚拟服务器（同名时取 pk 最小的一条）"""
         if not ip:
             return None
-        candidates = self.ltm_virtuals.get((ip, str(port or "")), [])
+        normalized = _normalize_ip(ip)
+        candidates = self.ltm_virtuals.get((normalized, str(port or "")), [])
         if not candidates and port:
             # 端口为空或写法不一致时，退化为只按地址匹配
-            candidates = [v for (addr, _), items in self.ltm_virtuals.items() if addr == ip for v in items]
+            candidates = [v for (addr, _), items in self.ltm_virtuals.items() if addr == normalized for v in items]
         if not candidates:
             return None
         return sorted(candidates, key=lambda v: v.pk)[0]
