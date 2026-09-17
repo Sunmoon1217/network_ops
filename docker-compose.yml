@@ -1,7 +1,6 @@
 name: network_ops
 
 services:
-  # TimescaleDB (PostgreSQL + 时序扩展)
   db:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
@@ -23,7 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis
   redis:
     image: redis:8.8.0
     container_name: netops-redis

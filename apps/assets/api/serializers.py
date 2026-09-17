@@ -90,6 +90,43 @@ class DeviceModelSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
 
+class DeviceGroupSerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        from assets.models import DeviceGroup
+
+        model = DeviceGroup
+        fields = ("id", "name", "group_type", "description", "member_count", "created_at")
+        read_only_fields = ("id", "created_at")
+
+    def get_member_count(self, obj) -> int:
+        # 配合 viewset 的 prefetch_related("members")，这里不会额外查库
+        return len(obj.members.all())
+
+
+class DeviceGroupMemberSerializer(serializers.ModelSerializer):
+    group_name = serializers.CharField(source="group.name", read_only=True, default="")
+    group_type = serializers.CharField(source="group.group_type", read_only=True, default="")
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+
+    class Meta:
+        from assets.models import DeviceGroupMember
+
+        model = DeviceGroupMember
+        fields = (
+            "id",
+            "group",
+            "group_name",
+            "group_type",
+            "device",
+            "device_hostname",
+            "device_role",
+            "created_at",
+        )
+        read_only_fields = ("id", "created_at")
+
+
 class DeviceSerializer(serializers.ModelSerializer):
     idc_name = serializers.CharField(source="idc.name", read_only=True, default="")
     cabinet_name = serializers.CharField(source="cabinet", read_only=True, default="")
@@ -328,12 +365,24 @@ class LtmPoolSerializer(serializers.ModelSerializer):
 
 
 class LtmPoolMemberSerializer(serializers.ModelSerializer):
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+
     class Meta:
         from assets.models import LtmPoolMember
 
         model = LtmPoolMember
-        fields = ("id", "pool_name", "name", "address")
-        read_only_fields = ("id",)
+        fields = (
+            "id",
+            "device",
+            "device_hostname",
+            "pool_name",
+            "name",
+            "address",
+            "port",
+            "is_active",
+            "created_at",
+        )
+        read_only_fields = ("id", "created_at")
 
 
 class LtmProfileSerializer(serializers.ModelSerializer):
@@ -458,6 +507,51 @@ class AddressBookSerializer(serializers.ModelSerializer):
             "parent",
             "parent_name",
             "description",
+            "is_active",
+            "created_at",
+        )
+        read_only_fields = ("id", "created_at")
+
+
+class GtmServerSerializer(serializers.ModelSerializer):
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+
+    class Meta:
+        from assets.models import GtmServer
+
+        model = GtmServer
+        fields = (
+            "id",
+            "device",
+            "device_hostname",
+            "name",
+            "datacenter",
+            "monitor",
+            "server_type",
+            "is_active",
+            "created_at",
+        )
+        read_only_fields = ("id", "created_at")
+
+
+class GtmVServerSerializer(serializers.ModelSerializer):
+    device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+    server_name = serializers.CharField(source="server.name", read_only=True, default="")
+
+    class Meta:
+        from assets.models import GtmVServer
+
+        model = GtmVServer
+        fields = (
+            "id",
+            "device",
+            "device_hostname",
+            "server",
+            "server_name",
+            "name",
+            "ip_address",
+            "port",
+            "monitor",
             "is_active",
             "created_at",
         )

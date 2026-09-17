@@ -33,7 +33,12 @@ export interface TraceResult {
 
 export const actionColor: Record<string, string> = { allow: '#18a058', deny: '#d03050' }
 export const actionLabel: Record<string, string> = { allow: '放行', deny: '拒绝' }
-export const deviceLabel: Record<string, string> = { firewall: '防火墙', switch: '交换机', loadbalancer: '负载均衡' }
+export const deviceLabel: Record<string, string> = {
+  firewall: '防火墙',
+  switch: '交换机',
+  slb: '服务器负载均衡',
+  gslb: '全局负载均衡',
+}
 
 export const hasTranslation = (hop: HopData): boolean => {
   return !!(hop.src_after || hop.dst_after || hop.port_after)

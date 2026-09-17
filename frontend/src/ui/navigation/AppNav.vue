@@ -2,6 +2,8 @@
 import { h, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
+// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射
+import { DataAnalysis, Connection } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
 import {
@@ -73,6 +75,8 @@ const menuOptions: MenuItem[] = [
       { index: '/tools/rack-view', label: '机柜视图', icon: renderIcon(IconBaseline) },
       { index: '/tools/subnet-calc', label: '子网计算器', icon: renderIcon(IconSubnet) },
       { index: '/tools/dns-query', label: 'DNS 查询', icon: renderIcon(IconDns) },
+      { index: '/tools/internet-asset', label: '互联网资产分析', icon: renderIcon(DataAnalysis) },
+      { index: '/tools/parser-mapping', label: '解析映射', icon: renderIcon(Connection) },
     ],
   },
 ]

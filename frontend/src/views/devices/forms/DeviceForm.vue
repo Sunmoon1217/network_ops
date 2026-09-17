@@ -37,7 +37,8 @@ const save = async () => {
     <el-form-item label="类型">
       <el-select v-model="form.device_type" style="width: 100%">
         <el-option label="防火墙" value="firewall" /><el-option label="交换机" value="switch" />
-        <el-option label="负载均衡" value="loadbalancer" /><el-option label="路由器" value="router" />
+        <el-option label="服务器负载均衡" value="slb" /><el-option label="全局负载均衡" value="gslb" />
+        <el-option label="路由器" value="router" />
         <el-option label="服务器" value="server" />
       </el-select>
     </el-form-item>
