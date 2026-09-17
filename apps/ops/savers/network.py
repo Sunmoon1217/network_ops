@@ -24,16 +24,15 @@ class VlanSaver(BaseSaver):
         from assets.models import Vlan
         from assets.serializers.views import VlanSerializer
 
-        created, updated = 0, 0
+        rows = []
         for item in as_list(parsed_data.get("vlans")):
             vid = self._safe_int(item.get("vlan_id") or item.get("vid"))
             if vid is None:
                 continue
             name = item.get("vlan_name") or item.get("name") or ""
-            is_new = self.upsert(VlanSerializer, Vlan, device, {"vid": vid}, {"vid": vid, "name": name})
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
-        return (created, updated)
+            rows.append({"vid": vid, "name": name})
+
+        return self.bulk_upsert(Vlan, device, rows, key_fields=("vid",), serializer_cls=VlanSerializer)
 
 
 class SnmpConfigSaver(BaseSaver):

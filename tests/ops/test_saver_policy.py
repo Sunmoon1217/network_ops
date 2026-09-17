@@ -142,3 +142,60 @@ def test_cisco_acl_shape_still_works():
     policy = Policy.objects.get(device=device, policy_id="100")
     assert policy.action == "allow"
     assert [address.name for address in policy.source_addresses.all()] == ["office-group"]
+
+
+# ---------- 批量化改造后的语义守卫 ----------
+
+
+@pytest.mark.django_db
+def test_existing_service_protocol_is_not_clobbered():
+    """PolicySaver 只补占位服务，不能把 ServiceSaver 填好的 protocol 冲成 any。
+
+    批量化时如果把服务也走 bulk_upsert，payload 里的 protocol="any" 会覆盖已有记录。
+    """
+    device = Device.objects.create(hostname="_t_pol_svc_keep", device_type="firewall")
+    Service.objects.create(device=device, name="HTTP", protocol="tcp", port="80")
+
+    PolicySaver().save(device, _parsed())
+
+    service = Service.objects.get(device=device, name="HTTP")
+    assert service.protocol == "tcp"
+    assert service.port == "80"
+
+
+@pytest.mark.django_db
+def test_m2m_links_are_replaced_not_accumulated():
+    """重新保存时旧关联要被替换：换一套源地址后不能还留着上一次的链接"""
+    device = Device.objects.create(hostname="_t_pol_m2m", device_type="firewall")
+    saver = PolicySaver()
+    saver.save(device, _parsed())
+
+    policy = Policy.objects.get(device=device, policy_id="9")
+    before = set(policy.source_addresses.values_list("name", flat=True))
+    assert before
+
+    # 真实模板用 | to_list 产出列表，裸字符串会被 as_list 丢掉
+    saver.save(
+        device,
+        {"rules": [{"rule_id": "9", "action": "permit", "src-ip": ["192.168.7.7"], "dst-ip": ["10.0.0.1"]}]},
+    )
+
+    policy.refresh_from_db()
+    assert set(policy.source_addresses.values_list("name", flat=True)) == {"192.168.7.7"}
+
+
+@pytest.mark.django_db
+def test_shared_address_book_is_written_once_for_many_rules():
+    """多条规则引用同一个地址簿时，最终只有一条地址簿记录"""
+    device = Device.objects.create(hostname="_t_pol_shared", device_type="firewall")
+    rules = [
+        {"rule_id": str(i), "action": "permit", "src-addr": ["office-group"], "dst-host": [f"10.0.0.{i}"]}
+        for i in range(1, 6)
+    ]
+
+    PolicySaver().save(device, {"rules": rules})
+
+    assert AddressBook.objects.filter(device=device, name="office-group", address_type="addressbook").count() == 1
+    for i in range(1, 6):
+        policy = Policy.objects.get(device=device, policy_id=str(i))
+        assert [book.name for book in policy.source_addresses.all()] == ["office-group"]

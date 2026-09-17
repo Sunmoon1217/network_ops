@@ -20,7 +20,7 @@ class InterfaceSaver(BaseSaver):
         if not interfaces:
             return (0, 0)
 
-        created, updated = 0, 0
+        rows = []
         for iface in interfaces:
             iface_name = iface.get("interface")
             if not iface_name:
@@ -40,20 +40,18 @@ class InterfaceSaver(BaseSaver):
             if isinstance(enabled, (int, float)):
                 enabled = enabled == 0
 
-            _, is_created = Interface.objects.update_or_create(
-                device=device,
-                interface=iface_name,
-                defaults={
+            rows.append(
+                {
+                    "interface": iface_name,
                     "description": iface.get("description"),
                     "enabled": bool(enabled),
                     "mode": mode or "access",
                     "vlans": vlans,
                     "ip_address": iface.get("ip_address"),
                     "subnet_mask": iface.get("subnet_mask"),
-                },
+                }
             )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
 
+        created, updated = self.bulk_upsert(Interface, device, rows, key_fields=("interface",))
         logger.info("接口保存完成: 新增 %d, 更新 %d", created, updated)
         return (created, updated)

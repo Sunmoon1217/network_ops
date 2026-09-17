@@ -223,6 +223,15 @@ TTP 模板解析 → 结果写回 config_json
 - **同一设备并行会写坏数据**：同一设备 4 线程并发写 4 份不同配置（100 个池），8/8 轮最终成员表混进 2–3 份配置的地址，并出现 19 次 `duplicate key ... uni_pool_member_device_pool_node_port`。2 线程时是间歇性的（6 轮中 1 次、10 轮中 0 次），更难发现。而且失败被 `_dispatch_savers` 按 Saver 吞掉只打日志，HTTP 请求照样返回成功。
 - `reparse --workers N` 的并行单位是**设备**，且命令内部保证每台设备只派一个任务（同一个 hostname 重复传入会去重）。它**只保证本命令内部**不会同设备并发；Web 导入路径没有设备级互斥。
 
+**Saver 的写库方式与性能**：瓶颈是**语句条数**，不是事务数——本机 Postgres 跑在容器里（`netops-db`，端口映射到宿主机），每跳往返约 0.95 ms，而 `COMMIT` 几乎免费（`synchronous_commit=off` 与包一层事务都只有 1.5x 左右，说明不是 fsync 的问题）。所以 `BaseSaver` 提供两个写入入口：
+
+- `upsert(...)`：单条，按自然键定位后走序列化器保存。
+- `bulk_upsert(model, device, rows, key_fields=..., serializer_cls=...)`：一次 SELECT 取现有行，再一次 `bulk_create` / 一次 `bulk_update`。**仍然逐行走序列化器校验**（保持 views 与 savers 共用同一套字段规则），只是把语句数压下来。同批内相同键按「后来者覆盖」去重，否则会直接撞唯一约束；键字段用 `.get`，可空键（如只在 range 上才有的 `ip_start`）缺失即 `None`。`bulk_update` 不走 `pre_save`，`updated_at` 由助手自己填。**不支持 M2M**：带 M2M 的模型要在调用方自己批量写关联表（见 `PolicySaver._replace_m2m`，用 `attname` 传 pk，字段名那个描述符只接受模型实例）。
+
+实测（200 行规模，合成真实配置）：按 Saver 合计 **53.92 s / 13985 条 SQL → 9.47 s / 2802 条**（5.7x，每行 6.2 → 1.7 条）；端到端 4 台设备 **37.39 s → 7.64 s**（4.9x），F5 SLB 那台 12.21 s → 0.24 s。剩下每行约 1–2 条 SQL 来自 DRF 自身：`PrimaryKeyRelatedField` 无条件 `queryset.get(pk=...)`（DRF 没有「传模型实例就短路」的分支），以及 `UniqueTogetherValidator` 每次校验一条查询——这两项是「Saver 走序列化器」的固有代价，没有动。
+
+`LBPoolSaver` 的池成员没有独立自然键，只能「先清后建」，清理范围按「设备 + 池名」圈定并整批一次 DELETE + 一次 `bulk_create`；池名列表为空时不动成员。
+
 ## API 路由
 
 `netops/urls.py` 依次 include 三个应用的 urls，全部挂载在 `/api/` 下。

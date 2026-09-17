@@ -47,38 +47,38 @@ class AddressBookSaver(BaseSaver):
         if not raw:
             return (0, 0)
 
-        created, updated = 0, 0
-        for name, body in self._entries(raw):
-            if not name:
+        entries = [(name, body) for name, body in self._entries(raw) if name]
+
+        created, updated = self.bulk_upsert(
+            AddressBook,
+            device,
+            [{"name": name, "address_type": "addressbook"} for name, _ in entries],
+            key_fields=("name", "address_type"),
+            serializer_cls=AddressBookSerializer,
+        )
+
+        # 父记录刚批量写完，一次把 pk 取回来；原先每本书都要再 filter().first() 查一次
+        parent_ids = dict(
+            AddressBook.objects.filter(device=device, address_type="addressbook").values_list("name", "pk")
+        )
+
+        child_rows = []
+        for name, body in entries:
+            parent_pk = parent_ids.get(name)
+            if parent_pk is None:
                 continue
-
-            is_new = self.upsert(
-                AddressBookSerializer,
-                AddressBook,
-                device,
-                {"name": name, "address_type": "addressbook"},
-                {"name": name, "address_type": "addressbook"},
-            )
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
-
-            parent = AddressBook.objects.filter(device=device, name=name, address_type="addressbook").first()
             for payload in self._child_payloads(body):
-                is_new_child = self.upsert(
-                    AddressBookSerializer,
-                    AddressBook,
-                    device,
-                    {
-                        "parent": parent,
-                        "address_type": payload["address_type"],
-                        "ip_address": payload.get("ip_address"),
-                        "ip_start": payload.get("ip_start"),
-                    },
-                    {**payload, "parent": parent.pk},
-                )
-                created += 1 if is_new_child else 0
-                updated += 0 if is_new_child else 1
-        return (created, updated)
+                # parent 给序列化器，parent_id 只用于批量 upsert 的键（免掉一次 FK 查询）
+                child_rows.append({**payload, "parent": parent_pk, "parent_id": parent_pk})
+
+        sub_created, sub_updated = self.bulk_upsert(
+            AddressBook,
+            device,
+            child_rows,
+            key_fields=("parent_id", "address_type", "ip_address", "ip_start"),
+            serializer_cls=AddressBookSerializer,
+        )
+        return (created + sub_created, updated + sub_updated)
 
     def _entries(self, raw) -> list[tuple[str, dict]]:
         """把产出归一成 ``[(地址簿名, 记录体)]``。
@@ -279,42 +279,128 @@ class PolicySaver(BaseSaver):
     keys = ["policies", "acl", "rules"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import Policy
-        from assets.serializers.views import PolicySerializer
+        from assets.models import AddressBook, Policy, Service
+        from assets.serializers.views import AddressBookSerializer, PolicySerializer
 
         policies = parsed_data.get("policies") or parsed_data.get("acl") or parsed_data.get("rules")
         if not policies:
             return (0, 0)
 
-        created, updated = 0, 0
+        # 第一遍只做收集：规则本体，以及它引用到的地址 / 服务。
+        # 同一个地址簿会被大量规则引用，逐条规则各解析一次的话 SELECT + 校验 + 写库
+        # 都要重复付，所以先跨规则去重，再统一批量落库。
+        policy_rows: list[dict] = []
+        address_specs: dict[tuple[str, str], dict] = {}
+        service_specs: dict[str, None] = {}
+        # (policy_id, 源地址键, 目的地址键, 服务名)
+        references: list[tuple[str, list[tuple[str, str]], list[tuple[str, str]], list[str]]] = []
+
         for index, item in enumerate(as_list(policies)):
             policy_id = str(item.get("policy_id") or item.get("rule_id") or item.get("name") or "").strip()
             if not policy_id:
                 continue
 
-            payload = {
-                "policy_id": policy_id,
-                "order": self._safe_int(item.get("order")) if item.get("order") is not None else index,
-                "name": str(item.get("name") or item.get("rule_name") or policy_id),
-                "action": self._normalize_action(item.get("action")),
-                "enabled": self._is_enabled(item),
-                "log": bool(item.get("log", False)),
-                "description": item.get("description", ""),
-            }
-            source_ids = self._resolve_addresses(device, self._address_entries(item, "src"))
-            if source_ids:
-                payload["source_addresses"] = source_ids
-            destination_ids = self._resolve_addresses(device, self._address_entries(item, "dst"))
-            if destination_ids:
-                payload["destination_addresses"] = destination_ids
-            service_ids = self._resolve_services(device, item)
-            if service_ids:
-                payload["services"] = service_ids
+            policy_rows.append(
+                {
+                    "policy_id": policy_id,
+                    "order": self._safe_int(item.get("order")) if item.get("order") is not None else index,
+                    "name": str(item.get("name") or item.get("rule_name") or policy_id),
+                    "action": self._normalize_action(item.get("action")),
+                    "enabled": self._is_enabled(item),
+                    "log": bool(item.get("log", False)),
+                    "description": item.get("description", ""),
+                }
+            )
+            services = self._collect_services(item)
+            for name in services:
+                service_specs[name] = None
+            references.append(
+                (
+                    policy_id,
+                    self._collect_addresses(address_specs, self._address_entries(item, "src")),
+                    self._collect_addresses(address_specs, self._address_entries(item, "dst")),
+                    services,
+                )
+            )
 
-            is_new = self.upsert(PolicySerializer, Policy, device, {"policy_id": policy_id}, payload)
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
+        if not policy_rows:
+            return (0, 0)
+
+        # ---- 地址簿与服务先落库，拿到 pk 供 M2M 使用 ----
+        # 计数只上报策略本身：地址簿 / 服务的账由 AddressBookSaver、ServiceSaver 报，
+        # 这里也计一遍会让流水线汇总重复（与改动前的语义保持一致）
+        self.bulk_upsert(
+            AddressBook,
+            device,
+            list(address_specs.values()),
+            key_fields=("name", "address_type"),
+            serializer_cls=AddressBookSerializer,
+        )
+
+        # 服务只按名字定位，协议未知时先记 any（等 ServiceSaver 补全）。
+        # 这里不能用 bulk_upsert：它会用 payload 覆盖已有记录，把 ServiceSaver
+        # 填好的 protocol 冲成 any，与原先 get_or_create 的语义不符。
+        service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
+        missing = [name for name in service_specs if name not in service_ids]
+        if missing:
+            Service.objects.bulk_create(
+                [Service(device=device, name=name, protocol="any") for name in missing], batch_size=500
+            )
+            service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
+
+        address_ids = {
+            (name, address_type): pk
+            for name, address_type, pk in AddressBook.objects.filter(device=device).values_list(
+                "name", "address_type", "pk"
+            )
+        }
+
+        # ---- 策略本体批量落库（M2M 不放进 payload，关联表单独批量写）----
+        created, updated = self.bulk_upsert(
+            Policy, device, policy_rows, key_fields=("policy_id",), serializer_cls=PolicySerializer
+        )
+
+        policy_ids = dict(Policy.objects.filter(device=device).values_list("policy_id", "pk"))
+        source_map: dict[int, set[int]] = {}
+        destination_map: dict[int, set[int]] = {}
+        service_map: dict[int, set[int]] = {}
+        for policy_id, source_keys, destination_keys, names in references:
+            policy_pk = policy_ids.get(policy_id)
+            if policy_pk is None:
+                continue
+            source_map[policy_pk] = {address_ids[key] for key in source_keys if key in address_ids}
+            destination_map[policy_pk] = {address_ids[key] for key in destination_keys if key in address_ids}
+            service_map[policy_pk] = {service_ids[name] for name in names if name in service_ids}
+
+        self._replace_m2m(Policy, "source_addresses", source_map)
+        self._replace_m2m(Policy, "destination_addresses", destination_map)
+        self._replace_m2m(Policy, "services", service_map)
         return (created, updated)
+
+    def _replace_m2m(self, model, field_name: str, mapping: dict[int, set[int]]) -> None:
+        """成批重置一个 M2M 关联：一次删除 + 一次 bulk_create。
+
+        逐条 ``instance.m2m.set(ids)`` 每个策略要发 3 条左右的语句；规则上百条时
+        这一项就占了大头，所以直接写 through 表。
+        """
+        field = getattr(model, field_name)
+        through = field.through
+        foreign_keys = [f for f in through._meta.get_fields() if f.many_to_one]
+        owner_fk = next(f for f in foreign_keys if f.related_model is model)
+        target_fk = next(f for f in foreign_keys if f.related_model is not model)
+
+        if not mapping:
+            return
+        # 用 attname（policy_id / addressbook_id）而不是字段名：字段名那个描述符
+        # 只接受模型实例，传 pk 会报 "must be a Policy instance"
+        through.objects.filter(**{f"{owner_fk.attname}__in": list(mapping)}).delete()
+        rows = [
+            through(**{owner_fk.attname: owner_id, target_fk.attname: target_id})
+            for owner_id, target_ids in mapping.items()
+            for target_id in target_ids
+        ]
+        if rows:
+            through.objects.bulk_create(rows, batch_size=500)
 
     def _normalize_action(self, action) -> str:
         """厂商用 permit / deny 等词，模型 choices 只有 allow / deny"""
@@ -350,22 +436,20 @@ class PolicySaver(BaseSaver):
             entries.append({"kind": "book", "value": value})
         return entries
 
-    def _resolve_addresses(self, device, entries: list[dict]) -> list[int]:
-        from assets.models import AddressBook
-        from assets.serializers.views import AddressBookSerializer
+    def _collect_addresses(self, specs: dict[tuple[str, str], dict], entries: list[dict]) -> list[tuple[str, str]]:
+        """把地址条目收进 ``specs``（按 ``(名字, 类型)`` 去重），返回本条规则用到的键。
 
-        ids = []
+        只收集不落库：真正的写库由 ``save`` 统一批量完成。
+        """
+        keys: list[tuple[str, str]] = []
         for entry in entries:
             payload = self._address_payload(entry)
             if not payload:
                 continue
-            book = AddressBook.objects.filter(
-                device=device, name=payload["name"], address_type=payload["address_type"]
-            ).first()
-            serializer = AddressBookSerializer(book, data={**payload, "device": device.pk}, partial=True)
-            serializer.is_valid(raise_exception=True)
-            ids.append(serializer.save().pk)
-        return ids
+            key = (payload["name"], payload["address_type"])
+            specs[key] = payload
+            keys.append(key)
+        return keys
 
     def _address_payload(self, entry: dict) -> dict | None:
         kind = entry["kind"]
@@ -403,15 +487,14 @@ class PolicySaver(BaseSaver):
         address = self._safe_ip(value)
         return {"name": address, "address_type": "host", "ip_address": address} if address else None
 
-    def _resolve_services(self, device, item: dict) -> list[int]:
-        """服务名落成 Service 记录；协议未知时记 any，等 ServiceSaver 补全"""
-        from assets.models import Service
+    def _collect_services(self, item: dict) -> list[str]:
+        """取本条规则引用的服务名（单条规则内去重）。
 
-        ids = []
+        跨规则的汇总由 ``save`` 负责——只收集不落库，写库统一批量做。
+        """
+        used: dict[str, None] = {}
         for value in as_list(item.get("service")):
             name = str(value or "").strip()
-            if not name:
-                continue
-            service, _ = Service.objects.get_or_create(device=device, name=name, defaults={"protocol": "any"})
-            ids.append(service.pk)
-        return ids
+            if name:
+                used[name] = None
+        return list(used)

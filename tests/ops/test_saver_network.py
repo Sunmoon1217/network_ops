@@ -149,3 +149,24 @@ def test_route_is_idempotent():
     assert saver.save(device, parsed) == (1, 0)
     assert saver.save(device, parsed) == (0, 1)
     assert Route.objects.filter(device=device).count() == 1
+
+
+@pytest.mark.django_db
+def test_duplicate_vlan_in_one_config_is_collapsed():
+    """同一份配置里重复的 vlan：批量 upsert 要去重，不能两条一起进 bulk_create。
+
+    逐条 upsert 时是「后来的覆盖先前的」，批量化后必须显式去重，否则直接撞
+    (device, vid) 唯一约束。
+    """
+    device = Device.objects.create(hostname="_t_vlan_dup", device_type="switch")
+
+    assert VlanSaver().save(
+        device, {"vlans": [{"vlan_id": "30", "vlan_name": "先"}, {"vlan_id": "30", "vlan_name": "后"}]}
+    ) == (
+        1,
+        0,
+    )
+
+    vlan = Vlan.objects.get(device=device, vid=30)
+    assert vlan.name == "后"
+    assert Vlan.objects.filter(device=device).count() == 1

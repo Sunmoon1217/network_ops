@@ -20,22 +20,28 @@ class LBVirtualServerSaver(BaseSaver):
     keys = ["virtuals"]
 
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmVirtualServer
+        from assets.models import LtmIRule, LtmPersist, LtmProfile, LtmVirtualServer
+        from assets.serializers.views import LtmIRuleSerializer, LtmPersistSerializer, LtmProfileSerializer
 
         virtuals = as_list(parsed_data.get("virtuals"))
         if not virtuals:
             return (0, 0)
 
-        created, updated = 0, 0
+        vs_rows = []
+        # profiles / rules / persist 是设备级清单：同一个名字被多个 virtual 引用时只留
+        # 一条，按写入顺序后来者覆盖（与逐条 upsert 的语义一致，raw 记最后一次来源）
+        profiles: dict[str, dict] = {}
+        rules: dict[str, dict] = {}
+        persists: dict[str, dict] = {}
+
         for vs in virtuals:
             name = self._leaf(vs.get("name"))
             if not name:
                 continue
             snat = vs.get("snat") if isinstance(vs.get("snat"), dict) else {}
-            _, is_created = LtmVirtualServer.objects.update_or_create(
-                device=device,
-                name=name,
-                defaults={
+            vs_rows.append(
+                {
+                    "name": name,
                     "vs_address": vs.get("vs_address", ""),
                     "vs_port": vs.get("vs_port", ""),
                     "mask": vs.get("mask"),
@@ -49,79 +55,42 @@ class LBVirtualServerSaver(BaseSaver):
                     "persist": self._extract_persist(vs.get("persist")),
                     "profiles": self._flatten_names(vs.get("profiles")),
                     "rules": self._flatten_names(vs.get("rules")),
-                },
+                }
             )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
 
-            for sub_created, sub_updated in (
-                self._save_profiles(device, vs.get("profiles"), name),
-                self._save_rules(device, vs.get("rules"), name),
-                self._save_persist(device, vs.get("persist"), name),
-            ):
-                created += sub_created
-                updated += sub_updated
-        return (created, updated)
+            for raw in self._named_entries(vs.get("profiles")):
+                profile_name = self._leaf(raw.get("name"))
+                if profile_name:
+                    profiles[profile_name] = {
+                        "name": profile_name,
+                        "type": self._basename(profile_name),
+                        "raw": {**raw, "virtual_server": name},
+                    }
+            for rule_name in self._flatten_names(vs.get("rules")):
+                rules[rule_name] = {
+                    "name": rule_name,
+                    "raw": {"name": rule_name, "virtual_server": name},
+                }
+            for raw in self._named_entries(vs.get("persist")):
+                persist_name = self._leaf(raw.get("name"))
+                if persist_name:
+                    persists[persist_name] = {
+                        "name": persist_name,
+                        "type": self._basename(persist_name),
+                        "raw": {**raw, "virtual_server": name},
+                    }
 
-    def _save_profiles(self, device, value, vs_name: str) -> tuple[int, int]:
-        from assets.models import LtmProfile
-        from assets.serializers.views import LtmProfileSerializer
-
-        created, updated = 0, 0
-        for raw in self._named_entries(value):
-            profile_name = self._leaf(raw.get("name"))
-            is_new = self.upsert(
-                LtmProfileSerializer,
-                LtmProfile,
-                device,
-                {"name": profile_name},
-                {
-                    "name": profile_name,
-                    "type": self._basename(profile_name),
-                    "raw": {**raw, "virtual_server": vs_name},
-                },
+        created, updated = self.bulk_upsert(LtmVirtualServer, device, vs_rows, key_fields=("name",))
+        for model, rows, serializer_cls in (
+            (LtmProfile, list(profiles.values()), LtmProfileSerializer),
+            (LtmIRule, list(rules.values()), LtmIRuleSerializer),
+            (LtmPersist, list(persists.values()), LtmPersistSerializer),
+        ):
+            sub_created, sub_updated = self.bulk_upsert(
+                model, device, rows, key_fields=("name",), serializer_cls=serializer_cls
             )
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
-        return (created, updated)
-
-    def _save_rules(self, device, value, vs_name: str) -> tuple[int, int]:
-        from assets.models import LtmIRule
-        from assets.serializers.views import LtmIRuleSerializer
-
-        created, updated = 0, 0
-        for rule_name in self._flatten_names(value):
-            is_new = self.upsert(
-                LtmIRuleSerializer,
-                LtmIRule,
-                device,
-                {"name": rule_name},
-                {"name": rule_name, "raw": {"name": rule_name, "virtual_server": vs_name}},
-            )
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
-        return (created, updated)
-
-    def _save_persist(self, device, value, vs_name: str) -> tuple[int, int]:
-        from assets.models import LtmPersist
-        from assets.serializers.views import LtmPersistSerializer
-
-        created, updated = 0, 0
-        for raw in self._named_entries(value):
-            persist_name = self._leaf(raw.get("name"))
-            is_new = self.upsert(
-                LtmPersistSerializer,
-                LtmPersist,
-                device,
-                {"name": persist_name},
-                {
-                    "name": persist_name,
-                    "type": self._basename(persist_name),
-                    "raw": {**raw, "virtual_server": vs_name},
-                },
-            )
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
+            created += sub_created
+            updated += sub_updated
         return (created, updated)
 
     def _flatten_names(self, value: Any) -> list[str]:
@@ -172,25 +141,28 @@ class LBPoolSaver(BaseSaver):
         if not pools:
             return (0, 0)
 
-        created, updated = 0, 0
+        pool_rows = []
+        member_rows = []
+        # 成员没有独立的自然键，只能「先清后建」。清理范围按「设备 + 池名」圈定：
+        # 只按 pool_name 全局匹配会误删其他设备上同名池的成员。
+        # 池在配置里出现过就以配置为准，成员清空也要把旧记录删掉。
+        touched_pool_names: list[str] = []
+
         for pool in pools:
             name = self._leaf(pool.get("name"))
             if not name:
                 continue
-            _, is_created = LtmPool.objects.update_or_create(
-                device=device,
-                name=name,
-                defaults={
+            touched_pool_names.append(name)
+            pool_rows.append(
+                {
+                    "name": name,
                     "mode": pool.get("mode", pool.get("load-balancing-mode", "")),
                     "monitors": self._leaf_list(pool.get("monitors") or pool.get("monitor")),
-                },
+                }
             )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
-            members = as_list(pool.get("members"))
-            rows = []
+
             seen: set[tuple[str, str]] = set()
-            for member in members:
+            for member in as_list(pool.get("members")):
                 if not isinstance(member, dict):
                     continue
                 member_name = self._leaf(member.get("name"))
@@ -202,7 +174,7 @@ class LBPoolSaver(BaseSaver):
                 if (member_name, port) in seen:
                     continue
                 seen.add((member_name, port))
-                rows.append(
+                member_rows.append(
                     LtmPoolMember(
                         device=device,
                         pool_name=name,
@@ -211,12 +183,14 @@ class LBPoolSaver(BaseSaver):
                         port=port,
                     )
                 )
-            # 先清后建，范围按「设备 + 池名」圈定：成员没有独立的自然键，
-            # 只按 pool_name 全局匹配会误删其他设备上同名池的成员。
-            # 池在配置里出现过就以配置为准，成员清空也要把旧记录删掉。
-            LtmPoolMember.objects.filter(device=device, pool_name=name).delete()
-            if rows:
-                LtmPoolMember.objects.bulk_create(rows)
+
+        created, updated = self.bulk_upsert(LtmPool, device, pool_rows, key_fields=("name",))
+
+        # 整批一次清理 + 一次写入，不再按池逐条发语句
+        if touched_pool_names:
+            LtmPoolMember.objects.filter(device=device, pool_name__in=touched_pool_names).delete()
+        if member_rows:
+            LtmPoolMember.objects.bulk_create(member_rows, batch_size=500)
         return (created, updated)
 
 
@@ -319,48 +293,61 @@ class GtmServerSaver(BaseSaver):
         from assets.models import GtmServer, GtmVServer
         from assets.serializers.views import GtmServerSerializer, GtmVServerSerializer
 
-        created, updated = 0, 0
-        for srv in as_list(parsed_data.get("servers")):
+        servers = as_list(parsed_data.get("servers"))
+        if not servers:
+            return (0, 0)
+
+        server_rows = []
+        pending_vservers: list[tuple[str, dict]] = []
+        for srv in servers:
             name = self._leaf(srv.get("server_name"))
             if not name:
                 continue
-            is_new = self.upsert(
-                GtmServerSerializer,
-                GtmServer,
-                device,
-                {"name": name},
+            server_rows.append(
                 {
                     "name": name,
                     "datacenter": self._leaf(srv.get("datacenter")),
                     "monitor": self._leaf(srv.get("server_monitor")),
                     "server_type": srv.get("server_type") or "",
-                },
+                }
             )
-            created += 1 if is_new else 0
-            updated += 0 if is_new else 1
-
             # virtual-servers 是 servers 的子 group：一个 server 下挂多个 vserver
-            server = GtmServer.objects.filter(device=device, name=name).first()
             for vs in as_list(srv.get("virtual_servers")):
                 vs_name = self._leaf(vs.get("vs_name"))
-                if not vs_name:
-                    continue
-                is_new_vs = self.upsert(
-                    GtmVServerSerializer,
-                    GtmVServer,
-                    device,
-                    {"server": server, "name": vs_name},
-                    {
-                        "server": server.pk,
-                        "name": vs_name,
-                        "ip_address": vs.get("vs_address") or None,
-                        "port": str(vs.get("vs_port") or ""),
-                        "monitor": self._leaf(vs.get("vs_monitor")),
-                    },
-                )
-                created += 1 if is_new_vs else 0
-                updated += 0 if is_new_vs else 1
-        return (created, updated)
+                if vs_name:
+                    pending_vservers.append((name, vs))
+
+        created, updated = self.bulk_upsert(
+            GtmServer, device, server_rows, key_fields=("name",), serializer_cls=GtmServerSerializer
+        )
+
+        # 父记录刚批量写完，一次取回 pk；原先每个 server 都要再 filter().first() 查一次
+        server_ids = dict(GtmServer.objects.filter(device=device).values_list("name", "pk"))
+        vs_rows = []
+        for server_name, vs in pending_vservers:
+            server_pk = server_ids.get(server_name)
+            if server_pk is None:
+                continue
+            vs_rows.append(
+                {
+                    # server 给序列化器，server_id 只用于批量 upsert 的键（免掉一次 FK 查询）
+                    "server": server_pk,
+                    "server_id": server_pk,
+                    "name": self._leaf(vs.get("vs_name")),
+                    "ip_address": vs.get("vs_address") or None,
+                    "port": str(vs.get("vs_port") or ""),
+                    "monitor": self._leaf(vs.get("vs_monitor")),
+                }
+            )
+
+        sub_created, sub_updated = self.bulk_upsert(
+            GtmVServer,
+            device,
+            vs_rows,
+            key_fields=("server_id", "name"),
+            serializer_cls=GtmVServerSerializer,
+        )
+        return (created + sub_created, updated + sub_updated)
 
 
 class GtmPoolSaver(BaseSaver):
