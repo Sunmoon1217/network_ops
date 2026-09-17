@@ -379,7 +379,7 @@ onMounted(() => {
         </div>
 
         <el-table :data="rows" size="small" :row-key="rowKey" class="asset-table" border>
-          <el-table-column prop="wideip" label="域名" min-width="200" fixed show-overflow-tooltip>
+          <el-table-column prop="wideip" label="域名" width="220" fixed show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono strong">{{ row.wideip || '-' }}</span>
             </template>
@@ -388,7 +388,7 @@ onMounted(() => {
           <el-table-column prop="rtype" label="类型" width="70" />
 
           <el-table-column label="GTM 虚拟服务器" align="center">
-            <el-table-column prop="gtmIp" label="IP" min-width="130">
+            <el-table-column prop="gtmIp" label="IP" width="135">
               <template #default="{ row }">
                 <span v-if="row.gtmIp" class="mono">{{ row.gtmIp }}</span>
                 <span v-else class="muted">-</span>
@@ -399,7 +399,7 @@ onMounted(() => {
 
           <el-table-column label="LLB（第一级 LTM）" align="center">
             <el-table-column label="虚拟服务器" align="center">
-              <el-table-column prop="llbAddress" label="地址" min-width="130">
+              <el-table-column prop="llbAddress" label="地址" width="135">
                 <template #default="{ row }">
                   <span v-if="row.llbAddress" class="mono">{{ row.llbAddress }}</span>
                   <span v-else class="muted">-</span>
@@ -408,7 +408,7 @@ onMounted(() => {
               <el-table-column prop="llbPort" label="端口" width="80" />
             </el-table-column>
             <el-table-column label="后端成员" align="center">
-              <el-table-column prop="llbMemberAddress" label="地址" min-width="130">
+              <el-table-column prop="llbMemberAddress" label="地址" width="135">
                 <template #default="{ row }">
                   <span v-if="row.llbMemberAddress" class="mono">{{ row.llbMemberAddress }}</span>
                   <span v-else class="muted">-</span>
@@ -420,7 +420,7 @@ onMounted(() => {
 
           <el-table-column label="SLB（下级 LTM）" align="center">
             <el-table-column label="虚拟服务器" align="center">
-              <el-table-column prop="slbAddress" label="地址" min-width="130">
+              <el-table-column prop="slbAddress" label="地址" width="135">
                 <template #default="{ row }">
                   <span v-if="row.slbAddress" class="mono">{{ row.slbAddress }}</span>
                   <span v-else class="muted">-</span>
@@ -429,7 +429,7 @@ onMounted(() => {
               <el-table-column prop="slbPort" label="端口" width="80" />
             </el-table-column>
             <el-table-column label="后端成员" align="center">
-              <el-table-column prop="slbMemberAddress" label="地址" min-width="130">
+              <el-table-column prop="slbMemberAddress" label="地址" width="135">
                 <template #default="{ row }">
                   <span v-if="row.slbMemberAddress" class="mono">{{ row.slbMemberAddress }}</span>
                   <span v-else class="muted">-</span>
@@ -439,7 +439,7 @@ onMounted(() => {
             </el-table-column>
           </el-table-column>
 
-          <el-table-column prop="note" label="说明" min-width="220" show-overflow-tooltip>
+          <el-table-column prop="note" label="说明" width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.note" class="muted">{{ row.note }}</span>
               <span v-else class="muted">-</span>
