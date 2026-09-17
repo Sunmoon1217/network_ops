@@ -22,7 +22,7 @@ gtm server {{ server_name | _line_ }} {
     datacenter {{ datacenter }}
     monitor {{ server_monitor | ORPHRASE }}
     product {{ server_type }}
-    <group name="virtual_servers*">
+    <group name="vservers*">
     virtual-servers { {{ _start_ }}
         <group>
         {{ vs_name }} {
