@@ -8,7 +8,7 @@
 import pytest
 from django.test import Client
 
-from assets.models import Device, GtmPool, GtmServer, GtmVServer, GtmWideip
+from assets.models import Device, GtmPool, GtmServer, GtmVServer, GtmWideip, ServerOwner
 from ops.models import InternetAnalysis
 
 LIST_URL = "/api/internet-analysis/"
@@ -102,3 +102,46 @@ def test_analyze_requires_device_param():
 @pytest.mark.django_db
 def test_analyze_unknown_device_returns_404():
     assert Client().post(f"{ANALYZE_URL}?device=999999").status_code == 404
+
+
+# ---------- 负责人映射（前端表格自己扁平化，靠这份映射填「负责人」列） ----------
+
+
+@pytest.mark.django_db
+def test_list_returns_owner_map_keyed_by_final_ip():
+    """owners 的键是链路最后的 IP 的原始写法，值是负责人"""
+    gslb = _build_chain("ia-cache-owner")
+    ServerOwner.objects.create(ip="10.1.1.1", owner="张三")
+    Client().post(f"{ANALYZE_URL}?device={gslb.pk}")
+
+    payload = Client().get(LIST_URL, {"device": gslb.pk}).json()
+
+    # 这条链路没有对应的 LTM 虚拟服务器，最后的 IP 回退到 GTM 虚拟服务器地址
+    assert payload["owners"] == {"10.1.1.1": "张三"}
+    assert payload["analyzed_at"]
+
+
+@pytest.mark.django_db
+def test_owner_map_reflects_edits_without_reanalysis():
+    """负责人是人工维护的，改了不必重跑分析就能看到"""
+    gslb = _build_chain("ia-cache-owner-edit")
+    owner = ServerOwner.objects.create(ip="10.1.1.1", owner="张三")
+    Client().post(f"{ANALYZE_URL}?device={gslb.pk}")
+
+    owner.owner = "李四"
+    owner.save(update_fields=["owner"])
+
+    payload = Client().get(LIST_URL, {"device": gslb.pk}).json()
+
+    assert payload["owners"] == {"10.1.1.1": "李四"}
+
+
+@pytest.mark.django_db
+def test_owner_map_skips_disabled_and_ownerless_records():
+    gslb = _build_chain("ia-cache-owner-skip")
+    ServerOwner.objects.create(ip="10.1.1.1", owner="已停用", status="disabled")
+    Client().post(f"{ANALYZE_URL}?device={gslb.pk}")
+
+    payload = Client().get(LIST_URL, {"device": gslb.pk}).json()
+
+    assert payload["owners"] == {}

@@ -31,6 +31,7 @@ interface LtmNode {
   status: string
   pool: string
   pool_found: boolean
+  rules: string[]
   members: LtmMemberNode[]
 }
 
@@ -83,6 +84,8 @@ interface WideIpNode {
 interface AnalysisResult {
   device: { id: number; hostname: string; device_type: string }
   wideips: WideIpNode[]
+  /** 链路最后的 IP（原始写法）→ 负责人，后端按 ServerOwner 现查，不随分析缓存过期 */
+  owners?: Record<string, string>
 }
 
 /**
@@ -101,19 +104,22 @@ interface PathRow {
   gtmPort: string
   llbAddress: string
   llbPort: string
+  llbRules: string
   llbMemberAddress: string
   llbMemberPort: string
   slbAddress: string
   slbPort: string
+  slbRules: string
   slbMemberAddress: string
   slbMemberPort: string
+  owner: string
   note: string
 }
 
 /** 路径的一级：本级虚拟服务器 + 指向下一级的池成员（终点时为 null） */
 type LtmStep = [LtmNode, LtmMemberNode | null]
 
-/** 一个空行骨架，避免每处都写全 13 个字段 */
+/** 一个空行骨架，避免每处都写全所有字段 */
 const blankRow = (wideip: string, rtype: string): Omit<PathRow, 'key'> => ({
   wideip,
   rtype,
@@ -121,12 +127,15 @@ const blankRow = (wideip: string, rtype: string): Omit<PathRow, 'key'> => ({
   gtmPort: '',
   llbAddress: '',
   llbPort: '',
+  llbRules: '',
   llbMemberAddress: '',
   llbMemberPort: '',
   slbAddress: '',
   slbPort: '',
+  slbRules: '',
   slbMemberAddress: '',
   slbMemberPort: '',
+  owner: '',
   note: '',
 })
 
@@ -180,6 +189,17 @@ const ltmColumns = (path: LtmStep[], index: number): [string, string, string, st
   if (!member) return [address, port, '', '']
   return [address, port, member.address || '', member.port || '']
 }
+
+/** 取路径第 index 级虚拟服务器的 iRules 文本 */
+const ltmRules = (path: LtmStep[], index: number): string => {
+  const step = path[index]
+  if (!step) return ''
+  return (step[0].rules ?? []).join(', ')
+}
+
+/** 链路最后的 IP：两级取 SLB 成员地址，一级取 LLB 成员地址，链路中断时回退到 GTM 地址 */
+const finalIp = (row: PathRow): string =>
+  row.slbMemberAddress || row.llbMemberAddress || row.gtmIp || ''
 
 /** 把分析结果扁平化成「一行一条链路」 */
 const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
@@ -236,6 +256,8 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
           const row = { ...base, key: `${memberKey}-path${pathIndex}` }
           ;[row.llbAddress, row.llbPort, row.llbMemberAddress, row.llbMemberPort] = ltmColumns(path, 0)
           ;[row.slbAddress, row.slbPort, row.slbMemberAddress, row.slbMemberPort] = ltmColumns(path, 1)
+          row.llbRules = ltmRules(path, 0)
+          row.slbRules = ltmRules(path, 1)
           if (path.length < 2) {
             row.note = '仅一级 LTM'
           } else if (path.length > 2) {
@@ -246,6 +268,12 @@ const buildPathRows = (data: AnalysisResult | null): PathRow[] => {
         })
       })
     })
+  })
+
+  // 负责人按链路最后的 IP 反查，与后端 build_path_rows 的回退顺序保持一致
+  const owners = data.owners ?? {}
+  rows.forEach((row) => {
+    row.owner = owners[finalIp(row)] ?? ''
   })
 
   return rows
@@ -442,6 +470,12 @@ onMounted(() => {
                 </template>
               </el-table-column>
               <el-table-column prop="llbPort" label="端口" width="80" />
+              <el-table-column prop="llbRules" label="rules" width="160" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span v-if="row.llbRules" class="mono">{{ row.llbRules }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
             </el-table-column>
             <el-table-column label="后端成员" align="center">
               <el-table-column prop="llbMemberAddress" label="地址" width="135">
@@ -463,6 +497,12 @@ onMounted(() => {
                 </template>
               </el-table-column>
               <el-table-column prop="slbPort" label="端口" width="80" />
+              <el-table-column prop="slbRules" label="rules" width="160" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span v-if="row.slbRules" class="mono">{{ row.slbRules }}</span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
             </el-table-column>
             <el-table-column label="后端成员" align="center">
               <el-table-column prop="slbMemberAddress" label="地址" width="135">
@@ -473,6 +513,13 @@ onMounted(() => {
               </el-table-column>
               <el-table-column prop="slbMemberPort" label="端口" width="80" />
             </el-table-column>
+          </el-table-column>
+
+          <el-table-column prop="owner" label="负责人" width="120">
+            <template #default="{ row }">
+              <span v-if="row.owner">{{ row.owner }}</span>
+              <span v-else class="muted">-</span>
+            </template>
           </el-table-column>
 
           <el-table-column prop="note" label="说明" width="220" show-overflow-tooltip>

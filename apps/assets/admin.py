@@ -29,6 +29,7 @@ from .models import (
     Room,
     Route,
     SecurityZone,
+    ServerOwner,
     Service,
     SnmpConfig,
     Subnet,
@@ -718,3 +719,11 @@ class SubnetUsageLogAdmin(admin.ModelAdmin):
         "recorded_at",
     )
     list_filter = ("subnet", "recorded_at")
+
+
+@admin.register(ServerOwner)
+class ServerOwnerAdmin(admin.ModelAdmin):
+    list_display = ("id", "ip", "hostname", "owner", "status", "created_at")
+    list_filter = ("status", "created_at", "updated_at")
+    search_fields = ("ip", "hostname", "owner")
+    date_hierarchy = "created_at"

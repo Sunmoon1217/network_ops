@@ -116,3 +116,46 @@ class TemplateTest(TestCase):
                 with self.subTest(template=ttp_file.name):
                     content = ttp_file.read_text(encoding="utf-8")
                     self.assertGreater(len(content.strip()), 0, f"模板为空: {ttp_file.name}")
+
+
+class F5PoolMemberSeparatorTest(TestCase):
+    """F5 池成员的端口分隔符：名字是 IPv6 字面量时 F5 用点号而不是冒号。
+
+    模板里冒号与点号两条备选行必须都保留，且端口要限成纯数字——不限的话冒号那条
+    会把 ``/Common/2001:db8::1.80`` 贪婪切成 name="/Common/2001:db8:"、
+    port="1.80"，回退行永远轮不到，表现为「端口被下一条成员覆盖」。
+    """
+
+    def _members(self, member_lines: str) -> list:
+        config = f"ltm pool /Common/pool_x {{\n    members {{\n{member_lines}    }}\n}}\n"
+        parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(config)
+        members = parsed["pools"]["members"]
+        return members if isinstance(members, list) else [members]
+
+    def test_colon_and_dot_separator_both_parse(self):
+        members = self._members(
+            "        /Common/node_a:80 {\n            address 10.0.0.1\n        }\n"
+            "        /Common/2001:db8::1.8080 {\n            address 2001:db8::1\n        }\n"
+        )
+        assert [(m["name"], m["port"]) for m in members] == [
+            ("/Common/node_a", "80"),
+            ("/Common/2001:db8::1", "8080"),
+        ]
+
+    def test_ipv6_literal_not_split_at_first_colon(self):
+        members = self._members("        /Common/2001:db8::1.80 {\n            address 2001:db8::1\n        }\n")
+        assert members[0]["name"] == "/Common/2001:db8::1"  # 不是 "/Common/2001:db8:"
+        assert members[0]["port"] == "80"  # 不是 "1.80"
+
+    def test_ipv6_member_does_not_steal_neighbour_port(self):
+        """混排时每条成员各拿自己的端口，v6 的不能被后面 v4 的覆盖"""
+        members = self._members(
+            "        /Common/2001:db8::1.80 {\n            address 2001:db8::1\n        }\n"
+            "        /Common/node_v4:8080 {\n            address 10.0.0.1\n        }\n"
+            "        /Common/2001:db8::2.443 {\n            address 2001:db8::2\n        }\n"
+        )
+        assert [(m["name"], m["port"]) for m in members] == [
+            ("/Common/2001:db8::1", "80"),
+            ("/Common/node_v4", "8080"),
+            ("/Common/2001:db8::2", "443"),
+        ]

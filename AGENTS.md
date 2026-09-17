@@ -156,6 +156,7 @@ uv run ruff format
 | 防火墙 | AddressBook, Service, Policy, NatRule |
 | IPAM | Tag, Subnet, IPAddress, SubnetUsageLog |
 | 路由与其它 | Route, Topology, ArpMac |
+| 人工维护 | ServerOwner（服务器 IP ↔ 负责人；不从设备配置提取，故不进 `ConfigBase`） |
 
 ### 操作层 `ops/`
 
@@ -293,11 +294,15 @@ tags, subnets, ip-addresses
 ## 注意事项
 
 - **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
+- **F5 池成员的端口分隔符有两种**：名字是普通串或 IPv4 时用冒号（`/Common/node:80`），名字本身是 IPv6 字面量时 F5 改用一个点号（`/Common/2001:db8::1.80`）。所以 `f5_ltm.ttp` 的 `pools` 里成员有两条备选行（点号那条是回退），**并且端口必须限成纯数字**（`vars` 块里的 `PORT`）——不限的话冒号那条会把 IPv6 成员贪婪切成 `name="/Common/2001:db8:"`、`port="1.80"`，永远轮不到回退行，表现为「端口被相邻成员的值带偏」。
+- **TTP 模板里的注释是纯文本、不是 XML 注释**：注释行里出现尖括号（例如直接写 `<vars>` 或 `<group>`）会被当成未闭合标签，整个模板解析失败。`re()` 只认内置名（`IP` / `IPV6`）或 `vars` 块里声明的名字，不能内联写正则。内置 `IPV6` 正则只认十六进制与冒号、**不含点号**，覆盖它要谨慎。
 - **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`ops/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
 - **`apps/ops/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
 - `ops` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ops`。
 - **互联网资产分析走缓存**：结果存 `ops.models.InternetAnalysis`，只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
+- **资产分析的表格列**：后端 `build_path_rows` 与前端 `internet-asset.vue` 里的 `buildPathRows` 是**两份各自独立**的扁平化实现（列序必须手工保持一致）。当前 16 列：域名 / 类型 / GTM IP·端口 / LLB 地址·端口·rules / LLB 成员地址·端口 / SLB 地址·端口·rules / SLB 成员地址·端口 / 负责人 / 说明。`EXPORT_COLUMN_WIDTHS` 的条数必须与 `EXPORT_HEADERS` 相同（有测试守），列宽按序号用 `get_column_letter` 生成，别再写死 `"ABCDEFGHIJKLM"`。
+- **「负责人」列**：按链路**最后的 IP**反查 `ServerOwner`，回退顺序是 `slb_member_address → llb_member_address → gtm_ip`（见 `_final_ip`）。匹配前两边都过 `_normalize_ip`，否则 `2001:DB8::1` 与压缩写法对不上。负责人**不进分析缓存**——它挂在 `build_path_rows`/`GET` 响应上现查，改了负责人不必重跑分析。前端表格自己扁平化、拿不到数据库，所以 GET 响应额外给一份 `owners`（键是链路最后 IP 的**原始写法**，与前端用同一份回退规则取值），避免在 JS 里重实现 IPv6 规范化。
 - `Topology` 是单模型，图数据存于 `graph_data` JSON 字段，没有独立的节点/边表。
 - `Device` 没有 `address` 字段，地址信息在 `DeviceConnection` 中。
 - 操作层应用目录名为 `ops`（避免与 Python 标准库 `operator` 冲突）。

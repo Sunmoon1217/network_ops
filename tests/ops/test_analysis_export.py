@@ -23,8 +23,9 @@ from assets.models import (
     LtmPool,
     LtmPoolMember,
     LtmVirtualServer,
+    ServerOwner,
 )
-from ops.api.analysis import EXPORT_HEADERS, analyze_device, build_path_rows
+from ops.api.analysis import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS, analyze_device, build_path_rows
 
 EXPORT_URL = "/api/internet-analysis/export/"
 ANALYZE_URL = "/api/internet-analysis/analyze/"
@@ -53,8 +54,12 @@ def _gtm_vserver(device: Device, server_name: str, vs_name: str, ip: str, port: 
     return GtmVServer.objects.create(device=device, server=server, name=vs_name, ip_address=ip, port=port)
 
 
-def _ltm_virtual(device: Device, name: str, ip: str, port: str, pool: str = "") -> LtmVirtualServer:
-    return LtmVirtualServer.objects.create(device=device, name=name, vs_address=ip, vs_port=port, pool=pool)
+def _ltm_virtual(
+    device: Device, name: str, ip: str, port: str, pool: str = "", rules: list[str] | None = None
+) -> LtmVirtualServer:
+    return LtmVirtualServer.objects.create(
+        device=device, name=name, vs_address=ip, vs_port=port, pool=pool, rules=rules or []
+    )
 
 
 def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
@@ -71,11 +76,11 @@ def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
     _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
 
     ltm = _device(f"{hostname}-ltm", "slb")
-    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
+    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb", rules=["irule_llb"])
     LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
     LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m_llb", address="10.2.2.2", port="8080")
 
-    _ltm_virtual(ltm, "vs_slb", "10.2.2.2", "8080", pool="pool_slb")
+    _ltm_virtual(ltm, "vs_slb", "10.2.2.2", "8080", pool="pool_slb", rules=["irule_slb"])
     LtmPool.objects.create(device=ltm, name="pool_slb", mode="http")
     LtmPoolMember.objects.create(device=ltm, pool_name="pool_slb", name="m_slb", address="10.9.9.9", port="9090")
     return gslb
@@ -85,13 +90,28 @@ def _build_two_level_chain(hostname: str = "ia-exp") -> Device:
 
 
 def test_export_headers_shape():
-    """13 列：GTM 四列 + LTM 两级各四列 + 说明"""
-    assert len(EXPORT_HEADERS) == 13
+    """16 列：GTM 四列 + LTM 两级各五列（含 rules）+ 负责人 + 说明"""
+    assert len(EXPORT_HEADERS) == 16
     assert EXPORT_HEADERS[0] == "域名"
     assert EXPORT_HEADERS[2:4] == ["GTM 虚拟服务器 IP", "GTM 虚拟服务器端口"]
-    assert EXPORT_HEADERS[4:8] == ["LLB 虚拟服务器地址", "LLB 端口", "LLB 后端成员地址", "LLB 后端成员端口"]
-    assert EXPORT_HEADERS[8:12] == ["SLB 虚拟服务器地址", "SLB 端口", "SLB 后端成员地址", "SLB 后端成员端口"]
-    assert EXPORT_HEADERS[12] == "说明"
+    assert EXPORT_HEADERS[4:9] == [
+        "LLB 虚拟服务器地址",
+        "LLB 端口",
+        "LLB rules",
+        "LLB 后端成员地址",
+        "LLB 后端成员端口",
+    ]
+    assert EXPORT_HEADERS[9:14] == [
+        "SLB 虚拟服务器地址",
+        "SLB 端口",
+        "SLB rules",
+        "SLB 后端成员地址",
+        "SLB 后端成员端口",
+    ]
+    assert EXPORT_HEADERS[14] == "负责人"
+    assert EXPORT_HEADERS[15] == "说明"
+    # 列宽数量必须与表头一致，否则导出会静默少设宽度
+    assert len(EXPORT_COLUMN_WIDTHS) == len(EXPORT_HEADERS)
 
 
 @pytest.mark.django_db
@@ -210,6 +230,8 @@ def test_empty_pool_still_produces_a_row():
 @pytest.mark.django_db
 def test_export_returns_xlsx_workbook():
     gslb = _build_two_level_chain("ia-xlsx")
+    # 链路最后的 IP 是 SLB 池成员 10.9.9.9，按它反查负责人
+    ServerOwner.objects.create(hostname="srv-final", ip="10.9.9.9", owner="张三")
     _analyze(gslb)
 
     res = Client().get(EXPORT_URL, {"device": gslb.pk})
@@ -229,7 +251,7 @@ def test_export_returns_xlsx_workbook():
     assert sheet.max_row == 2
 
     # 导出列顺序要与字段一一对应（空说明单元格 openpyxl 写的是 None）
-    values = [sheet.cell(row=2, column=index).value for index in range(1, 14)]
+    values = [sheet.cell(row=2, column=index).value for index in range(1, 17)]
     assert values == [
         "www.example.com",
         "A",
@@ -237,12 +259,15 @@ def test_export_returns_xlsx_workbook():
         "80",
         "10.1.1.1",
         "80",
+        "irule_llb",
         "10.2.2.2",
         "8080",
         "10.2.2.2",
         "8080",
+        "irule_slb",
         "10.9.9.9",
         "9090",
+        "张三",
         None,
     ]
 
@@ -255,3 +280,93 @@ def test_export_requires_device_param():
 @pytest.mark.django_db
 def test_export_unknown_device_returns_404():
     assert Client().get(EXPORT_URL, {"device": 999999}).status_code == 404
+
+
+# ---------- rules 列与负责人 ----------
+
+
+@pytest.mark.django_db
+def test_llb_and_slb_rules_columns():
+    """两级虚拟服务器各自的 iRules 落在各自那一列"""
+    gslb = _build_two_level_chain("ia-rules")
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["llb_rules"] == "irule_llb"
+    assert row["slb_rules"] == "irule_slb"
+
+
+@pytest.mark.django_db
+def test_owner_resolved_from_deepest_member_ip():
+    """负责人按链路最后的 IP 反查：两级链路取 SLB 池成员地址"""
+    gslb = _build_two_level_chain("ia-owner")
+    ServerOwner.objects.create(ip="10.9.9.9", owner="最终负责人")
+    # 干扰项：中间那一跳的地址也建一条，不能取它
+    ServerOwner.objects.create(ip="10.2.2.2", owner="中间负责人")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["owner"] == "最终负责人"
+
+
+@pytest.mark.django_db
+def test_owner_falls_back_to_llb_member_when_single_level():
+    """只有一级 LTM 时，最后的 IP 是 LLB 池成员地址"""
+    gslb = _device("ia-owner-one")
+    _wideip(gslb, "one.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.1.1.1", "80")
+
+    ltm = _device("ia-owner-one-ltm", "slb")
+    _ltm_virtual(ltm, "vs_llb", "10.1.1.1", "80", pool="pool_llb")
+    LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m", address="10.5.5.5", port="8080")
+    ServerOwner.objects.create(ip="10.5.5.5", owner="一级负责人")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["slb_member_address"] == ""
+    assert row["owner"] == "一级负责人"
+
+
+@pytest.mark.django_db
+def test_owner_falls_back_to_gtm_ip_when_chain_breaks():
+    """链路断在「无对应 LTM 虚拟服务器」时，用 GTM 虚拟服务器地址反查"""
+    gslb = _device("ia-owner-break")
+    _wideip(gslb, "break.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "10.7.7.7", "80")
+    ServerOwner.objects.create(ip="10.7.7.7", owner="断链负责人")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["note"] == "无对应 LTM 虚拟服务器 · GTM 虚拟服务器地址即最终地址"
+    assert row["owner"] == "断链负责人"
+
+
+@pytest.mark.django_db
+def test_disabled_owner_is_ignored():
+    """status=disabled 的负责人记录不参与匹配"""
+    gslb = _build_two_level_chain("ia-owner-off")
+    ServerOwner.objects.create(ip="10.9.9.9", owner="已停用", status="disabled")
+
+    assert build_path_rows(analyze_device(gslb))[0]["owner"] == ""
+
+
+@pytest.mark.django_db
+def test_owner_matches_ipv6_regardless_of_writing():
+    """IPv6 写法不同（大小写 / 展开）也要能匹配上负责人"""
+    gslb = _device("ia-owner-v6")
+    _wideip(gslb, "v6.example.com", ["pool_web"])
+    _gtm_pool(gslb, "pool_web", [{"server_name": "s1", "vs_name": "vs1"}])
+    _gtm_vserver(gslb, "s1", "vs1", "2001:db8::1", "80")
+
+    ltm = _device("ia-owner-v6-ltm", "slb")
+    _ltm_virtual(ltm, "vs_llb", "2001:0DB8:0000::1", "80", pool="pool_llb")
+    LtmPool.objects.create(device=ltm, name="pool_llb", mode="http")
+    LtmPoolMember.objects.create(device=ltm, pool_name="pool_llb", name="m", address="2001:DB8::99", port="80")
+    ServerOwner.objects.create(ip="2001:0db8::99", owner="v6 负责人")
+
+    row = build_path_rows(analyze_device(gslb))[0]
+
+    assert row["llb_member_address"] == "2001:DB8::99"
+    assert row["owner"] == "v6 负责人"

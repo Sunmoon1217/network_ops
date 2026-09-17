@@ -6,6 +6,16 @@ ltm node {{ name | _start_ }} {
 } {{ _end_ }}
 </group>
 
+# pool 成员写的是 /Common/名字:端口，但名字本身是 IPv6 字面量时冒号会歧义，
+# F5 改用一个点号分隔端口：/Common/2001:db8::1.80。所以成员要两条备选行（下面
+# 那条是回退），**并且端口必须限成纯数字**：不限的话冒号那条会把 IPv6 成员贪婪
+# 切成 name="/Common/2001:db8:"、port="1.80"，永远轮不到回退行。
+# re() 只认 vars 块里声明的名字或内置名，不能内联写正则。
+<vars>
+PORT = r"\d+"
+</vars>
+
+# 注释是纯文本不是 XML 注释，里面不能出现尖括号，否则会被当成未闭合标签。
 <group name="pools">
 ltm pool {{ name | _start_ }} {
     load-balancing-mode {{ mode }}
@@ -13,7 +23,10 @@ ltm pool {{ name | _start_ }} {
     <group name="members">
     members { {{ _start_ }}
         <group>
-        {{ name | _start_ }}:{{ port }} {
+        {{ name | _start_ }}:{{ port | re("PORT") }} {
+            address {{ address }}
+        } {{ _end_ }}
+        {{ name | _start_ }}.{{ port | re("PORT") }} {
             address {{ address }}
         } {{ _end_ }}
         </group>

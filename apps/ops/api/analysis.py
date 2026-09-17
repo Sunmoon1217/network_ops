@@ -29,6 +29,7 @@ from urllib.parse import quote
 
 from django.http import HttpResponse
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -51,15 +52,18 @@ EXPORT_HEADERS = [
     "GTM 虚拟服务器端口",  # GtmVServer.port
     "LLB 虚拟服务器地址",  # LtmVirtualServer.vs_address
     "LLB 端口",  # LtmVirtualServer.vs_port
+    "LLB rules",  # LtmVirtualServer.rules
     "LLB 后端成员地址",  # LtmPoolMember.address
     "LLB 后端成员端口",  # LtmPoolMember.port
     "SLB 虚拟服务器地址",  # LtmVirtualServer.vs_address（级联的下一级）
     "SLB 端口",  # LtmVirtualServer.vs_port
+    "SLB rules",  # LtmVirtualServer.rules（级联的下一级）
     "SLB 后端成员地址",  # LtmPoolMember.address
     "SLB 后端成员端口",  # LtmPoolMember.port
+    "负责人",  # ServerOwner.owner，按链路最后的 IP 反查
     "说明",
 ]
-EXPORT_COLUMN_WIDTHS = (28, 8, 20, 18, 22, 12, 20, 18, 22, 12, 20, 18, 34)
+EXPORT_COLUMN_WIDTHS = (28, 8, 20, 18, 22, 12, 30, 20, 18, 22, 12, 30, 20, 18, 16, 34)
 
 
 def _parse_member_entry(entry) -> tuple[str, str, dict]:
@@ -158,6 +162,7 @@ def _expand_ltm_virtual(virtual: LtmVirtualServer, index: _AssetIndex, depth: in
         "status": virtual.status,
         "pool": virtual.pool or "",
         "pool_found": bool(virtual.pool) and (virtual.device_id, virtual.pool) in index.ltm_pools,
+        "rules": [str(rule) for rule in (virtual.rules or [])],
         "members": [],
     }
 
@@ -276,9 +281,14 @@ def _resolve_device(request):
 
 
 def _cached_response(cached: InternetAnalysis) -> dict:
-    """把缓存记录拼成响应体：分析结果 + 分析时间与耗时"""
+    """把缓存记录拼成响应体：分析结果 + 负责人映射 + 分析时间与耗时
+
+    ``owners`` 每次现查：负责人是人工维护的，改了不该要求重跑分析才能看到。
+    """
+    result = cached.result or {}
     return {
-        **(cached.result or {}),
+        **result,
+        "owners": build_owner_map(result),
         "analyzed_at": cached.analyzed_at,
         "duration_ms": cached.duration_ms,
     }
@@ -368,6 +378,30 @@ def _walk_ltm_paths(node: dict, prefix: list[tuple[dict, dict | None]]) -> list[
     return paths
 
 
+def _ltm_rules(path: list[tuple[dict, dict | None]], index: int) -> str:
+    """取路径第 index 级虚拟服务器的 iRules，多条用逗号连接"""
+    if index >= len(path):
+        return ""
+    node, _ = path[index]
+    return ", ".join(str(rule) for rule in (node.get("rules") or []))
+
+
+def _final_ip(row: dict) -> str:
+    """链路最后的 IP：两级取 SLB 成员地址，一级取 LLB 成员地址，链路中断时回退到 GTM 地址"""
+    return row.get("slb_member_address") or row.get("llb_member_address") or row.get("gtm_ip") or ""
+
+
+def _load_owner_index() -> dict[str, str]:
+    """规范化 IP -> 负责人。
+
+    只取启用的记录；两边都过 ``_normalize_ip``，否则 ``2001:DB8::1`` 这类写法
+    与实际入库的压缩形式对不上。
+    """
+    from assets.models import ServerOwner
+
+    return {_normalize_ip(item.ip): item.owner for item in ServerOwner.objects.filter(status="enabled") if item.owner}
+
+
 def _ltm_columns(path: list[tuple[dict, dict | None]], index: int) -> tuple[str, str, str, str]:
     """取路径第 index 级的 (虚拟服务器地址, 端口, 池成员地址, 池成员端口)"""
     if index >= len(path):
@@ -392,12 +426,15 @@ def _blank_row(wideip: dict) -> dict:
         "gtm_port": "",
         "llb_address": "",
         "llb_port": "",
+        "llb_rules": "",
         "llb_member_address": "",
         "llb_member_port": "",
         "slb_address": "",
         "slb_port": "",
+        "slb_rules": "",
         "slb_member_address": "",
         "slb_member_port": "",
+        "owner": "",
         "note": "",
     }
 
@@ -437,6 +474,8 @@ def _member_path_rows(wideip: dict, member: dict) -> list[dict]:
         row = _base()
         (row["llb_address"], row["llb_port"], row["llb_member_address"], row["llb_member_port"]) = _ltm_columns(path, 0)
         (row["slb_address"], row["slb_port"], row["slb_member_address"], row["slb_member_port"]) = _ltm_columns(path, 1)
+        row["llb_rules"] = _ltm_rules(path, 0)
+        row["slb_rules"] = _ltm_rules(path, 1)
         notes = []
         if len(path) < 2:
             notes.append("仅一级 LTM")
@@ -448,11 +487,18 @@ def _member_path_rows(wideip: dict, member: dict) -> list[dict]:
     return rows
 
 
-def build_path_rows(result: dict) -> list[dict]:
+def build_path_rows(result: dict, owner_index: dict[str, str] | None = None) -> list[dict]:
     """把 analyze_device 的结果扁平化成「一行一条链路」的表格行。
 
-    列固定为 GTM 四列 + LTM 两级（LLB / SLB）各四列 + 说明，便于筛选与导出。
+    列固定为 GTM 四列 + LTM 两级（LLB / SLB）各 5 列 + 负责人 + 说明。
+
+    负责人按链路最后的 IP 反查 ``ServerOwner``。这里不把它写进分析缓存，而是在
+    出表时现查：改了负责人不必重跑分析就能立刻反映到页面与导出。``owner_index``
+    可注入，便于测试。
     """
+    if owner_index is None:
+        owner_index = _load_owner_index()
+
     rows: list[dict] = []
 
     for wideip in result.get("wideips", []):
@@ -468,7 +514,23 @@ def build_path_rows(result: dict) -> list[dict]:
             for member in members:
                 rows.extend(_member_path_rows(wideip, member))
 
+    for row in rows:
+        # final_ip 只用于反查负责人（以及给前端做同一份映射），不进导出列
+        row["final_ip"] = _final_ip(row)
+        row["owner"] = owner_index.get(_normalize_ip(row["final_ip"]), "")
+
     return rows
+
+
+def build_owner_map(result: dict) -> dict[str, str]:
+    """链路最后的 IP（原始写法）-> 负责人。
+
+    前端表格自己扁平化分析结果，拿不到数据库；这里把现查的负责人按**原始 IP 字符串**
+    返回，前端就能用同一份回退规则直接查表，不必在 JS 里实现 IPv6 规范化。
+    """
+    return {
+        row["final_ip"]: row["owner"] for row in build_path_rows(result) if row.get("final_ip") and row.get("owner")
+    }
 
 
 @api_view(["GET"])
@@ -504,17 +566,21 @@ def internet_analysis_export(request):
                 row["gtm_port"],
                 row["llb_address"],
                 row["llb_port"],
+                row["llb_rules"],
                 row["llb_member_address"],
                 row["llb_member_port"],
                 row["slb_address"],
                 row["slb_port"],
+                row["slb_rules"],
                 row["slb_member_address"],
                 row["slb_member_port"],
+                row["owner"],
                 row["note"],
             ]
         )
-    for column, width in zip("ABCDEFGHIJKLM", EXPORT_COLUMN_WIDTHS, strict=False):
-        sheet.column_dimensions[column].width = width
+    # 列宽跟着表头走：写死 "ABCDEFGHIJKLM" 在加列时会静默少设宽度
+    for index, width in enumerate(EXPORT_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
 
     buffer = BytesIO()
     workbook.save(buffer)

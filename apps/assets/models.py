@@ -1108,3 +1108,35 @@ class SubnetUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.subnet.network} @ {self.recorded_at:%Y-%m-%d %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# 服务器负责人（人工维护）
+# ---------------------------------------------------------------------------
+
+
+class ServerOwner(models.Model):
+    """服务器 IP 与负责人的对应关系。
+
+    人工维护、不从设备配置提取，所以是裸 ``models.Model``（不进 ``ConfigBase``）。
+    ``ip`` 是查询键：资产分析拿到链路最后的 IP 后按它反查负责人；用
+    ``GenericIPAddressField`` 是为了让 IPv6 统一小写压缩，避免 ``2001:DB8::1``
+    与 ``2001:db8::1`` 匹配不上。
+    """
+
+    STATUS_CHOICES = (("enabled", "启用"), ("disabled", "停用"))
+
+    hostname = models.CharField(max_length=255, blank=True, default="", verbose_name="主机名")
+    ip = models.GenericIPAddressField(unique=True, verbose_name="IP 地址")
+    owner = models.CharField(max_length=255, blank=True, default="", verbose_name="负责人")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="enabled", verbose_name="状态")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "服务器负责人"
+        verbose_name_plural = verbose_name
+        ordering = ("ip",)
+
+    def __str__(self):
+        return f"{self.ip} - {self.owner}" if self.owner else str(self.ip)
