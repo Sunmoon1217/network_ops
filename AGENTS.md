@@ -216,6 +216,13 @@ TTP 模板解析 → 结果写回 config_json
 
 `signals.py` 的处理器仅在 `created=True` 时触发，并用 `_processing` 集合防止递归。
 
+**关于并发（实测结论）**：
+
+- 信号是**完全同步**的：在 `DeviceConfig.save()` 的调用栈里跑完「读 Git → 解析 → 全部 Saver」，无线程池、无队列、无 async。`_processing` 是模块级 set，只在本进程内有效，且键是 `DeviceConfig.pk` 而非设备 id——**同一台设备的两个 DeviceConfig 并行进入流水线时它挡不住**。注意它其实只在「同一 pk 再次 `created=True`」时才会生效，而这不可能发生（pk 唯一），所以当前流程里它是冗余的；嵌套那次 `config_json` 回写是 `created=False`，在第 21 行的 `not created` 就已经返回。**更新已有的 DeviceConfig 永远不会触发流水线。**
+- **不同设备可以并行**：`runserver` 默认多线程（`--nothreading` 是 `store_false`），而负载是 DB 往返瓶颈（每语句约 0.95 ms，Postgres 跑在容器里、经宿主机端口映射），socket I/O 期间释放 GIL。实测 4 台设备 4 线程 18.34 s → 5.49 s（3.34x）。
+- **同一设备并行会写坏数据**：同一设备 4 线程并发写 4 份不同配置（100 个池），8/8 轮最终成员表混进 2–3 份配置的地址，并出现 19 次 `duplicate key ... uni_pool_member_device_pool_node_port`。2 线程时是间歇性的（6 轮中 1 次、10 轮中 0 次），更难发现。而且失败被 `_dispatch_savers` 按 Saver 吞掉只打日志，HTTP 请求照样返回成功。
+- `reparse --workers N` 的并行单位是**设备**，且命令内部保证每台设备只派一个任务（同一个 hostname 重复传入会去重）。它**只保证本命令内部**不会同设备并发；Web 导入路径没有设备级互斥。
+
 ## API 路由
 
 `netops/urls.py` 依次 include 三个应用的 urls，全部挂载在 `/api/` 下。

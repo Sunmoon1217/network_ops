@@ -54,6 +54,7 @@ def test_reparse_parses_and_runs_savers(monkeypatch, h3c_model):
 @pytest.mark.django_db
 def test_reparse_no_parse_reuses_existing_config_json(monkeypatch, h3c_model):
     """--no-parse 不读 Git，直接用已有 config_json 跑 Saver"""
+
     def _boom(hostname, commit=None):
         raise AssertionError("--no-parse 不应读取 Git")
 
@@ -143,3 +144,83 @@ def test_reparse_saver_failure_raises_command_error(monkeypatch, h3c_model):
 
     with pytest.raises(CommandError, match="Saver 执行失败"):
         _run("--device", "rp-sw-07")
+
+
+# ---------- 并行 / 命令内按设备分组 ----------
+
+
+@pytest.mark.django_db
+def test_reparse_dedupes_repeated_device(monkeypatch, h3c_model):
+    """同一个 hostname 传多次只处理一次。
+
+    不去重的话，并行时会有多个 worker 同时写同一台设备的同一批行，
+    正是要避免的那种并发。
+    """
+    monkeypatch.setattr("ops.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    _make_config("rp-dup", h3c_model)
+
+    output = _run("--device", "rp-dup", "--device", "rp-dup")
+
+    assert output.count("rp-dup: 已重新解析") == 1
+    assert "完成：1 台设备" in output
+
+
+@pytest.mark.django_db
+def test_reparse_rejects_zero_workers(monkeypatch, h3c_model):
+    monkeypatch.setattr("ops.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    _make_config("rp-w0", h3c_model)
+
+    with pytest.raises(CommandError, match="--workers 必须 >= 1"):
+        _run("--device", "rp-w0", "--workers", "0")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reparse_parallel_writes_same_result_as_sequential(monkeypatch):
+    """跨设备并行：每台设备各写各的，结果与顺序执行一致。
+
+    transaction=True 是必须的：子进程连的是同一个测试库，但看不到父进程
+    未提交的事务，包裹式事务下子进程会读不到这些 DeviceConfig。
+    """
+    monkeypatch.setattr("ops.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    vendor = Vendor.objects.create(name="H3C")
+    model = DeviceModel.objects.create(name="S5560X-par", vendor=vendor)
+    hostnames = [f"rp-par-{i}" for i in range(4)]
+    for hostname in hostnames:
+        _make_config(hostname, model)
+
+    output = _run("--all", "--workers", "4")
+
+    assert "并行度 4" in output
+    assert "完成：4 台设备，0 个 Saver 失败" in output
+    for hostname in hostnames:
+        device = Device.objects.get(hostname=hostname)
+        assert Vlan.objects.filter(device=device).count() == 2
+        assert Interface.objects.filter(device=device).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reparse_parallel_reports_saver_failure(monkeypatch):
+    """并行时子进程里的 Saver 失败要能回传，并以非零退出码收尾"""
+    monkeypatch.setattr("ops.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    vendor = Vendor.objects.create(name="H3C")
+    model = DeviceModel.objects.create(name="S5560X-fail", vendor=vendor)
+    _make_config("rp-par-fail-1", model)
+    _make_config("rp-par-fail-2", model)
+
+    from ops.savers import registry
+
+    def _boom(self, device, parsed_data):
+        raise RuntimeError("模拟 Saver 故障")
+
+    original = registry.get_savers_for_config
+
+    def _patched(device_type, config_json):
+        savers = original(device_type, config_json)
+        for _, saver in savers:
+            saver.save = _boom.__get__(saver, type(saver))
+        return savers
+
+    monkeypatch.setattr("ops.savers.registry.get_savers_for_config", _patched)
+
+    with pytest.raises(CommandError, match="Saver 执行失败"):
+        _run("--all", "--workers", "2")
