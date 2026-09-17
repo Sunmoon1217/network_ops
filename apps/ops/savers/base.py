@@ -60,6 +60,18 @@ class BaseSaver(ABC):
         except ValueError:
             return None
 
+    def _leaf(self, value: Any) -> str:
+        """取 F5 路径名字的末段：``/Common/pool_web`` → ``pool_web``。
+
+        F5 配置里对象名普遍带 ``/Common/`` 分区前缀，而库里的名称字段存末段，
+        关联（例如池成员按 server_name 找 GtmServer）也依赖两边写法一致。
+
+        清理放在这里而不是模板里：TTP 的模板函数做不了整串替换——``replaceall``
+        是逐字符语义，``re()`` 又只认 ``<vars>`` 里声明的名字、且是"从行里抓取"
+        的匹配函数，链在 ``strip('"')`` 之后拿不到标量。
+        """
+        return str(value or "").strip().strip('"').rstrip("/").rsplit("/", 1)[-1]
+
     def upsert(self, serializer_cls, model, device, lookup: dict, payload: dict) -> bool:
         """用序列化器 upsert 一条记录，返回是否为新建。
 

@@ -45,9 +45,9 @@ def test_gtm_server_saves_virtual_servers():
 
     server = GtmServer.objects.get(device=device)
     assert (server.name, server.datacenter, server.monitor, server.server_type) == (
-        "/Common/DC-BJ-SRV",
-        "/Common/DC-BJ",
-        "/Common/icmp",
+        "DC-BJ-SRV",
+        "DC-BJ",
+        "icmp",
         "bigip",
     )
 
@@ -91,10 +91,10 @@ def test_gtm_pool_members_go_to_json():
     assert pool.fallback_mode == "return-to-dns"
     assert pool.fallback_ip == "10.0.0.9"
     assert pool.ttl == 30
-    assert pool.monitor == ["/Common/http"]
+    assert pool.monitor == ["http"]
     assert pool.members == [
         {
-            "server": "/Common/s1",
+            "server": "s1",
             "vserver": "vs_web",
             "status": "enabled",
             "order": 0,
@@ -169,3 +169,67 @@ def test_gtm_savers_are_idempotent():
     assert saver.save(device, parsed) == (0, 2)
     assert GtmServer.objects.filter(device=device).count() == 1
     assert GtmVServer.objects.filter(device=device).count() == 1
+
+
+@pytest.mark.django_db
+def test_common_prefix_is_stripped_and_relations_still_match():
+    """F5 的 /Common/ 前缀要被剥掉，且关联两侧写法保持一致。
+
+    用 monitor-srv 这种名字是有意的：模板里曾用 lstrip("/Common/") 去前缀，
+    而 lstrip 按字符集删除，会把 monitor-srv 啃成 itor-srv（m/o/n 都在集合里）。
+    """
+    device = Device.objects.create(hostname="_t_gtm_prefix", device_type="gslb")
+
+    GtmDatacenterSaver().save(device, {"datacenters": {"name": "/Common/DC-BJ"}})
+    GtmServerSaver().save(
+        device,
+        {
+            "servers": {
+                "server_name": "/Common/monitor-srv",
+                "datacenter": "/Common/DC-BJ",
+                "server_monitor": "/Common/icmp",
+                "server_type": "bigip",
+                "virtual_servers": [{"vs_name": "vs1", "vs_address": "10.1.1.1", "vs_port": "80"}],
+            }
+        },
+    )
+    GtmPoolSaver().save(
+        device,
+        {
+            "pools": {
+                "pool_name": "/Common/pool_web",
+                "pool_monitor": "/Common/http",
+                "members": [
+                    {"server_name": "/Common/monitor-srv", "vs_name": "vs1", "member_monitor": "/Common/tcp"},
+                ],
+            }
+        },
+    )
+    GTMWideipSaver().save(
+        device,
+        {
+            "wideips": {
+                "wideip_name": "/Common/www.example.com",
+                "wideip_type": "A",
+                "pools": [{"pool_name": "/Common/pool_web"}],
+            }
+        },
+    )
+
+    assert GtmDatacenter.objects.get(device=device).name == "DC-BJ"
+
+    server = GtmServer.objects.get(device=device)
+    assert server.name == "monitor-srv"  # 不是 lstrip 会得到的 "itor-srv"
+    assert server.datacenter == "DC-BJ"
+    assert server.monitor == "icmp"
+    assert GtmVServer.objects.get(device=device, server=server).name == "vs1"
+
+    pool = GtmPool.objects.get(device=device)
+    assert pool.name == "pool_web"
+    assert pool.monitor == ["http"]
+    # 关键：池成员引用的 server 名必须与 GtmServer.name 写法一致，关联才成立
+    assert pool.members[0]["server"] == server.name == "monitor-srv"
+
+    wideip = GtmWideip.objects.get(device=device)
+    assert wideip.name == "www.example.com"
+    assert wideip.pools == [pool.name]

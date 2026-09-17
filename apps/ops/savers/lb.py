@@ -243,12 +243,15 @@ class GTMWideipSaver(BaseSaver):
 
         created, updated = 0, 0
         for w in wideips:
-            name = w.get("wideip_name", w.get("name"))
+            name = self._leaf(w.get("wideip_name") or w.get("name"))
             if not name:
                 continue
             pools_raw = w.get("pools", [])
             if isinstance(pools_raw, list):
-                pools = [p.get("pool_name", p.get("name", "")) if isinstance(p, dict) else str(p) for p in pools_raw]
+                pools = [
+                    self._leaf(p.get("pool_name") or p.get("name")) if isinstance(p, dict) else self._leaf(p)
+                    for p in pools_raw
+                ]
             elif isinstance(pools_raw, str):
                 pools = [pools_raw]
             else:
@@ -281,7 +284,7 @@ class GtmDatacenterSaver(BaseSaver):
 
         created, updated = 0, 0
         for dc in as_list(parsed_data.get("datacenters")):
-            name = dc.get("name")
+            name = self._leaf(dc.get("name"))
             if not name:
                 continue
             is_new = self.upsert(GtmDatacenterSerializer, GtmDatacenter, device, {"name": name}, {"name": name})
@@ -302,7 +305,7 @@ class GtmServerSaver(BaseSaver):
 
         created, updated = 0, 0
         for srv in as_list(parsed_data.get("servers")):
-            name = srv.get("server_name")
+            name = self._leaf(srv.get("server_name"))
             if not name:
                 continue
             is_new = self.upsert(
@@ -312,8 +315,8 @@ class GtmServerSaver(BaseSaver):
                 {"name": name},
                 {
                     "name": name,
-                    "datacenter": srv.get("datacenter") or "",
-                    "monitor": srv.get("server_monitor") or "",
+                    "datacenter": self._leaf(srv.get("datacenter")),
+                    "monitor": self._leaf(srv.get("server_monitor")),
                     "server_type": srv.get("server_type") or "",
                 },
             )
@@ -323,7 +326,7 @@ class GtmServerSaver(BaseSaver):
             # virtual-servers 是 servers 的子 group：一个 server 下挂多个 vserver
             server = GtmServer.objects.filter(device=device, name=name).first()
             for vs in as_list(srv.get("virtual_servers")):
-                vs_name = vs.get("vs_name")
+                vs_name = self._leaf(vs.get("vs_name"))
                 if not vs_name:
                     continue
                 is_new_vs = self.upsert(
@@ -336,7 +339,7 @@ class GtmServerSaver(BaseSaver):
                         "name": vs_name,
                         "ip_address": vs.get("vs_address") or None,
                         "port": str(vs.get("vs_port") or ""),
-                        "monitor": vs.get("vs_monitor") or "",
+                        "monitor": self._leaf(vs.get("vs_monitor")),
                     },
                 )
                 created += 1 if is_new_vs else 0
@@ -356,10 +359,10 @@ class GtmPoolSaver(BaseSaver):
 
         created, updated = 0, 0
         for pool in as_list(parsed_data.get("pools")):
-            name = pool.get("pool_name")
+            name = self._leaf(pool.get("pool_name"))
             if not name:
                 continue
-            monitor = pool.get("pool_monitor")
+            monitor = self._leaf(pool.get("pool_monitor"))
             payload = {
                 "name": name,
                 "lb_mode": pool.get("preferred") or "round-robin",
@@ -382,17 +385,17 @@ class GtmPoolSaver(BaseSaver):
     def _normalize_members(self, pool: dict) -> list[dict]:
         members = []
         for member in as_list(pool.get("members")):
-            server = member.get("server_name")
+            server = self._leaf(member.get("server_name"))
             if not server:
                 continue
             members.append(
                 {
                     "server": server,
-                    "vserver": member.get("vs_name", ""),
+                    "vserver": self._leaf(member.get("vs_name")),
                     "status": member.get("member_status", "enabled"),
                     "order": self._safe_int(member.get("member_order")) or 0,
                     "ratio": self._safe_int(member.get("member_ratio")) or 1,
-                    "monitor": member.get("member_monitor", ""),
+                    "monitor": self._leaf(member.get("member_monitor")),
                 }
             )
         return members
