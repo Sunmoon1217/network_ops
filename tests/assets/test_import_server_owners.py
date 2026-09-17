@@ -19,6 +19,8 @@ def _write_xlsx(path, rows, header=("hostname", "ip", "owner"), sheet=SHEET):
 
     workbook = Workbook()
     worksheet = workbook.active
+    if worksheet is None:
+        worksheet = workbook.create_sheet()
     worksheet.title = sheet
     worksheet.append(list(header))
     for row in rows:

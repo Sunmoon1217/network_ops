@@ -47,6 +47,7 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "celery-stubs>=0.1.3",
     "django-extensions>=4.1",
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
