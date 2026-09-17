@@ -21,6 +21,23 @@ COPY manage.py pyproject.toml uv.lock ./
 COPY netops/ ./netops/
 COPY apps/ ./apps/
 
+# 构建期校验：把 netops.settings 真正加载一遍，并导入 ASGI 入口。
+# 只 import 模块发现不了「INSTALLED_APPS 里某个包没装」，django.setup() 可以；
+# 这一步不连数据库，因此 build 阶段无需 DB。
+RUN set -eux; \
+    python -c "import os, django; \
+os.environ.setdefault('DJANGO_SETTINGS_MODULE','netops.settings'); \
+django.setup(); \
+from netops.asgi import application; \
+print('django app ok:', application.__class__.__name__)"
+
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# ASGI 启动：gunicorn + uvicorn worker（uvicorn.workers 已被移除，用独立包）。
+# 需要多进程时在运行时覆盖，如 `docker run ... network-ops:latest gunicorn
+# netops.asgi:application -k uvicorn_worker.UvicornWorker -b 0.0.0.0:8000 -w 4`。
+CMD ["gunicorn", "netops.asgi:application", \
+     "--worker-class", "uvicorn_worker.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]
