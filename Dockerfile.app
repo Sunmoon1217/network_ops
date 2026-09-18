@@ -22,6 +22,8 @@
 #
 # 首次部署与升级后要显式跑迁移（不在 entrypoint 里自动跑）：
 #   docker compose run --rm app python manage.py migrate
+#
+# CMD 只放**可调参数**（--bind / --workers / 日志），固定部分在 entrypoint 里，见文件末尾。
 
 FROM network-ops-base:py312
 
@@ -70,11 +72,30 @@ EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/netops-entrypoint"]
 
-# ASGI 启动：gunicorn + uvicorn worker（uvicorn.workers 已被移除，用独立包）。
-# 需要多进程时在运行时覆盖，如 `docker compose run --rm app gunicorn
-# netops.asgi:application -k uvicorn_worker.UvicornWorker -b 0.0.0.0:8000 -w 4`。
-CMD ["gunicorn", "netops.asgi:application", \
-     "--worker-class", "uvicorn_worker.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
+# 启动命令拆成两半：**硬要求**在 docker/entrypoint.sh 里，**可调参数**放在 CMD，
+# 好让参数既能在 `docker inspect` 里看到，又能被覆盖。
+#
+#   entrypoint 里：gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker
+#                  --bind 0.0.0.0:8000        ← 与 nginx 的 upstream 耦合，见下方说明
+#   CMD 里（下面）：--workers / --access-logfile / --error-logfile
+#
+# 覆盖规则（entrypoint 里按官方镜像的通行写法判断 $1 是否以 - 开头）：
+#
+#   docker compose run --rm app --workers 4                  # 只给参数 → 补上硬要求
+#   docker compose run --rm app python manage.py migrate     # 整条命令 → 原样执行
+#   docker compose run --rm app gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker -w 4
+#
+# worker（celery）走的是「整条命令」那条，在 docker-compose.yml 里用 entrypoint + command 表达。
+#
+# 为什么 --bind 不放 CMD 而放 entrypoint：它跟 nginx 的 upstream 绑在一起（改地址必须同步
+# nginx 配置），而 gunicorn 自己的默认值是 127.0.0.1:8000——一旦有人「只覆盖部分参数」把它
+# 漏掉，nginx 就连不上（502）；并且 --bind 是 append 语义（`gunicorn/config.py` 的
+# `action = "append"`），在 CMD 之后再追加一个只会**多一个监听**、覆盖不掉。三条加起来，
+# 它是硬要求而不是可调参数。
+#
+# 也正因为 append 语义，没有再做一套 GUNICORN_* 环境变量：环境变量只能追加在 CMD 之后，
+# 对 --bind 是「多一个监听」、对 --workers 才是覆盖——同一个旋钮两套机制、行为还不一致，
+# 不如只留 CMD 这一处。
+CMD ["--workers", "1", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]

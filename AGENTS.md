@@ -55,7 +55,7 @@ network_ops/
 │   └── gen-self-signed-cert.sh
 ├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
 ├── tmp/
-├── docker/entrypoint.sh # 应用容器入口：把镜像里的静态成品复制进命名卷（空目录挂载点）
+├── docker/entrypoint.sh # 应用容器入口：静态成品复制进命名卷（空目录挂载点）；参数以 - 开头时补上 gunicorn 硬要求
 ├── Dockerfile.base      # 环境镜像（只装依赖，不含源码）
 ├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
 ├── .dockerignore
@@ -132,6 +132,8 @@ uv run ruff format
 - **不用 `volumes_from`**：它会把源容器的所有卷都带过来（nginx 会白拿 `app_data` 里的配置仓库），且卷在目标容器里的路径与源容器相同（nginx 只能看到 `/app/www`，配置被绑死）。显式写 `static_data:/usr/share/nginx/html:ro` 才能只读、挑卷、并放在 nginx 自己的路径上。
 - **nginx 的后端地址用 `resolver` + 变量**（`set $netops_upstream "app:8000"`）而不是 `upstream` 块：`upstream` 只在启动时解析一次，app 容器重建换 IP 后会一直 502；变量形式按 `valid` 周期重解析，也让 `nginx -t` 脱离 compose 网络能通过。
 - **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。
+- **启动命令拆两半：硬要求在 entrypoint，可调参数在 CMD**：`docker/entrypoint.sh` 里是 `gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`，`Dockerfile.app` 的 `CMD` 是 `["--workers","1","--access-logfile","-","--error-logfile","-"]`。entrypoint 按官方镜像的通行写法判断 `$1` 是否以 `-` 开头：是（或没有参数）就补上硬要求，否则整条命令原样执行。于是三种用法都成立：`docker compose run --rm app --workers 4`（只覆盖参数）、`docker compose run --rm app python manage.py migrate`（换整条命令）、worker 的 `entrypoint: ["celery"]` + `command:`（见 `docker-compose.yml`）。
+- **`--bind` 是硬要求，不是可调参数**：它与 nginx 的 upstream 耦合（改地址必须同步 nginx 配置），而 gunicorn 自己的默认值是 `127.0.0.1:8000`——「只覆盖部分参数」时漏掉它就是 502；并且 `--bind` 是 **append** 语义（`gunicorn/config.py` 的 `action = "append"`），在 CMD 之后再追加只会**多一个监听**、覆盖不掉。同理没有做 `GUNICORN_*` 环境变量层：环境变量只能追加在 CMD 之后，对 `--bind` 是「多一个监听」、对 `--workers` 才是覆盖，同一个旋钮两套机制、行为还不一致，不如只留 CMD 这一处。
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`）。
 - **前端请求路径**：以 `/api/` 开头（如 `/api/assets/devices/`）。
 - **前端自动导入**：使用 `unplugin-auto-import` + `unplugin-vue-components`（`ElementPlusResolver`）。

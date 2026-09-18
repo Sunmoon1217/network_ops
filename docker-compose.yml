@@ -64,6 +64,13 @@ services:
     container_name: netops-app
     restart: unless-stopped
     environment: *app-environment
+    # gunicorn 的可调参数在镜像的 CMD 里（--workers / 日志，固定部分与 --bind 在
+    # docker/entrypoint.sh）。要调就覆盖 command，只写参数即可，entrypoint 会补上硬要求：
+    #   command: ["--workers", "4"]
+    # 换监听地址得连 nginx 的 upstream 一起改，且 --bind 是 append 语义（追加会多一个
+    # 监听而不是覆盖），所以它不在这里覆盖，而是整条命令替换，例如：
+    #   command: ["gunicorn", "netops.asgi:application",
+    #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
     volumes:
       # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
       - app_data:/app/data
@@ -102,7 +109,11 @@ services:
     container_name: netops-worker
     restart: unless-stopped
     environment: *app-environment
-    command: ["celery", "-A", "netops", "worker", "--loglevel=info"]
+    # 单用途容器，所以基础命令放 entrypoint、参数放 command（正是 CMD 的常规用法）。
+    # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物，
+    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西。
+    entrypoint: ["celery"]
+    command: ["-A", "netops", "worker", "--loglevel=info"]
     volumes:
       # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
       - app_data:/app/data

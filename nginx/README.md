@@ -25,7 +25,7 @@ client ──▶ nginx ───────┤
    （`.dockerignore` 特意放开了这两个目录）；这两个路径同时就是 Django 的
    `STATIC_ROOT` 与 `FRONTEND`，DEBUG 下 Django 自己也从这里托管；
 3. 容器启动时 `docker/entrypoint.sh` 把它们复制**另一份**到命名卷（**一个**卷，按 URL 前缀布局）；
-4. nginx 只读挂载这两个卷。
+4. nginx 只读挂载这**一个**卷。
 
 镜像里因此**没有任何 node/npm/pnpm**，构建也只需秒级。代价是构建前必须先在宿主机
 把成品构建出来——镜像里有断言，`frontend/dist` 缺 `index.html` 或 `www` 为空都会
@@ -182,6 +182,8 @@ Vite 构建产物的文件名带内容 hash（如 `accounts-CLRZcrUY.js`），�
 | `NGINX_PORT` | `80` | HTTP 映射端口 |
 | `NGINX_SSL_PORT` | `443` | HTTPS 映射端口 |
 
+app 容器的 gunicorn 可调参数在镜像的 `CMD` 里（覆盖方式见文末「说明」），不在这里读。
+
 ## 常用运维命令
 
 ```bash
@@ -199,7 +201,7 @@ docker compose exec nginx tail -f /var/log/nginx/netops.access.log
 
 # 确认静态产物已经同步进卷
 docker compose exec nginx ls /usr/share/nginx/html
-docker compose exec nginx ls /usr/share/nginx/static | head
+docker compose exec nginx ls /usr/share/nginx/html/static | head
 ```
 
 ## 发版流程
@@ -216,7 +218,7 @@ docker compose up -d --build app worker nginx
 docker compose run --rm app python manage.py migrate
 ```
 
-app 容器启动时会把新产物同步进两个静态卷，nginx 无需重启即可读到
+app 容器启动时会把新产物同步进那个静态卷，nginx 无需重启即可读到
 （`index.html` 不缓存，`assets` 文件名带内容 hash）。
 
 ## 说明
@@ -224,6 +226,8 @@ app 容器启动时会把新产物同步进两个静态卷，nginx 无需重启�
 - **上传大小**：`100m`，用于设备 Excel 导入。
 - **超时**：`proxy_read_timeout 300s`，因路径追踪、配置解析等操作较慢。
 - **关闭缓冲**：`/api/` 关闭 `proxy_buffering`，便于流式响应。
+- **gunicorn 调参**：可调参数在镜像的 `CMD` 里（`--workers` 与两个日志开关），覆盖时**只写参数**即可，`docker/entrypoint.sh` 会补上硬要求（`gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`）——例如 compose 里给 app 加 `command: ["--workers", "4"]`；反过来传整条命令就原样执行。**`--bind` 不在这里覆盖**：它与本目录 `conf.d` 里的 upstream（现在是 `app:8000`）耦合，改端口必须同步改 nginx 配置；而且 gunicorn 的 `--bind` 是 append 语义，追加一个只会多一个监听、覆盖不掉。要换地址就整条命令替换。
+- **同一个镜像的三种用法**：不传参（或只给 `-` 开头的参数）= web；`entrypoint: ["celery"]` + `command:` 放参数 = worker（刻意跳过铺静态产物那一步，worker 不挂 `static_data`）；`docker compose run --rm app python manage.py migrate` = 一次性容器。
 
 ## 排查
 
