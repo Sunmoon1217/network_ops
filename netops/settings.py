@@ -29,17 +29,39 @@ SECRET_KEY = "django-insecure-bua49zfleexo##5iy2q^dm@880a5kdvh5q6%1zss&p#xe1y13$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+def _env_list(name: str, default: str = "") -> list[str]:
+    """逗号分隔的环境变量 → 列表（去空白、丢空项）；未设置时用 default。"""
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
 # 允许的 Host
 #
 # 当前经 nginx 作为统一入口访问，且暂无域名，因此默认放开（"*"），
 # 以便同时支持 localhost、局域网 IP、以及后续临时分配的主机名。
 #
-# 注意：nginx 使用 `proxy_set_header Host $host` 透传客户端的 Host 头，
-# 因此 Django 侧必须放行这些值，否则会返回 400 Bad Request。
+# nginx 用 `proxy_set_header Host $http_host` 透传客户端**原样**的 Host 头
+# （含端口），Django 侧必须放行这些值，否则返回 400 Bad Request。
+# 注意 Django 校验时会剥掉端口再比对（`localhost:8000` 匹配 `localhost`）。
 #
 # 后续有正式域名或固定 IP 后，用环境变量收紧即可，例如：
 #   DJANGO_ALLOWED_HOSTS=netops.example.com,10.0.0.5
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
+ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
+
+
+# CSRF 可信来源（Django 4+ 的 Origin 校验）
+#
+# 校验规则：请求带 Origin 头时，它必须等于「当前 host」（scheme://<Host 头>）
+# 或落在 CSRF_TRUSTED_ORIGINS 里，否则 403：
+#   Forbidden (Origin checking failed - http://localhost:8000 does not match
+#   any trusted origins.)
+#
+# 正常情况不需要配——nginx 透传原样 Host（含端口），Origin 天然等于「当前 host」。
+# 需要显式声明的只有「浏览器看到的来源 ≠ 转发给 Django 的 Host」的拓扑，例如：
+#   - 外层还有一层 LB / 网关，它把 Host 改写成内部地址
+#   - TLS 在外层终结，而 Django 侧看到的协议/host 与公网不一致
+# 值必须带 scheme（Origin 的格式），逗号分隔，例如：
+#   DJANGO_CSRF_TRUSTED_ORIGINS='https://netops.example.com,http://localhost:8000'
+CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 
 # 反向代理：信任 nginx 传递的原始协议

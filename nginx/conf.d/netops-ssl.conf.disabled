@@ -49,11 +49,12 @@ server {
         proxy_pass http://$netops_upstream;
         proxy_http_version 1.1;
 
-        proxy_set_header Host              $host;
+        # 与 netops.conf 一致：$http_host 保留端口，否则非标准端口下 CSRF Origin 校验 403
+        proxy_set_header Host              $http_host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Host  $http_host;
 
         proxy_set_header Connection "";
 
@@ -69,5 +70,9 @@ server {
 # 将 location / 替换为：
 #
 #     location / {
-#         return 301 https://$host$request_uri;
+#         return 301 https://$host:8443$request_uri;
 #     }
+#
+# 端口要写**宿主机上 HTTPS 实际映射的端口**（这里按 NGINX_SSL_PORT=8443 举例），
+# 两个变量都不能直接用：$host 不含端口（会跳到 443），$http_host 带的是 **HTTP**
+# 那个端口（会跳到 8000 还要求 TLS）。若 SSL 就映射在 443 上，写 https://$host$request_uri 即可。

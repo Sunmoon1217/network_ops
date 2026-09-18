@@ -185,6 +185,45 @@ entrypoint 在启动 nginx 之前执行（`docker logs nginx` 里能看到 `Laun
 >   - "host.docker.internal:host-gateway"
 > ```
 
+### Host 必须透传端口（`$http_host`，不是 `$host`）
+
+`conf.d` 里两个 server 块都用：
+
+```nginx
+proxy_set_header Host             $http_host;   # 客户端原样的 Host，**含端口**
+proxy_set_header X-Forwarded-Host $http_host;
+```
+
+**不能用 `$host`**：nginx 的 `$host` 会丢掉端口。宿主机映射到非标准端口时（`.env` 里
+`NGINX_PORT=8000`）浏览器发的是 `Host: localhost:8000`，而 `$host` 把它变成 `localhost`，
+于是 Django 的 `request.get_host()` 得到 `localhost` —— Django 4+ 的 CSRF **Origin 校验**
+只认「当前 host」与 `CSRF_TRUSTED_ORIGINS`，而浏览器的 `Origin` 是 `http://localhost:8000`，
+登录后台就会 403：
+
+```
+Forbidden (Origin checking failed - http://localhost:8000 does not match any trusted origins.): /admin/login/
+```
+
+实测对照（同一个请求，只换 Host）：
+
+| 发给 nginx 的 Host | Django 看到的 host | 结果 |
+|---|---|---|
+| `localhost:8000` | `localhost:8000` | Origin 校验**通过**，失败原因变成「CSRF cookie not set」（curl 没带 cookie） |
+| `localhost`（即 `$host` 的行为） | `localhost` | `Origin checking failed - http://localhost:8000 ...` |
+
+所以**端口必须原样传下去**，不要用 `$host`。端口映射本身不需要改：`NGINX_PORT` 想用
+多少都行。
+
+例外情况：如果外层还有一层 LB / 网关会改写 Host，或者 TLS 在外层终结、Django 看到的
+来源与浏览器不一致，那就不是 nginx 一个文件能解决的——用环境变量显式声明公网来源：
+
+```
+# .env（值必须带 scheme，含 :// 与端口，必须用单引号）
+DJANGO_CSRF_TRUSTED_ORIGINS='https://netops.example.com,http://localhost:8000'
+```
+
+契约由 `tests/deploy/test_reverse_proxy_config.py` 守。
+
 ### 启用 HTTPS（可选）
 
 ```bash
@@ -283,6 +322,7 @@ app 容器启动时会把新产物同步进那个静态卷，nginx 无需重启�
 | admin 后台无样式 | 卷里 `static/` 没拿到产物，同上 |
 | 页面还是旧版本 | 两步都要做：宿主机 `pnpm build` 重新构建成品，再 `docker compose up -d --build app`（产物是 COPY 进镜像的，少了前一步镜像里就是旧文件） |
 | `502 Bad Gateway` | app 容器没起来或未通过健康检查：`docker compose ps`、`docker compose logs app` |
+| 后台登录 403 `Origin checking failed - http://localhost:8000 ...` | nginx 把端口丢了（用了 `$host`）：Host 必须是 `$http_host`，见上文「Host 必须透传端口」 |
 | 重建 app 后一直 502 | 说明 upstream 被写回了 `upstream` 块（启动时只解析一次）；本配置用变量形式可避免，检查是否被改回 |
 | 接口返回 html 而非 JSON | 请求被 SPA 兜底，检查 location 匹配顺序 |
 | 修改配置未生效 | 执行 `docker compose exec nginx nginx -s reload` |

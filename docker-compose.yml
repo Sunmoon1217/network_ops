@@ -15,6 +15,11 @@ x-app-environment: &app-environment
   REDIS_DB: ${REDIS_DB:-0}
   REDIS_PASSWORD: ${REDIS_PASSWORD:-}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+  # CSRF 可信来源（Django 4+ 的 Origin 校验）。正常拓扑下留空即可——nginx 透传
+  # 原样 Host（含端口），Origin 天然等于「当前 host」；只有外层还有 LB/网关改写了
+  # Host 时才需要显式声明，值要带 scheme，例如：
+  #   DJANGO_CSRF_TRUSTED_ORIGINS='https://netops.example.com'
+  DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
 
 services:
   db:
@@ -137,8 +142,8 @@ services:
     container_name: netops-nginx
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_SSL_PORT:-443}:443"
+      - "${NGINX_PORT:-8000}:80"
+      - "${NGINX_SSL_PORT:-8443}:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       # 启动时把当前 runtime 的 DNS 地址算出来写进 /etc/nginx/netops/resolver.conf

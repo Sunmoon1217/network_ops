@@ -46,6 +46,7 @@ network_ops/
 │   └── configs/
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
 │   ├── assets/          # device_group / serializer_migration / service_unique
+│   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
 │   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
 ├── docs/compose/
 ├── frontend/            # Vue 3 + TypeScript + Vite
@@ -93,6 +94,7 @@ cd frontend && pnpm install
 | `POSTGRES_HOST` | `localhost` | 数据库主机 |
 | `POSTGRES_PORT` | `5432` | 数据库端口 |
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔，映射到 `ALLOWED_HOSTS`；无域名阶段默认放开 |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 逗号分隔，映射到 `CSRF_TRUSTED_ORIGINS`（Django 4+ 的 Origin 校验）；**正常拓扑留空即可** |
 
 > 环境变量集中在项目根的 **`.env.example`**：`cp .env.example .env` 后按需修改即可（`.env` 已被 `.gitignore` 忽略，`.env.example` 入库）。注意**只有 `docker compose` 会自动加载 `.env`**，Django 自己不读它——在宿主机直接跑 Django 时要 `set -a; . ./.env; set +a`。
 
@@ -140,7 +142,8 @@ uv run ruff format
 - **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。**项目镜像的基础镜像本身可换**：`Dockerfile.app` 用 `ARG BASE_IMAGE=network-ops-base:py312` + `FROM ${BASE_IMAGE}`（`FROM` 里只能用 `ARG`——`ENV` 在 `FROM` 之前不生效），compose 的 app 与 worker 两处 build 都把它映射成 `${BASE_IMAGE:-network-ops-base:py312}`，所以换私有 registry / 换 python 版本只改环境变量：`BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker`；直接 `docker build` 时写成 `BASE_IMAGE=... docker build --build-arg BASE_IMAGE ...`（**只写名字**即取同名环境变量的值）。
 - **启动命令拆两半：硬要求在 entrypoint，可调参数在 CMD**：`docker/entrypoint.sh` 里是 `gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`，`Dockerfile.app` 的 `CMD` 是 `["--workers","1","--access-logfile","-","--error-logfile","-"]`。entrypoint 按官方镜像的通行写法判断 `$1` 是否以 `-` 开头：是（或没有参数）就补上硬要求，否则整条命令原样执行。于是三种用法都成立：`docker compose run --rm app --workers 4`（只覆盖参数）、`docker compose run --rm app python manage.py migrate`（换整条命令）、worker 的 `entrypoint: ["celery"]` + `command:`（见 `docker-compose.yml`）。
 - **`--bind` 是硬要求，不是可调参数**：它与 nginx 的 upstream 耦合（改地址必须同步 nginx 配置），而 gunicorn 自己的默认值是 `127.0.0.1:8000`——「只覆盖部分参数」时漏掉它就是 502；并且 `--bind` 是 **append** 语义（`gunicorn/config.py` 的 `action = "append"`），在 CMD 之后再追加只会**多一个监听**、覆盖不掉。同理没有做 `GUNICORN_*` 环境变量层：环境变量只能追加在 CMD 之后，对 `--bind` 是「多一个监听」、对 `--workers` 才是覆盖，同一个旋钮两套机制、行为还不一致，不如只留 CMD 这一处。
-- **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`）。
+- **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`），CSRF 可信来源由 `DJANGO_CSRF_TRUSTED_ORIGINS` 控制（默认空）。
+- **nginx 必须透传带端口的 Host（`$http_host`），否则后台登录 403**：nginx 变量 `$host` **不含端口**，所以宿主映射到非标准端口（`.env` 的 `NGINX_PORT=8000`）时 Django 的 `request.get_host()` 得到 `localhost`，而浏览器 Origin 是 `http://localhost:8000`——Django 4+ 的 Origin 校验只认「当前 host」与 `CSRF_TRUSTED_ORIGINS`，于是 `/admin/login/` 直接 403：`Forbidden (Origin checking failed - http://localhost:8000 does not match any trusted origins.)`。**实测对照**：同一个请求只把 Host 从 `localhost:8000` 换成 `localhost`，失败原因立刻从 Origin 变成「CSRF cookie not set」（即 Origin 已通过）——端口就是唯一变量。所以 conf.d 的两个 server 块都用 `$http_host`（客户端原样的 Host，含端口），`X-Forwarded-Host` 同理。`DJANGO_CSRF_TRUSTED_ORIGINS` 只在「浏览器看到的来源 ≠ 转发给 Django 的 Host」时才需要（外层还有 LB/网关改写 Host、TLS 在外层终结等），值必须带 scheme。这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守（含一条「Host 带端口则同源 Origin 可信」的 Django 侧测试）。
 - **前端请求路径**：以 `/api/` 开头（如 `/api/assets/devices/`）。
 - **前端自动导入**：使用 `unplugin-auto-import` + `unplugin-vue-components`（`ElementPlusResolver`）。
 - **前端函数风格**：`.vue` 与 `.ts` 一律使用箭头函数，不使用 `function` 声明——普通函数 `const fn = (a: T) => {}`、异步 `const fn = async () => {}`、泛型 `const fn = <T>(a: T) => {}`。原因是 `function` 声明会被提升，容易掩盖定义顺序问题，也与项目既有写法保持一致。自检命令（应无输出）：
