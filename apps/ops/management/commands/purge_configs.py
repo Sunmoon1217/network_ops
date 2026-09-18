@@ -215,7 +215,10 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("不会动（人工 / Excel 数据，全库计数）：")
         shown = False
-        for model in django_apps.get_app_config("assets").get_models():
+        # django-stubs 把 get_models() 标成 list[type[Model]]，而「type[Model]」这种写法下
+        # 看不到模型管理器 `.objects`（只有具体模型类才有），这里放宽成 Any。
+        asset_models: list[Any] = list(django_apps.get_app_config("assets").get_models())
+        for model in asset_models:
             if model in config_set:
                 continue
             count = model.objects.count()
