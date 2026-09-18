@@ -1,5 +1,6 @@
-# 构建上下文瘦身：只保留 pyproject.toml / uv.lock / 项目源码。
-# 环境镜像只依赖锁文件，项目镜像只复制源码，其余一律不进上下文。
+# 构建上下文瘦身。
+# 环境镜像只依赖 pyproject.toml / uv.lock；项目镜像复制源码 + **两份宿主机构建好的
+# 静态成品**（frontend/dist、www），其余一律不进上下文。
 
 # 虚拟环境与包缓存（uv 在镜像内重新安装）
 .venv/
@@ -10,17 +11,19 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# 前端
+# 前端依赖（成品要进镜像，所以这里只排除依赖目录）
 frontend/node_modules/
-frontend/dist/
 .pnpm-store/
 
-# 运行时数据与产物（配置仓库、上传、静态收集）
+# 运行时数据（配置仓库、上传、日志）：不进镜像，运行时用卷挂载
 data/
-www/
 media/
 logs/
 tmp/
+
+# 注意：frontend/dist 与 www 必须留在上下文里 —— 它们是宿主机上构建好的静态成品，
+# Dockerfile.app 要把它们 COPY 进镜像（nginx 通过命名卷读取）。
+# 这两个目录在 .gitignore 里被忽略，但 docker build 只认本文件。
 
 # 反向代理资源（由 nginx 容器挂载，不进应用镜像）
 nginx/ssl/

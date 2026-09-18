@@ -1,16 +1,29 @@
 # syntax=docker/dockerfile:1
 #
-# 项目镜像 —— 在不变的基础环境镜像之上，只叠加项目源码。
+# 项目镜像 —— 在不变的基础环境镜像之上，叠加项目源码与**静态成品**。
 #
-# 依赖装在基础镜像的 /opt/venv 里，PATH / VIRTUAL_ENV / WORKDIR 均已由
-# Dockerfile.base 设置，所以这里只有 COPY —— 没有任何依赖安装步骤：
+# 静态成品不在镜像内构建，直接用宿主机已经构建好的：
+#   frontend/dist  ←  cd frontend && pnpm build
+#   www            ←  uv run python manage.py collectstatic --noinput
+# 所以构建前必须先跑这两步；镜像里有断言，产物缺失或为空会直接构建失败。
+# （好处：镜像里没有任何 node/npm/pnpm，构建也只需秒级）
 #
-#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .  # 环境变了才重建
-#   docker build -f Dockerfile.app -t network-ops:latest .                      # 每次都跑，秒级完成
+# 成品为什么要进镜像、再经命名卷给 nginx：
+#   nginx 是独立容器，**读不到本镜像里的文件**，跨容器共享只有卷这一条路
+#   （tmpfs 是每容器私有的内存文件系统，无法共享）。所以 /app/www 与
+#   /app/frontend/dist 保持原样（Django 的 STATIC_ROOT / FRONTEND 就指这里），
+#   容器启动时由 docker/entrypoint.sh 复制**另一份**到命名卷给 nginx 用。
+#   卷挂在空目录上，内容唯一来源就是这次复制，不存在「Docker 只播种一次、
+#   重建镜像后卷里还是旧产物」的问题。
 #
-# 运行（数据库在 compose 里，容器内用服务名 db 访问）：
-#   docker run --rm -p 8000:8000 --network network_ops_internal \
-#     -e POSTGRES_HOST=db -e POSTGRES_PASSWORD=... network-ops:latest
+# 构建：
+#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .  # pyproject/uv.lock 变了才重建
+#   docker build -f Dockerfile.app -t network-ops:latest .                     # 每次发版都跑
+#
+# 首次部署与升级后要显式跑迁移（不在 entrypoint 里自动跑）：
+#   docker compose run --rm app python manage.py migrate
+#
+# CMD 只放**可调参数**（--bind / --workers / 日志），固定部分在 entrypoint 里，见文件末尾。
 
 FROM network-ops-base:py312
 
@@ -20,6 +33,30 @@ WORKDIR /app
 COPY manage.py pyproject.toml uv.lock ./
 COPY netops/ ./netops/
 COPY apps/ ./apps/
+
+# 宿主机构建好的静态成品（.dockerignore 已放开这两个目录）
+COPY frontend/dist ./frontend/dist
+COPY www ./www
+
+# 校验成品，并建出运行时要用的空目录：
+#   /app/data                 配置仓库（GitPython 操作的 git 仓库）的挂载点
+#   /var/lib/netops-static    命名卷挂载点，镜像里**故意留空**；卷内布局按 URL
+#                             前缀设计（index.html + assets/ + static/），内容只由
+#                             entrypoint 从 /app/www、/app/frontend/dist 复制进来
+RUN set -eux; \
+    if [ ! -f /app/frontend/dist/index.html ]; then \
+        echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
+        exit 1; \
+    fi; \
+    if [ -z "$(ls -A /app/www)" ]; then \
+        echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
+        exit 1; \
+    fi; \
+    mkdir -p /app/data /var/lib/netops-static; \
+    echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
+
+COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
+RUN chmod +x /usr/local/bin/netops-entrypoint
 
 # 构建期校验：把 netops.settings 真正加载一遍，并导入 ASGI 入口。
 # 只 import 模块发现不了「INSTALLED_APPS 里某个包没装」，django.setup() 可以；
@@ -33,11 +70,32 @@ print('django app ok:', application.__class__.__name__)"
 
 EXPOSE 8000
 
-# ASGI 启动：gunicorn + uvicorn worker（uvicorn.workers 已被移除，用独立包）。
-# 需要多进程时在运行时覆盖，如 `docker run ... network-ops:latest gunicorn
-# netops.asgi:application -k uvicorn_worker.UvicornWorker -b 0.0.0.0:8000 -w 4`。
-CMD ["gunicorn", "netops.asgi:application", \
-     "--worker-class", "uvicorn_worker.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
+ENTRYPOINT ["/usr/local/bin/netops-entrypoint"]
+
+# 启动命令拆成两半：**硬要求**在 docker/entrypoint.sh 里，**可调参数**放在 CMD，
+# 好让参数既能在 `docker inspect` 里看到，又能被覆盖。
+#
+#   entrypoint 里：gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker
+#                  --bind 0.0.0.0:8000        ← 与 nginx 的 upstream 耦合，见下方说明
+#   CMD 里（下面）：--workers / --access-logfile / --error-logfile
+#
+# 覆盖规则（entrypoint 里按官方镜像的通行写法判断 $1 是否以 - 开头）：
+#
+#   docker compose run --rm app --workers 4                  # 只给参数 → 补上硬要求
+#   docker compose run --rm app python manage.py migrate     # 整条命令 → 原样执行
+#   docker compose run --rm app gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker -w 4
+#
+# worker（celery）走的是「整条命令」那条，在 docker-compose.yml 里用 entrypoint + command 表达。
+#
+# 为什么 --bind 不放 CMD 而放 entrypoint：它跟 nginx 的 upstream 绑在一起（改地址必须同步
+# nginx 配置），而 gunicorn 自己的默认值是 127.0.0.1:8000——一旦有人「只覆盖部分参数」把它
+# 漏掉，nginx 就连不上（502）；并且 --bind 是 append 语义（`gunicorn/config.py` 的
+# `action = "append"`），在 CMD 之后再追加一个只会**多一个监听**、覆盖不掉。三条加起来，
+# 它是硬要求而不是可调参数。
+#
+# 也正因为 append 语义，没有再做一套 GUNICORN_* 环境变量：环境变量只能追加在 CMD 之后，
+# 对 --bind 是「多一个监听」、对 --workers 才是覆盖——同一个旋钮两套机制、行为还不一致，
+# 不如只留 CMD 这一处。
+CMD ["--workers", "1", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]

@@ -4,7 +4,7 @@
 
 网络运维管理平台：Django REST 后端 + Vue 3 前端。
 
-后端提供数据模型与 REST API，负责设备配置的解析与入库。前端构建产物默认可由 Django 直接托管（便于开发调试）；生产/集成环境则使用 `nginx/` 作为统一入口，静态资源直出、`/api` 反向代理到 Django。
+后端提供数据模型与 REST API，负责设备配置的解析与入库。前端构建产物默认可由 Django 直接托管（便于开发调试）；生产/集成环境使用 `docker compose` 起 db / redis / app / worker / nginx，由 `nginx/` 作为统一入口（静态资源直出，`/api` 反向代理到 app 容器）。
 
 ## 项目结构
 
@@ -53,9 +53,13 @@ network_ops/
 │   ├── conf.d/          # netops.conf(80)、netops-ssl.conf.disabled(443)
 │   ├── ssl/             # TLS 证书（不入库）
 │   └── gen-self-signed-cert.sh
-├── www/                 # collectstatic 产物（不入库，由 nginx 直接托管）
+├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
 ├── tmp/
-├── docker-compose.yml   # db(TimescaleDB) / redis / nginx
+├── docker/entrypoint.sh # 应用容器入口：静态成品复制进命名卷（空目录挂载点）；参数以 - 开头时补上 gunicorn 硬要求
+├── Dockerfile.base      # 环境镜像（只装依赖，不含源码）
+├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
+├── .dockerignore
+├── docker-compose.yml   # db(TimescaleDB) / redis / app / worker / nginx
 ├── pyproject.toml       # Python 依赖、pytest、ruff 配置
 └── uv.lock
 ```
@@ -119,9 +123,17 @@ uv run ruff format
 - **单一配置**：`netops/settings.py` 包含全部配置，无 `settings_d/` 分发，无 `DJANGO_ENV`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
-- **无 Celery / 无任务队列**：所有处理在请求周期内同步完成。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
+- **DeviceConfig 的解析入库仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
-- **反向代理**：`nginx/` 作为统一入口（80/443）。静态资源由 nginx 直出：`/assets/*` → `frontend/dist`，`/static/*` → `www`（collectstatic 产物）；`/api/*`、`/admin/*`、`/media/*` 代理到宿主机 Django。详见 `nginx/README.md`。
+- **反向代理与容器化**：`nginx/` 作为统一入口（80/443）。`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django）；`/assets/*`、`/static/*` 由 nginx 直出。两类静态资源的源头是**宿主机**（`pnpm build` + `collectstatic`），`Dockerfile.app` 把它们 COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`），容器启动时 `docker/entrypoint.sh` 复制**另一份**到**一个**命名卷 `static_data`，nginx 只读挂载。详见 `nginx/README.md`。
+- **静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic，因为 `STATIC_URL` 就是 `/static/`）。因此 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖 `/`、`/assets/*`、`/static/*`，`location /static/` 不需要再写 root 覆盖。宿主机上 `www/` 与 `frontend/dist/` 仍是各自独立的目录、各由自己的工具清空（`collectstatic --clear`、`pnpm build` 的 `emptyOutDir`），只有容器里这一份副本被合到一起，所以两个清空动作互不干扰。
+- **为什么必须绕一层命名卷**：nginx 是独立容器，读不到 app 镜像里的文件；跨容器共享只有卷这一条路（tmpfs 是每容器私有的内存文件系统，`--volumes-from` 也拿不到，实测过）。命名卷挂在镜像里**故意留空的** `/var/lib/netops-static` 上——挂到有内容的目录会遮住镜像内容，而 Docker 只在卷首次创建时播种一次，于是「重建镜像后页面还是旧的」。入口脚本每次都**权威**重铺，注意清卷根时要 `! -name static` 排除掉 `static/`（它由下一步单独同步）。
+- **不用 `volumes_from`**：它会把源容器的所有卷都带过来（nginx 会白拿 `app_data` 里的配置仓库），且卷在目标容器里的路径与源容器相同（nginx 只能看到 `/app/www`，配置被绑死）。显式写 `static_data:/usr/share/nginx/html:ro` 才能只读、挑卷、并放在 nginx 自己的路径上。
+- **nginx 的后端地址用 `resolver` + 变量**（`set $netops_upstream "app:8000"`）而不是 `upstream` 块：`upstream` 只在启动时解析一次，app 容器重建换 IP 后会一直 502；变量形式按 `valid` 周期重解析，也让 `nginx -t` 脱离 compose 网络能通过。
+- **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。
+- **启动命令拆两半：硬要求在 entrypoint，可调参数在 CMD**：`docker/entrypoint.sh` 里是 `gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`，`Dockerfile.app` 的 `CMD` 是 `["--workers","1","--access-logfile","-","--error-logfile","-"]`。entrypoint 按官方镜像的通行写法判断 `$1` 是否以 `-` 开头：是（或没有参数）就补上硬要求，否则整条命令原样执行。于是三种用法都成立：`docker compose run --rm app --workers 4`（只覆盖参数）、`docker compose run --rm app python manage.py migrate`（换整条命令）、worker 的 `entrypoint: ["celery"]` + `command:`（见 `docker-compose.yml`）。
+- **`--bind` 是硬要求，不是可调参数**：它与 nginx 的 upstream 耦合（改地址必须同步 nginx 配置），而 gunicorn 自己的默认值是 `127.0.0.1:8000`——「只覆盖部分参数」时漏掉它就是 502；并且 `--bind` 是 **append** 语义（`gunicorn/config.py` 的 `action = "append"`），在 CMD 之后再追加只会**多一个监听**、覆盖不掉。同理没有做 `GUNICORN_*` 环境变量层：环境变量只能追加在 CMD 之后，对 `--bind` 是「多一个监听」、对 `--workers` 才是覆盖，同一个旋钮两套机制、行为还不一致，不如只留 CMD 这一处。
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`）。
 - **前端请求路径**：以 `/api/` 开头（如 `/api/assets/devices/`）。
 - **前端自动导入**：使用 `unplugin-auto-import` + `unplugin-vue-components`（`ElementPlusResolver`）。

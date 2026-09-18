@@ -1,5 +1,21 @@
 name: network_ops
 
+# app 与 worker 共用同一镜像与环境，用锚点避免两处写法漂移
+x-app-environment: &app-environment
+  POSTGRES_DB: ${POSTGRES_DB:-netops}
+  POSTGRES_USER: ${POSTGRES_USER:-netops}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netops_password}
+  # 容器内走 compose 网络，固定用服务名与容器端口；
+  # 注意这与 db 服务对外映射的 ${POSTGRES_PORT}（宿主端口）是两回事，
+  # 宿主端口改了也不影响容器内连接。
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+
 services:
   db:
     image: timescale/timescaledb:2.27.1-pg16
@@ -39,6 +55,76 @@ services:
       timeout: 5s
       retries: 5
 
+  # Django / ASGI 应用。镜像内的静态产物经命名卷交给 nginx（见 Dockerfile.app）
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: network-ops:latest
+    container_name: netops-app
+    restart: unless-stopped
+    environment: *app-environment
+    # gunicorn 的可调参数在镜像的 CMD 里（--workers / 日志，固定部分与 --bind 在
+    # docker/entrypoint.sh）。要调就覆盖 command，只写参数即可，entrypoint 会补上硬要求：
+    #   command: ["--workers", "4"]
+    # 换监听地址得连 nginx 的 upstream 一起改，且 --bind 是 append 语义（追加会多一个
+    # 监听而不是覆盖），所以它不在这里覆盖，而是整条命令替换，例如：
+    #   command: ["gunicorn", "netops.asgi:application",
+    #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
+    volumes:
+      # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
+      - app_data:/app/data
+      # 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
+      # 目录**，卷里内容只由 entrypoint 启动时从 /app/www、/app/frontend/dist
+      # 复制进来——不用那两个路径本身当挂载点，是为了避免卷遮住镜像内容后
+      # 「Docker 只播种一次」带来的陈旧问题。
+      # 卷内布局按 URL 前缀设计：/index.html、/assets/*（Vite）+ /static/*（collectstatic），
+      # 因此 nginx 一个 root 就能覆盖全部静态请求。
+      - static_data:/var/lib/netops-static
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 不映射到宿主端口：统一走 nginx 入口。调试见 docker/README 或
+    #   docker compose exec app python manage.py shell
+    expose:
+      - "8000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # Celery worker：采集→解析→存储是异步阶段任务，没有 worker 时
+  # 上游 .delay() 只会把消息堆在 Redis 里、永远不执行。
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: network-ops:latest
+    container_name: netops-worker
+    restart: unless-stopped
+    environment: *app-environment
+    # 单用途容器，所以基础命令放 entrypoint、参数放 command（正是 CMD 的常规用法）。
+    # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物，
+    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西。
+    entrypoint: ["celery"]
+    command: ["-A", "netops", "worker", "--loglevel=info"]
+    volumes:
+      # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
+      - app_data:/app/data
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
   nginx:
     image: nginx:1.31-alpine
     container_name: netops-nginx
@@ -49,13 +135,12 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      # Vue 构建产物，由 nginx 直接托管（需先执行 pnpm build）
-      - ./frontend/dist:/usr/share/nginx/html:ro
-      # Django collectstatic 产物，由 nginx 直接托管（需先执行 manage.py collectstatic）
-      - ./www:/usr/share/nginx/static:ro
-    # Django 运行在宿主机，容器需通过 host.docker.internal 访问
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # 静态产物卷由 app 容器写入（entrypoint 把镜像里的成品复制进来），nginx 只读。
+      # 不再 bind mount 宿主机目录，也不会在发版时手工往容器里塞文件。
+      - static_data:/usr/share/nginx/html:ro
+    depends_on:
+      app:
+        condition: service_healthy
     networks:
       - internal
 
@@ -67,4 +152,10 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  # 配置仓库与运行期数据（必须持久化）
+  app_data:
+    driver: local
+  # 静态产物（可由重建镜像恢复，属于可丢弃数据）
+  static_data:
     driver: local
