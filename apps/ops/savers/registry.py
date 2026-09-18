@@ -34,6 +34,23 @@ def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[lis
     return [(keys, saver_cls()) for saver_cls, keys in grouped.items()]
 
 
+def build_saver_payloads(device_type: str, config_json: dict) -> list[tuple[BaseSaver, dict]]:
+    """按 Saver 分组，返回 ``(saver 实例, 该 Saver 应该看到的 payload)``。
+
+    **调用方不要自己拼 payload**：命中同一个 Saver 的多个 key 必须一起传，且只传
+    有值的键。这条规则原先在 ``pipeline._dispatch_savers`` 与两个 Celery 存储任务里
+    各写了一遍，其中 ``run_storage_stage`` 把 ``keys``（列表）当成单个 key 用，
+    ``parsed_data.get(["policies", "acl"])`` 直接抛 ``TypeError: unhashable type``，
+    凡是匹配到 Saver 的设备都存不进去。收敛到这里，避免再次各写一份。
+    """
+    payloads: list[tuple[BaseSaver, dict]] = []
+    for keys, saver in get_savers_for_config(device_type, config_json):
+        payload = {key: config_json[key] for key in keys if config_json.get(key)}
+        if payload:
+            payloads.append((saver, payload))
+    return payloads
+
+
 def register(device_types: list[str], keys: list[str]):
     """类装饰器：注册 Saver 到指定设备类型和 key
 

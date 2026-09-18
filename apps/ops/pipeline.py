@@ -114,15 +114,10 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
 
 def _dispatch_savers(device, config_json: dict, result: PipelineResult) -> None:
     """按顶层 key 找到 Saver 并逐个执行；单个失败只记录，不中断其余"""
-    from ops.savers.registry import get_savers_for_config
+    from ops.savers.registry import build_saver_payloads
 
-    for keys, saver in get_savers_for_config(device.device_type, config_json):
-        # 命中同一 Saver 的多个键要一起传，否则 Saver 内的兜底链只看到第一个
-        payload = {key: config_json[key] for key in keys if config_json.get(key)}
-        if not payload:
-            continue
-
-        outcome = SaverOutcome(keys=list(keys))
+    for saver, payload in build_saver_payloads(device.device_type, config_json):
+        outcome = SaverOutcome(keys=list(payload))
         try:
             outcome.created, outcome.updated = saver.save(device, payload)
             logger.info(

@@ -1,4 +1,5 @@
 """Celery 异步任务 - 采集→解析→存储阶段式工作流"""
+
 import logging
 import time
 
@@ -30,12 +31,14 @@ def _update_stage_status(stage_id, status, output_data=None, error_message=""):
 # 阶段式任务（采集→解析→存储）
 # ---------------------------------------------------------------------------
 
+
 @shared_task(bind=True, name="ops.run_collection_stage")
 def run_collection_stage(self, stage_id):
     """采集阶段 - 通过连接设备获取配置"""
     logger.info("Starting collection stage %s", stage_id)
     try:
         from core.models import Stage
+
         stage = Stage.objects.get(id=stage_id)
         device = stage.task.device
         if not device:
@@ -65,6 +68,7 @@ def run_parsing_stage(self, stage_id):
     logger.info("Starting parsing stage %s", stage_id)
     try:
         from core.models import Stage
+
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
         device = task.device
@@ -78,6 +82,7 @@ def run_parsing_stage(self, stage_id):
 
         # 选择解析器
         from ops.parsers.factory import ParserFactory
+
         try:
             parser = ParserFactory.get_parser(device)
         except ValueError:
@@ -100,6 +105,7 @@ def run_storage_stage(self, stage_id):
     logger.info("Starting storage stage %s", stage_id)
     try:
         from core.models import Stage
+
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
         device = task.device
@@ -111,13 +117,15 @@ def run_storage_stage(self, stage_id):
 
         parsed_data = parsing_stage.output_data
 
-        # 选择 Saver
-        from ops.savers.registry import get_savers_for_config
-        savers = get_savers_for_config(device.device_type, parsed_data)
+        # 选择 Saver。get_savers_for_config 的第一个元素是**key 列表**（一个 Saver
+        # 可能注册多个 key，如 PolicySaver 的 policies/acl/rules），必须整组交给它，
+        # 不能当成单个 key——原先 {key: parsed_data.get(key)} 会抛
+        # TypeError: unhashable type: 'list'
+        from ops.savers.registry import build_saver_payloads
 
         total_created, total_updated = 0, 0
-        for key, saver in savers:
-            created, updated = saver.save(device, {key: parsed_data.get(key)})
+        for saver, payload in build_saver_payloads(device.device_type, parsed_data):
+            created, updated = saver.save(device, payload)
             total_created += created
             total_updated += updated
 
@@ -132,6 +140,7 @@ def run_storage_stage(self, stage_id):
 # ---------------------------------------------------------------------------
 # DeviceConfig 异步任务
 # ---------------------------------------------------------------------------
+
 
 @shared_task(bind=True, name="ops.run_config_parsing")
 def run_config_parsing(self, config_id):
@@ -159,7 +168,8 @@ def run_config_parsing(self, config_id):
         duration = time.time() - start
 
         DeviceConfig.objects.filter(id=config_id).update(
-            config_json=parsed_data, parse_duration=round(duration, 3),
+            config_json=parsed_data,
+            parse_duration=round(duration, 3),
         )
         logger.info("Config parsing completed: %s (%.3fs)", config_id, duration)
     except Exception:
@@ -171,7 +181,6 @@ def run_config_parsing(self, config_id):
 def run_config_storage(self, config_id):
     """异步存储 DeviceConfig 解析结果"""
     from assets.models import DeviceConfig
-    from ops.savers.registry import get_savers_for_config
 
     logger.info("Starting config storage for DeviceConfig %s", config_id)
     try:
@@ -182,10 +191,14 @@ def run_config_storage(self, config_id):
             logger.warning("DeviceConfig %s config_json 为空，跳过", config_id)
             return
 
-        savers = get_savers_for_config(device.device_type, config.config_json)
+        # 与 run_storage_stage 用同一套分组规则：每个 Saver 只拿到自己注册的 key。
+        # 原先直接把整个 config_json 递进去，等于让 Saver 能看到不属于它的键，
+        # 注册的 key 写错了也测不出来。
+        from ops.savers.registry import build_saver_payloads
+
         total_created, total_updated = 0, 0
-        for key, saver in savers:
-            created, updated = saver.save(device, config.config_json)
+        for saver, payload in build_saver_payloads(device.device_type, config.config_json):
+            created, updated = saver.save(device, payload)
             total_created += created
             total_updated += updated
 
