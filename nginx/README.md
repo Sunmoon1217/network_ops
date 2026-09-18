@@ -73,6 +73,8 @@ nginx/
 ├── conf.d/
 │   ├── netops.conf                  # HTTP(80) 配置，默认启用
 │   └── netops-ssl.conf.disabled     # HTTPS(443) 配置，默认未启用
+├── docker-entrypoint.d/
+│   └── 05-netops-resolver.sh        # 启动时把当前 runtime 的 DNS 写成 /etc/nginx/netops/resolver.conf
 ├── ssl/
 │   ├── .gitkeep
 │   ├── server.crt                   # 证书（不提交）
@@ -82,6 +84,8 @@ nginx/
 ```
 
 nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不会生效。
+`docker-entrypoint.d/05-netops-resolver.sh` 由镜像的 entrypoint 在启动 nginx 之前执行，
+生成 `/etc/nginx/netops/resolver.conf`（**不是** conf.d），再被 conf.d 里的配置 `include` 进来。
 
 ## 卷挂载关系
 
@@ -120,7 +124,7 @@ docker compose run --rm app python manage.py createsuperuser
 配置里写的是：
 
 ```nginx
-resolver 127.0.0.11 valid=10s ipv6=off;
+include /etc/nginx/netops/resolver.conf;   # ← 由 docker-entrypoint.d/ 的脚本在启动时生成
 set $netops_upstream "app:8000";
 ...
 proxy_pass http://$netops_upstream;
@@ -131,7 +135,49 @@ proxy_pass http://$netops_upstream;
 1. `upstream` **只在启动时解析一次**。`app` 容器重建后会拿到新 IP，nginx 仍指向旧 IP，表现为「重建 app 之后一直 502，直到 reload nginx」。变量形式让 nginx 按 `valid` 周期重新解析。
 2. 静态 `upstream` 一旦解析不到 `app` 就直接 `emerg` 退出——脱离 compose 网络连 `nginx -t` 都过不了；变量形式只在真正转发时才解析。
 
-`127.0.0.11` 是 Docker 的内置 DNS（用户自定义 bridge 网络里可用）。
+#### resolver 的地址不能写死（地址由 runtime 决定）
+
+**镜像与 runtime 无关**：官方 nginx 镜像是同一个，`resolver` 的行为也一样。不一样的只是
+**runtime 给容器写的 `/etc/resolv.conf`**，所以「DNS 解析器地址」这件事只有 runtime 知道：
+
+| runtime | 容器内 `/etc/resolv.conf` | 说明 |
+|---------|--------------------------|------|
+| Docker（用户自定义 bridge） | `nameserver 127.0.0.11` | Docker 内置 DNS |
+| **Podman** | 例如 `nameserver 10.89.3.1` | aardvark-dns 在**网络网关**上提供 DNS，**没有 127.0.0.11** |
+
+原先这里写死的是 `resolver 127.0.0.11`——那是按「只部署在 Docker」定的值（`876fbf9` 的
+注释原文就是「127.0.0.11 是 Docker 的内置 DNS」）。硬编码在别的 runtime 上就是：
+
+```
+recv() failed (111: Connection refused) while resolving, resolver: 127.0.0.11:53
+```
+
+网络本身完全正常，只是解析器地址不对 → `app` 解析失败 → 前端 **502**。
+
+> 为什么不干脆删掉 `resolver`（那样就不需要地址了）：那就得回到静态 `upstream` 块，
+> 而它有两个已经实测过的代价——只在启动时解析一次（app 重建换 IP 后一直 502 直到
+> reload），以及解析不到 `app` 时直接 `emerg` 退出（脱离 compose 网络连 `nginx -t`
+> 都过不了）。变量形式必须配 `resolver`，而 `resolver` 必须显式给地址；所以正确的
+> 做法是**把地址的来源参数化/推导出来**，而不是去掉它。
+
+所以改成**启动时推导**：`nginx/docker-entrypoint.d/05-netops-resolver.sh` 从容器自己的
+`/etc/resolv.conf` 取出 `nameserver`，写成 `/etc/nginx/netops/resolver.conf`，conf.d 里的两个
+server 块（80 与 443）再 `include` 它。`docker-compose.yml` 只把这**一个文件**挂到镜像的
+`/docker-entrypoint.d/`——**不要挂整个目录**，那会遮住镜像自带的 entrypoint 脚本；它由镜像
+entrypoint 在启动 nginx 之前执行（`docker logs nginx` 里能看到 `Launching .../05-netops-resolver.sh`）。
+
+脚本行为，以及为什么不走官方 envsubst 模板：
+
+- 多个 `nameserver` 用空格拼接，IPv6 自动加方括号（与镜像自带的 `15-local-resolvers.envsh` 同逻辑）。
+- **取不到 nameserver 就报错退出**，容器启动即失败，不会留下坏配置。
+- 官方模板机制（`templates/*.template` + `NGINX_LOCAL_RESOLVERS`）也能做，但它要求额外设置
+  `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1`：**不设那个变量，镜像自带的脚本会直接 return，占位符
+  原样留在配置里，而 `nginx -t` 竟然仍然通过**（实测过），故障要等真正转发时才暴露；它还要求
+  输出目录已存在且可写，否则静默跳过（所以还得再挂个 `tmpfs`）。相比之下这个脚本失败即响。
+
+> 验证：`docker compose exec nginx cat /etc/nginx/netops/resolver.conf`，应与容器
+> `/etc/resolv.conf` 里的 `nameserver` 一致；`docker compose exec nginx nginx -T | grep resolver`
+> 确认已生效。注意 `/etc/nginx/netops/` 是容器内目录（每次启动重新生成），不需要持久化。
 
 > 若要让 nginx 指向**宿主机**上直接跑的 Django（不用 app 容器）：把 `$netops_upstream` 改成 `host.docker.internal:8000`，并给 nginx 服务加回
 > ```yaml

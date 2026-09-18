@@ -21,7 +21,9 @@ server {
 
     # 与 netops.conf 保持一致：用「变量 + resolver」而不是 upstream 块，
     # 这样 app 容器重建后 nginx 会重新解析地址，不必手工 reload。
-    resolver 127.0.0.11 valid=10s ipv6=off;
+    # resolver 地址由容器启动时从 /etc/resolv.conf 生成（Docker 是 127.0.0.11，
+    # Podman 是网络网关），写死任一个都会在另一种 runtime 上解析失败并 502。
+    include /etc/nginx/netops/resolver.conf;
     set $netops_upstream "app:8000";
 
     # 证书
