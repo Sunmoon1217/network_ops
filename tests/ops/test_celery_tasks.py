@@ -11,17 +11,7 @@ import pytest
 from core.models import Stage, Task
 from ops.tasks import run_collection_stage, run_parsing_stage, run_storage_stage
 
-
-@pytest.fixture
-def eager_celery(settings):
-    """让任务在进程内同步执行，且失败时把状态反映到 result 而不是抛异常。"""
-    from netops.celery import app
-
-    prev = (app.conf.task_always_eager, app.conf.task_eager_propagates)
-    app.conf.task_always_eager = True
-    app.conf.task_eager_propagates = False
-    yield app
-    app.conf.task_always_eager, app.conf.task_eager_propagates = prev
+# eager_celery 是共享 fixture，见 tests/conftest.py
 
 
 @pytest.mark.django_db

@@ -60,6 +60,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
+      args:
+        # 基础镜像可用宿主机环境变量覆盖（默认值与 Dockerfile.app 的 ARG 默认值一致）：
+        #   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
+        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
     image: network-ops:latest
     container_name: netops-app
     restart: unless-stopped
@@ -105,6 +109,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
+      args:
+        # 与 app 服务保持一致，避免两个服务的基础镜像不一致
+        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
     image: network-ops:latest
     container_name: netops-worker
     restart: unless-stopped
@@ -134,6 +141,12 @@ services:
       - "${NGINX_SSL_PORT:-443}:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # 启动时把当前 runtime 的 DNS 地址算出来写进 /etc/nginx/netops/resolver.conf
+      # （conf.d 里 include 它）。Docker 是内置 DNS 127.0.0.11，Podman 是网络网关
+      # （如 10.89.3.1）——写死任一个，另一种 runtime 上都会
+      # `recv() failed (111: Connection refused) while resolving` + 502。
+      # 只挂这一个文件，不要把整个目录挂上去（那会遮住镜像自带的 entrypoint 脚本）。
+      - ./nginx/docker-entrypoint.d/05-netops-resolver.sh:/docker-entrypoint.d/05-netops-resolver.sh:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       # 静态产物卷由 app 容器写入（entrypoint 把镜像里的成品复制进来），nginx 只读。
       # 不再 bind mount 宿主机目录，也不会在发版时手工往容器里塞文件。

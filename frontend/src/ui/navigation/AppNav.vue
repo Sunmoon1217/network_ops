@@ -2,8 +2,8 @@
 import { h, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
-// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射
-import { DataAnalysis, Connection } from '@element-plus/icons-vue'
+// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心
+import { DataAnalysis, Connection, Timer } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
 import {
@@ -66,6 +66,12 @@ const menuOptions: MenuItem[] = [
       { index: '/ipam/ip-addresses', label: 'IP 地址', icon: renderIcon(IconIp) },
       { index: '/ipam/tags', label: '标签管理', icon: renderIcon(IconIp) },
       { index: '/ipam/usage-trend', label: '使用率趋势', icon: renderIcon(IconSubnet) },
+    ],
+  },
+  {
+    index: '/tasks', label: '任务中心', icon: renderIcon(Timer),
+    children: [
+      { index: '/tasks', label: '任务列表', icon: renderIcon(Timer) },
     ],
   },
   {

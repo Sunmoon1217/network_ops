@@ -36,7 +36,9 @@ network_ops/
 │       ├── path_tracer.py       # 路径追踪算法
 │       ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
 │       ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
+│       ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
 │       ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
+│       ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run）
 │       ├── models.py            # InternetAnalysis（分析结果缓存）
 │       └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
 ├── data/
@@ -51,6 +53,7 @@ network_ops/
 │   └── src/{api,assets,composables,layout,router,stores,ui,utils,views}
 ├── nginx/               # 反向代理（静态直出 + API 代理）
 │   ├── conf.d/          # netops.conf(80)、netops-ssl.conf.disabled(443)
+│   ├── docker-entrypoint.d/  # 05-netops-resolver.sh：启动时把 runtime 的 DNS 写成 resolver.conf
 │   ├── ssl/             # TLS 证书（不入库）
 │   └── gen-self-signed-cert.sh
 ├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
@@ -60,6 +63,7 @@ network_ops/
 ├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
 ├── .dockerignore
 ├── docker-compose.yml   # db(TimescaleDB) / redis / app / worker / nginx
+├── .env.example         # 环境变量模板：cp 成 .env（.env 已被 .gitignore 忽略）
 ├── pyproject.toml       # Python 依赖、pytest、ruff 配置
 └── uv.lock
 ```
@@ -90,7 +94,7 @@ cd frontend && pnpm install
 | `POSTGRES_PORT` | `5432` | 数据库端口 |
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔，映射到 `ALLOWED_HOSTS`；无域名阶段默认放开 |
 
-> 项目中**不存在** `.env` / `.env.example`，配置直接来自环境变量。
+> 环境变量集中在项目根的 **`.env.example`**：`cp .env.example .env` 后按需修改即可（`.env` 已被 `.gitignore` 忽略，`.env.example` 入库）。注意**只有 `docker compose` 会自动加载 `.env`**，Django 自己不读它——在宿主机直接跑 Django 时要 `set -a; . ./.env; set +a`。
 
 ## 常用命令
 
@@ -121,17 +125,19 @@ uv run ruff format
 ## 关键约定
 
 - **单一配置**：`netops/settings.py` 包含全部配置，无 `settings_d/` 分发，无 `DJANGO_ENV`。
+- **`.env` 的解析坑（compose 实测，密码最容易中招）**：`$` 会做变量插值——`POSTGRES_PASSWORD=pa$word` 实际只得到 `pa`；要字面量 `$` 必须写 `$$`（`pa$$word` → `pa$word`）或用**单引号** `'a#b $c'`（**双引号不保护 `$`**：`"a#b $c"` → `a#b `）。`#` 前面有空格就是行内注释（`p #ss` → `p`），紧贴则保留（`p#ss` → `p#ss`）；行尾空格会被去掉。**含 `$` / `#` 的值一律用单引号。**
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
-- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
-- **DeviceConfig 的解析入库仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。两套链路并存，别混。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。**入口是 `/api/tasks/`**：`ops/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
+- **DeviceConfig 的解析入库默认仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ops.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
 - **反向代理与容器化**：`nginx/` 作为统一入口（80/443）。`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django）；`/assets/*`、`/static/*` 由 nginx 直出。两类静态资源的源头是**宿主机**（`pnpm build` + `collectstatic`），`Dockerfile.app` 把它们 COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`），容器启动时 `docker/entrypoint.sh` 复制**另一份**到**一个**命名卷 `static_data`，nginx 只读挂载。详见 `nginx/README.md`。
 - **静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic，因为 `STATIC_URL` 就是 `/static/`）。因此 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖 `/`、`/assets/*`、`/static/*`，`location /static/` 不需要再写 root 覆盖。宿主机上 `www/` 与 `frontend/dist/` 仍是各自独立的目录、各由自己的工具清空（`collectstatic --clear`、`pnpm build` 的 `emptyOutDir`），只有容器里这一份副本被合到一起，所以两个清空动作互不干扰。
 - **为什么必须绕一层命名卷**：nginx 是独立容器，读不到 app 镜像里的文件；跨容器共享只有卷这一条路（tmpfs 是每容器私有的内存文件系统，`--volumes-from` 也拿不到，实测过）。命名卷挂在镜像里**故意留空的** `/var/lib/netops-static` 上——挂到有内容的目录会遮住镜像内容，而 Docker 只在卷首次创建时播种一次，于是「重建镜像后页面还是旧的」。入口脚本每次都**权威**重铺，注意清卷根时要 `! -name static` 排除掉 `static/`（它由下一步单独同步）。
 - **不用 `volumes_from`**：它会把源容器的所有卷都带过来（nginx 会白拿 `app_data` 里的配置仓库），且卷在目标容器里的路径与源容器相同（nginx 只能看到 `/app/www`，配置被绑死）。显式写 `static_data:/usr/share/nginx/html:ro` 才能只读、挑卷、并放在 nginx 自己的路径上。
 - **nginx 的后端地址用 `resolver` + 变量**（`set $netops_upstream "app:8000"`）而不是 `upstream` 块：`upstream` 只在启动时解析一次，app 容器重建换 IP 后会一直 502；变量形式按 `valid` 周期重解析，也让 `nginx -t` 脱离 compose 网络能通过。
-- **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。
+- **`resolver` 的地址不能写死（地址由 runtime 决定）**：**镜像与 runtime 无关**——官方 nginx 镜像同一个、`resolver` 行为也一样；不一样的只是 runtime 给容器写的 `/etc/resolv.conf`。Docker 用户自定义网络是内置 DNS `127.0.0.11`，而 **Podman 把 DNS 放在网络网关**（aardvark-dns，例如 `10.89.3.1`），Podman 根本没有 `127.0.0.11`。原先写死的 `127.0.0.11` 是按「只部署 Docker」定的（`876fbf9` 的注释原文即「127.0.0.11 是 Docker 的内置 DNS」），换 runtime 就是 `recv() failed (111: Connection refused) while resolving, resolver: 127.0.0.11:53`——网络完全正常、只是解析器地址不对，然后 `app` 解析失败、前端 502。**注意这不是"能省就省"的问题**：删掉 `resolver` 就得回到静态 `upstream` 块，那会失去按 `valid` 重解析（app 重建换 IP 后一直 502）并且解析不到就直接 `emerg`；变量形式必须配 `resolver`，而 `resolver` 必须显式给地址——所以要把地址**推导**出来而不是去掉。做法：`nginx/docker-entrypoint.d/05-netops-resolver.sh` 在容器启动时从 `/etc/resolv.conf` 推导并写出 `/etc/nginx/netops/resolver.conf`，conf.d 里的 server 块（80/443）`include` 它；compose 只把这**一个文件**挂到 `/docker-entrypoint.d/`（**挂目录会遮住镜像自带的 entrypoint 脚本**）。脚本取不到 nameserver 就报错退出（失败即响），IPv6 会加方括号。**不要改用官方 envsubst 模板机制**：它要求额外设 `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1`，而不设时占位符会原样留在配置里、`nginx -t` **竟然仍然通过**（实测），故障推迟到转发时才暴露。
+- **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。**项目镜像的基础镜像本身可换**：`Dockerfile.app` 用 `ARG BASE_IMAGE=network-ops-base:py312` + `FROM ${BASE_IMAGE}`（`FROM` 里只能用 `ARG`——`ENV` 在 `FROM` 之前不生效），compose 的 app 与 worker 两处 build 都把它映射成 `${BASE_IMAGE:-network-ops-base:py312}`，所以换私有 registry / 换 python 版本只改环境变量：`BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker`；直接 `docker build` 时写成 `BASE_IMAGE=... docker build --build-arg BASE_IMAGE ...`（**只写名字**即取同名环境变量的值）。
 - **启动命令拆两半：硬要求在 entrypoint，可调参数在 CMD**：`docker/entrypoint.sh` 里是 `gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`，`Dockerfile.app` 的 `CMD` 是 `["--workers","1","--access-logfile","-","--error-logfile","-"]`。entrypoint 按官方镜像的通行写法判断 `$1` 是否以 `-` 开头：是（或没有参数）就补上硬要求，否则整条命令原样执行。于是三种用法都成立：`docker compose run --rm app --workers 4`（只覆盖参数）、`docker compose run --rm app python manage.py migrate`（换整条命令）、worker 的 `entrypoint: ["celery"]` + `command:`（见 `docker-compose.yml`）。
 - **`--bind` 是硬要求，不是可调参数**：它与 nginx 的 upstream 耦合（改地址必须同步 nginx 配置），而 gunicorn 自己的默认值是 `127.0.0.1:8000`——「只覆盖部分参数」时漏掉它就是 502；并且 `--bind` 是 **append** 语义（`gunicorn/config.py` 的 `action = "append"`），在 CMD 之后再追加只会**多一个监听**、覆盖不掉。同理没有做 `GUNICORN_*` 环境变量层：环境变量只能追加在 CMD 之后，对 `--bind` 是「多一个监听」、对 `--workers` 才是覆盖，同一个旋钮两套机制、行为还不一致，不如只留 CMD 这一处。
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`）。
@@ -188,6 +194,7 @@ uv run ruff format
 | `parsers/template_keys.py` | 从 TTP 模板静态提取顶层数据键 |
 | `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
 | `pipeline.py` | 配置处理流水线，信号与 `reparse` 命令共用 |
+| `workflow.py` | 任务工作流的入口：`start_task`（建 Task + 投递采集阶段）、`dispatch_stage`、`cancel_task`、`submit_config_job` |
 | `models.py` | `InternetAnalysis`：互联网资产分析结果缓存 |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
 
@@ -257,6 +264,10 @@ TTP 模板解析 → 结果写回 config_json
 | `/api/auth/login/` | 登录获取 Token |
 | `/api/auth/logout/` | 登出 |
 | `/api/me/` | 当前用户信息 |
+| `/api/tasks/` | 任务列表 / 新建（**新建即投递采集阶段**，是 Celery 工作流的入口） |
+| `/api/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
+| `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
+| `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
 
 **assets**（`assets/api/urls.py`，前缀 `/api/assets/`）
 
@@ -319,6 +330,7 @@ tags, subnets, ip-addresses
 - **为什么只有 7 列**：**LLB 的池成员地址#端口 就是 SLB 虚拟服务器的地址#端口**（同一份数据，LLB 池成员指向下一级 SLB），所以不各占一列；「服务器地址#端口」是链路最后一跳的池成员（两级取 SLB 的、一级取 LLB 的，断链时回退到 GTM 地址，见 `_final_target`）。有测试 `test_llb_member_equals_slb_virtual_server` 守这个前提。
 - 行字典里仍保留 `llb_address`/`llb_port`/`slb_member_address` 这类**分列字段**（导出与前端展示时再按 `TARGET_SEPARATOR` 拼成 `地址#端口`），`note`/`rtype`/`gtm_ip` 也仍在行里，只是不再出现在表格与导出中——`note` 还被前端用来算「已解析」条数，删列时别顺手删字段。`EXPORT_COLUMN_WIDTHS` 的条数必须与 `EXPORT_HEADERS` 相同（有测试守），列宽按序号用 `get_column_letter` 生成，别再写死 `"ABCDEFGHIJKLM"`。
 - 前端模板里**不要把 `row` 作为参数传给函数**（`serverTarget(row)`）：Element Plus 插槽给的 `row` 是它自己的 `DefaultRow`，传给形参类型为 `PathRow` 的函数会 `vue-tsc` 报错；把拼接好的值预先算进行字段（如 `llbTarget`/`slbTarget`/`serverTarget`）再读属性即可。
+- **清理配置数据要用 `manage.py purge_configs`**：配置**原文**只在 Git 仓库里，解析**结果**写在各资产表里，而这些表与 `DeviceConfig` **没有任何外键**——所以删 `DeviceConfig`、删仓库都不会级联清掉它们，手工清必漏。命令把「配置解析产物」定义为 `ConfigBase.__subclasses__()`（运行时枚举，当前 24 个；实测 Saver 写入的模型全部是它的子类，不存在"配了 Saver 却不属于 ConfigBase"的漏网之鱼），再加上 `DeviceConfig` 与 `InternetAnalysis` 派生缓存。默认**只报告**（dry-run），`--yes` 才删；`--with-workflow` 才清 Task/Stage（`Stage.output_data` 里可能存着配置**全文**）；`--purge-repo` 才动文件系统，且它会删掉**整个**仓库、所以强制 `--all`。人工 / Excel 数据（Device、DCIM、ServerOwner 等）永远不动；堆叠组的备机不持有配置，`--device <备机>` 会用 `resolve_config_owner` 折算到主设备。两个坑：`Route`/`Vrf` 与运行态采集接口（`/api/trace/route-collect*`）共用同一张表，按表清分不出来源；另外 config_repo 有**两份**（宿主机 `data/config_repo` 与 `app_data` 卷里的 `/app/data/config_repo`），删一处不影响另一处。执行前先 `docker compose stop worker`。
 - **导入服务器负责人**：`python manage.py import_server_owners --file x.xlsx`（sheet `servers`，列 `hostname` / `ip` / `owner`，另有 `--sheet` / `--dry-run`）。**按列名取而不是按位置**——表头可以换序、可以夹带无关列，缺列直接报错并列出实际表头，避免把 `ip` 静默串到 `hostname` 上。`ip` 是唯一键（导入时用 `ipaddress` 规范化，`2001:DB8::1` 与 `2001:db8::1` 落同一条），文件内重复取最后一行；更新**只覆盖 hostname / owner，不动 `status`**（这份表没有 status 列，不能把手工停用的记录导成启用）。有非法行时**整批不导入**并以非零退出码收尾，不做「写一半再报错」。
 - **「负责人」列**：按链路**最后的 IP**反查 `ServerOwner`，回退顺序是 `slb_member_address → llb_member_address → gtm_ip`（见 `_final_ip`）。匹配前两边都过 `_normalize_ip`，否则 `2001:DB8::1` 与压缩写法对不上。负责人**不进分析缓存**——它挂在 `build_path_rows`/`GET` 响应上现查，改了负责人不必重跑分析。前端表格自己扁平化、拿不到数据库，所以 GET 响应额外给一份 `owners`（键是链路最后 IP 的**原始写法**，与前端用同一份回退规则取值），避免在 JS 里重实现 IPv6 规范化。
 - `Topology` 是单模型，图数据存于 `graph_data` JSON 字段，没有独立的节点/边表。

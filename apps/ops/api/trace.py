@@ -3,6 +3,7 @@
 import logging
 
 import requests
+from django.db import transaction
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -125,38 +126,47 @@ def route_collect(request):
         logger.error("TTP 解析失败: %s", e)
         return Response({"error": f"TTP 解析失败: {e}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # 保存路由
+    # 保存路由。**整段放进一个事务**：原先 delete 在前、逐条 create 在后，任何一条插入
+    # 失败都会留下「旧路由已删、新路由一条没进」的空表，而异常被吞进 errors，接口还返回
+    # success=true。现在失败会整体回滚并返回非 2xx。
+    #
+    # device 必须显式传：Route.device 自 migration 0023 起是非空外键（与 vrf.device 冗余，
+    # Saver 里也是按 vrf.device 保持一致），漏传会撞 NotNullViolation。
     vrf, _ = Vrf.objects.get_or_create(device=device, name=vrf_name)
-    old_count = Route.objects.filter(vrf=vrf).count()
-    Route.objects.filter(vrf=vrf).delete()
 
-    routes_data = []
-    if parsed and isinstance(parsed, list) and len(parsed) > 0:
-        routes_data = parsed[0].get("routes", [])
+    routes_data = parsed[0].get("routes", []) if isinstance(parsed, list) and parsed else []
 
-    created = 0
-    errors = []
+    # 同批内按 (destination, nexthop) 去重（后来者覆盖）：Route 上有
+    # uni_route_vrf_dst_nh，重复行会让整批 bulk_create 失败。
+    routes: dict[tuple[str, str | None], Route] = {}
     for route in routes_data:
         destination = route.get("destination", "")
-        nexthop = route.get("nexthop")
-        interface = route.get("interface", "")
-        protocol = route.get("protocol", "other")
-        metric = route.get("metric", 0)
-
         if not destination:
             continue
-        try:
-            Route.objects.create(
-                vrf=vrf,
-                destination=destination,
-                nexthop=nexthop or None,
-                interface=interface,
-                protocol=protocol if protocol in dict(Route.PROTOCOL_CHOICES) else "other",
-                metric=int(metric) if metric else 0,
-            )
-            created += 1
-        except Exception as e:
-            errors.append(str(e))
+        nexthop = route.get("nexthop") or None
+        protocol = route.get("protocol", "other")
+        metric = route.get("metric", 0)
+        routes[(destination, nexthop)] = Route(
+            vrf=vrf,
+            device=device,
+            destination=destination,
+            nexthop=nexthop,
+            interface=route.get("interface", ""),
+            protocol=protocol if protocol in dict(Route.PROTOCOL_CHOICES) else "other",
+            metric=int(metric) if metric else 0,
+        )
+
+    try:
+        with transaction.atomic():
+            old_count = Route.objects.filter(vrf=vrf).count()
+            Route.objects.filter(vrf=vrf).delete()
+            Route.objects.bulk_create(list(routes.values()))
+    except Exception as e:
+        logger.exception("保存路由失败: device=%s vrf=%s", device.hostname, vrf_name)
+        return Response(
+            {"error": f"保存路由失败（原有路由未被改动）: {e}"},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response(
         {
@@ -165,8 +175,7 @@ def route_collect(request):
             "api_url": api_url,
             "vrf": vrf_name,
             "deleted": old_count,
-            "created": created,
-            "errors": errors,
+            "created": len(routes),
         }
     )
 
@@ -192,37 +201,40 @@ def route_collect_raw(request):
         return Response({"error": f"设备 {device_id} 不存在"}, status=http_status.HTTP_404_NOT_FOUND)
 
     vrf, _ = Vrf.objects.get_or_create(device=device, name=vrf_name)
-    old_count = Route.objects.filter(vrf=vrf).count()
-    Route.objects.filter(vrf=vrf).delete()
 
     import re
 
-    created = 0
-    errors = []
+    pattern = re.compile(r"^[A-Z*]+\s+(\S+)\s+(?:\[\d+/\d+\]\s+)?(?:via\s+(\S+)|is\s+directly\s+connected,\s+(\S+))")
 
+    # 与 route_collect 同一条保存路径：一个事务 + 同批去重 + 显式带上 device。
+    routes: dict[tuple[str, str | None], Route] = {}
     for line in raw_text.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        m = re.match(r"^[A-Z*]+\s+(\S+)\s+(?:\[\d+/\d+\]\s+)?(?:via\s+(\S+)|is\s+directly\s+connected,\s+(\S+))", line)
+        m = pattern.match(line.strip())
         if not m:
             continue
         destination = m.group(1)
-        nexthop = m.group(2)
+        nexthop = m.group(2) or None
         interface = m.group(3) or ""
-        protocol = "connected" if interface else "static"
+        routes[(destination, nexthop)] = Route(
+            vrf=vrf,
+            device=device,
+            destination=destination,
+            nexthop=nexthop,
+            interface=interface,
+            protocol="connected" if interface else "static",
+        )
 
-        try:
-            Route.objects.create(
-                vrf=vrf,
-                destination=destination,
-                nexthop=nexthop if nexthop else None,
-                interface=interface,
-                protocol=protocol,
-            )
-            created += 1
-        except Exception as e:
-            errors.append(str(e))
+    try:
+        with transaction.atomic():
+            old_count = Route.objects.filter(vrf=vrf).count()
+            Route.objects.filter(vrf=vrf).delete()
+            Route.objects.bulk_create(list(routes.values()))
+    except Exception as e:
+        logger.exception("保存路由失败（raw）: device=%s vrf=%s", device.hostname, vrf_name)
+        return Response(
+            {"error": f"保存路由失败（原有路由未被改动）: {e}"},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response(
         {
@@ -230,8 +242,7 @@ def route_collect_raw(request):
             "device": device.hostname,
             "vrf": vrf_name,
             "deleted": old_count,
-            "created": created,
-            "errors": errors,
+            "created": len(routes),
         }
     )
 
