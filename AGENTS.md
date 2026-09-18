@@ -38,6 +38,7 @@ network_ops/
 │       ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
 │       ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
 │       ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
+│       ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run）
 │       ├── models.py            # InternetAnalysis（分析结果缓存）
 │       └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
 ├── data/
@@ -325,6 +326,7 @@ tags, subnets, ip-addresses
 - **为什么只有 7 列**：**LLB 的池成员地址#端口 就是 SLB 虚拟服务器的地址#端口**（同一份数据，LLB 池成员指向下一级 SLB），所以不各占一列；「服务器地址#端口」是链路最后一跳的池成员（两级取 SLB 的、一级取 LLB 的，断链时回退到 GTM 地址，见 `_final_target`）。有测试 `test_llb_member_equals_slb_virtual_server` 守这个前提。
 - 行字典里仍保留 `llb_address`/`llb_port`/`slb_member_address` 这类**分列字段**（导出与前端展示时再按 `TARGET_SEPARATOR` 拼成 `地址#端口`），`note`/`rtype`/`gtm_ip` 也仍在行里，只是不再出现在表格与导出中——`note` 还被前端用来算「已解析」条数，删列时别顺手删字段。`EXPORT_COLUMN_WIDTHS` 的条数必须与 `EXPORT_HEADERS` 相同（有测试守），列宽按序号用 `get_column_letter` 生成，别再写死 `"ABCDEFGHIJKLM"`。
 - 前端模板里**不要把 `row` 作为参数传给函数**（`serverTarget(row)`）：Element Plus 插槽给的 `row` 是它自己的 `DefaultRow`，传给形参类型为 `PathRow` 的函数会 `vue-tsc` 报错；把拼接好的值预先算进行字段（如 `llbTarget`/`slbTarget`/`serverTarget`）再读属性即可。
+- **清理配置数据要用 `manage.py purge_configs`**：配置**原文**只在 Git 仓库里，解析**结果**写在各资产表里，而这些表与 `DeviceConfig` **没有任何外键**——所以删 `DeviceConfig`、删仓库都不会级联清掉它们，手工清必漏。命令把「配置解析产物」定义为 `ConfigBase.__subclasses__()`（运行时枚举，当前 24 个；实测 Saver 写入的模型全部是它的子类，不存在"配了 Saver 却不属于 ConfigBase"的漏网之鱼），再加上 `DeviceConfig` 与 `InternetAnalysis` 派生缓存。默认**只报告**（dry-run），`--yes` 才删；`--with-workflow` 才清 Task/Stage（`Stage.output_data` 里可能存着配置**全文**）；`--purge-repo` 才动文件系统，且它会删掉**整个**仓库、所以强制 `--all`。人工 / Excel 数据（Device、DCIM、ServerOwner 等）永远不动；堆叠组的备机不持有配置，`--device <备机>` 会用 `resolve_config_owner` 折算到主设备。两个坑：`Route`/`Vrf` 与运行态采集接口（`/api/trace/route-collect*`）共用同一张表，按表清分不出来源；另外 config_repo 有**两份**（宿主机 `data/config_repo` 与 `app_data` 卷里的 `/app/data/config_repo`），删一处不影响另一处。执行前先 `docker compose stop worker`。
 - **导入服务器负责人**：`python manage.py import_server_owners --file x.xlsx`（sheet `servers`，列 `hostname` / `ip` / `owner`，另有 `--sheet` / `--dry-run`）。**按列名取而不是按位置**——表头可以换序、可以夹带无关列，缺列直接报错并列出实际表头，避免把 `ip` 静默串到 `hostname` 上。`ip` 是唯一键（导入时用 `ipaddress` 规范化，`2001:DB8::1` 与 `2001:db8::1` 落同一条），文件内重复取最后一行；更新**只覆盖 hostname / owner，不动 `status`**（这份表没有 status 列，不能把手工停用的记录导成启用）。有非法行时**整批不导入**并以非零退出码收尾，不做「写一半再报错」。
 - **「负责人」列**：按链路**最后的 IP**反查 `ServerOwner`，回退顺序是 `slb_member_address → llb_member_address → gtm_ip`（见 `_final_ip`）。匹配前两边都过 `_normalize_ip`，否则 `2001:DB8::1` 与压缩写法对不上。负责人**不进分析缓存**——它挂在 `build_path_rows`/`GET` 响应上现查，改了负责人不必重跑分析。前端表格自己扁平化、拿不到数据库，所以 GET 响应额外给一份 `owners`（键是链路最后 IP 的**原始写法**，与前端用同一份回退规则取值），避免在 JS 里重实现 IPv6 规范化。
 - `Topology` 是单模型，图数据存于 `graph_data` JSON 字段，没有独立的节点/边表。
