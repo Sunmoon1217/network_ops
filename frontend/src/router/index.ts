@@ -82,6 +82,14 @@ const router = createRouter({
       ],
     },
     {
+      path: '/tasks',
+      component: () => import('@/views/devices/index.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', name: 'task-list', component: () => import('@/views/tasks/index.vue') },
+      ],
+    },
+    {
       path: '/tools',
       component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },

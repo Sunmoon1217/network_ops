@@ -36,6 +36,7 @@ network_ops/
 │       ├── path_tracer.py       # 路径追踪算法
 │       ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
 │       ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
+│       ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
 │       ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
 │       ├── models.py            # InternetAnalysis（分析结果缓存）
 │       └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
@@ -123,8 +124,8 @@ uv run ruff format
 - **单一配置**：`netops/settings.py` 包含全部配置，无 `settings_d/` 分发，无 `DJANGO_ENV`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
-- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
-- **DeviceConfig 的解析入库仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。两套链路并存，别混。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。**入口是 `/api/tasks/`**：`ops/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
+- **DeviceConfig 的解析入库默认仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ops.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
 - **反向代理与容器化**：`nginx/` 作为统一入口（80/443）。`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django）；`/assets/*`、`/static/*` 由 nginx 直出。两类静态资源的源头是**宿主机**（`pnpm build` + `collectstatic`），`Dockerfile.app` 把它们 COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`），容器启动时 `docker/entrypoint.sh` 复制**另一份**到**一个**命名卷 `static_data`，nginx 只读挂载。详见 `nginx/README.md`。
 - **静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic，因为 `STATIC_URL` 就是 `/static/`）。因此 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖 `/`、`/assets/*`、`/static/*`，`location /static/` 不需要再写 root 覆盖。宿主机上 `www/` 与 `frontend/dist/` 仍是各自独立的目录、各由自己的工具清空（`collectstatic --clear`、`pnpm build` 的 `emptyOutDir`），只有容器里这一份副本被合到一起，所以两个清空动作互不干扰。
@@ -188,6 +189,7 @@ uv run ruff format
 | `parsers/template_keys.py` | 从 TTP 模板静态提取顶层数据键 |
 | `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
 | `pipeline.py` | 配置处理流水线，信号与 `reparse` 命令共用 |
+| `workflow.py` | 任务工作流的入口：`start_task`（建 Task + 投递采集阶段）、`dispatch_stage`、`cancel_task`、`submit_config_job` |
 | `models.py` | `InternetAnalysis`：互联网资产分析结果缓存 |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
 
@@ -257,6 +259,10 @@ TTP 模板解析 → 结果写回 config_json
 | `/api/auth/login/` | 登录获取 Token |
 | `/api/auth/logout/` | 登出 |
 | `/api/me/` | 当前用户信息 |
+| `/api/tasks/` | 任务列表 / 新建（**新建即投递采集阶段**，是 Celery 工作流的入口） |
+| `/api/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
+| `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
+| `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
 
 **assets**（`assets/api/urls.py`，前缀 `/api/assets/`）
 

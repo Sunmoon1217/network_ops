@@ -655,6 +655,8 @@ def _import_devices(ws):
 
 
 def _import_configs(ws):
+    from ops.workflow import submit_config_job
+
     created, skipped, errors = 0, 0, []
 
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
@@ -698,14 +700,24 @@ def _import_configs(ws):
             errors.append(f"行 {row_idx}: 保存到 Git 失败: {e}")
             continue
 
-        # 用 get_or_create 而不是 update_or_create：这条记录代表"某设备在某 commit 上的
+        # 用「先查后建」而不是 update_or_create：这条记录代表"某设备在某 commit 上的
         # 配置快照"，重复导入同一版本时不该动它。用 update_or_create 会把已经解析好的
         # config_json 清空，而 created=False 又不会触发重新解析，解析结果就永久丢了。
-        DeviceConfig.objects.get_or_create(
-            device=device,
-            git_commit_hash=commit_hash,
-            defaults={"config_json": {}},
-        )
+        #
+        # 批量导入**不在请求里跑同步流水线**：每台设备解析+入库要 0.2–12 s，几十行就是
+        # 几十秒串行。这里挂 `_defer_pipeline` 让 signals 跳过同步处理，再投递 celery 链
+        # （解析 → 存储）；单个上传仍走同步路径，失败能直接在响应里报错。
+        if DeviceConfig.objects.filter(device=device, git_commit_hash=commit_hash).exists():
+            skipped += 1
+            continue
+
+        config = DeviceConfig(device=device, git_commit_hash=commit_hash, config_json={})
+        config._defer_pipeline = True  # type: ignore[attr-defined]
+        config.save()
+        try:
+            submit_config_job(config.pk)
+        except Exception as e:
+            errors.append(f"行 {row_idx}: 配置已保存，但投递解析任务失败: {e}")
         created += 1
 
     return {"created": created, "skipped": skipped, "errors": errors}
