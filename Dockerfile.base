@@ -90,9 +90,12 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
 # 版本号统一用 importlib.metadata 取：不是每个包都暴露 __version__（ttp 就没有）。
 # 注意这里只验证「环境」本身 —— 本镜像不含项目代码，碰不了 netops.settings，
 # 项目侧的校验放在 Dockerfile.app 的验证层。
+# 清单要与 pyproject.toml 的 dependencies 对齐：漏检的包会让基础镜像「看起来构建
+# 成功」，却在项目镜像里才炸。celery 就是实例——netops/__init__.py 直接 import 它，
+# 基础镜像里没有时会一路拖到 collectstatic 才报 ModuleNotFoundError。
 RUN python -c "import importlib.metadata as m; \
-[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','django_extensions','django_stubs_ext','gunicorn','uvicorn_worker')]; \
-print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','django-extensions','django-stubs-ext','gunicorn','uvicorn','uvicorn-worker')})"
+[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','django_extensions','django_stubs_ext','gunicorn','uvicorn_worker')]; \
+print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','django-extensions','django-stubs-ext','gunicorn','uvicorn','uvicorn-worker')})"
 
 # 项目镜像在此之上 COPY 源码即可，这里给一个默认工作目录
 WORKDIR /app
