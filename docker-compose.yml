@@ -68,9 +68,11 @@ services:
       # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
       - app_data:/app/data
       # 下面两个是「镜像产物的出口」，供 nginx 通过同名卷读取。
-      # entrypoint 每次启动都会用镜像里的 staging 覆盖同步，不必手工维护。
-      - www_data:/app/www
-      - dist_data:/app/frontend/dist
+      # 挂载点是镜像里**故意留空的目录**，卷里内容只由 entrypoint 启动时从
+      # /app/www、/app/frontend/dist 复制进来——不用 /app/www 本身当挂载点，
+      # 是为了避免卷遮住镜像内容后「Docker 只播种一次」带来的陈旧问题。
+      - www_data:/var/lib/netops-static/www
+      - dist_data:/var/lib/netops-static/dist
     depends_on:
       db:
         condition: service_healthy

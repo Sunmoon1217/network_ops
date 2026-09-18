@@ -10,11 +10,11 @@
 #
 # 成品为什么要进镜像、再经命名卷给 nginx：
 #   nginx 是独立容器，**读不到本镜像里的文件**，跨容器共享只有卷这一条路
-#   （tmpfs 是每容器私有的内存文件系统，无法共享）。而卷挂在 /app/www、
-#   /app/frontend/dist 上会遮住镜像里的同名目录，且 Docker 只在卷首次创建时用
-#   镜像内容播种一次——重建镜像后旧卷不会更新。因此构建期先把成品另存到
-#   /opt/static（staging），运行时由 docker/entrypoint.sh 同步进两个挂载点，
-#   保证「重建镜像 → 卷里的产物跟着更新」。
+#   （tmpfs 是每容器私有的内存文件系统，无法共享）。所以 /app/www 与
+#   /app/frontend/dist 保持原样（Django 的 STATIC_ROOT / FRONTEND 就指这里），
+#   容器启动时由 docker/entrypoint.sh 复制**另一份**到命名卷给 nginx 用。
+#   卷挂在空目录上，内容唯一来源就是这次复制，不存在「Docker 只播种一次、
+#   重建镜像后卷里还是旧产物」的问题。
 #
 # 构建：
 #   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .  # pyproject/uv.lock 变了才重建
@@ -36,10 +36,10 @@ COPY apps/ ./apps/
 COPY frontend/dist ./frontend/dist
 COPY www ./www
 
-# 校验成品 + 拷到 staging。
-# staging 必须是另一个路径：运行时命名卷会挂到 /app/www 与 /app/frontend/dist 上，
-# 把镜像里这两个目录遮住（见文件头说明）。
-# /app/data 是配置仓库（GitPython 操作的 git 仓库）的挂载点，先建出来。
+# 校验成品，并建出运行时要用的空目录：
+#   /app/data                       配置仓库（GitPython 操作的 git 仓库）的挂载点
+#   /var/lib/netops-static/{www,dist}  命名卷挂载点，镜像里**故意留空**，
+#                                      内容只由 entrypoint 从 /app/{www,frontend/dist} 复制进来
 RUN set -eux; \
     if [ ! -f /app/frontend/dist/index.html ]; then \
         echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
@@ -49,10 +49,8 @@ RUN set -eux; \
         echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
         exit 1; \
     fi; \
-    mkdir -p /app/data /opt/static; \
-    cp -a /app/www /opt/static/www; \
-    cp -a /app/frontend/dist /opt/static/dist; \
-    echo "static files: www=$(find /opt/static/www -type f | wc -l) dist=$(find /opt/static/dist -type f | wc -l)"
+    mkdir -p /app/data /var/lib/netops-static/www /var/lib/netops-static/dist; \
+    echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
 
 COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
 RUN chmod +x /usr/local/bin/netops-entrypoint

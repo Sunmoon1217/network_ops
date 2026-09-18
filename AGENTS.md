@@ -55,7 +55,7 @@ network_ops/
 │   └── gen-self-signed-cert.sh
 ├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
 ├── tmp/
-├── docker/entrypoint.sh # 应用容器入口：把镜像里的静态成品同步进命名卷
+├── docker/entrypoint.sh # 应用容器入口：把镜像里的静态成品复制进命名卷（空目录挂载点）
 ├── Dockerfile.base      # 环境镜像（只装依赖，不含源码）
 ├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
 ├── .dockerignore
@@ -126,8 +126,9 @@ uv run ruff format
 - **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
 - **DeviceConfig 的解析入库仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
-- **反向代理与容器化**：`nginx/` 作为统一入口（80/443）。`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django）；`/assets/*`、`/static/*` 由 nginx 直出。两类静态资源的源头是**宿主机**（`pnpm build` + `collectstatic`），`Dockerfile.app` 把它们 COPY 进镜像并另存到 `/opt/static`，容器启动时 `docker/entrypoint.sh` **权威同步**进 `dist_data`/`www_data` 两个命名卷，nginx 只读挂载这两个卷。详见 `nginx/README.md`。
-- **为什么必须绕一层命名卷**：nginx 是独立容器，读不到 app 镜像里的文件；跨容器共享只有卷这一条路（tmpfs 是每容器私有的内存文件系统，`--volumes-from` 也拿不到，实测过）。而卷会遮住镜像里的同名目录、Docker 只在卷首次创建时播种一次，所以 entrypoint 每次启动都重新同步，否则会出现「重建镜像后页面还是旧的」。
+- **反向代理与容器化**：`nginx/` 作为统一入口（80/443）。`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django）；`/assets/*`、`/static/*` 由 nginx 直出。两类静态资源的源头是**宿主机**（`pnpm build` + `collectstatic`），`Dockerfile.app` 把它们 COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`），容器启动时 `docker/entrypoint.sh` 复制**另一份**到 `www_data`/`dist_data` 两个命名卷，nginx 只读挂载。详见 `nginx/README.md`。
+- **为什么必须绕一层命名卷**：nginx 是独立容器，读不到 app 镜像里的文件；跨容器共享只有卷这一条路（tmpfs 是每容器私有的内存文件系统，`--volumes-from` 也拿不到，实测过）。命名卷挂在镜像里**故意留空的** `/var/lib/netops-static/{www,dist}` 上——挂到有内容的目录会遮住镜像内容，而 Docker 只在卷首次创建时播种一次，于是「重建镜像后页面还是旧的」。入口脚本每次都**权威**重铺（先 `find -delete` 再 cp），顺带清掉上一版带 hash 的遗留资源。
+- **不用 `volumes_from`**：它会把源容器的所有卷都带过来（nginx 会白拿 `app_data` 里的配置仓库），且卷在目标容器里的路径与源容器相同（nginx 只能看到 `/app/www`，配置被绑死）。显式写 `www_data:/usr/share/nginx/static:ro` 才能只读、挑卷、并放在 nginx 自己的路径上。
 - **nginx 的后端地址用 `resolver` + 变量**（`set $netops_upstream "app:8000"`）而不是 `upstream` 块：`upstream` 只在启动时解析一次，app 容器重建换 IP 后会一直 502；变量形式按 `valid` 周期重解析，也让 `nginx -t` 脱离 compose 网络能通过。
 - **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了（例如新增 celery）必须重建 `Dockerfile.base`，否则项目镜像会在运行期才报 `ModuleNotFoundError`。`Dockerfile.base` 的冒烟自检清单要与 `dependencies` 对齐，就是为了让这种问题在基础镜像构建时就暴露。
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`）。

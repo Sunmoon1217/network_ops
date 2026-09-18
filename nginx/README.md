@@ -21,10 +21,10 @@ client ──▶ nginx ───────┤
 产物的源头是**宿主机**，流程是「宿主机构建 → COPY 进 app 镜像 → 命名卷 → nginx」：
 
 1. 宿主机上执行 `cd frontend && pnpm build` 与 `uv run python manage.py collectstatic --noinput`；
-2. `Dockerfile.app` 把 `frontend/dist` 与 `www` **COPY 进 app 镜像**（`.dockerignore`
-   特意放开了这两个目录），并另存一份到 `/opt/static`（staging）；
-3. 容器启动时 `docker/entrypoint.sh` 把 staging **权威同步**进两个命名卷
-   （先清空挂载点内容再铺，所以上一版的遗留资源不会堆积）；
+2. `Dockerfile.app` 把 `frontend/dist` 与 `www` **COPY 进 app 镜像**
+   （`.dockerignore` 特意放开了这两个目录）；这两个路径同时就是 Django 的
+   `STATIC_ROOT` 与 `FRONTEND`，DEBUG 下 Django 自己也从这里托管；
+3. 容器启动时 `docker/entrypoint.sh` 把它们复制**另一份**到两个命名卷；
 4. nginx 只读挂载这两个卷。
 
 镜像里因此**没有任何 node/npm/pnpm**，构建也只需秒级。代价是构建前必须先在宿主机
@@ -40,7 +40,20 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 | 命名卷 / 绑定挂载 | ✅ |
 | `tmpfs` | ❌ 每个容器各自私有、内存文件系统，`--volumes-from` 也拿不到（Docker 没有共享 tmpfs 的机制），且容器一停内容即丢 |
 
-而命名卷挂在 `/app/www`、`/app/frontend/dist` 上会**遮住镜像里的同名目录**，Docker 仅在卷首次创建时用镜像内容播种一次——重建镜像后旧卷不会更新，表现就是「镜像里产物是新的，页面还是旧的」。所以 entrypoint 每次启动都从 `/opt/static` 覆盖同步一次，保证卷内容跟随镜像（代价是每次启动多拷一次静态文件，量很小）。
+而卷挂在有内容的目录上会**遮住镜像里的同名目录**，Docker 又只在卷首次创建时用镜像内容播种一次——重建镜像后旧卷不会更新，表现就是「镜像里产物是新的，页面还是旧的」。
+
+所以命名卷挂在镜像里**故意留空的目录** `/var/lib/netops-static/{www,dist}` 上：卷的初始内容为空，内容唯一来源就是 entrypoint 启动时的复制，不存在「播种过一次就不更新」的歧义。复制是**权威**的（先 `find -mindepth 1 -delete` 再铺），所以上一版带 hash 的遗留资源也不会堆在卷里。
+
+### 为什么用显式命名卷，而不是 `volumes_from`
+
+`volumes_from: ["app:ro"]` 也能让 nginx 拿到卷（compose 支持，还会隐式加上 `depends_on`），但有两个副作用：
+
+| `volumes_from` 的行为 | 后果 |
+|----------------------|------|
+| 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连 `app_data`（`data/config_repo` 那个 git 仓库）一起拿到 |
+| 卷在目标容器里的路径 = 源容器的路径 | nginx 只能看到 `/app/www`，`root` 得写成 app 的内部路径，配置被绑死 |
+
+所以 compose 里显式写 `www_data:/usr/share/nginx/static:ro`、`dist_data:/usr/share/nginx/html:ro`：既能只读、能挑卷，又能放在 nginx 自己的常规路径上。
 
 ## 目录结构
 
@@ -63,9 +76,12 @@ nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不�
 
 | 卷 | app 容器 | nginx 容器 | 内容 |
 |----|---------|-----------|------|
-| `dist_data` | `/app/frontend/dist`（读写） | `/usr/share/nginx/html`（只读） | Vue 构建产物 |
-| `www_data` | `/app/www`（读写） | `/usr/share/nginx/static`（只读） | collectstatic 产物 |
+| `dist_data` | `/var/lib/netops-static/dist`（读写） | `/usr/share/nginx/html`（只读） | Vue 构建产物 |
+| `www_data` | `/var/lib/netops-static/www`（读写） | `/usr/share/nginx/static`（只读） | collectstatic 产物 |
 | `app_data` | `/app/data`（读写） | — | 配置仓库（必须持久化） |
+
+app 侧的两个挂载点在镜像里是**空目录**，只作为命名卷的落点；镜像里真正放产物的是
+`/app/frontend/dist` 与 `/app/www`（Django 用），entrypoint 负责把后者复制进前者。
 
 `dist_data` / `www_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来。
 
