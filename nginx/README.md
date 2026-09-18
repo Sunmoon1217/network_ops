@@ -24,7 +24,7 @@ client ──▶ nginx ───────┤
 2. `Dockerfile.app` 把 `frontend/dist` 与 `www` **COPY 进 app 镜像**
    （`.dockerignore` 特意放开了这两个目录）；这两个路径同时就是 Django 的
    `STATIC_ROOT` 与 `FRONTEND`，DEBUG 下 Django 自己也从这里托管；
-3. 容器启动时 `docker/entrypoint.sh` 把它们复制**另一份**到两个命名卷；
+3. 容器启动时 `docker/entrypoint.sh` 把它们复制**另一份**到命名卷（**一个**卷，按 URL 前缀布局）；
 4. nginx 只读挂载这两个卷。
 
 镜像里因此**没有任何 node/npm/pnpm**，构建也只需秒级。代价是构建前必须先在宿主机
@@ -42,7 +42,18 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 
 而卷挂在有内容的目录上会**遮住镜像里的同名目录**，Docker 又只在卷首次创建时用镜像内容播种一次——重建镜像后旧卷不会更新，表现就是「镜像里产物是新的，页面还是旧的」。
 
-所以命名卷挂在镜像里**故意留空的目录** `/var/lib/netops-static/{www,dist}` 上：卷的初始内容为空，内容唯一来源就是 entrypoint 启动时的复制，不存在「播种过一次就不更新」的歧义。复制是**权威**的（先 `find -mindepth 1 -delete` 再铺），所以上一版带 hash 的遗留资源也不会堆在卷里。
+所以命名卷挂在镜像里**故意留空的目录** `/var/lib/netops-static` 上：卷的初始内容为空，内容唯一来源就是 entrypoint 启动时的复制，不存在「播种过一次就不更新」的歧义。复制是**权威**的（先清空再铺），所以上一版带 hash 的遗留资源也不会堆在卷里。
+
+卷内的目录布局**按 URL 前缀设计**，这样 nginx 一个 `root` 就能覆盖全部静态请求：
+
+```
+<卷>/
+├── index.html   ← Vite 产物（SPA 入口，/ 走 try_files 兜底）
+├── assets/*     ← Vite 产物（/assets/*）
+└── static/*     ← collectstatic 产物（/static/*，STATIC_URL 就是 /static/）
+```
+
+宿主机上 `www/` 与 `frontend/dist/` 仍然是各自独立的目录、各自的工具负责清空（`collectstatic --clear` / `pnpm build` 的 `emptyOutDir`），只有容器里的**这一份副本**被合到一起，所以两个清空动作互不干扰。
 
 ### 为什么用显式命名卷，而不是 `volumes_from`
 
@@ -51,9 +62,9 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 | `volumes_from` 的行为 | 后果 |
 |----------------------|------|
 | 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连 `app_data`（`data/config_repo` 那个 git 仓库）一起拿到 |
-| 卷在目标容器里的路径 = 源容器的路径 | nginx 只能看到 `/app/www`，`root` 得写成 app 的内部路径，配置被绑死 |
+| 卷在目标容器里的路径 = 源容器的路径 | nginx 只能看到 `/app/www`、`/app/frontend/dist`，`root` 得写成 app 的内部路径，配置被绑死 |
 
-所以 compose 里显式写 `www_data:/usr/share/nginx/static:ro`、`dist_data:/usr/share/nginx/html:ro`：既能只读、能挑卷，又能放在 nginx 自己的常规路径上。
+所以 compose 里显式写 `static_data:/usr/share/nginx/html:ro`：只读、能挑卷、放在 nginx 自己的常规路径上，一个 root 覆盖 `/`、`/assets/*`、`/static/*`。
 
 ## 目录结构
 
@@ -76,14 +87,14 @@ nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不�
 
 | 卷 | app 容器 | nginx 容器 | 内容 |
 |----|---------|-----------|------|
-| `dist_data` | `/var/lib/netops-static/dist`（读写） | `/usr/share/nginx/html`（只读） | Vue 构建产物 |
-| `www_data` | `/var/lib/netops-static/www`（读写） | `/usr/share/nginx/static`（只读） | collectstatic 产物 |
+| `static_data` | `/var/lib/netops-static`（读写） | `/usr/share/nginx/html`（只读） | `index.html` + `assets/`（Vite）与 `static/`（collectstatic） |
 | `app_data` | `/app/data`（读写） | — | 配置仓库（必须持久化） |
 
-app 侧的两个挂载点在镜像里是**空目录**，只作为命名卷的落点；镜像里真正放产物的是
-`/app/frontend/dist` 与 `/app/www`（Django 用），entrypoint 负责把后者复制进前者。
+app 侧的挂载点在镜像里是**空目录**，只作为命名卷的落点；镜像里真正放产物的是
+`/app/frontend/dist` 与 `/app/www`（Django 用），entrypoint 负责把它们复制进卷
+（`dist` → 卷根，`www` → 卷内 `static/`）。
 
-`dist_data` / `www_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来。
+`static_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来（`app_data` 则必须保留）。
 
 ## 使用方法
 
@@ -219,7 +230,7 @@ app 容器启动时会把新产物同步进两个静态卷，nginx 无需重启�
 | 现象 | 原因与处理 |
 |------|-----------|
 | 首页 404 / 空白 | 静态卷为空：`docker compose up -d --build app` 重建并同步；或看 app 日志里 entrypoint 是否报错 |
-| admin 后台无样式 | `www_data` 卷没拿到产物，同上 |
+| admin 后台无样式 | 卷里 `static/` 没拿到产物，同上 |
 | 页面还是旧版本 | 两步都要做：宿主机 `pnpm build` 重新构建成品，再 `docker compose up -d --build app`（产物是 COPY 进镜像的，少了前一步镜像里就是旧文件） |
 | `502 Bad Gateway` | app 容器没起来或未通过健康检查：`docker compose ps`、`docker compose logs app` |
 | 重建 app 后一直 502 | 说明 upstream 被写回了 `upstream` 块（启动时只解析一次）；本配置用变量形式可避免，检查是否被改回 |

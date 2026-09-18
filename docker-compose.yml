@@ -67,12 +67,13 @@ services:
     volumes:
       # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
       - app_data:/app/data
-      # 下面两个是「镜像产物的出口」，供 nginx 通过同名卷读取。
-      # 挂载点是镜像里**故意留空的目录**，卷里内容只由 entrypoint 启动时从
-      # /app/www、/app/frontend/dist 复制进来——不用 /app/www 本身当挂载点，
-      # 是为了避免卷遮住镜像内容后「Docker 只播种一次」带来的陈旧问题。
-      - www_data:/var/lib/netops-static/www
-      - dist_data:/var/lib/netops-static/dist
+      # 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
+      # 目录**，卷里内容只由 entrypoint 启动时从 /app/www、/app/frontend/dist
+      # 复制进来——不用那两个路径本身当挂载点，是为了避免卷遮住镜像内容后
+      # 「Docker 只播种一次」带来的陈旧问题。
+      # 卷内布局按 URL 前缀设计：/index.html、/assets/*（Vite）+ /static/*（collectstatic），
+      # 因此 nginx 一个 root 就能覆盖全部静态请求。
+      - static_data:/var/lib/netops-static
     depends_on:
       db:
         condition: service_healthy
@@ -123,11 +124,9 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      # 两个静态产物卷由 app 容器写入（镜像内构建 + entrypoint 同步），nginx 只读。
-      # 不再 bind mount 宿主机目录，所以宿主机不需要 node/pnpm，也不需要在发版前
-      # 手工跑 pnpm build / collectstatic。
-      - dist_data:/usr/share/nginx/html:ro
-      - www_data:/usr/share/nginx/static:ro
+      # 静态产物卷由 app 容器写入（entrypoint 把镜像里的成品复制进来），nginx 只读。
+      # 不再 bind mount 宿主机目录，也不会在发版时手工往容器里塞文件。
+      - static_data:/usr/share/nginx/html:ro
     depends_on:
       app:
         condition: service_healthy
@@ -147,7 +146,5 @@ volumes:
   app_data:
     driver: local
   # 静态产物（可由重建镜像恢复，属于可丢弃数据）
-  www_data:
-    driver: local
-  dist_data:
+  static_data:
     driver: local

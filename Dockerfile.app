@@ -37,9 +37,10 @@ COPY frontend/dist ./frontend/dist
 COPY www ./www
 
 # 校验成品，并建出运行时要用的空目录：
-#   /app/data                       配置仓库（GitPython 操作的 git 仓库）的挂载点
-#   /var/lib/netops-static/{www,dist}  命名卷挂载点，镜像里**故意留空**，
-#                                      内容只由 entrypoint 从 /app/{www,frontend/dist} 复制进来
+#   /app/data                 配置仓库（GitPython 操作的 git 仓库）的挂载点
+#   /var/lib/netops-static    命名卷挂载点，镜像里**故意留空**；卷内布局按 URL
+#                             前缀设计（index.html + assets/ + static/），内容只由
+#                             entrypoint 从 /app/www、/app/frontend/dist 复制进来
 RUN set -eux; \
     if [ ! -f /app/frontend/dist/index.html ]; then \
         echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
@@ -49,7 +50,7 @@ RUN set -eux; \
         echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
         exit 1; \
     fi; \
-    mkdir -p /app/data /var/lib/netops-static/www /var/lib/netops-static/dist; \
+    mkdir -p /app/data /var/lib/netops-static; \
     echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
 
 COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
