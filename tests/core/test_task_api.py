@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from assets.models import Device, DeviceConnection, DeviceModel, Vendor
 from core.models import Stage, Task, User
+from ops import workflow
 
 TASKS_URL = "/api/tasks/"
 
@@ -29,15 +30,15 @@ def device(db):
 
 
 def _no_dispatch(monkeypatch):
+    """让投递失败：阶段表里的任务换成 ``.delay()`` 抛异常的桩（模拟 broker 不可达）。"""
+
     class _FailTask:
         @staticmethod
         def delay(stage_id):
             raise RuntimeError("broker down")
 
-    monkeypatch.setattr(
-        "ops.workflow._stage_tasks",
-        lambda: {"collection": _FailTask, "parsing": _FailTask, "storage": _FailTask},
-    )
+    for stage_type in ("collection", "parsing", "storage"):
+        monkeypatch.setitem(workflow._STAGE_TASKS, stage_type, _FailTask)
 
 
 @pytest.mark.django_db
