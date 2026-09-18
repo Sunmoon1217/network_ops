@@ -63,6 +63,7 @@ network_ops/
 ├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
 ├── .dockerignore
 ├── docker-compose.yml   # db(TimescaleDB) / redis / app / worker / nginx
+├── .env.example         # 环境变量模板：cp 成 .env（.env 已被 .gitignore 忽略）
 ├── pyproject.toml       # Python 依赖、pytest、ruff 配置
 └── uv.lock
 ```
@@ -93,7 +94,7 @@ cd frontend && pnpm install
 | `POSTGRES_PORT` | `5432` | 数据库端口 |
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔，映射到 `ALLOWED_HOSTS`；无域名阶段默认放开 |
 
-> 项目中**不存在** `.env` / `.env.example`，配置直接来自环境变量。
+> 环境变量集中在项目根的 **`.env.example`**：`cp .env.example .env` 后按需修改即可（`.env` 已被 `.gitignore` 忽略，`.env.example` 入库）。注意**只有 `docker compose` 会自动加载 `.env`**，Django 自己不读它——在宿主机直接跑 Django 时要 `set -a; . ./.env; set +a`。
 
 ## 常用命令
 
@@ -124,6 +125,7 @@ uv run ruff format
 ## 关键约定
 
 - **单一配置**：`netops/settings.py` 包含全部配置，无 `settings_d/` 分发，无 `DJANGO_ENV`。
+- **`.env` 的解析坑（compose 实测，密码最容易中招）**：`$` 会做变量插值——`POSTGRES_PASSWORD=pa$word` 实际只得到 `pa`；要字面量 `$` 必须写 `$$`（`pa$$word` → `pa$word`）或用**单引号** `'a#b $c'`（**双引号不保护 `$`**：`"a#b $c"` → `a#b `）。`#` 前面有空格就是行内注释（`p #ss` → `p`），紧贴则保留（`p#ss` → `p#ss`）；行尾空格会被去掉。**含 `$` / `#` 的值一律用单引号。**
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
 - **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。**入口是 `/api/tasks/`**：`ops/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）。**必须有 worker 消费队列**，否则 `.delay()` 只会把消息堆在 Redis 里永远不执行——`docker-compose.yml` 里的 `worker` 服务就是干这个的。
