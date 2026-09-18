@@ -1,4 +1,5 @@
 import secrets
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
@@ -77,6 +78,13 @@ class Task(models.Model):
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
 
+    if TYPE_CHECKING:
+        stages: models.QuerySet["Stage"]
+
+        def get_task_type_display(self) -> str: ...
+
+        def get_status_display(self) -> str: ...
+
     class Meta:
         verbose_name = "任务"
         verbose_name_plural = verbose_name
@@ -125,6 +133,12 @@ class Stage(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
     retry_count = models.PositiveIntegerField(default=0, verbose_name="重试次数")
     max_retries = models.PositiveIntegerField(default=3, verbose_name="最大重试次数")
+
+    if TYPE_CHECKING:
+
+        def get_stage_type_display(self) -> str: ...
+
+        def get_status_display(self) -> str: ...
 
     class Meta:
         verbose_name = "阶段"

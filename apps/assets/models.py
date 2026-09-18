@@ -758,9 +758,7 @@ class AddressBook(ConfigBase):
     description = models.TextField(blank=True, default="", verbose_name="描述")
 
     if TYPE_CHECKING:
-        from assets.models import AddressBook
-
-        children: QuerySet[AddressBook]
+        children: QuerySet["AddressBook"]
 
     class Meta:
         verbose_name = "地址簿"
@@ -917,6 +915,10 @@ class Subnet(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
+    if TYPE_CHECKING:
+        children: QuerySet["Subnet"]
+        ip_addresses: QuerySet["IPAddress"]
+
     class Meta:
         verbose_name = "网段"
         verbose_name_plural = verbose_name
@@ -939,7 +941,7 @@ class Subnet(models.Model):
     def used_ips(self):
         if not self.pk:
             return 0
-        return self.ip_addresses.filter(status="used").count()  # type: ignore
+        return self.ip_addresses.filter(status="used").count()
 
     @property
     def utilization(self):
