@@ -45,7 +45,7 @@ def _trigger_next_stage(task, stage_type: str, input_data=None) -> None:
 
     task_func = task_map.get(stage_type)
     if task_func:
-        task_func.delay(next_stage.pk)
+        task_func.delay(next_stage.pk)  # type: ignore
 
     logger.info("Triggered %s stage (id=%s) for task %s", stage_type, next_stage.pk, task.pk)
 
