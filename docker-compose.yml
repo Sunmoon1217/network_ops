@@ -60,6 +60,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
+      args:
+        # 基础镜像可用宿主机环境变量覆盖（默认值与 Dockerfile.app 的 ARG 默认值一致）：
+        #   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
+        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
     image: network-ops:latest
     container_name: netops-app
     restart: unless-stopped
@@ -105,6 +109,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
+      args:
+        # 与 app 服务保持一致，避免两个服务的基础镜像不一致
+        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
     image: network-ops:latest
     container_name: netops-worker
     restart: unless-stopped

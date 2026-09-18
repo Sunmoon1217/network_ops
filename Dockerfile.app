@@ -20,12 +20,19 @@
 #   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .  # pyproject/uv.lock 变了才重建
 #   docker build -f Dockerfile.app -t network-ops:latest .                     # 每次发版都跑
 #
+# 基础镜像可以换（私有 registry、别的 python 版本等），默认 network-ops-base:py312：
+#   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
+#   docker build --build-arg BASE_IMAGE=network-ops-base:py312 -f Dockerfile.app -t network-ops:latest .
+# 注意 FROM 里只能用 ARG：ENV 在 FROM 之前不生效，所以这里不是 ENV。
+#
 # 首次部署与升级后要显式跑迁移（不在 entrypoint 里自动跑）：
 #   docker compose run --rm app python manage.py migrate
 #
 # CMD 只放**可调参数**（--bind / --workers / 日志），固定部分在 entrypoint 里，见文件末尾。
 
-FROM network-ops-base:py312
+ARG BASE_IMAGE=network-ops-base:py312
+
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
