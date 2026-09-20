@@ -61,7 +61,7 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 
 | `volumes_from` 的行为 | 后果 |
 |----------------------|------|
-| 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连 `app_data`（`data/config_repo` 那个 git 仓库）一起拿到 |
+| 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连配置仓库那个挂载（宿主机 `./data` → `/app/data`）一起拿到 |
 | 卷在目标容器里的路径 = 源容器的路径 | nginx 只能看到 `/app/www`、`/app/frontend/dist`，`root` 得写成 app 的内部路径，配置被绑死 |
 
 所以 compose 里显式写 `static_data:/usr/share/nginx/html:ro`：只读、能挑卷、放在 nginx 自己的常规路径上，一个 root 覆盖 `/`、`/assets/*`、`/static/*`。
@@ -92,13 +92,13 @@ nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不�
 | 卷 | app 容器 | nginx 容器 | 内容 |
 |----|---------|-----------|------|
 | `static_data` | `/var/lib/netops-static`（读写） | `/usr/share/nginx/html`（只读） | `index.html` + `assets/`（Vite）与 `static/`（collectstatic） |
-| `app_data` | `/app/data`（读写） | — | 配置仓库（必须持久化） |
+| `./data`（**宿主机 bind**） | `/app/data`（读写） | — | 配置仓库与运行期数据（必须持久化） |
 
 app 侧的挂载点在镜像里是**空目录**，只作为命名卷的落点；镜像里真正放产物的是
 `/app/frontend/dist` 与 `/app/www`（Django 用），entrypoint 负责把它们复制进卷
 （`dist` → 卷根，`www` → 卷内 `static/`）。
 
-`static_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来（`app_data` 则必须保留）。
+`static_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来（宿主机 `./data` 那份则必须保留）。
 
 ## 使用方法
 

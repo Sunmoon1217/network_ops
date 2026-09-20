@@ -98,8 +98,20 @@ services:
     #   command: ["gunicorn", "netops.asgi:application",
     #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
     volumes:
-      # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
-      - app_data:/app/data
+      # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化。
+      # **bind 到宿主机的 ./data**（原来是命名卷 app_data）：这样宿主机的 git / 编辑器能直接看，
+      # `manage.py purge_configs --purge-repo` 与容器动的是**同一份**（从前卷里另有一份、两边
+      # 互不影响，排查"配置怎么没进来/怎么删不掉"时最容易搞混）。目录已在 `.gitignore`（`data/*`）
+      # 与 `.dockerignore`（`data/`）里，不会入库、也不会进镜像。
+      # ⚠️ bind 的代价是**属主不一致**，两个方向都要知道（实测）：
+      #    * 容器以 root 跑，它在这里新建的文件在宿主机上属于容器 root → 宿主侧要改这些文件得 sudo；
+      #    * 反过来，宿主已有的文件属主是宿主用户，容器里的 git 会**拒绝操作**：
+      #      `fatal: detected dubious ownership in repository at '/app/data/config_repo'`，
+      #      而 GitPython 走的正是 git CLI，所以配置仓库会静默全挂。
+      #      这一点由 `docker/entrypoint.sh` 第 0 步的 `git config --system --add safe.directory '*'` 解决。
+      # 想彻底消除属主不一致，就得让 app/worker 以宿主 uid 运行（`user: "${UID}:${GID}"`）并同步
+      # 处理静态卷的写权限，那是另一处改动。
+      - ./data:/app/data
       # 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
       # 目录**，卷里内容只由 entrypoint 启动时从 /app/www、/app/frontend/dist
       # 复制进来——不用那两个路径本身当挂载点，是为了避免卷遮住镜像内容后
@@ -150,8 +162,8 @@ services:
     # 阶段任务要连数据库，凭据同样从 secrets 读
     secrets: *db-secrets
     volumes:
-      # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
-      - app_data:/app/data
+      # 阶段任务要读写 data/config_repo，必须与 app 共享**同一份**目录（同一个 bind）
+      - ./data:/app/data
     depends_on:
       # 必须等 app **healthy** 而不是 started：app 启动时才会按需跑数据库迁移
       # （docker/entrypoint.sh 第 3 步），worker 一上来就要读写那些表，不能抢跑。
@@ -233,9 +245,8 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  # 配置仓库与运行期数据（必须持久化）
-  app_data:
-    driver: local
+  # 注：配置仓库与运行期数据现在是宿主机的 ./data bind 挂载，不再用命名卷 app_data。
+  # 旧卷不会被自动删除，确认里面没东西后可以手工清理：docker volume rm network_ops_app_data
   # 静态产物（可由重建镜像恢复，属于可丢弃数据）
   static_data:
     driver: local

@@ -49,12 +49,25 @@
 #
 # 初始管理员在下面第 4 步**零配置创建**：库里一个超级用户都没有时，创建一个 admin 并把随机
 # 初始密码打印在启动日志里（`docker compose logs app` 抄下来即可）；已经有时什么都不做。
+#
+# git 的「安全目录」白名单在下面第 0 步处理：配置仓库现在是宿主机 ./data 的 bind 挂载，属主是
+# 宿主用户而容器以 root 运行，git 会拒绝操作（dubious ownership），而 GitPython 走的就是 git CLI。
 
 set -e
 
 VOL=/var/lib/netops-static
 
 mkdir -p /app/data "$VOL" "$VOL/static"
+
+# 0) 放行「属主不是自己」的 git 仓库。配置仓库现在是宿主机 `./data` 的 bind 挂载（见
+#    docker-compose.yml），容器以 root 运行、仓库文件属主是宿主用户，git 因此直接拒绝操作：
+#        fatal: detected dubious ownership in repository at '/app/data/config_repo'
+#    GitPython 走的就是 git CLI，所以「读配置历史 / 提交配置」会全挂——实测过。
+#    放行 `*` 而不是写死那个路径：仓库位置可用 `CONFIG_REPO_PATH` 覆盖（默认值在
+#    ops/config_repo.py 里算），在这里再抄一份路径等于埋一个「改一处忘一处就静默失效」的坑；
+#    容器里只有这一个仓库，放行全部并没有实际放宽面。
+git config --system --get-all safe.directory 2>/dev/null | grep -qx '\*' ||
+    git config --system --add safe.directory '*'
 
 # 1) SPA（Vite 产物）→ 卷根；保留 static/ 给下一步
 find "$VOL" -mindepth 1 -maxdepth 1 ! -name static -exec rm -rf {} +
