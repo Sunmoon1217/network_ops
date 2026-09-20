@@ -267,7 +267,9 @@ Vite 构建产物的文件名带内容 hash（如 `accounts-CLRZcrUY.js`），�
 | `NGINX_PORT` | `80` | HTTP 映射端口 |
 | `NGINX_SSL_PORT` | `443` | HTTPS 映射端口 |
 
-app 容器的 gunicorn 可调参数在镜像的 `CMD` 里（覆盖方式见文末「说明」），不在这里读。
+app 容器的 gunicorn 可调参数走 `GUNICORN_*` 环境变量（`env/gunicorn.env` 由 compose 的
+`env_file` 注入 app 容器 → `docker/entrypoint.sh` 的 shell 插值，见文末「说明」），
+不在这里读。
 
 ## 常用运维命令
 
@@ -311,7 +313,7 @@ app 容器启动时会把新产物同步进那个静态卷，nginx 无需重启�
 - **上传大小**：`100m`，用于设备 Excel 导入。
 - **超时**：`proxy_read_timeout 300s`，因路径追踪、配置解析等操作较慢。
 - **关闭缓冲**：`/api/` 关闭 `proxy_buffering`，便于流式响应。
-- **gunicorn 调参**：可调参数在镜像的 `CMD` 里（`--workers` 与两个日志开关），覆盖时**只写参数**即可，`docker/entrypoint.sh` 会补上硬要求（`gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000`）——例如 compose 里给 app 加 `command: ["--workers", "4"]`；反过来传整条命令就原样执行。**`--bind` 不在这里覆盖**：它与本目录 `conf.d` 里的 upstream（现在是 `app:8000`）耦合，改端口必须同步改 nginx 配置；而且 gunicorn 的 `--bind` 是 append 语义，追加一个只会多一个监听、覆盖不掉。要换地址就整条命令替换。
+- **gunicorn 调参**：常用参数（`GUNICORN_WORKERS` / `GUNICORN_TIMEOUT` / `GUNICORN_KEEP_ALIVE` / `GUNICORN_MAX_REQUESTS` / `GUNICORN_LOG_LEVEL` …）在 `env/gunicorn.env` 里设，compose 的 app 服务把 `env/gunicorn.env`（连同 `env/app.env`）经 `env_file` 注入容器（同名时 `environment:` 优先），`docker/entrypoint.sh` 再用 shell 插值（`${GUNICORN_WORKERS:-1}` 等，默认值就写在那一份）拼出整条 gunicorn 命令，改完 `docker compose up -d app` 生效（不必重建镜像，compose 里也没有 command 要改）。一次性临时调参仍可覆盖：`docker compose run --rm app --workers 4`（追加在默认命令之后，gunicorn 对同名选项是后者胜）；传整条命令则原样执行。**`--bind` 没有环境变量、也不在这里覆盖**：它与本目录 `conf.d` 里的 upstream（现在是 `app:8000`）耦合，改端口必须同步改 nginx 配置；而且 gunicorn 的 `--bind` 是 append 语义，追加一个只会多一个监听、覆盖不掉。要换地址就整条命令替换。
 - **同一个镜像的三种用法**：不传参（或只给 `-` 开头的参数）= web；`entrypoint: ["celery"]` + `command:` 放参数 = worker（刻意跳过铺静态产物那一步，worker 不挂 `static_data`）；`docker compose run --rm app python manage.py migrate` = 一次性容器。
 
 ## 排查
