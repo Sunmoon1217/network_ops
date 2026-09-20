@@ -21,9 +21,11 @@
 """
 
 import secrets
+from typing import cast
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from models import User
 
 DEFAULT_USERNAME = "admin"
 
@@ -38,8 +40,8 @@ class Command(BaseCommand):
         parser.add_argument("--update-password", action="store_true", help="同名账号已存在时也重置它的密码")
 
     def handle(self, *args, **options):
-        user_model = get_user_model()
-        manager = user_model._default_manager
+        user_model = cast(User, get_user_model())
+        manager = user_model.objects
         username = options["username"]
         explicit_password = options["password"]
         existing = manager.filter(**{user_model.USERNAME_FIELD: username}).first()
