@@ -25,7 +25,8 @@ from typing import cast
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from models import User
+
+from core.models import User
 
 DEFAULT_USERNAME = "admin"
 
