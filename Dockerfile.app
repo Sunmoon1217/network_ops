@@ -28,7 +28,8 @@
 # 首次部署与升级后要显式跑迁移（不在 entrypoint 里自动跑）：
 #   docker compose run --rm app python manage.py migrate
 #
-# CMD 只放**可调参数**（--bind / --workers / 日志），固定部分在 entrypoint 里，见文件末尾。
+# CMD 只放**可调参数**（--workers / 超时 / 日志等），固定部分（--worker-class / --bind）
+# 在 entrypoint 里，见文件末尾。
 
 ARG BASE_IMAGE=network-ops-base:py312
 
@@ -79,30 +80,32 @@ EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/netops-entrypoint"]
 
-# 启动命令拆成两半：**硬要求**在 docker/entrypoint.sh 里，**可调参数**放在 CMD，
-# 好让参数既能在 `docker inspect` 里看到，又能被覆盖。
+# 启动命令**整条在 docker/entrypoint.sh 里拼装**，这里刻意**不定义 CMD**
+# （基础镜像 Dockerfile.base 也不定义，否则会被继承）：
 #
 #   entrypoint 里：gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker
-#                  --bind 0.0.0.0:8000        ← 与 nginx 的 upstream 耦合，见下方说明
-#   CMD 里（下面）：--workers / --access-logfile / --error-logfile
+#                  --bind 0.0.0.0:8000            ← 硬要求，写死
+#                  --workers ${GUNICORN_WORKERS:-1} ...  ← 可调参数，取环境变量
 #
-# 覆盖规则（entrypoint 里按官方镜像的通行写法判断 $1 是否以 - 开头）：
+# 为什么不放 CMD：
+#   * 同一个镜像还要当 celery worker 用，而 worker 在 docker-compose.yml 里用
+#     `entrypoint: ["celery"]` + `command:` 换掉了整条命令，**走不到** gunicorn 这条路径
+#     ——默认值写在 CMD 里只对 app 有意义，反而多一处要同步的地方；
+#   * CMD 是 exec 形式，里面的 ${GUNICORN_*} 不会被展开（要展开得退回 shell 形式，
+#     而那又会绕过 entrypoint 的「$1 以 - 开头」判断）。
 #
-#   docker compose run --rm app --workers 4                  # 只给参数 → 补上硬要求
+# 覆盖规则（entrypoint 里按官方镜像的通行写法判断 $1 是否以 - 开头；两种都成立）：
+#
+#   docker compose run --rm app --workers 4                  # 追加参数 → 覆盖同名项
 #   docker compose run --rm app python manage.py migrate     # 整条命令 → 原样执行
-#   docker compose run --rm app gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker -w 4
+#   docker compose run --rm app gunicorn netops.asgi:application -k uvicorn_worker.UvicornWorker
 #
-# worker（celery）走的是「整条命令」那条，在 docker-compose.yml 里用 entrypoint + command 表达。
+# 可调参数一律走环境变量：`.env` → compose 的 x-gunicorn-environment（app 服务）
+# → entrypoint 的 shell 插值。清单、默认值与含义见 .env.example 的「gunicorn」段。
+# 环境变量在这里是**替换**语义（位置固定），不是 gunicorn 自带的 GUNICORN_CMD_ARGS 那种
+# 「追加到最后」——后者对 --bind 只会多出一个监听，覆盖不掉，所以没有用它。
 #
-# 为什么 --bind 不放 CMD 而放 entrypoint：它跟 nginx 的 upstream 绑在一起（改地址必须同步
-# nginx 配置），而 gunicorn 自己的默认值是 127.0.0.1:8000——一旦有人「只覆盖部分参数」把它
-# 漏掉，nginx 就连不上（502）；并且 --bind 是 append 语义（`gunicorn/config.py` 的
-# `action = "append"`），在 CMD 之后再追加一个只会**多一个监听**、覆盖不掉。三条加起来，
-# 它是硬要求而不是可调参数。
-#
-# 也正因为 append 语义，没有再做一套 GUNICORN_* 环境变量：环境变量只能追加在 CMD 之后，
-# 对 --bind 是「多一个监听」、对 --workers 才是覆盖——同一个旋钮两套机制、行为还不一致，
-# 不如只留 CMD 这一处。
-CMD ["--workers", "1", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# 为什么 --bind / --worker-class 不做成变量：--bind 跟 nginx 的 upstream 绑在一起（改地址必须
+# 同步 nginx 配置），而 gunicorn 自己的默认值是 127.0.0.1:8000——「只覆盖部分参数」时漏掉它
+# nginx 就连不上（502）；并且 --bind 是 append 语义（`gunicorn/config.py` 的
+# `action = "append"`），追加一个只会**多一个监听**。--worker-class 决定 ASGI 能否工作，同理。
