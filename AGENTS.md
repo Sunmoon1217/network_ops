@@ -52,7 +52,7 @@ network_ops/
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
 │   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
-├── docs/compose/
+├── docs/compose/        # 历史设计文档（plans/ 与 spec/）；docs/ 整目录在 .gitignore 里
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
 │   └── src/{api,assets,composables,layout,router,stores,ui,utils,views}
@@ -64,7 +64,10 @@ network_ops/
 ├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
 ├── env/                 # 给容器的配置：按服务分的 env 文件（app/db/gunicorn/celery.env）+ secrets/（密钥，不入库）
 ├── tmp/
-├── docker/entrypoint.sh # 应用容器入口：静态成品复制进命名卷 → 按需迁移 → 零配置建管理员 → 拼出整条 gunicorn 命令启动
+├── docker/
+│   ├── entrypoint.sh    # 应用容器入口：静态成品复制进命名卷 → 按需迁移 → 零配置建管理员 → 拼出整条 gunicorn 命令启动
+│   └── README.md        # **容器化构建手册**：构建顺序与命令、两个镜像的分层取舍、`uv sync` 参数、冒烟清单
+│                        # 契约、compose 里"看不出来"的约束（本文档只放指针，三个指令文件头部也只留一行）
 ├── Dockerfile.base      # 环境镜像（只装依赖，不含源码）
 ├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
 ├── .dockerignore
@@ -174,7 +177,7 @@ uv run ruff format
 - **配置仓库是命名卷、配置源目录是只读 bind**：app 挂 `config_repo_data:/app/data/config_repo`（**命名卷**，读写）+ `./data/configs:/app/data/configs:ro`（**只读 bind**，写成 long syntax 并显式 **`create_host_path: false`**：缺 `data/configs` 时 `up` 直接报错，而不是让 dockerd 建一个 root 属主、宿主用户写不进也删不掉的空目录——**首次部署要先 `mkdir -p data/configs`**；这是唯一需要宿主目录的挂载点），worker **只**挂那个卷（导入配置是 app 的接口）。`config_repo` 是解析流水线的**内部工作目录**（`ops/config_repo.py`；`init_repo()` mkdir + git init + commit、`save_config()` 每次导入都提交，连 `get_config` / `list_devices` 这些**读**路径也先调 `init_repo()`），**不需要宿主可见**，所以用命名卷（属主继承自镜像、容器 root 写自己的卷，无需 uid 对齐——语义见技能 `docker-mounts-and-ownership`）；`configs` 是运维放文件的地方（Excel「配置文件」sheet 的 C 列 `config_dir`，按**进程 CWD** 解析，容器里写 `data/configs`），所以是 bind 且挂 `:ro`。**沿革别绕回去**：它曾经是 bind，为此要「容器跑成宿主 uid + `export UID GID` + `HOME=/tmp` + 静态卷 777 + `safe.directory` + 两处挂载点自检」，这些**已全部删除**；唯一保留的是**镜像里的 git 提交身份**（`user.name` / `user.email`），它不是为 bind 服务的——原因见技能 `git-in-containers`。**代价**：宿主侧看不到这份仓库，宿主直跑 Django 用的是 `<项目根>/data/config_repo`（**另一份**，dev 用）。看 / 清理容器那份：`docker compose exec app git -C /app/data/config_repo log --oneline`、`docker compose exec app python manage.py purge_configs --all --purge-repo --yes`；把已有宿主仓库搬进**空卷**：`docker compose run --rm --no-deps -v ./data/config_repo:/from:ro app sh -c 'cp -a /from/. /app/data/config_repo/'`。卷名用新的 `config_repo_data`（不复用旧 `app_data`，避免静默合并两份历史）。
 - **不用 `volumes_from`**：它会把源容器的**所有**卷带过来、且容器内路径被绑死；显式写 `static_data:/usr/share/nginx/html:ro` 才能只读、挑卷、放在 nginx 自己的路径上。理由与替代方案：技能 `nginx-container-proxy` 第 6 节。
 - **nginx 侧与本项目耦合的两条硬要求**：① 后端地址用**变量式** upstream（`set $netops_upstream "app:8000"`）并配 `resolver`，`resolver` 地址在启动时从 runtime 的 `/etc/resolv.conf` 推导（写死 `127.0.0.11` 换 Podman 就 502）——做法见 `nginx/docker-entrypoint.d/05-netops-resolver.sh`，原理与 envsubst 陷阱见技能 `nginx-container-proxy`；② conf.d 必须用 `$http_host`（含端口）透传 Host，否则后台登录 403。这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守。
-- **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了必须重建 `Dockerfile.base`，否则运行期才报 `ModuleNotFoundError`；换源要用 uv 自己的变量、且必须重新 `uv lock`——见技能 `uv-package-and-lockfile`。**基础镜像本身可换**：`Dockerfile.app` 用 `ARG BASE_IMAGE=network-ops-base:py312` + `FROM ${BASE_IMAGE}`（`FROM` 里只能用 `ARG`），compose 用 `x-app-build` 锚点给 app 与 worker 传同一个 build arg（`${BASE_IMAGE:-network-ops-base:py312}`，一处定义不会漂移），所以换私有 registry / Python 版本只需 `BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker`。
+- **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了必须重建 `Dockerfile.base`，否则运行期才报 `ModuleNotFoundError`；换源要用 uv 自己的变量、且必须重新 `uv lock`——见技能 `uv-package-and-lockfile`。**基础镜像本身可换**：`Dockerfile.app` 用 `ARG BASE_IMAGE=network-ops-base:py312` + `FROM ${BASE_IMAGE}`（`FROM` 里只能用 `ARG`），compose 用 `x-app-build` 锚点给 app 与 worker 传同一个 build arg（`${BASE_IMAGE:-network-ops-base:py312}`，一处定义不会漂移），所以换私有 registry / Python 版本只需 `BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker`。**构建顺序与命令、两个镜像的分层取舍、`uv sync` 参数、冒烟清单契约、compose 里"看不出来"的约束、改回去会踩的坑**：`docker/README.md`（三个 Dockerfile/compose 文件只在头部留一行指针，注释一律外迁到那里）。
 - **启动命令整条在 entrypoint 里拼：硬要求写死，可调参数取环境变量**：`docker/entrypoint.sh` 拼出 `gunicorn netops.asgi:application --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:8000 --workers "${GUNICORN_WORKERS:-1}" …`；**镜像里刻意没有 CMD**（同一个镜像还要当 celery worker 用——worker 在 compose 里被整条换掉、走不到这里；且 CMD 的 exec 形式不展开 `${...}`）。entrypoint 按「`$1` 以 `-` 开头就追加、否则整条替换」的通行写法，三种用法都成立：`docker compose run --rm app --workers 4`（追加）、`docker compose run --rm app python manage.py migrate`（换整条）、worker 的 `entrypoint: ["/bin/sh","-c"]` + `command:`（`exec celery ...`）。
 - **gunicorn 可调参数在 `env/gunicorn.env`**：app 用 `env_file: [env/app.env, env/gunicorn.env]`；worker 只有 `env/app.env` + `env/celery.env`（**拿不到**这些旋钮）。清单：`GUNICORN_WORKERS` / `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` / `GUNICORN_KEEP_ALIVE` / `GUNICORN_MAX_REQUESTS` / `GUNICORN_MAX_REQUESTS_JITTER` / `GUNICORN_LOG_LEVEL`（空值 / 未设置取默认，写 `0` 就是 0）；**默认值只在 entrypoint 写一份**。改 env 文件后 `docker compose up -d app` 生效、不必重建镜像；**改 `docker/entrypoint.sh` 或任何源码必须重建镜像**，而且 `up -d --build` 这**一条**命令**不会**让容器换镜像（坑与正确做法：技能 `docker-compose-behavior` 第 3 节）。验证：`docker compose exec app grep -n <特征> <文件>`。这些名字是 compose 层定的，不是 gunicorn 官方机制（它只认 `GUNICORN_CMD_ARGS`，而那是**追加**语义，对 `--bind` 只会多一个监听，所以没用）；celery 侧只有一个 `CELERY_LOGLEVEL`（`--concurrency` 刻意不暴露：同设备并发会写坏数据，见下文「关于并发」）。
 - **`--bind` 与 `--worker-class` 写死、不做成变量**：`--bind` 与 nginx 的 upstream 耦合（改地址必须同步 nginx），gunicorn 默认值 `127.0.0.1:8000` 一旦漏掉就是 502，且它是 **append** 语义（追加只会多一个监听）。给变量等于给一个必然配错的旋钮。
