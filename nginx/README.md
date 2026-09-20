@@ -111,7 +111,7 @@ uv run python manage.py collectstatic --noinput
 docker compose up -d --build
 
 # 数据库迁移不用手跑：app 容器启动时只在「有未应用的迁移」时才执行
-# （manage.py migrate_if_needed，多副本由 advisory lock 串行化）。
+# （manage.py migrate_if_needed，多副本由数据库自带的命名锁串行化）。
 # 想人工放行就设 MIGRATE_ON_START=0 再执行：
 docker compose run --rm app python manage.py migrate
 

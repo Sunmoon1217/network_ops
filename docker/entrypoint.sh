@@ -42,7 +42,7 @@
 # 注意卷根清空时要**排除 static/**：它由第 2 步单独同步，不能被第 1 步顺带删掉。
 #
 # 迁移在下面第 3 步**自动跑**：只在确实有未应用的迁移时才执行，且整段「检查 + 迁移」由
-# migrate_if_needed 用 PostgreSQL advisory lock 串行化，所以多副本同时启动不会互相竞争
+# migrate_if_needed 用数据库自带的命名锁（PG advisory / MySQL GET_LOCK）串行化，所以多副本同时启动不会互相竞争
 # （Django 自己不给 migrate 加锁，裸的两行 shell 会撞车，原因见那个命令的文档字符串）。
 # 想让迁移必须人工放行（或交给外部发布流水线），把 MIGRATE_ON_START 设为 0：
 #   docker compose run --rm app python manage.py migrate

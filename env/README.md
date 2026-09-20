@@ -18,7 +18,7 @@
 
 `app.env` 里的 `MIGRATE_ON_START=1`（默认）让 app 容器启动时**按需**跑数据库迁移：只在
 确实有未应用的迁移时才执行 `migrate --noinput`，且整段「检查 + 迁移」由 PostgreSQL
-advisory lock 串行化（Django 自己不给 migrate 加锁），所以多副本同时启动不会互相竞争。
+数据库自带的命名锁串行化（PostgreSQL 用 `pg_advisory_lock`、MySQL 用 `GET_LOCK`；Django 自己不给 migrate 加锁），所以多副本同时启动不会互相竞争；其它后端会直接报错，不做「静默不加锁」的降级。
 设成 0 就跳过，迁移交给外部发布流水线或人工：
 `docker compose run --rm app python manage.py migrate`。实现见
 `apps/core/management/commands/migrate_if_needed.py`。

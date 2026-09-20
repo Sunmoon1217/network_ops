@@ -26,7 +26,7 @@
 # 注意 FROM 里只能用 ARG：ENV 在 FROM 之前不生效，所以这里不是 ENV。
 #
 # 数据库迁移在**容器启动时自动跑**（有未应用的迁移才跑，见 docker/entrypoint.sh 第 3 步与
-# manage.py migrate_if_needed；多副本同时启动由 PostgreSQL advisory lock 串行化）。
+# manage.py migrate_if_needed；多副本同时启动由数据库自带的命名锁串行化）。
 # 想让迁移改为人工放行，设 MIGRATE_ON_START=0 后显式执行：
 #   docker compose run --rm app python manage.py migrate
 #
