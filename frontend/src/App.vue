@@ -11,7 +11,9 @@ import Login from '@/views/login/Login.vue'
 const route = useRoute()
 const authStore = useAuthStore()
 
-const isLoginPage = computed(() => route.path === '/login')
+// 公开页（登录 / 注册）由路由的 meta.skipLayout 标记，直接交给 router-view 渲染；
+// 不能只判断「未登录」——那样任何公开页都会被渲染成 Login（注册页就这么被吞掉过）。
+const isPublicPage = computed(() => route.meta.skipLayout === true)
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 onMounted(() => {
@@ -22,7 +24,7 @@ onMounted(() => {
 <template>
   <!-- 全局中文语言包：分页器、日期选择器、空数据等内置文案统一为中文 -->
   <el-config-provider :locale="zhCn">
-    <Login v-if="isLoginPage" />
+    <router-view v-if="isPublicPage" />
     <Login v-else-if="!isAuthenticated" />
     <SideLayout v-else>
       <template #nav><AppNav /></template>

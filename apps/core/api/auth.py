@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from core.api.serializers import RegisterSerializer
 from core.models import User
 
 
@@ -41,6 +42,32 @@ def login(request):
         "token": drf_token.key,
         "user": {"id": u.pk, "username": u.username},
     })
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def register(request):
+    """注册一个**普通账号**，成功即返回 token（注册即登录，前端不必再走一次登录）。
+
+    这是与 ``login`` 同一类的公开接口，所以同样必须显式 ``@authentication_classes([])``：
+    否则浏览器带着「已登录的 sessionid」打过来时，DRF 的 ``SessionAuthentication`` 会自己调用
+    ``enforce_csrf()`` 返回 403——这条路径绕开中间件层的 ``csrf_exempt``，机制与实测详见
+    ``login`` 的注释（换 host 就好了那种假象）。
+
+    权限完全由服务端决定：``RegisterSerializer.create()`` 走 ``create_user``，``is_staff`` /
+    ``is_superuser`` 都是 False，且请求里根本没有能影响它们的字段。注册开放、不做邮箱验证或审批，
+    要收紧（例如加开关 / 邀请码 / 管理员审批）就在这里加校验。
+    """
+    serializer = RegisterSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user = serializer.save()
+
+    drf_token, _ = DRFToken.objects.get_or_create(user=user)
+    return Response(
+        {"token": drf_token.key, "user": {"id": user.pk, "username": user.username}},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])

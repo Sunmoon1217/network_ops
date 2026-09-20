@@ -11,6 +11,12 @@ const router = createRouter({
       meta: { skipLayout: true },
     },
     {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/login/Register.vue'),
+      meta: { skipLayout: true },
+    },
+    {
       path: '/',
       name: 'home',
       component: () => import('@/views/dashboard/Home.vue'),

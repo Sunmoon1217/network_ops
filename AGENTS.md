@@ -46,6 +46,7 @@ network_ops/
 │   └── configs/
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
 │   ├── assets/          # device_group / serializer_migration / service_unique
+│   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
 │   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
 ├── docs/compose/
@@ -152,6 +153,7 @@ uv run ruff format
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由环境变量 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`），CSRF 可信来源由 `DJANGO_CSRF_TRUSTED_ORIGINS` 控制（默认空）。
 - **nginx 必须透传带端口的 Host（`$http_host`），否则后台登录 403**：nginx 变量 `$host` **不含端口**，所以宿主映射到非标准端口（`.env` 的 `NGINX_PORT=8000`）时 Django 的 `request.get_host()` 得到 `localhost`，而浏览器 Origin 是 `http://localhost:8000`——Django 4+ 的 Origin 校验只认「当前 host」与 `CSRF_TRUSTED_ORIGINS`，于是 `/admin/login/` 直接 403：`Forbidden (Origin checking failed - http://localhost:8000 does not match any trusted origins.)`。**实测对照**：同一个请求只把 Host 从 `localhost:8000` 换成 `localhost`，失败原因立刻从 Origin 变成「CSRF cookie not set」（即 Origin 已通过）——端口就是唯一变量。所以 conf.d 的两个 server 块都用 `$http_host`（客户端原样的 Host，含端口），`X-Forwarded-Host` 同理。`DJANGO_CSRF_TRUSTED_ORIGINS` 只在「浏览器看到的来源 ≠ 转发给 Django 的 Host」时才需要（外层还有 LB/网关改写 Host、TLS 在外层终结等），值必须带 scheme。这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守（含一条「Host 带端口则同源 Origin 可信」的 Django 侧测试）。
 - **「账号密码换 token」的接口必须显式 `@authentication_classes([])`**：DRF 的 `SessionAuthentication` 一旦发现请求带着**已认证的 session** 就会自己调 `enforce_csrf()`——这条路径是 DRF 发起的，**绕开**中间件层面的 `csrf_exempt`（`APIView.as_view()` 本就对整个视图 csrf_exempt）。所以浏览器里登录过 `/admin/` 之后，`/api/auth/login/` 会因为带 `sessionid` 而 403（`{"detail": "CSRF Failed: ..."}`）；而换个 host 就"好了"——`localhost:8000` 与 `127.0.0.1:8000` 的 cookie 互相带不上，**别被这种"换个地址就好了"骗过去**（本仓库真踩过：先以为是 nginx 丢端口，改完 nginx 仍然 403）。`login` 不需要任何身份、也就没有需要 CSRF 保护的东西，已在视图上关掉认证；`logout` / `me` 前端都会带 `Authorization`，TokenAuthentication 先命中就返回，`SessionAuthentication` 根本不执行，故不受影响。三条测试分别守「不带 cookie 正常」「带 session cookie 不被 CSRF 拦」「带 token 的请求不受 session cookie 影响」：`tests/core/test_auth_login_csrf.py`。
+- **注册开放，但只创建普通账号**：`POST /api/auth/register/`（`core/api/serializers.py` 的 `RegisterSerializer` + `core/api/auth.py` 的 `register`）只开放 `username` / `password` / `email`（可选）/ `phone`（可选）——`is_staff` / `is_superuser` / `is_active` 全由服务端决定，走 `create_user()`（**不是** `create_superuser()`），请求里根本没有能影响它们的字段。四条容易踩的：① 视图必须显式 `@authentication_classes([])`，理由与 `login` 一模一样（浏览器带着已登录的 `sessionid` 打过来时，DRF 的 `SessionAuthentication` 会自己调 `enforce_csrf()` 返回 403，这条路径绕开中间件层的 `csrf_exempt`），有测试守；② 密码交给 Django 的 `AUTH_PASSWORD_VALIDATORS` 四条规则（`validate_password(password, user=candidate)`——必须传候选用户，否则相似度校验不生效），所以「纯数字 / 太短 / 与用户名相似 / 常见密码」都在这里被拒；③ 用户名用 `iexact` 判重——数据库唯一约束是**大小写敏感**的，只查 `exact` 会放过 `Admin` 与 `admin` 并存；④ 注册成功直接返回 token（响应体与 `login` 同形 `{token, user:{id,username}}`），前端不必再登录一次。**开放注册没有邮箱验证、没有审批、也没有限流**（项目没配 `CACHES`，DRF 限流只能退化成单进程计数），要收紧就在 `register` 视图里加开关 / 邀请码 / 管理员审批。`email` 不是 unique（模型本身就不是），要做唯一或邮箱验证得另加。前端：`frontend/src/views/login/Register.vue` + 路由 `/register`（`meta.skipLayout`，登录页有「立即注册」入口）。
 - **前端请求路径**：以 `/api/` 开头（如 `/api/assets/devices/`）。
 - **前端自动导入**：使用 `unplugin-auto-import` + `unplugin-vue-components`（`ElementPlusResolver`）。
 - **前端函数风格**：`.vue` 与 `.ts` 一律使用箭头函数，不使用 `function` 声明——普通函数 `const fn = (a: T) => {}`、异步 `const fn = async () => {}`、泛型 `const fn = <T>(a: T) => {}`。原因是 `function` 声明会被提升，容易掩盖定义顺序问题，也与项目既有写法保持一致。自检命令（应无输出）：
@@ -272,6 +274,7 @@ TTP 模板解析 → 结果写回 config_json
 
 | 路径 | 说明 |
 |------|------|
+| `/api/auth/register/` | 注册普通账号（**开放**，成功即返回 token） |
 | `/api/auth/login/` | 登录获取 Token |
 | `/api/auth/logout/` | 登出 |
 | `/api/me/` | 当前用户信息 |
