@@ -50,11 +50,15 @@
 # 初始管理员在下面第 4 步**零配置创建**：库里一个超级用户都没有时，创建一个 admin 并把随机
 # 初始密码打印在启动日志里（`docker compose logs app` 抄下来即可）；已经有时什么都不做。
 
+
 set -e
 
 VOL=/var/lib/netops-static
 
-mkdir -p /app/data "$VOL" "$VOL/static"
+# 这里**没有挂载点权限自检**：两个数据目录一个在命名卷里（属主继承自镜像、容器以 root 跑），
+# 一个是只读 bind（root 读得到），都不存在"属主对不上"这种失败模式。该自检是随「让容器跑成宿主
+# uid 去 bind 宿主机目录」那一版方案一起进来的，方案撤了就一并撤掉——留着只会是一段永远为真的判断。
+mkdir -p "$VOL" "$VOL/static"
 
 # 1) SPA（Vite 产物）→ 卷根；保留 static/ 给下一步
 find "$VOL" -mindepth 1 -maxdepth 1 ! -name static -exec rm -rf {} +

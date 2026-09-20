@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, logout as apiLogout, getCurrentUser } from '@/api/auth'
+import { login as apiLogin, logout as apiLogout, getCurrentUser, register as apiRegister } from '@/api/auth'
 import { getToken, setToken, removeToken } from '@/utils/token'
 
 export interface User {
@@ -20,6 +20,20 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const data = await apiLogin(username, password)
+      token.value = data.token
+      setToken(data.token)
+      user.value = data.user
+      return true
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 注册：成功后与 login 一样把 token / 用户写进 store，前端不必再登录一次。 */
+  const register = async (payload: { username: string; password: string; email?: string; phone?: string }) => {
+    loading.value = true
+    try {
+      const data = await apiRegister(payload)
       token.value = data.token
       setToken(data.token)
       user.value = data.user
@@ -50,5 +64,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, loading, isAuthenticated, login, logout, fetchUser }
+  return { token, user, loading, isAuthenticated, login, register, logout, fetchUser }
 })

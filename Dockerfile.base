@@ -1,93 +1,27 @@
 # syntax=docker/dockerfile:1
 #
-# 基础（环境）镜像 —— 只装 Python 运行时与依赖，不含任何项目代码。
-#
-# 设计要点：
-#   1. 只 COPY 依赖清单（pyproject.toml + uv.lock），不 COPY 源码。
-#      这样源码怎么改都不会让这一层缓存失效，基础镜像内容完全由锁文件决定。
-#   2. uv 只在构建期以 --mount 方式临时挂载，不装进镜像；镜像里没有 uv、
-#      没有包管理器，运行时只用 /opt/venv 里的解释器与依赖。
-#   3. 依赖装进独立的 /opt/venv（而非 /app/.venv），与项目代码彻底解耦。
-#   4. 运行期用 gunicorn + uvicorn worker 跑 ASGI，不用 runserver。
-#   5. 不装 gcc/musl-dev 等编译链：psycopg2-binary、cffi 等都有 cp312
-#      musllinux_1_2 轮子，本镜像的 musl 1.2.6 可直接使用。
-#   6. 连基础镜像自带的系统 pip 也一并移除，运行时镜像里没有任何包管理器。
-#
-# 构建：
-#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
-#
-# 该镜像构建一次后即固定不变；项目镜像只需 FROM 它并复制源码。
+# 基础（环境）镜像：只装依赖、不含项目代码（构建一次长期复用）。
+# 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
 
 FROM python:3.12-alpine
 
-# ---- 镜像源（可用 --build-arg 覆盖） ----------------------------------------
-# 国内构建环境下官方源不可达：dl-cdn.alpinelinux.org 报 I/O error、pypi.org 极慢，
-# apk 与 Python 包都得换镜像，且不从宿主机 ~/.config 继承。
-# ⚠️ Python 包这个变量必须是 **uv 自己的** UV_DEFAULT_INDEX：uv 不读 pip 的配置
-#    （PIP_INDEX_URL / pip.conf 一律忽略——实测把 PIP_INDEX_URL 指向一个连不上的地址，
-#    `uv sync` 照样成功地去 PyPI 拉包；换成 UV_DEFAULT_INDEX 才会失败）。UV_INDEX_URL
-#    是同一个旋钮的旧名（已 deprecated），两个都设会打架，这里只留 UV_DEFAULT_INDEX。
-# 另注：uv.lock 会**固化**解析时的 registry 与 wheel URL（本项目锁文件里就是腾讯镜像的
-#    simple / packages 路径），所以 `uv sync --frozen` 本来就按 lock 走；这里设置是为了
-#    「lock 需要重新解析 / 缺 lock」的情况。换镜像源时记得 `uv lock --default-index <新源>`，
-#    否则 frozen 安装仍然会去旧源。
 ARG APK_MIRROR=mirrors.aliyun.com
 ARG UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple
 ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
-# ---- 构建网络说明 ------------------------------------------------------------
-# daemon.json 里的 proxies 只作用于「拉取基础镜像」，不作用于构建容器：
-# 构建容器里的 apk/pip 走的是 Docker 自己的网络栈，可能比宿主机更慢甚至超时。
-# 若构建时抓包缓慢，让构建容器直接复用宿主机网络栈即可：
-#   docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
-# 注意此时不要再用 --build-arg 传 http_proxy：--network=host 下
-# 172.17.0.1 不再是容器网关，代理地址会不可达。
-
-# ---- 运行期系统依赖（各自独立成层） -----------------------------------------
-# 拆成两层是有意的：libpq 只有一个包、秒级完成；git 会带 10 来个依赖，
-# 在受限网络下更容易超时。分开后成功的那层可被缓存复用，失败时只需重试 git。
 RUN sed -i "s#dl-cdn.alpinelinux.org#${APK_MIRROR}#g" /etc/apk/repositories \
     && apk add --no-cache --timeout 120 libpq
 
-# git：`apps/ops/config_repo.py` 用 GitPython 操作 data/config_repo 仓库，
-# 运行期必须有 git 可执行文件。
 RUN apk add --no-cache --timeout 300 git
 
-# 去掉基础镜像自带的系统 pip（约 7MB）：依赖已全部装进 /opt/venv，
-# 运行时不需要包管理器；镜像里也没有 uv。日后要在容器内装包，
-# 可临时挂载 uv：docker run --rm -v /opt/venv ghcr.io/astral-sh/uv \
-#   uv pip install --python /opt/venv <pkg>
 RUN rm -rf /usr/local/lib/python3.12/site-packages /usr/local/bin/pip*
 
-# 虚拟环境独立于项目目录，项目代码挂载/覆盖时不会影响它
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH=${VIRTUAL_ENV}/bin:${PATH}
-# 只用镜像内的 Python，禁止 uv 联网下载解释器（容器里没必要，也会拖慢构建）
 ENV UV_PYTHON_DOWNLOADS=never
 
-# ---- 只复制依赖清单（不 COPY 源码） ------------------------------------------
 COPY pyproject.toml uv.lock ./
 
-# ---- 建 venv + 装主依赖，合并成一层 -----------------------------------------
-# 合成一层是为了「装完即清理」，不为清理多留一层；uv 全程只在构建期挂载，
-# 不落进最终镜像。
-#   uv sync --frozen             : 严格按 uv.lock 安装，不重新解析
-#                --no-dev        : 不装 pytest / ruff 等开发依赖
-#                --no-install-project : 本镜像只提供环境，不装项目自身
-#                --active        : 装进已激活的 ${VIRTUAL_ENV}
-#                --no-cache      : 不读也不写 uv 缓存（实测跑完缓存目录仍是空的），
-#                                  所以这一层不必再 `uv cache clean`；下面那句
-#                                  `rm -rf /root/.cache/uv` 只是兜底
-# 运行镜像只装**主依赖**（--no-dev），开发与类型检查工具（pytest / ruff /
-# django-stubs 等）都不进镜像。
-# 这里曾经用 `--no-deps` 补装 django-stubs-ext 与 typing-extensions，是因为
-# settings 的 INSTALLED_APPS 注册了 django_stubs_ext；那个注册已经去掉——
-# django_stubs_ext 只在显式调用 monkeypatch() 时才有用（让 QuerySet[Model] 这类
-# 泛型注解在运行时求值不报错），本项目既没调用也没用它的类型别名，因此运行镜像
-# 不需要它（django-stubs 侧仍在 dev 组，类型检查不受影响）。
-# gunicorn / uvicorn / uvicorn-worker 是**主依赖**（ASGI 运行栈；新 uvicorn >=0.36
-# 已移除 uvicorn.workers，必须用官方拆出的 uvicorn-worker 包），`uv sync --no-dev`
-# 会一起装上。
 RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
     uv venv --python python3 "${VIRTUAL_ENV}" \
     && mkdir -p /opt/app \
@@ -96,21 +30,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
     && rm -rf /opt/app /root/.cache/uv \
     && find "${VIRTUAL_ENV}" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
-# 冒烟自检：构建即验证依赖真正可导入，镜像不可用则构建失败。
-# 版本号统一用 importlib.metadata 取：不是每个包都暴露 __version__（ttp 就没有）。
-# 注意这里只验证「环境」本身 —— 本镜像不含项目代码，碰不了 netops.settings，
-# 项目侧的校验放在 Dockerfile.app 的验证层。
-# 清单要与 pyproject.toml 的 dependencies 对齐：漏检的包会让基础镜像「看起来构建
-# 成功」，却在项目镜像里才炸。celery 就是实例——netops/__init__.py 直接 import 它，
-# 基础镜像里没有时会一路拖到 collectstatic 才报 ModuleNotFoundError。
 RUN python -c "import importlib.metadata as m; \
 [__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','redis','gunicorn','uvicorn_worker')]; \
 print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','redis','gunicorn','uvicorn','uvicorn-worker')})"
 
-# 项目镜像在此之上 COPY 源码即可，这里给一个默认工作目录
 WORKDIR /app
-
-# 刻意**不定义 CMD / ENTRYPOINT**：本镜像只有环境、没有源码，单独 `docker run` 本来就跑不起来；
-# 而一旦在这里写了 CMD，项目镜像（Dockerfile.app）会**继承**它——那等于把 gunicorn 的启动
-# 参数又钉回镜像里，`.env` 里的 GUNICORN_* 也就调不动了（参数不在 CMD 里才轮得到 entrypoint
-# 的 shell 插值）。gunicorn 的整条命令在 docker/entrypoint.sh 里拼装，见 Dockerfile.app。

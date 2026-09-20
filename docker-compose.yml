@@ -1,17 +1,8 @@
+# 变量按「谁读」分三处（根 .env 给 compose 插值 / env/*.env 按服务注入 / env/secrets/* 给凭据）：env/README.md
+# 部署与排障：docker/README.md §5；项目自身的约定：AGENTS.md「关键约定」
+
 name: network_ops
 
-# 环境变量按「谁读」分两处（都在 env/ 下），compose 里不再罗列具体变量：
-#   .env（根）      → 只给 compose 自己用（下面这些 ${VAR} 插值：宿主映射端口 / 镜像 / secrets 路径）
-#   env/*.env       → 给容器进程用，按服务分别 env_file 注入（app / db / gunicorn / celery 四个）
-#   env/secrets/*   → 密钥（数据库用户名 / 密码），只读挂到 /run/secrets/*
-# 各服务拿到什么、为什么这么分：env/README.md；密钥的生成与轮换：env/secrets/README.md。
-
-# 数据库凭据（用户名 + 密码）。compose 在非 swarm 模式下就是把文件挂成
-# /run/secrets/<name>：db 服务用 postgres 官方镜像的 POSTGRES_USER_FILE /
-# POSTGRES_PASSWORD_FILE 读，app/worker 由 netops/settings.py 的 _env_or_file() 读。
-# 文件由 `bash env/secrets/generate.sh` 生成，已在 .gitignore 里排除；**缺文件时 compose 会
-# 直接报错**，这是有意的——宁可起不来，也不要拿默认密码静默连上一个空库。
-# 路径可用 POSTGRES_USER_SECRET_FILE / POSTGRES_PASSWORD_SECRET_FILE 覆盖。
 x-secrets: &db-secrets
   - postgres_user
   - postgres_password
@@ -22,9 +13,6 @@ secrets:
   postgres_password:
     file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}
 
-# app 与 worker 是同一个镜像（Dockerfile.app + 同一个 BASE_IMAGE），构建配置用锚点共享，
-# 免得两处各写一份后漂移成两个不同的基础镜像：
-#   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
 x-app-build: &app-build
   context: .
   dockerfile: Dockerfile.app
@@ -36,7 +24,6 @@ services:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
     restart: unless-stopped
-    # POSTGRES_DB / PGDATA / *_FILE 都在这里（env/db.env）
     env_file:
       - env/db.env
     secrets: *db-secrets
@@ -47,13 +34,6 @@ services:
     networks:
       - internal
     healthcheck:
-      # **必须显式给 -U**：healthcheck 由 docker 以镜像默认用户执行（postgres 官方镜像的
-      # 容器 USER 是 root，entrypoint 内部才 gosu 切到 postgres），不带 -U 时 pg_isready
-      # 会拿 OS 用户 root 去连，于是 postgres 日志被
-      # `FATAL: role "root" does not exist` 刷屏——而容器**仍然被判健康**
-      # （pg_isready 只看服务器是否响应，不看角色是否存在），故障因此不会自己暴露。
-      # 用户名只在 secret 文件里（compose 的 ${} 插值读不到），所以让容器内的 sh 去读它：
-      # `$$` 是 compose 的转义，到容器里才是 `$(cat ...)`。
       test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/postgres_user)\" -d \"$${POSTGRES_DB:-netops}\""]
       interval: 10s
       timeout: 5s
@@ -76,47 +56,29 @@ services:
       timeout: 5s
       retries: 5
 
-  # Django / ASGI 应用。镜像内的静态产物经命名卷交给 nginx（见 Dockerfile.app）
   app:
     build: *app-build
     image: network-ops:latest
     container_name: netops-app
     restart: unless-stopped
-    # 容器进程读的变量，按用途分开注入：
-    #   env/app.env      → Django 运行时（数据库 / Redis / DJANGO_*），app 与 worker 共用
-    #   env/gunicorn.env → 只有 app 需要的 gunicorn 旋钮
     env_file:
       - env/app.env
       - env/gunicorn.env
-    # 数据库凭据（只读挂进 /run/secrets/*）：settings.py 的 _env_or_file() 读的就是它
     secrets: *db-secrets
-    # 启动命令**不在这里写**：gunicorn 的硬要求（--worker-class / --bind）与可调参数
-    # （默认值 + ${GUNICORN_*} 插值）都在 docker/entrypoint.sh 里拼装。只想临时调一次：
-    #   docker compose run --rm app --workers 4      # 追加参数 → 覆盖同名项
-    # 换监听地址要连 nginx 的 upstream 一起改，且 --bind 是 append 语义（追加会多一个监听
-    # 而不是覆盖），所以那是整条命令替换，例如：
-    #   command: ["gunicorn", "netops.asgi:application",
-    #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
     volumes:
-      # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化
-      - app_data:/app/data
-      # 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
-      # 目录**，卷里内容只由 entrypoint 启动时从 /app/www、/app/frontend/dist
-      # 复制进来——不用那两个路径本身当挂载点，是为了避免卷遮住镜像内容后
-      # 「Docker 只播种一次」带来的陈旧问题。
-      # 卷内布局按 URL 前缀设计：/index.html、/assets/*（Vite）+ /static/*（collectstatic），
-      # 因此 nginx 一个 root 就能覆盖全部静态请求。
+      - config_repo_data:/app/data/config_repo
+      - type: bind
+        source: ./data/configs
+        target: /app/data/configs
+        read_only: true
+        bind:
+          create_host_path: false
       - static_data:/var/lib/netops-static
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 端口：不映射到宿主（统一走 nginx 入口），也**不写 expose**——容器之间能不能通只取决于
-    # 「进程有没有在监听」，自定义网络里 nginx 访问 `app:8000` 与 expose 无关（实测：一个没有
-    # expose 声明的容器，同网络的另一个容器照样访问得到）。镜像本身已经声明了 `EXPOSE 8000`
-    # （Dockerfile.app），这里再写一遍只是重复的自文档。调试：
-    #   docker compose exec app python manage.py shell
     networks:
       - internal
     healthcheck:
@@ -126,51 +88,26 @@ services:
       retries: 6
       start_period: 20s
 
-  # Celery worker：采集→解析→存储是异步阶段任务，没有 worker 时
-  # 上游 .delay() 只会把消息堆在 Redis 里、永远不执行。
   worker:
     build: *app-build
     image: network-ops:latest
     container_name: netops-worker
     restart: unless-stopped
-    # 与 app 共用 env/app.env；celery 自己的旋钮在 env/celery.env
     env_file:
       - env/app.env
       - env/celery.env
-    # 单用途容器，所以基础命令放 entrypoint、参数放 command（正是 CMD 的常规用法）。
-    # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物，
-    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西——所以 gunicorn
-    # 那套旋钮（env/gunicorn.env）也不给它。
-    # 用 sh -c 包一层，是为了让 --loglevel 从**容器环境**取：compose 的 ${VAR} 插值只读
-    # 根目录的 .env，读不到 env/celery.env，所以写成 `$${...}`——compose 把 `$$` 还原成
-    # 字面 `$`，再由容器内的 shell 展开；exec 保证 celery 仍是 PID 1、能收到信号。
-    # **刻意不暴露 --concurrency**：同一台设备的配置并发入库会写坏数据（见 AGENTS.md）。
     entrypoint: ["/bin/sh", "-c"]
     command: ["exec celery -A netops worker --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
-    # 阶段任务要连数据库，凭据同样从 secrets 读
     secrets: *db-secrets
     volumes:
-      # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
-      - app_data:/app/data
+      - config_repo_data:/app/data/config_repo
     depends_on:
-      # 必须等 app **healthy** 而不是 started：app 启动时才会按需跑数据库迁移
-      # （docker/entrypoint.sh 第 3 步），worker 一上来就要读写那些表，不能抢跑。
       app:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - internal
-    # 探活方式：让 **本容器这个** worker 回答一次控制命令。
-    #   * `-d celery@$$HOSTNAME` 把目标限定成自己（`$$` 是 compose 的转义，到容器里才是
-    #     `$`，由 healthcheck 的 sh -c 展开；不限定就等于「任意一个节点答了就算健康」，
-    #     多副本时会互相掩盖故障）；
-    #   * `celery inspect ping` 走 broker（redis healthy 已在 depends_on 里保证），
-    #     所以它同时验证了「worker 进程活着」+「能连上 broker」，比 pgrep 只看进程存在强；
-    #   * 已知的误报场景：worker 正卡在一个长时间 CPU 密集任务里时，控制命令要等它让出
-    #     执行权才能被处理，这一次探测可能超时——所以 timeout 给到 10s、retries 3 次摊平。
-    # 它目前只是「让 `docker compose ps` 一眼看出 worker 是否真在消费」，没有服务
-    # depends_on 它；要用于滚动发布就把它加上。
     healthcheck:
       test: ["CMD-SHELL", "celery -A netops inspect ping -d \"celery@$$HOSTNAME\" --timeout 5 >/dev/null 2>&1 || exit 1"]
       interval: 30s
@@ -187,21 +124,11 @@ services:
       - "${NGINX_SSL_PORT:-8443}:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # 启动时把当前 runtime 的 DNS 地址算出来写进 /etc/nginx/netops/resolver.conf
-      # （conf.d 里 include 它）。Docker 是内置 DNS 127.0.0.11，Podman 是网络网关
-      # （如 10.89.3.1）——写死任一个，另一种 runtime 上都会
-      # `recv() failed (111: Connection refused) while resolving` + 502。
-      # 只挂这一个文件，不要把整个目录挂上去（那会遮住镜像自带的 entrypoint 脚本）。
       - ./nginx/docker-entrypoint.d/05-netops-resolver.sh:/docker-entrypoint.d/05-netops-resolver.sh:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      # 静态产物卷由 app 容器写入（entrypoint 把镜像里的成品复制进来），nginx 只读。
-      # 不再 bind mount 宿主机目录，也不会在发版时手工往容器里塞文件。
       - static_data:/usr/share/nginx/html:ro
-    # nginx 即使没有任何 server 块也能启动（只是不监听端口），所以「容器 Up ≠ 能服务」。
-    # 健康检查直接探 80：配置缺失 / 静态卷为空 / 进程异常都会让它变成 unhealthy，在
-    # `docker compose ps` 里一眼可见，而不是等用户访问时才发现被 reset。
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -221,9 +148,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  # 配置仓库与运行期数据（必须持久化）
-  app_data:
+  config_repo_data:
     driver: local
-  # 静态产物（可由重建镜像恢复，属于可丢弃数据）
   static_data:
     driver: local
