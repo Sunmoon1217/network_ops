@@ -60,7 +60,7 @@ const handleLogin = async () => {
 
       <div class="login-footer">
         <span>还没有账号？</span>
-        <el-link type="primary" :underline="false" @click="router.push('/register')">立即注册</el-link>
+        <el-link type="primary" underline="never" @click="router.push('/register')">立即注册</el-link>
       </div>
     </div>
   </div>

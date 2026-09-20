@@ -107,7 +107,7 @@ const handleRegister = async () => {
 
       <div class="register-footer">
         <span>已经有账号了？</span>
-        <el-link type="primary" :underline="false" @click="router.push('/login')">返回登录</el-link>
+        <el-link type="primary" underline="never" @click="router.push('/login')">返回登录</el-link>
       </div>
     </div>
   </div>
