@@ -57,6 +57,11 @@ const handleLogin = async () => {
           <el-button type="primary" class="login-button" size="large" :loading="loading" @click="handleLogin">登 录</el-button>
         </el-form-item>
       </el-form>
+
+      <div class="login-footer">
+        <span>还没有账号？</span>
+        <el-link type="primary" :underline="false" @click="router.push('/register')">立即注册</el-link>
+      </div>
     </div>
   </div>
 </template>
@@ -100,5 +105,11 @@ const handleLogin = async () => {
 .login-button {
   width: 100%;
   margin-top: 8px;
+}
+.login-footer {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 </style>

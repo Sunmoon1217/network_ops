@@ -10,6 +10,7 @@ router.register(r"tasks", views.TaskViewSet, basename="task")
 router.register(r"stages", views.StageViewSet, basename="stage")
 
 urlpatterns = [
+    path("auth/register/", auth.register, name="register"),
     path("auth/login/", auth.login, name="login"),
     path("auth/logout/", auth.logout, name="logout"),
     path("me/", auth.me, name="me"),
