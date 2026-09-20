@@ -153,12 +153,30 @@ services:
       # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
       - app_data:/app/data
     depends_on:
+      # 必须等 app **healthy** 而不是 started：app 启动时才会按需跑数据库迁移
+      # （docker/entrypoint.sh 第 3 步），worker 一上来就要读写那些表，不能抢跑。
       app:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - internal
+    # 探活方式：让 **本容器这个** worker 回答一次控制命令。
+    #   * `-d celery@$$HOSTNAME` 把目标限定成自己（`$$` 是 compose 的转义，到容器里才是
+    #     `$`，由 healthcheck 的 sh -c 展开；不限定就等于「任意一个节点答了就算健康」，
+    #     多副本时会互相掩盖故障）；
+    #   * `celery inspect ping` 走 broker（redis healthy 已在 depends_on 里保证），
+    #     所以它同时验证了「worker 进程活着」+「能连上 broker」，比 pgrep 只看进程存在强；
+    #   * 已知的误报场景：worker 正卡在一个长时间 CPU 密集任务里时，控制命令要等它让出
+    #     执行权才能被处理，这一次探测可能超时——所以 timeout 给到 10s、retries 3 次摊平。
+    # 它目前只是「让 `docker compose ps` 一眼看出 worker 是否真在消费」，没有服务
+    # depends_on 它；要用于滚动发布就把它加上。
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A netops inspect ping -d \"celery@$$HOSTNAME\" --timeout 5 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   nginx:
     image: nginx:1.31-alpine
