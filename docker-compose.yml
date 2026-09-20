@@ -98,21 +98,47 @@ services:
     #   command: ["gunicorn", "netops.asgi:application",
     #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
     volumes:
-      # 配置仓库（GitPython 操作的 git 仓库）与上传，必须持久化。
-      # **bind 到宿主机的 ./data**（原来是命名卷 app_data）：这样宿主机的 git / 编辑器能直接看，
-      # `manage.py purge_configs --purge-repo` 与容器动的是**同一份**（从前卷里另有一份、两边
-      # 互不影响，排查"配置怎么没进来/怎么删不掉"时最容易搞混）。目录已在 `.gitignore`（`data/*`）
-      # 与 `.dockerignore`（`data/`）里，不会入库、也不会进镜像。
-      # ⚠️ bind 的代价是**属主不一致**，两个方向都要知道（实测）：
-      #    * 容器以 root 跑，它在这里新建的文件在宿主机上属于容器 root → 宿主侧要改这些文件得 sudo；
-      #    * 反过来，宿主已有的文件属主是宿主用户，容器里的 git 会**拒绝操作**：
-      #      `fatal: detected dubious ownership in repository at '/app/data/config_repo'`，
-      #      而 GitPython 走的正是 git CLI，所以配置仓库会静默全挂。
-      #      这一点由 `docker/entrypoint.sh` 第 0 步的 `git config --system --add safe.directory '*'` 解决。
-      # 想彻底消除属主不一致，就得让 app/worker 以宿主 uid 运行（`user: "${UID}:${GID}"`）并同步
-      # 处理静态卷的写权限，那是另一处改动。
-      - ./data:/app/data
-      # 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
+      # 运行期数据**按目录分别挂**，而且两种目录的挂法也不同（从前是整份 `./data:/app/data` bind）：
+      # 一个只读的输入、一个平台自己用的工作目录，混在一个挂载里等于顺手把输入也给了写权限、
+      # 也把 configs 白白挂给不需要它的 worker。
+      #
+      # ① config_repo：**命名卷**（`config_repo_data`）。它是解析流水线的**内部工作目录**
+      #    （`ops/config_repo.py` 的 CONFIG_REPO_PATH 默认值），app 与 worker 都读写——
+      #    `init_repo()` 会 mkdir + git init + commit，导入配置时 `save_config()` 每次都要提交。
+      #    两个服务必须挂**同一个卷**：各持一份会让两边看到的配置历史分叉。
+      #    为什么不再 bind（2026-09 曾从命名卷 `app_data` 改成 bind，现在改回来）：这里没有任何
+      #    "要让宿主机直接看到"的东西——运维给的原始资料在 ② 那个目录/Excel 里，配置历史通过
+      #    `/api/configs/*` 看。而 bind 的代价是**属主不一致**（实测：以 root 跑的容器在这里新建的
+      #    文件在宿主机上不是宿主用户，宿主侧要 sudo 才能改；反过来宿主的文件会让容器里的 git 报
+      #    `fatal: detected dubious ownership`，GitPython 走的就是 git CLI，于是配置仓库静默全挂），
+      #    为了抹平它就得让容器跑成宿主 uid，再连带处理 HOME / 静态卷可写 / 挂载点可写自检——
+      #    一整套只为 bind 服务的配套。卷没有这个问题：它的属主**继承自镜像里的挂载点目录**，
+      #    而容器以 root 跑（镜像默认），写自己的卷天经地义。
+      #    代价（要清楚）：宿主机的 git / 编辑器看不到这份仓库；宿主机直跑 Django 时用的是
+      #    `<项目根>/data/config_repo`，那是**另一份**（dev 用），两者互不影响。
+      #    要在宿主上看这个卷：`docker compose exec app git -C /app/data/config_repo log --oneline`。
+      #    已经有一份宿主仓库要搬进来：`docker compose run --rm --no-deps -v ./data/config_repo:/from:ro \
+      #      app sh -c 'cp -a /from/. /app/data/config_repo/'`（只在卷还是空的时候做）。
+      - config_repo_data:/app/data/config_repo
+      # ② configs：**只读**的配置源目录，**仍然是 bind**——它是运维放 Excel 里 C 列（config_dir）
+      #    指向的文件的地方，必须是宿主机上的真实目录：那一列按**进程 CWD** 解析，容器里 CWD=/app，
+      #    所以 Excel 里写 `data/configs` 就落到这里。只给 app 挂（导入配置是 app 的接口，worker 的
+      #    流水线只碰 config_repo），而且挂 **:ro**：这是原始资料，解析流程只读不改，挂成只读后一旦有
+      #    代码往里写会当场 EROFS，而不是悄悄改掉源文件。它**不是**代码里的常量，纯粹由 Excel 指定。
+      #    这里用 long syntax 并显式写 **`create_host_path: false`**：缺目录时 `up` **直接报错**，
+      #    而不是让 dockerd 建一个「宿主用户既写不进、也删不掉」的空目录。**关键是那个显式开关，
+      #    不是 long syntax**——实测三种写法：短语法、长语法（默认 `create_host_path: true`）都会
+      #    由 **dockerd** 把缺失目录建成 root 755、`up` 照样成功（宿主侧连 `rm -rf data/` 都"权限
+      #    不够"）；只有显式 `false` 才会失败即响（`bind source path does not exist`）。
+      #    所以首次部署（含刚 clone 的机器）要先 `mkdir -p data/configs`——用宿主用户建、属主天然
+      #    正确。这也是**唯一**需要宿主目录的挂载点（config_repo 与静态产物都是命名卷）。
+      - type: bind
+        source: ./data/configs
+        target: /app/data/configs
+        read_only: true
+        bind:
+          create_host_path: false
+      # ③ 静态产物的出口，供 nginx 通过同一个卷读取。挂载点是镜像里**故意留空的
       # 目录**，卷里内容只由 entrypoint 启动时从 /app/www、/app/frontend/dist
       # 复制进来——不用那两个路径本身当挂载点，是为了避免卷遮住镜像内容后
       # 「Docker 只播种一次」带来的陈旧问题。
@@ -150,9 +176,8 @@ services:
       - env/app.env
       - env/celery.env
     # 单用途容器，所以基础命令放 entrypoint、参数放 command（正是 CMD 的常规用法）。
-    # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物，
-    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西——所以 gunicorn
-    # 那套旋钮（env/gunicorn.env）也不给它。
+    # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物 + 跑迁移 + 起
+    # gunicorn，而 worker 并不挂那个卷、迁移也由 app 做完（下面 depends_on 等它 healthy）。
     # 用 sh -c 包一层，是为了让 --loglevel 从**容器环境**取：compose 的 ${VAR} 插值只读
     # 根目录的 .env，读不到 env/celery.env，所以写成 `$${...}`——compose 把 `$$` 还原成
     # 字面 `$`，再由容器内的 shell 展开；exec 保证 celery 仍是 PID 1、能收到信号。
@@ -162,8 +187,10 @@ services:
     # 阶段任务要连数据库，凭据同样从 secrets 读
     secrets: *db-secrets
     volumes:
-      # 阶段任务要读写 data/config_repo，必须与 app 共享**同一份**目录（同一个 bind）
-      - ./data:/app/data
+      # 阶段任务要读写 data/config_repo，必须与 app 共享**同一个命名卷**（同一份 git 历史；
+      # 各持一份会让两边看到的配置历史分叉）。刻意**不挂** configs：那份只读源目录只有 app 的
+      # Excel 导入接口用得到（见 app 服务的注释）。
+      - config_repo_data:/app/data/config_repo
     depends_on:
       # 必须等 app **healthy** 而不是 started：app 启动时才会按需跑数据库迁移
       # （docker/entrypoint.sh 第 3 步），worker 一上来就要读写那些表，不能抢跑。
@@ -245,8 +272,11 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  # 注：配置仓库与运行期数据现在是宿主机的 ./data bind 挂载，不再用命名卷 app_data。
+  # 配置仓库（Git 仓库）：app 与 worker 共用同一个卷。**刻意用新名字**而不是复用 2026-09 之前的
+  # `app_data`——那个旧卷里可能还留着上个方案的历史，复用它等于把两份不相干的历史静默合到一起。
   # 旧卷不会被自动删除，确认里面没东西后可以手工清理：docker volume rm network_ops_app_data
+  config_repo_data:
+    driver: local
   # 静态产物（可由重建镜像恢复，属于可丢弃数据）
   static_data:
     driver: local

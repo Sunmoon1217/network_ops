@@ -52,10 +52,14 @@ COPY frontend/dist ./frontend/dist
 COPY www ./www
 
 # 校验成品，并建出运行时要用的空目录：
-#   /app/data                 配置仓库（GitPython 操作的 git 仓库）的挂载点
-#   /var/lib/netops-static    命名卷挂载点，镜像里**故意留空**；卷内布局按 URL
+#   /app/data/config_repo     `config_repo_data` 命名卷的挂载点。**镜像里保持空**：卷只在首次创建时
+#                             用这里的内容播种一次，空目录 → 卷是空的 → `init_repo()` 在里面 git init。
+#   /app/data/configs         Excel 导入用的配置源目录挂载点（app 以 :ro 把宿主机 ./data/configs 挂上来）
+#   /var/lib/netops-static    静态产物命名卷的挂载点，同样是**故意留空**；卷内布局按 URL
 #                             前缀设计（index.html + assets/ + static/），内容只由
 #                             entrypoint 从 /app/www、/app/frontend/dist 复制进来
+# 挂载点建在镜像里（而不是留给 dockerd 在容器启动时创建），是为了让"路径存在"这件事可预期：
+# 缺了它 Docker 会以 root 建出来，行为看着一样但没人知道是从哪来的。
 RUN set -eux; \
     if [ ! -f /app/frontend/dist/index.html ]; then \
         echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
@@ -65,8 +69,22 @@ RUN set -eux; \
         echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
         exit 1; \
     fi; \
-    mkdir -p /app/data /var/lib/netops-static; \
+    mkdir -p /app/data/config_repo /app/data/configs /var/lib/netops-static; \
     echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
+
+# git 提交必须有「提交者身份」。没配 user.email 时 git 会退化成 `用户@主机名`，而容器主机名是个**没有域名
+# 部分**的容器 id，于是它直接拒绝、让你先去配（实测 root 与任意 uid 一样，都会失败）：
+#     fatal: unable to auto-detect email address (got 'root@0649f8566bbe.(none)')
+# 配上之后 `init_repo()` 的首次提交、`save_config()` 的每次导入才走得通。这里给一个中性身份；要换成
+# 团队自己的，用容器环境变量覆盖即可（它们优先于配置）：
+#   GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL / GIT_COMMITTER_NAME / GIT_COMMITTER_EMAIL
+RUN git config --system user.name "netops" && git config --system user.email "netops@localhost"
+
+# 这里**不放** `git config --system safe.directory`：那一条是「容器进程与仓库属主不是同一个用户」才需要的
+# （`fatal: detected dubious ownership in repository`），而它现在不会发生——配置仓库是命名卷、容器以 root
+# 跑，卷里的文件就是 root 建的，属主与进程用户一致。⚠️ 哪天把 config_repo 改回 bind、或给容器加 `user:`，
+# 这条要加回来，而且必须加在**镜像层**：worker 走 compose 给的 celery 命令、不执行 entrypoint，
+# 写在 entrypoint 里 worker 拿不到（此前漏过一次，worker 一直报 dubious ownership）。
 
 COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
 RUN chmod +x /usr/local/bin/netops-entrypoint

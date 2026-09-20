@@ -206,7 +206,8 @@ class Command(BaseCommand):
         files = sum(1 for item in path.rglob("*") if item.is_file())
         self.stdout.write(f"Git 仓库将删除: {path}（含 .git 共 {files} 个文件）")
         self.stdout.write("  注意：只删本环境这一个目录，Git 历史里的原文不做重写；")
-        self.stdout.write("        宿主机的 ./data 就是容器里的 /app/data（bind 挂载），删了容器里也就没了。")
+        self.stdout.write("        路径取自 CONFIG_REPO_PATH（容器里是命名卷 config_repo_data 的挂载点，")
+        self.stdout.write("        宿主机直跑时是 <项目根>/data/config_repo）——两边各一份，互不影响。")
 
     def _print_kept(self, with_workflow: bool) -> None:
         from core.models import Stage, Task
