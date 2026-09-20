@@ -110,7 +110,9 @@ uv run python manage.py collectstatic --noinput
 # 首次构建镜像并启动全套（db / redis / app / worker / nginx）
 docker compose up -d --build
 
-# 首次部署或升级后跑迁移（entrypoint 不会自动跑，避免多副本竞争）
+# 数据库迁移不用手跑：app 容器启动时只在「有未应用的迁移」时才执行
+# （manage.py migrate_if_needed，多副本由 advisory lock 串行化）。
+# 想人工放行就设 MIGRATE_ON_START=0 再执行：
 docker compose run --rm app python manage.py migrate
 
 # 创建管理员
@@ -301,7 +303,7 @@ uv run python manage.py collectstatic --noinput
 # 2. 重建 app/worker/nginx（镜像里换成新成品，容器启动时同步进卷）
 docker compose up -d --build app worker nginx
 
-# 有数据库变更时
+# 有数据库变更时（app 容器下一次启动会自己按需迁移，这条只是不想等重启时的做法）
 docker compose run --rm app python manage.py migrate
 ```
 

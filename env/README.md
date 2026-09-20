@@ -11,10 +11,17 @@
 
 | 文件 | 注入到 | 内容 |
 |------|--------|------|
-| `app.env` | app、worker | Django 运行时：数据库、Redis、`DJANGO_*` |
+| `app.env` | app、worker | Django 运行时：数据库、Redis、`DJANGO_*`、`MIGRATE_ON_START`（只有 app 的 entrypoint 读它，worker 不读） |
 | `db.env` | db | `POSTGRES_DB` / `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` / `PGDATA` |
 | `gunicorn.env` | app | `GUNICORN_*`（`docker/entrypoint.sh` 拼启动命令用） |
 | `celery.env` | worker | `CELERY_LOGLEVEL` |
+
+`app.env` 里的 `MIGRATE_ON_START=1`（默认）让 app 容器启动时**按需**跑数据库迁移：只在
+确实有未应用的迁移时才执行 `migrate --noinput`，且整段「检查 + 迁移」由 PostgreSQL
+advisory lock 串行化（Django 自己不给 migrate 加锁），所以多副本同时启动不会互相竞争。
+设成 0 就跳过，迁移交给外部发布流水线或人工：
+`docker compose run --rm app python manage.py migrate`。实现见
+`apps/core/management/commands/migrate_if_needed.py`。
 
 ```yaml
 app:
