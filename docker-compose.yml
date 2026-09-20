@@ -179,6 +179,15 @@ services:
       # 静态产物卷由 app 容器写入（entrypoint 把镜像里的成品复制进来），nginx 只读。
       # 不再 bind mount 宿主机目录，也不会在发版时手工往容器里塞文件。
       - static_data:/usr/share/nginx/html:ro
+    # nginx 即使没有任何 server 块也能启动（只是不监听端口），所以「容器 Up ≠ 能服务」。
+    # 健康检查直接探 80：配置缺失 / 静态卷为空 / 进程异常都会让它变成 unhealthy，在
+    # `docker compose ps` 里一眼可见，而不是等用户访问时才发现被 reset。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       app:
         condition: service_healthy
