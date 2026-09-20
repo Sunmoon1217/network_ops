@@ -98,3 +98,6 @@ nginx/ssl/*.pem
 
 # 分支数据库配置（由 scripts/switch-branch*.sh 生成）
 .env.db
+
+# 跨会话知识库的入口软链（真身在用户级 ~/.dsh/skills，见 AGENTS.md「知识库」）
+.dsh/

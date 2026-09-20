@@ -54,3 +54,6 @@ docker-compose.yml
 docker-compose.override.yml
 Dockerfile*
 .dockerignore
+
+# 跨会话知识库（软链指向 ~/.dsh/skills，与镜像无关）
+.dsh/
