@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 APPS_DIR = BASE_DIR / "apps"
 if str(APPS_DIR) not in sys.path:
@@ -29,17 +31,59 @@ SECRET_KEY = "django-insecure-bua49zfleexo##5iy2q^dm@880a5kdvh5q6%1zss&p#xe1y13$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+def _env_list(name: str, default: str = "") -> list[str]:
+    """逗号分隔的环境变量 → 列表（去空白、丢空项）；未设置时用 default。"""
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
+def _env_or_file(name: str, default: str = "") -> str:
+    """读一个配置值：`<NAME>_FILE` 指向的文件优先（Docker secrets），其次环境变量，最后默认值。
+
+    Docker secrets 在 compose（非 swarm）下就是把密钥挂成 `/run/secrets/<name>` 文件；
+    postgres 官方镜像认 `POSTGRES_PASSWORD_FILE` 这套 `*_FILE` 变量，Django 侧得自己读。
+    优先顺序与「谁更该赢」一致：显式给的密钥文件 > 进程环境 > 内置默认值。
+
+    文件存在但读不出来时**直接报错**，不静默回退到默认密码——那只会把「密钥配错了」
+    伪装成「数据库连不上」。内容 strip() 与 postgres 官方 entrypoint 的 `$(cat file)`
+    行为一致（去掉结尾换行），否则末尾换行会变成密码的一部分。
+    """
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ImproperlyConfigured(f"{name}_FILE={path} 读取失败：{exc}") from exc
+    return os.environ.get(name, default)
+
+
 # 允许的 Host
 #
 # 当前经 nginx 作为统一入口访问，且暂无域名，因此默认放开（"*"），
 # 以便同时支持 localhost、局域网 IP、以及后续临时分配的主机名。
 #
-# 注意：nginx 使用 `proxy_set_header Host $host` 透传客户端的 Host 头，
-# 因此 Django 侧必须放行这些值，否则会返回 400 Bad Request。
+# nginx 用 `proxy_set_header Host $http_host` 透传客户端**原样**的 Host 头
+# （含端口），Django 侧必须放行这些值，否则返回 400 Bad Request。
+# 注意 Django 校验时会剥掉端口再比对（`localhost:8000` 匹配 `localhost`）。
 #
 # 后续有正式域名或固定 IP 后，用环境变量收紧即可，例如：
 #   DJANGO_ALLOWED_HOSTS=netops.example.com,10.0.0.5
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
+ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
+
+
+# CSRF 可信来源（Django 4+ 的 Origin 校验）
+#
+# 校验规则：请求带 Origin 头时，它必须等于「当前 host」（scheme://<Host 头>）
+# 或落在 CSRF_TRUSTED_ORIGINS 里，否则 403：
+#   Forbidden (Origin checking failed - http://localhost:8000 does not match
+#   any trusted origins.)
+#
+# 正常情况不需要配——nginx 透传原样 Host（含端口），Origin 天然等于「当前 host」。
+# 需要显式声明的只有「浏览器看到的来源 ≠ 转发给 Django 的 Host」的拓扑，例如：
+#   - 外层还有一层 LB / 网关，它把 Host 改写成内部地址
+#   - TLS 在外层终结，而 Django 侧看到的协议/host 与公网不一致
+# 值必须带 scheme（Origin 的格式），逗号分隔，例如：
+#   DJANGO_CSRF_TRUSTED_ORIGINS='https://netops.example.com,http://localhost:8000'
+CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 
 # 反向代理：信任 nginx 传递的原始协议
@@ -63,8 +107,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
-    "django_extensions",
-    "django_stubs_ext",
     "core.apps.CoreConfig",
     "ops.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
@@ -107,8 +149,10 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("POSTGRES_DB", "netops"),
-        "USER": os.environ.get("POSTGRES_USER", "netops"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "netops_password"),
+        # 用户名与密码走 docker secrets（compose 挂 /run/secrets/*，模板见 secrets/）；
+        # 没有挂 secret 时仍接受同名环境变量，便于宿主机直跑与旧部署。
+        "USER": _env_or_file("POSTGRES_USER", "netops"),
+        "PASSWORD": _env_or_file("POSTGRES_PASSWORD", "netops_password"),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": int(os.environ.get("POSTGRES_PORT", "5432")),
     }
@@ -187,7 +231,7 @@ REST_FRAMEWORK = {
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("REDIS_DB", 0))
-REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
+REDIS_PASSWORD = _env_or_file("REDIS_PASSWORD", "")
 
 if REDIS_PASSWORD:
     REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"

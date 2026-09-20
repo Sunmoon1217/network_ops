@@ -21,11 +21,19 @@
 FROM python:3.12-alpine
 
 # ---- 镜像源（可用 --build-arg 覆盖） ----------------------------------------
-# 国内构建环境下官方源不可达：dl-cdn.alpinelinux.org 报 I/O error、
-# pypi.org 极慢。apk 与 pip 都必须换镜像，且不从宿主机 ~/.config 继承。
+# 国内构建环境下官方源不可达：dl-cdn.alpinelinux.org 报 I/O error、pypi.org 极慢，
+# apk 与 Python 包都得换镜像，且不从宿主机 ~/.config 继承。
+# ⚠️ Python 包这个变量必须是 **uv 自己的** UV_DEFAULT_INDEX：uv 不读 pip 的配置
+#    （PIP_INDEX_URL / pip.conf 一律忽略——实测把 PIP_INDEX_URL 指向一个连不上的地址，
+#    `uv sync` 照样成功地去 PyPI 拉包；换成 UV_DEFAULT_INDEX 才会失败）。UV_INDEX_URL
+#    是同一个旋钮的旧名（已 deprecated），两个都设会打架，这里只留 UV_DEFAULT_INDEX。
+# 另注：uv.lock 会**固化**解析时的 registry 与 wheel URL（本项目锁文件里就是腾讯镜像的
+#    simple / packages 路径），所以 `uv sync --frozen` 本来就按 lock 走；这里设置是为了
+#    「lock 需要重新解析 / 缺 lock」的情况。换镜像源时记得 `uv lock --default-index <新源>`，
+#    否则 frozen 安装仍然会去旧源。
 ARG APK_MIRROR=mirrors.aliyun.com
-ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
-ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+ARG UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple
+ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
 # ---- 构建网络说明 ------------------------------------------------------------
 # daemon.json 里的 proxies 只作用于「拉取基础镜像」，不作用于构建容器：
@@ -60,29 +68,31 @@ ENV UV_PYTHON_DOWNLOADS=never
 # ---- 只复制依赖清单（不 COPY 源码） ------------------------------------------
 COPY pyproject.toml uv.lock ./
 
-# ---- 建 venv + 装依赖 + 装 ASGI 服务器，合并成一层 ---------------------------
+# ---- 建 venv + 装主依赖，合并成一层 -----------------------------------------
 # 合成一层是为了「装完即清理」，不为清理多留一层；uv 全程只在构建期挂载，
 # 不落进最终镜像。
 #   uv sync --frozen             : 严格按 uv.lock 安装，不重新解析
 #                --no-dev        : 不装 pytest / ruff 等开发依赖
 #                --no-install-project : 本镜像只提供环境，不装项目自身
 #                --active        : 装进已激活的 ${VIRTUAL_ENV}
-# 补装的三个包：settings.py 的 INSTALLED_APPS 里有 django_extensions 与
-# django_stubs_ext，但它们在 pyproject.toml 的 dev 组里，--no-dev 不会装，
-# 缺了会直接 ModuleNotFoundError（typing-extensions 是 django_stubs_ext
-# 运行时真正 import 的）。版本取自 uv.lock，--no-deps 只补模块不引依赖树。
-# gunicorn/uvicorn/uvicorn-worker：ASGI 运行栈。新 uvicorn（>=0.36）已移除
-# uvicorn.workers，必须用官方拆出的 uvicorn-worker 包。
+#                --no-cache      : 不读也不写 uv 缓存（实测跑完缓存目录仍是空的），
+#                                  所以这一层不必再 `uv cache clean`；下面那句
+#                                  `rm -rf /root/.cache/uv` 只是兜底
+# 运行镜像只装**主依赖**（--no-dev），开发与类型检查工具（pytest / ruff /
+# django-stubs 等）都不进镜像。
+# 这里曾经用 `--no-deps` 补装 django-stubs-ext 与 typing-extensions，是因为
+# settings 的 INSTALLED_APPS 注册了 django_stubs_ext；那个注册已经去掉——
+# django_stubs_ext 只在显式调用 monkeypatch() 时才有用（让 QuerySet[Model] 这类
+# 泛型注解在运行时求值不报错），本项目既没调用也没用它的类型别名，因此运行镜像
+# 不需要它（django-stubs 侧仍在 dev 组，类型检查不受影响）。
+# gunicorn / uvicorn / uvicorn-worker 是**主依赖**（ASGI 运行栈；新 uvicorn >=0.36
+# 已移除 uvicorn.workers，必须用官方拆出的 uvicorn-worker 包），`uv sync --no-dev`
+# 会一起装上。
 RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
     uv venv --python python3 "${VIRTUAL_ENV}" \
     && mkdir -p /opt/app \
     && cp pyproject.toml uv.lock /opt/app/ \
-    && uv sync --frozen --no-dev --no-install-project --active \
-    && uv pip install --python "${VIRTUAL_ENV}" --no-deps \
-         "django-extensions==4.1" "django-stubs-ext==6.1.0" "typing-extensions==4.16.0" \
-    && uv pip install --python "${VIRTUAL_ENV}" \
-         "gunicorn==26.2.0" "uvicorn==0.53.0" "uvicorn-worker==0.4.0" \
-    && uv cache clean \
+    && uv sync --frozen --no-dev --no-install-project --active --no-cache \
     && rm -rf /opt/app /root/.cache/uv \
     && find "${VIRTUAL_ENV}" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
@@ -94,15 +104,13 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
 # 成功」，却在项目镜像里才炸。celery 就是实例——netops/__init__.py 直接 import 它，
 # 基础镜像里没有时会一路拖到 collectstatic 才报 ModuleNotFoundError。
 RUN python -c "import importlib.metadata as m; \
-[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','django_extensions','django_stubs_ext','gunicorn','uvicorn_worker')]; \
-print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','django-extensions','django-stubs-ext','gunicorn','uvicorn','uvicorn-worker')})"
+[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','redis','gunicorn','uvicorn_worker')]; \
+print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','redis','gunicorn','uvicorn','uvicorn-worker')})"
 
 # 项目镜像在此之上 COPY 源码即可，这里给一个默认工作目录
 WORKDIR /app
 
-# ASGI 启动：gunicorn + uvicorn worker（uvicorn.workers 已被移除，用独立包）
-CMD ["gunicorn", "netops.asgi:application", \
-     "--worker-class", "uvicorn_worker.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# 刻意**不定义 CMD / ENTRYPOINT**：本镜像只有环境、没有源码，单独 `docker run` 本来就跑不起来；
+# 而一旦在这里写了 CMD，项目镜像（Dockerfile.app）会**继承**它——那等于把 gunicorn 的启动
+# 参数又钉回镜像里，`.env` 里的 GUNICORN_* 也就调不动了（参数不在 CMD 里才轮得到 entrypoint
+# 的 shell 插值）。gunicorn 的整条命令在 docker/entrypoint.sh 里拼装，见 Dockerfile.app。

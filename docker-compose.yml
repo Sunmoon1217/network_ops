@@ -1,31 +1,45 @@
 name: network_ops
 
-# app 与 worker 共用同一镜像与环境，用锚点避免两处写法漂移
-x-app-environment: &app-environment
-  POSTGRES_DB: ${POSTGRES_DB:-netops}
-  POSTGRES_USER: ${POSTGRES_USER:-netops}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netops_password}
-  # 容器内走 compose 网络，固定用服务名与容器端口；
-  # 注意这与 db 服务对外映射的 ${POSTGRES_PORT}（宿主端口）是两回事，
-  # 宿主端口改了也不影响容器内连接。
-  POSTGRES_HOST: db
-  POSTGRES_PORT: 5432
-  REDIS_HOST: redis
-  REDIS_PORT: 6379
-  REDIS_DB: ${REDIS_DB:-0}
-  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+# 环境变量按「谁读」分两处（都在 env/ 下），compose 里不再罗列具体变量：
+#   .env（根）      → 只给 compose 自己用（下面这些 ${VAR} 插值：宿主映射端口 / 镜像 / secrets 路径）
+#   env/*.env       → 给容器进程用，按服务分别 env_file 注入（app / db / gunicorn / celery 四个）
+#   env/secrets/*   → 密钥（数据库用户名 / 密码），只读挂到 /run/secrets/*
+# 各服务拿到什么、为什么这么分：env/README.md；密钥的生成与轮换：env/secrets/README.md。
+
+# 数据库凭据（用户名 + 密码）。compose 在非 swarm 模式下就是把文件挂成
+# /run/secrets/<name>：db 服务用 postgres 官方镜像的 POSTGRES_USER_FILE /
+# POSTGRES_PASSWORD_FILE 读，app/worker 由 netops/settings.py 的 _env_or_file() 读。
+# 文件由 `bash env/secrets/generate.sh` 生成，已在 .gitignore 里排除；**缺文件时 compose 会
+# 直接报错**，这是有意的——宁可起不来，也不要拿默认密码静默连上一个空库。
+# 路径可用 POSTGRES_USER_SECRET_FILE / POSTGRES_PASSWORD_SECRET_FILE 覆盖。
+x-secrets: &db-secrets
+  - postgres_user
+  - postgres_password
+
+secrets:
+  postgres_user:
+    file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}
+
+# app 与 worker 是同一个镜像（Dockerfile.app + 同一个 BASE_IMAGE），构建配置用锚点共享，
+# 免得两处各写一份后漂移成两个不同的基础镜像：
+#   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile.app
+  args:
+    BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
 
 services:
   db:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-netops}
-      POSTGRES_USER: ${POSTGRES_USER:-netops}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netops_password}
-      PGDATA: /var/lib/postgresql/data
+    # POSTGRES_DB / PGDATA / *_FILE 都在这里（env/db.env）
+    env_file:
+      - env/db.env
+    secrets: *db-secrets
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -33,7 +47,9 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netops}"]
+      # 不带 -U：用户名现在只存在于 secret 文件里，compose 插值取不到；pg_isready 只探
+      # 「服务器是否接受连接」，用容器默认用户（postgres）即可，与业务用户无关。
+      test: ["CMD-SHELL", "pg_isready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,22 +73,23 @@ services:
 
   # Django / ASGI 应用。镜像内的静态产物经命名卷交给 nginx（见 Dockerfile.app）
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-      args:
-        # 基础镜像可用宿主机环境变量覆盖（默认值与 Dockerfile.app 的 ARG 默认值一致）：
-        #   BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
-        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
+    build: *app-build
     image: network-ops:latest
     container_name: netops-app
     restart: unless-stopped
-    environment: *app-environment
-    # gunicorn 的可调参数在镜像的 CMD 里（--workers / 日志，固定部分与 --bind 在
-    # docker/entrypoint.sh）。要调就覆盖 command，只写参数即可，entrypoint 会补上硬要求：
-    #   command: ["--workers", "4"]
-    # 换监听地址得连 nginx 的 upstream 一起改，且 --bind 是 append 语义（追加会多一个
-    # 监听而不是覆盖），所以它不在这里覆盖，而是整条命令替换，例如：
+    # 容器进程读的变量，按用途分开注入：
+    #   env/app.env      → Django 运行时（数据库 / Redis / DJANGO_*），app 与 worker 共用
+    #   env/gunicorn.env → 只有 app 需要的 gunicorn 旋钮
+    env_file:
+      - env/app.env
+      - env/gunicorn.env
+    # 数据库凭据（只读挂进 /run/secrets/*）：settings.py 的 _env_or_file() 读的就是它
+    secrets: *db-secrets
+    # 启动命令**不在这里写**：gunicorn 的硬要求（--worker-class / --bind）与可调参数
+    # （默认值 + ${GUNICORN_*} 插值）都在 docker/entrypoint.sh 里拼装。只想临时调一次：
+    #   docker compose run --rm app --workers 4      # 追加参数 → 覆盖同名项
+    # 换监听地址要连 nginx 的 upstream 一起改，且 --bind 是 append 语义（追加会多一个监听
+    # 而不是覆盖），所以那是整条命令替换，例如：
     #   command: ["gunicorn", "netops.asgi:application",
     #             "-k", "uvicorn_worker.UvicornWorker", "-b", "0.0.0.0:9000"]
     volumes:
@@ -90,10 +107,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 不映射到宿主端口：统一走 nginx 入口。调试见 docker/README 或
+    # 端口：不映射到宿主（统一走 nginx 入口），也**不写 expose**——容器之间能不能通只取决于
+    # 「进程有没有在监听」，自定义网络里 nginx 访问 `app:8000` 与 expose 无关（实测：一个没有
+    # expose 声明的容器，同网络的另一个容器照样访问得到）。镜像本身已经声明了 `EXPOSE 8000`
+    # （Dockerfile.app），这里再写一遍只是重复的自文档。调试：
     #   docker compose exec app python manage.py shell
-    expose:
-      - "8000"
     networks:
       - internal
     healthcheck:
@@ -106,21 +124,26 @@ services:
   # Celery worker：采集→解析→存储是异步阶段任务，没有 worker 时
   # 上游 .delay() 只会把消息堆在 Redis 里、永远不执行。
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-      args:
-        # 与 app 服务保持一致，避免两个服务的基础镜像不一致
-        BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
+    build: *app-build
     image: network-ops:latest
     container_name: netops-worker
     restart: unless-stopped
-    environment: *app-environment
+    # 与 app 共用 env/app.env；celery 自己的旋钮在 env/celery.env
+    env_file:
+      - env/app.env
+      - env/celery.env
     # 单用途容器，所以基础命令放 entrypoint、参数放 command（正是 CMD 的常规用法）。
     # 这里刻意**跳过** app 的 entrypoint：那一步是往 static_data 卷里铺静态产物，
-    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西。
-    entrypoint: ["celery"]
-    command: ["-A", "netops", "worker", "--loglevel=info"]
+    # 而 worker 并不挂那个卷，跑了也只是往自己容器层里复制一份没用的东西——所以 gunicorn
+    # 那套旋钮（env/gunicorn.env）也不给它。
+    # 用 sh -c 包一层，是为了让 --loglevel 从**容器环境**取：compose 的 ${VAR} 插值只读
+    # 根目录的 .env，读不到 env/celery.env，所以写成 `$${...}`——compose 把 `$$` 还原成
+    # 字面 `$`，再由容器内的 shell 展开；exec 保证 celery 仍是 PID 1、能收到信号。
+    # **刻意不暴露 --concurrency**：同一台设备的配置并发入库会写坏数据（见 AGENTS.md）。
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec celery -A netops worker --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
+    # 阶段任务要连数据库，凭据同样从 secrets 读
+    secrets: *db-secrets
     volumes:
       # 阶段任务要读写 data/config_repo，必须与 app 共享同一个卷
       - app_data:/app/data
@@ -137,8 +160,8 @@ services:
     container_name: netops-nginx
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_SSL_PORT:-443}:443"
+      - "${NGINX_PORT:-8000}:80"
+      - "${NGINX_SSL_PORT:-8443}:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       # 启动时把当前 runtime 的 DNS 地址算出来写进 /etc/nginx/netops/resolver.conf
