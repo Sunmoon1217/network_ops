@@ -477,18 +477,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-extensions"
-version = "4.1"
-source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
-dependencies = [
-    { name = "django" },
-]
-sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/6d/b3/ed0f54ed706ec0b54fd251cc0364a249c6cd6c6ec97f04dc34be5e929eac/django_extensions-4.1.tar.gz", hash = "sha256:7b70a4d28e9b840f44694e3f7feb54f55d495f8b3fa6c5c0e5e12bcb2aa3cdeb" }
-wheels = [
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/64/96/d967ca440d6a8e3861120f51985d8e5aec79b9a8bdda16041206adfe7adc/django_extensions-4.1-py3-none-any.whl", hash = "sha256:0699a7af28f2523bf8db309a80278519362cd4b6e1fd0a8cd4bf063e1e023336" },
-]
-
-[[package]]
 name = "django-filter"
 version = "26.1"
 source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
@@ -603,6 +591,24 @@ dependencies = [
 sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/e0/db/3ca813cbacb23ab6fe46ff38a9b5ef8e73e970c8051f2ce903aacafe0446/gitpython-3.1.62.tar.gz", hash = "sha256:1791de66309bc0c7cfca40bf8d2e3de7ca091cbf94e6051be1ad0722c61062af" }
 wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/d6/0b/29d7965215f8ef830a7ca1f42997fe13e5693d85e9edb18f938d063ef5f2/gitpython-3.1.62-py3-none-any.whl", hash = "sha256:7002251225e10e29d2e1f49e6532613fe5d5d9f0b6f1f02997a52b38fe56899e" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "26.2.0"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/d9/8a/e4ef6ee11701b6cd64702848415ffb69eeff85cb388a3c6c7fe86f22f3f8/gunicorn-26.2.0.tar.gz", hash = "sha256:62b864895d9ebff0b2f9867ba04fe811c93121596540830c9c916d0769668447" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/fe/85/7522a52e5e2f42faf1a129113ab63e548c42e103e9af395b7bfe65e403e2/gunicorn-26.2.0-py3-none-any.whl", hash = "sha256:bd249d0b3f7972f7432f0a6b6ff3b3ee2d129f70cd1ff6c09a9dd9e29a2b88e3" },
+]
+
+[[package]]
+name = "h11"
+version = "0.16.0"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86" },
 ]
 
 [[package]]
@@ -933,17 +939,19 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "dnspython" },
     { name = "gitpython" },
+    { name = "gunicorn" },
     { name = "openpyxl" },
     { name = "psycopg2-binary" },
     { name = "redis" },
     { name = "requests" },
     { name = "ttp" },
+    { name = "uvicorn" },
+    { name = "uvicorn-worker" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "celery-stubs" },
-    { name = "django-extensions" },
     { name = "django-stubs" },
     { name = "djangorestframework-stubs" },
     { name = "ipykernel" },
@@ -960,17 +968,19 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.18.0" },
     { name = "dnspython", specifier = ">=2.8.0" },
     { name = "gitpython", specifier = ">=3.1.61" },
+    { name = "gunicorn", specifier = ">=26.2.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
     { name = "redis", specifier = ">=8.1.0" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "ttp", specifier = ">=0.10.1" },
+    { name = "uvicorn", specifier = ">=0.53.0" },
+    { name = "uvicorn-worker", specifier = ">=0.4.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "celery-stubs", specifier = ">=0.1.3" },
-    { name = "django-extensions", specifier = ">=4.1" },
     { name = "django-stubs", specifier = ">=6.1.0" },
     { name = "djangorestframework-stubs", specifier = ">=3.18.1" },
     { name = "ipykernel", specifier = ">=7.3.0" },
@@ -1435,6 +1445,32 @@ source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
 sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c" }
 wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897" },
+]
+
+[[package]]
+name = "uvicorn"
+version = "0.53.0"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "h11" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/5d/ad/04bbb797c84fc1f26cb171f7394716f4865ffb8d8c5e1eef42565c2dfa6b/uvicorn-0.53.0.tar.gz", hash = "sha256:a9356f0cb89b3b8621529c5d5eebd69bfe154f4c3f68b4cf2de47e45fa855c2e" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/76/18/0eea75741ee812e9f598b687619ce2454f6c3a1c5cd21ea990ec6bd26f45/uvicorn-0.53.0-py3-none-any.whl", hash = "sha256:e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e" },
+]
+
+[[package]]
+name = "uvicorn-worker"
+version = "0.4.0"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+dependencies = [
+    { name = "gunicorn" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/80/59/9101b9c0680fd80e9d26c07deb822a5d18a324339fcf9cd017885ee808ad/uvicorn_worker-0.4.0.tar.gz", hash = "sha256:8ee5306070d8f38dce124adce488c3c0b50f20cf0c0222b12c66188da7214493" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/90/25/09cd7a90c8bb7fb693be0d6704fccd5f9778d5513214b7a01cc4a94ff314/uvicorn_worker-0.4.0-py3-none-any.whl", hash = "sha256:e2ed952cef976f5e9e429d7269640bbcafbd36c80aa80f1003c8c77a6797abde" },
 ]
 
 [[package]]

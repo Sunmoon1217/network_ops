@@ -85,8 +85,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
-    "django_extensions",
-    "django_stubs_ext",
     "core.apps.CoreConfig",
     "ops.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
