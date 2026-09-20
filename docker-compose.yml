@@ -200,8 +200,20 @@ services:
     # nginx 即使没有任何 server 块也能启动（只是不监听端口），所以「容器 Up ≠ 能服务」。
     # 健康检查直接探 80：配置缺失 / 静态卷为空 / 进程异常都会让它变成 unhealthy，在
     # `docker compose ps` 里一眼可见，而不是等用户访问时才发现被 reset。
+    #
+    # **必须显式绕开代理**：宿主机 shell 里配了 `http_proxy` 时，Docker CLI 会把这些变量注入容器
+    # （`docker inspect` 的 Config.Env 里能看到），于是探活会去连代理——代理不通就**假 unhealthy**，
+    # 代理返回 200 就**假 healthy**，而这条检查的意义恰恰是抓「nginx 在跑但没在服务」。
+    # 用 `curl --noproxy '*'`：**不能只依赖 `no_proxy`**，它由运维的代理配置决定，很多环境里根本没有
+    # 127.0.0.1（实测：注入 `http_proxy` 且**不给** `no_proxy` 时，裸 `curl` 返回 000/exit 7，
+    # `curl --noproxy '*'` 返回 200；busybox wget 更糟，它压根不认 `no_proxy`，连代理后 exit 1）。
+    # `-f` 让 4xx/5xx 也算失败：静态卷为空时 nginx 回 **403**（实测 curl exit=22 → 判 unhealthy）。
+    # 注意 SPA 有 `try_files ... /index.html` 兜底，**不存在**的路径会拿到 index.html（200），
+    # 所以负向验证要用「空目录 / 死端口」，别拿随便一个 404 路径去试。
+    # curl 是 nginx:alpine 自带的 apk 包（实测 8.22.0），换基础镜像时若不带它，这条检查会直接失败——
+    # 那是响的，不是静默的。
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 3
