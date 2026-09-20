@@ -115,7 +115,8 @@ docker compose up -d --build
 # 想人工放行就设 MIGRATE_ON_START=0 再执行：
 docker compose run --rm app python manage.py migrate
 
-# 创建管理员
+# 管理员不用手建：app 启动时若「一个超级用户都没有」会创建 admin，随机初始密码打印在
+# 启动日志里（docker compose logs app | grep 初始密码）。也可以手工执行：
 docker compose run --rm app python manage.py createsuperuser
 ```
 

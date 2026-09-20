@@ -46,6 +46,9 @@
 # （Django 自己不给 migrate 加锁，裸的两行 shell 会撞车，原因见那个命令的文档字符串）。
 # 想让迁移必须人工放行（或交给外部发布流水线），把 MIGRATE_ON_START 设为 0：
 #   docker compose run --rm app python manage.py migrate
+#
+# 初始管理员在下面第 4 步**零配置创建**：库里一个超级用户都没有时，创建一个 admin 并把随机
+# 初始密码打印在启动日志里（`docker compose logs app` 抄下来即可）；已经有时什么都不做。
 
 set -e
 
@@ -71,7 +74,13 @@ else
     echo "[entrypoint] MIGRATE_ON_START=0，跳过迁移（需要时执行 docker compose run --rm app python manage.py migrate）"
 fi
 
-# 4) 启动。$1 以 - 开头（或压根没有参数）→ 视为「给默认命令的参数」，在下面这条
+# 4) 初始管理员：**不需要任何配置**。库里还没有超级用户时创建 `admin`，随机初始密码直接打印在
+#    启动日志里（登录后请立即修改）；已经有超级用户就是空操作，不会覆盖已有密码、也不会把同名
+#    普通账号静默提权（见 manage.py ensure_superuser）。人工用法：
+#     docker compose exec app python manage.py ensure_superuser --username ops --password '...'
+python manage.py ensure_superuser
+
+# 5) 启动。$1 以 - 开头（或压根没有参数）→ 视为「给默认命令的参数」，在下面这条
 #    命令后面追加；否则视为「整条命令」原样执行。这是官方镜像的通行写法（docker run
 #    python -c ...：以 - 开头就补上 python），三类覆盖因此都成立，也不需要任何
 #    「追加参数」的猜测。

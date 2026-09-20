@@ -30,6 +30,9 @@
 # 想让迁移改为人工放行，设 MIGRATE_ON_START=0 后显式执行：
 #   docker compose run --rm app python manage.py migrate
 #
+# 初始管理员同样在启动时**零配置创建**（第 4 步 manage.py ensure_superuser）：只在库里一个
+# 超级用户都没有时创建 admin，随机初始密码打印在启动日志里；已经有就是空操作。
+#
 # CMD 只放**可调参数**（--workers / 超时 / 日志等），固定部分（--worker-class / --bind）
 # 在 entrypoint 里，见文件末尾。
 
