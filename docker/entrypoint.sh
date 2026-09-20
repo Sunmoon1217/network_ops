@@ -41,9 +41,14 @@
 # 复制是**权威**的（先清空再铺），否则上一版带 hash 的遗留资源会一直堆在卷里。
 # 注意卷根清空时要**排除 static/**：它由第 2 步单独同步，不能被第 1 步顺带删掉。
 #
-# 注意这里**不跑 migrate**：迁移是有副作用的操作，多副本同时启动会互相竞争。
-# 首次部署与版本升级请显式执行：
+# 迁移在下面第 3 步**自动跑**：只在确实有未应用的迁移时才执行，且整段「检查 + 迁移」由
+# migrate_if_needed 用数据库自带的命名锁（PG advisory / MySQL GET_LOCK）串行化，所以多副本同时启动不会互相竞争
+# （Django 自己不给 migrate 加锁，裸的两行 shell 会撞车，原因见那个命令的文档字符串）。
+# 想让迁移必须人工放行（或交给外部发布流水线），把 MIGRATE_ON_START 设为 0：
 #   docker compose run --rm app python manage.py migrate
+#
+# 初始管理员在下面第 4 步**零配置创建**：库里一个超级用户都没有时，创建一个 admin 并把随机
+# 初始密码打印在启动日志里（`docker compose logs app` 抄下来即可）；已经有时什么都不做。
 
 set -e
 
@@ -59,7 +64,23 @@ cp -a /app/frontend/dist/. "$VOL"/
 find "$VOL/static" -mindepth 1 -delete
 cp -a /app/www/. "$VOL/static"/
 
-# 3) 启动。$1 以 - 开头（或压根没有参数）→ 视为「给默认命令的参数」，在下面这条
+# 3) 数据库迁移：**有未应用的迁移才跑**（首次部署的第一次启动即自动建表），判断与并发
+#    串行化都在 manage.py migrate_if_needed 里。失败就退出（set -e）——宁可起不来，也不要
+#    带着过期表结构对外服务。只有 app 会走到这里：worker 在 compose 里被整条换成 celery
+#    命令，并且它 depends_on app 的 service_healthy，会等迁移跑完再启动。
+if [ "${MIGRATE_ON_START:-1}" = "1" ]; then
+    python manage.py migrate_if_needed
+else
+    echo "[entrypoint] MIGRATE_ON_START=0，跳过迁移（需要时执行 docker compose run --rm app python manage.py migrate）"
+fi
+
+# 4) 初始管理员：**不需要任何配置**。库里还没有超级用户时创建 `admin`，随机初始密码直接打印在
+#    启动日志里（登录后请立即修改）；已经有超级用户就是空操作，不会覆盖已有密码、也不会把同名
+#    普通账号静默提权（见 manage.py ensure_superuser）。人工用法：
+#     docker compose exec app python manage.py ensure_superuser --username ops --password '...'
+python manage.py ensure_superuser
+
+# 5) 启动。$1 以 - 开头（或压根没有参数）→ 视为「给默认命令的参数」，在下面这条
 #    命令后面追加；否则视为「整条命令」原样执行。这是官方镜像的通行写法（docker run
 #    python -c ...：以 - 开头就补上 python），三类覆盖因此都成立，也不需要任何
 #    「追加参数」的猜测。

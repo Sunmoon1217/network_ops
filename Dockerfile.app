@@ -25,8 +25,13 @@
 #   docker build --build-arg BASE_IMAGE=network-ops-base:py312 -f Dockerfile.app -t network-ops:latest .
 # 注意 FROM 里只能用 ARG：ENV 在 FROM 之前不生效，所以这里不是 ENV。
 #
-# 首次部署与升级后要显式跑迁移（不在 entrypoint 里自动跑）：
+# 数据库迁移在**容器启动时自动跑**（有未应用的迁移才跑，见 docker/entrypoint.sh 第 3 步与
+# manage.py migrate_if_needed；多副本同时启动由数据库自带的命名锁串行化）。
+# 想让迁移改为人工放行，设 MIGRATE_ON_START=0 后显式执行：
 #   docker compose run --rm app python manage.py migrate
+#
+# 初始管理员同样在启动时**零配置创建**（第 4 步 manage.py ensure_superuser）：只在库里一个
+# 超级用户都没有时创建 admin，随机初始密码打印在启动日志里；已经有就是空操作。
 #
 # CMD 只放**可调参数**（--workers / 超时 / 日志等），固定部分（--worker-class / --bind）
 # 在 entrypoint 里，见文件末尾。
