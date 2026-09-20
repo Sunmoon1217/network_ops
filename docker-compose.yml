@@ -47,9 +47,14 @@ services:
     networks:
       - internal
     healthcheck:
-      # 不带 -U：用户名现在只存在于 secret 文件里，compose 插值取不到；pg_isready 只探
-      # 「服务器是否接受连接」，用容器默认用户（postgres）即可，与业务用户无关。
-      test: ["CMD-SHELL", "pg_isready"]
+      # **必须显式给 -U**：healthcheck 由 docker 以镜像默认用户执行（postgres 官方镜像的
+      # 容器 USER 是 root，entrypoint 内部才 gosu 切到 postgres），不带 -U 时 pg_isready
+      # 会拿 OS 用户 root 去连，于是 postgres 日志被
+      # `FATAL: role "root" does not exist` 刷屏——而容器**仍然被判健康**
+      # （pg_isready 只看服务器是否响应，不看角色是否存在），故障因此不会自己暴露。
+      # 用户名只在 secret 文件里（compose 的 ${} 插值读不到），所以让容器内的 sh 去读它：
+      # `$$` 是 compose 的转义，到容器里才是 `$(cat ...)`。
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/postgres_user)\" -d \"$${POSTGRES_DB:-netops}\""]
       interval: 10s
       timeout: 5s
       retries: 5
