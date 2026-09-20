@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 APPS_DIR = BASE_DIR / "apps"
 if str(APPS_DIR) not in sys.path:
@@ -32,6 +34,26 @@ DEBUG = True
 def _env_list(name: str, default: str = "") -> list[str]:
     """逗号分隔的环境变量 → 列表（去空白、丢空项）；未设置时用 default。"""
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
+def _env_or_file(name: str, default: str = "") -> str:
+    """读一个配置值：`<NAME>_FILE` 指向的文件优先（Docker secrets），其次环境变量，最后默认值。
+
+    Docker secrets 在 compose（非 swarm）下就是把密钥挂成 `/run/secrets/<name>` 文件；
+    postgres 官方镜像认 `POSTGRES_PASSWORD_FILE` 这套 `*_FILE` 变量，Django 侧得自己读。
+    优先顺序与「谁更该赢」一致：显式给的密钥文件 > 进程环境 > 内置默认值。
+
+    文件存在但读不出来时**直接报错**，不静默回退到默认密码——那只会把「密钥配错了」
+    伪装成「数据库连不上」。内容 strip() 与 postgres 官方 entrypoint 的 `$(cat file)`
+    行为一致（去掉结尾换行），否则末尾换行会变成密码的一部分。
+    """
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ImproperlyConfigured(f"{name}_FILE={path} 读取失败：{exc}") from exc
+    return os.environ.get(name, default)
 
 
 # 允许的 Host
@@ -127,8 +149,10 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("POSTGRES_DB", "netops"),
-        "USER": os.environ.get("POSTGRES_USER", "netops"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "netops_password"),
+        # 用户名与密码走 docker secrets（compose 挂 /run/secrets/*，模板见 secrets/）；
+        # 没有挂 secret 时仍接受同名环境变量，便于宿主机直跑与旧部署。
+        "USER": _env_or_file("POSTGRES_USER", "netops"),
+        "PASSWORD": _env_or_file("POSTGRES_PASSWORD", "netops_password"),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": int(os.environ.get("POSTGRES_PORT", "5432")),
     }
@@ -207,7 +231,7 @@ REST_FRAMEWORK = {
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("REDIS_DB", 0))
-REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
+REDIS_PASSWORD = _env_or_file("REDIS_PASSWORD", "")
 
 if REDIS_PASSWORD:
     REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
