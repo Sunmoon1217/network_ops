@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
-import DataTable from '@/ui/DataTable.vue'
-import DataPagination from '@/ui/DataPagination.vue'
-import DeviceFilter from '@/ui/DeviceFilter.vue'
+import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataPagination from '@/components/DataPagination.vue'
+import DeviceFilter from '@/components/DeviceFilter.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getLtmVirtualServers, getLtmPools } from '@/api/config'
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import FormPage from '@/ui/FormPage.vue'
+import FormPage from '@/components/FormPage.vue'
 import { getNtpConfig, createNtpConfig, updateNtpConfig } from '@/api/baseline'
 import { fetchAllPages } from '@/utils/fetchAllPages'
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
+import PageLayout from '@/layout/PageLayout.vue'
 import api from '@/api/index'
 import { InfoFilled } from '@element-plus/icons-vue'
 

@@ -11,7 +11,7 @@ import {
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,
   IconIp, IconSubnet, IconTools, IconPathTrace, IconRouting,
   IconLayoutSide,
-} from './menu-icons'
+} from '@/assets/menu-icons'
 
 const router = useRouter()
 const route = useRoute()

@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { IconSun, IconMoon } from '@/ui/navigation/menu-icons'
+import { IconSun, IconMoon } from '@/assets/menu-icons'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const searchQuery = ref('')
+const router = useRouter()
+
+const handlechangepassword = async () => {
+  router.push('/auth/change-password/')
+}
+
 
 const handleLogout = async () => {
   await authStore.logout()
@@ -25,7 +32,7 @@ const handleLogout = async () => {
       size="small"
     />
     <div class="bar-right">
-      <span class="username">{{ authStore.user?.username || 'admin' }}</span>
+      <el-button link @click="handlechangepassword">{{ authStore.user?.username || 'admin' }}</el-button>
       <el-tooltip :content="themeStore.isDark ? '亮色模式' : '暗色模式'" placement="bottom">
         <el-button :icon="themeStore.isDark ? IconMoon : IconSun" size="small" @click="themeStore.toggleDark()" />
       </el-tooltip>

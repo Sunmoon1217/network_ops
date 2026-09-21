@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { IconSun, IconMoon } from '@/ui/navigation/menu-icons'
+import { IconSun, IconMoon } from '@/assets/menu-icons'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const router = useRouter()
