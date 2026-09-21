@@ -6,7 +6,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useAuthStore } from '@/stores/auth'
 import AppNav from '@/layout/AppNav.vue'
 import SideLayout from '@/layout/SideLayout.vue'
-import Login from '@/views/login/Login.vue'
+import Login from '@/views/auth/Login.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()

@@ -7,19 +7,19 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: () => import('@/views/login/Login.vue'),
+      component: () => import('@/views/auth/Login.vue'),
       meta: { skipLayout: true },
     },
     {
       path: '/register',
       name: 'register',
-      component: () => import('@/views/login/Register.vue'),
+      component: () => import('@/views/auth/Register.vue'),
       meta: { skipLayout: true },
     },
     {
       path: '/auth/change-password',
       name: 'change-password',
-      component: () => import('@/views/login/ChangePassword.vue'),
+      component: () => import('@/views/auth/ChangePassword.vue'),
       meta: { requiresAuth: true },
     },
     {

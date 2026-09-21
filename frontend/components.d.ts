@@ -15,7 +15,6 @@ declare module 'vue' {
     DataPagination: typeof import('./src/components/DataPagination.vue')['default']
     DataTable: typeof import('./src/components/DataTable.vue')['default']
     DeviceFilter: typeof import('./src/components/DeviceFilter.vue')['default']
-    DeviceSelector: typeof import('./src/views/topology/components/DeviceSelector.vue/index.js')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -58,10 +57,6 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     StatCard: typeof import('./src/components/StatCard.vue')['default']
-    TopologyEdgePanel: typeof import('./src/views/topology/components/TopologyEdgePanel.vue/index.js')['default']
-    TopologyGraph: typeof import('./src/views/topology/components/TopologyGraph.vue/index.js')['default']
-    TopologyNodePanel: typeof import('./src/views/topology/components/TopologyNodePanel.vue/index.js')['default']
-    TopologyToolbar: typeof import('./src/views/topology/components/TopologyToolbar.vue/index.js')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']
