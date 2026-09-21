@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, logout as apiLogout, getCurrentUser, register as apiRegister } from '@/api/auth'
+import { login as apiLogin, logout as apiLogout, getCurrentUser, register as apiRegister, changePassword as apichangesecert } from '@/api/auth'
 import { getToken, setToken, removeToken } from '@/utils/token'
 
 export interface User {
@@ -64,5 +64,14 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, loading, isAuthenticated, login, register, logout, fetchUser }
+  const changePassword = async (from: any) => {
+    if (!token.value) return
+    try {
+      await apichangesecert(from)
+    } catch {
+      return false
+    }
+  }
+
+  return { token, user, loading, isAuthenticated, login, register, logout, fetchUser, changePassword }
 })

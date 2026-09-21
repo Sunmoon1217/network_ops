@@ -17,14 +17,20 @@ const router = createRouter({
       meta: { skipLayout: true },
     },
     {
+      path: '/auth/change-password',
+      name: 'change-password',
+      component: () => import('@/views/login/ChangePassword.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/',
       name: 'home',
-      component: () => import('@/views/dashboard/Home.vue'),
+      component: () => import('@/views/Home.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/devices',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'device-list', component: () => import('@/views/devices/list.vue') },
@@ -49,7 +55,7 @@ const router = createRouter({
     },
     {
       path: '/config',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/config/slb' },
@@ -63,7 +69,7 @@ const router = createRouter({
     },
     {
       path: '/ipam',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/ipam/subnets' },
@@ -81,15 +87,15 @@ const router = createRouter({
     },
     {
       path: '/topology',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
-        { path: '', name: 'topology', component: () => import('@/views/tools/topology.vue') },
+        { path: '', name: 'topology', component: () => import('@/views/topology/topology.vue') },
       ],
     },
     {
       path: '/tasks',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'task-list', component: () => import('@/views/tasks/index.vue') },
@@ -97,7 +103,7 @@ const router = createRouter({
     },
     {
       path: '/tools',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/tools/path-trace' },
