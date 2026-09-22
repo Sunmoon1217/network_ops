@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { login as apiLogin, logout as apiLogout, getCurrentUser, register as apiRegister, changePassword as apichangesecert } from '@/api/auth'
 import { getToken, setToken, removeToken } from '@/utils/token'
+import { resetUserPreferences } from '@/composables/useTablePrefs'
 
 import type { User } from '@/types'
 
@@ -19,6 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.token
       setToken(data.token)
       user.value = data.user
+      resetUserPreferences() // 换账号登录，清掉上一个账号的偏好缓存
       return true
     } finally {
       loading.value = false
@@ -33,6 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.token
       setToken(data.token)
       user.value = data.user
+      resetUserPreferences()
       return true
     } finally {
       loading.value = false
@@ -46,6 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = null
       user.value = null
       removeToken()
+      resetUserPreferences()
     }
   }
 

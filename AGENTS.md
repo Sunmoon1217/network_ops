@@ -322,6 +322,7 @@ TTP 模板解析 → 结果写回 config_json
 | `/api/auth/login/` | 登录获取 Token |
 | `/api/auth/logout/` | 登出 |
 | `/api/me/` | 当前用户信息 |
+| `/api/me/preferences/` | 当前用户的前端配置（表格列宽等）：GET 全量 / PUT 单条 upsert（value=null 即删）/ DELETE ?key=；按用户隔离 |
 | `/api/tasks/` | 任务列表 / 新建（**新建即投递采集阶段**，是 Celery 工作流的入口） |
 | `/api/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
 | `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |

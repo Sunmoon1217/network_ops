@@ -45,6 +45,33 @@ class Token(models.Model):
         return f"{self.user.username} - {self.key[:8]}..."
 
 
+class UserPreference(models.Model):
+    """按用户保存的前端配置（表格列宽等界面偏好）。
+
+    key 是「页面/表」粒度的命名空间（如 ``table:devices.interfaces:column-widths``），
+    value 是任意 JSON（列宽存 ``{列key: 宽度}``）；同一用户的同一 key 只有一行，
+    读写都限定在 ``request.user`` 上——偏好不跨用户共享。
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="preferences",
+        verbose_name="用户",
+    )
+    key = models.CharField(max_length=100, verbose_name="偏好键")
+    value = models.JSONField(default=dict, verbose_name="偏好值")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "用户偏好"
+        verbose_name_plural = verbose_name
+        unique_together = ("user", "key")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.key}"
+
+
 class Task(models.Model):
     """任务主记录"""
 
