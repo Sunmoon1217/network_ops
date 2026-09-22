@@ -1,6 +1,5 @@
 export * from './api'
 export * from './layout'
-export * from './stores'
 export * from './parser'
 export * from './internet-asset'
 export * from './parser-mapping'
