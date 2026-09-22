@@ -12,8 +12,13 @@
 network_ops/
 ├── manage.py            # Django 入口
 ├── main.py
-├── netops/              # 项目配置（单一 settings，不按环境分发）
-│   ├── settings.py      # 全部配置（DEBUG 硬编码为 True）
+├── netops/              # 项目配置
+│   ├── settings/        # env 动态项在 base 只写一遍；环境文件只放硬差异与守卫
+│   │   ├── __init__.py  # 白名单分发（DJANGO_ENV，未知即拒）+ 助手导出 + apps/ 进 sys.path
+│   │   ├── base.py      # 全部 env 动态配置（*_FILE > env > 默认 链）+ 静态（_env_list/_env_or_file）
+│   │   ├── dev.py       # 空壳：base 即 dev 语义 ← 不设 DJANGO_ENV 的默认
+│   │   ├── container.py # 守卫：POSTGRES_HOST / REDIS_HOST 必须由 env/app.env 注入
+│   │   └── prod.py      # DEBUG=False 硬覆盖 + 5 个关键 env 必填守卫（fail loud）
 │   ├── urls.py          # /admin/、/api/、前端 SPA 兜底
 │   ├── views.py         # 托管 frontend/dist（index.html、assets、favicon）
 │   ├── asgi.py
@@ -55,7 +60,7 @@ network_ops/
 ├── docs/compose/        # 历史设计文档（plans/ 与 spec/）；docs/ 整目录在 .gitignore 里
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
-│   └── src/{api,assets,composables,layout,router,stores,ui,utils,views}
+│   └── src/{api,assets,components,composables,layout,router,stores,types,utils,views}
 ├── nginx/               # 反向代理（静态直出 + API 代理）
 │   ├── conf.d/          # netops.conf(80)、netops-ssl.conf.disabled(443)
 │   ├── docker-entrypoint.d/  # 05-netops-resolver.sh：启动时把 runtime 的 DNS 写成 resolver.conf
@@ -94,12 +99,13 @@ network_ops/
 | `nginx-container-proxy` | `resolver` 推导、变量式 upstream、envsubst 静默失效、`$http_host` 与 Origin 校验 |
 | `uv-package-and-lockfile` | uv 不读 pip 配置（只有 `UV_DEFAULT_INDEX` 有效）、`uv.lock` 固化 registry / wheel URL、依赖层镜像的重建时机 |
 | `ttp-template-gotchas` | 模板按 **XML** 解析（注释里的尖括号会炸）、`re()` 可内联正则、**单条命中给 dict / 多条给 list**、内置 `IPV6` 不含点号 |
+| `frontend-types` | 前端数据类型组织：具名类型进 `src/types/` + `import type ... from '@/types'`、barrel 撞名语义化改名、`.ts` / `.d.ts` 分工、忘 export / 复制不接线的坑 |
 
 **为什么放技能而不是本文档**：
 
 - 技能**目录清单自动进每个会话**（首次请求前以 user 消息注入 name + description），正文**按需加载**（`skill` 工具或 `/name`）——不占常驻上下文；本文档是每轮都在的，塞进去等于长期付费。
 - 每个技能写的是「**结论 + 证据命令 + 怎么做**」，未来可以照着重跑一遍验证，而不是二手结论。
-- 扫描优先级：`<项目根>/.dsh/skills`（100）> `<项目根>/.agents/skills`（200）> `~/.dsh/skills`（400）> `~/.agents/skills`（500）。**通用**结论放全局（现在这六个都是），**本项目特有**的放 `<项目根>/.dsh/skills/`（同名覆盖全局那份）。
+- 扫描优先级：`<项目根>/.dsh/skills`（100）> `<项目根>/.agents/skills`（200）> `~/.dsh/skills`（400）> `~/.agents/skills`（500）。**通用**结论放全局，**本项目特有**的放 `<项目根>/.dsh/skills/`（同名覆盖全局那份）；项目特有技能的**真身也建在全局仓库**、项目侧只放软链入口（`frontend-types` 即如此），真身一律在全局仓库提交。
 
 **写新技能的两条规矩**：
 
@@ -122,18 +128,18 @@ uv sync --all-groups
 cd frontend && pnpm install
 ```
 
-数据库为 **PostgreSQL**，通过进程环境变量配置（见 `netops/settings.py`）：
+数据库为 **PostgreSQL**，通过进程环境变量配置（见 `netops/settings/`）：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `POSTGRES_DB` | `netops` | 数据库名（容器部署时在 `env/app.env` 与 `env/db.env` 里） |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | **走 docker secrets**：`env/secrets/postgres_user`、`env/secrets/postgres_password` → 容器内 `/run/secrets/*`；`settings.py` 的 `_env_or_file()` 读 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE`（没有 `*_FILE` 时回退同名环境变量，供宿主机直跑）。见 `env/secrets/README.md` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | **走 docker secrets**：`env/secrets/postgres_user`、`env/secrets/postgres_password` → 容器内 `/run/secrets/*`；`settings/base.py` 的 `_env_or_file()` 读 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE`（没有 `*_FILE` 时回退同名环境变量，供宿主机直跑）。见 `env/secrets/README.md` |
 | `POSTGRES_HOST` | `localhost` | 数据库主机（容器里由 `env/app.env` 给 `db`） |
 | `POSTGRES_PORT` | `5432` | 数据库端口（容器内固定 5432；根 `.env` 里那个是**宿主映射**端口） |
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔，映射到 `ALLOWED_HOSTS`；无域名阶段默认放开 |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 逗号分隔，映射到 `CSRF_TRUSTED_ORIGINS`（Django 4+ 的 Origin 校验）；**正常拓扑留空即可** |
 
-> 配置按「谁读」分三处（完整表格见 `env/README.md`）：**`.env`（根）** 只给 compose 自己插值（`cp .env.example .env`；已被 `.gitignore` 忽略）；**`env/*.env`** 按服务注入容器（`app.env` 给 app+worker、`db.env` 给 db、`gunicorn.env` 给 app、`celery.env` 给 worker）；**`env/secrets/*`** 只读挂载给凭据。Django 自己不读任何 `.env`——宿主机直跑时要 `set -a; . ./.env; set +a`，再 `export POSTGRES_HOST=localhost REDIS_HOST=localhost POSTGRES_USER_FILE=env/secrets/postgres_user POSTGRES_PASSWORD_FILE=env/secrets/postgres_password`。
+> 配置按「谁读」分三处（完整表格见 `env/README.md`）：**`.env`（根）** 只给 compose 自己插值（`cp .env.example .env`；已被 `.gitignore` 忽略）；**`env/*.env`** 按服务注入容器（`app.env` 给 app+worker、`db.env` 给 db、`gunicorn.env` 给 app、`celery.env` 给 worker）；**`env/secrets/*`** 只读挂载给凭据。Django 自己不读任何 `.env`——宿主机直跑时要 `set -a; . ./.env; set +a`，再 `export POSTGRES_HOST=localhost REDIS_HOST=localhost POSTGRES_USER=netops POSTGRES_PASSWORD=<值>`（**凭据只走环境变量**；`*_FILE` / secrets 文件机制**只在容器里使用**——链路统一在 `settings/base.py`：`*_FILE > 同名环境变量 > 默认值`，宿主不设 `_FILE` 即走环境变量层）。
 
 ## 常用命令
 
@@ -165,7 +171,7 @@ uv run ruff format
 
 > 本节只写**本项目自己的约定**（路径、服务、旋钮、契约）。第三方软件（Docker / docker compose、容器里的 git、Django / DRF、nginx、健康检查与凭据、uv）的**实测行为**在 `.dsh/skills`：需要时用 `skill` 工具加载对应技能，本节只在关键处点名，不复述细节。
 
-- **单一配置**：`netops/settings.py` 包含全部配置，无 `settings_d/` 分发，无 `DJANGO_ENV`。
+- **settings：env 动态项在 base 只定义一遍，环境文件只放「不走环境变量的硬差异与守卫」（环境旋钮唯一 `DJANGO_ENV`，`DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`）**：`netops/settings/`——`base.py` 集中全部可被环境变量影响的配置（`SECRET_KEY` / `DEBUG` / `ALLOWED_HOSTS` / `CSRF` / `DATABASES` / Redis，凭据链 `*_FILE > 同名环境变量 > 默认值`），**同一段读取逻辑写一遍、靠各环境注入不同的值区分**，不在每个环境文件里重复接线；三个环境文件只放环境变量表达不了的东西：`dev.py` **空壳**（base 即 dev 语义）、`container.py` 两条 host 必填守卫（env_file 被误删一行时**启动即拒**，而不是退到 localhost 等首个请求才 connection refused——Django 连接是惰性的）、`prod.py` `DEBUG=False` **硬覆盖**（不吃 `DJANGO_DEBUG` 后门）+ 5 个守卫（`DJANGO_SECRET_KEY`、`ALLOWED_HOSTS` 空或 `*`、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST`——查 `os.environ` 原始值，因为 base 的 default 会兜底，缺失即拒绝启动）。环境选择：**不设 → dev**（manage/asgi/wsgi/celery 的 setdefault、pytest 都指包）；容器由 `env/app.env` 注入 `DJANGO_ENV=container`；生产显式 `DJANGO_ENV=prod`；**白名单**：未知值（拼错如 `prd`）拒绝启动，不静默落 dev。`*_FILE` secrets **只在容器里设置**（宿主操作上不用它，链路三环境不分叉）。**防循环硬规矩**：`base.py` 与三个环境文件禁止 `from netops.settings import ...` / `from . import ...`，只允许 `from .base import ...`（反向依赖父包执行结果会在 `__init__` 半初始化时炸——BASE_DIR 那次事故的形态）。守卫与分发矩阵由 `tests/deploy/test_settings_environments.py` 守。
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
@@ -185,16 +191,18 @@ uv run ruff format
 - **初始管理员零配置创建**：第 4 步无条件调 `manage.py ensure_superuser`——**不占环境变量、不进 compose、不用 secret**（初始管理员属于「零配置起步」那一环，进了环境变量就会出现在 `docker inspect` / `/proc/1/environ` 里）。判定只看数据库：**一个超管都没有**时才建 `admin`，随机密码**打印在启动日志**（`docker compose logs app`）。四条边界：① 已有超管 → 只跳过；② 同名但不是超管 → 只警告、**不自动提权**、也不改密码；③ 人工用法 `--username ops --password '...'`（密码不回显）、`--update-password`；④ 首次登录不需要预建 Token。
 - **四个容器都有健康检查**（细节与实测：技能 `container-healthchecks`）：app 探 8000 的 TCP（`socket.create_connection`）；db 探 `pg_isready -U "$$(cat /run/secrets/postgres_user)"`（**`-U` 不能省**——healthcheck 由 docker 以镜像默认用户 root 执行，不带 `-U` 会刷 `role "root" does not exist` 而容器照样 healthy）；nginx 探 `curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/`（**`--noproxy '*'` 不能省**，且别用 busybox `wget` 当探针——它不认 `no_proxy`；`-f` 让 4xx/5xx 也算失败）；worker 探 `celery -A netops inspect ping -d "celery@$$HOSTNAME" --timeout 5`（**必须 `-d` 限定自己**，它走 broker，同时验证「进程活着」+「连得上 Redis」）。worker 的 `depends_on: app: service_healthy` 是为了**等迁移跑完**；nginx 探 80 还能发现「conf.d 没挂进来」（没有 server 块 nginx 照样启动）。
 - **环境变量按「谁读」分三处**：`.env`（根）只给 compose 插值；`env/*.env` 按服务 `env_file` 注入（见 `env/README.md`）；`env/secrets/*` 只读挂载给凭据。三条规则：**compose 的 `${VAR}` 只读根 `.env`**、`environment:` 优先于 `env_file`、多个 `env_file` **后面的覆盖前面的**。一个坑：worker 的 `--loglevel` 要读 `env/celery.env`，而 compose 会对自己的文件做 `${...}` 替换（读不到那些文件），所以那里写 `$${CELERY_LOGLEVEL:-info}`——`$$` 到容器里才是 `$`，由 `sh -c` 展开。
-- **数据库凭据走 docker secrets，不进 `.env` / 环境变量**：`env/secrets/postgres_user` / `postgres_password` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`；`env/db.env` 与 `env/app.env` 里只写 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE`（db 由 postgres 官方镜像读，app / worker 由 `settings.py` 的 `_env_or_file()` 读，没有 `*_FILE` 时回退同名环境变量，宿主机直跑不受影响）。**两条别改回去**：① postgres 官方 entrypoint 规定 `POSTGRES_USER` 与 `POSTGRES_USER_FILE` 同时设置就报错退出，所以只留 `_FILE`；② db 的 healthcheck 靠容器内 `sh` 读 secret，**`-U` 必须显式给**（见上一条）。生成 / 迁移：`bash env/secrets/generate.sh`（默认**沿用旧值**；postgres 只在**首次初始化数据卷**时应用凭据，换值不改库里已有密码——详见 `env/secrets/README.md`）。密钥不入库（`.gitignore`）、不进构建上下文（`.dockerignore`）；redis 密码仍是环境变量（官方镜像没有 `*_FILE` 机制）。为什么不用环境变量（`docker inspect` / `/proc/1/environ` 里是明文）：技能 `container-healthchecks` 第 5 节。
+- **数据库凭据走 docker secrets，不进 `.env` / 环境变量**：`env/secrets/postgres_user` / `postgres_password` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`；`env/db.env` 与 `env/app.env` 里只写 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE`（db 由 postgres 官方镜像读，app / worker 由 `settings/base.py` 的 `_env_or_file()` 读，没有 `*_FILE` 时回退同名环境变量，宿主机直跑不受影响）。**两条别改回去**：① postgres 官方 entrypoint 规定 `POSTGRES_USER` 与 `POSTGRES_USER_FILE` 同时设置就报错退出，所以只留 `_FILE`；② db 的 healthcheck 靠容器内 `sh` 读 secret，**`-U` 必须显式给**（见上一条）。生成 / 迁移：`bash env/secrets/generate.sh`（默认**沿用旧值**；postgres 只在**首次初始化数据卷**时应用凭据，换值不改库里已有密码——详见 `env/secrets/README.md`）。密钥不入库（`.gitignore`）、不进构建上下文（`.dockerignore`）；redis 密码仍是环境变量（官方镜像没有 `*_FILE` 机制）。为什么不用环境变量（`docker inspect` / `/proc/1/environ` 里是明文）：技能 `container-healthchecks` 第 5 节。
 - **代理感知配置**：`SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS` 由 `DJANGO_ALLOWED_HOSTS` 控制（默认 `*`），CSRF 可信来源由 `DJANGO_CSRF_TRUSTED_ORIGINS` 控制（默认空；**正常拓扑留空即可**）。
 - **「账号密码换 token」的接口必须显式 `@authentication_classes([])`**（`login` / `register` 都是）：否则浏览器带着已登录的 `sessionid` 打过来会被 DRF 的 `SessionAuthentication` 拦成 403——**换个 host 就"好了"是假象**（cookie 域不同而已）。原理见技能 `django-drf-gotchas` 第 1 节；回归测试 `tests/core/test_auth_login_csrf.py`。
-- **注册开放，但只创建普通账号**：`POST /api/auth/register/`（`core/api/serializers.py` 的 `RegisterSerializer` + `core/api/auth.py` 的 `register`）只开放 `username` / `password` / `email`（可选）/ `phone`（可选），`is_staff` / `is_superuser` / `is_active` 由服务端决定，走 `create_user()`（**不是** `create_superuser()`）。四条要点：① 视图显式 `@authentication_classes([])`；② 密码过 Django 的 `AUTH_PASSWORD_VALIDATORS`（`validate_password(password, user=candidate)`，**必须传候选用户**，否则相似度校验不生效）；③ 用户名用 `iexact` 判重（数据库唯一约束**大小写敏感**，只查 `exact` 会放过 `Admin` 与 `admin` 并存）；④ 成功直接返回 token（与 `login` 同形 `{token, user:{id,username}}`）。**没有邮箱验证 / 审批 / 限流**（项目没配 `CACHES`，DRF 限流只会退化成单进程计数），要收紧得自己加开关 / 邀请码 / 审批；`email` 不是 unique。前端：`frontend/src/views/login/Register.vue` + 路由 `/register`（`meta.skipLayout`）。
+- **注册开放，但只创建普通账号**：`POST /api/auth/register/`（`core/api/serializers.py` 的 `RegisterSerializer` + `core/api/auth.py` 的 `register`）只开放 `username` / `password` / `email`（可选）/ `phone`（可选），`is_staff` / `is_superuser` / `is_active` 由服务端决定，走 `create_user()`（**不是** `create_superuser()`）。四条要点：① 视图显式 `@authentication_classes([])`；② 密码过 Django 的 `AUTH_PASSWORD_VALIDATORS`（`validate_password(password, user=candidate)`，**必须传候选用户**，否则相似度校验不生效）；③ 用户名用 `iexact` 判重（数据库唯一约束**大小写敏感**，只查 `exact` 会放过 `Admin` 与 `admin` 并存）；④ 成功直接返回 token（与 `login` 同形 `{token, user:{id,username}}`）。**没有邮箱验证 / 审批 / 限流**（项目没配 `CACHES`，DRF 限流只会退化成单进程计数），要收紧得自己加开关 / 邀请码 / 审批；`email` 不是 unique。前端：`frontend/src/views/auth/Register.vue` + 路由 `/register`（`meta.skipLayout`）。
 - **前端请求路径**：以 `/api/` 开头（如 `/api/assets/devices/`）。
 - **前端自动导入**：使用 `unplugin-auto-import` + `unplugin-vue-components`（`ElementPlusResolver`）。
 - **前端函数风格**：`.vue` 与 `.ts` 一律使用箭头函数，不使用 `function` 声明——普通函数 `const fn = (a: T) => {}`、异步 `const fn = async () => {}`、泛型 `const fn = <T>(a: T) => {}`（`function` 声明会被提升，容易掩盖定义顺序问题）。自检命令（应无输出）：
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
+- **前端数据类型集中管理**：所有具名 `interface` / `type` / `enum` 定义在 `frontend/src/types/`（按域分文件 + `index.ts` barrel `export *` 聚合），引用一律 `import type { ... } from '@/types'`——业务文件（`.ts` / `.vue`）不落具名类型定义，也**不做类型中转导出**；例外只有匿名内联参数类型与第三方库类型转发（`useG6.ts` 的 `GraphData`）。barrel 同名不同结构必须**语义化改名**（`GslbDeviceOption` 先例，勿用 `Xxx_` 下划线避让）；`types/index.ts` 用 `.ts` 不是 `.d.ts`（`.d.ts` 只留给 auto-imports / components / vite-env 这类工具生成与环境声明）。自检（应只剩 useG6 的 GraphData 转发一行）：
+  `grep -rnE "^(export )?(interface|type|enum) " frontend/src --include=*.ts --include=*.vue | grep -v "^src/types/"`。细节与三个实测坑：技能 `frontend-types`。
 - **Ruff**：`line-length = 120`；`select = ["E","F","I","N","W"]`，忽略 `F405/F403/E402`；`known-first-party = ["assets","core","ops"]`；`**/migrations/*` 忽略 `E501`，并通过 `[tool.ruff.format]` 排除（迁移文件不参与格式化）。
-- **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`，`testpaths = ["tests"]`；测试统一放项目根 `tests/<应用>/`（不散落在应用目录内，应用下不留脚手架的 `tests.py`——pytest 不收集该文件名），各层带 `__init__.py`，路径形如 `tests.assets.test_analysis`。
+- **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`（pyproject；不设 `DJANGO_ENV` → 默认 dev，环境机制见上文 settings 条目），`testpaths = ["tests"]`；测试统一放项目根 `tests/<应用>/`（不散落在应用目录内，应用下不留脚手架的 `tests.py`——pytest 不收集该文件名），各层带 `__init__.py`，路径形如 `tests.assets.test_analysis`。
 - **测试内的资源定位**：用包路径（`Path(ops.__file__).parent / ...`）或 `settings.BASE_DIR`，**不要**用 `Path(__file__).parent.parent`——依赖测试文件自身位置，目录一挪就静默失效（踩过一次，测试因 `exists()` 判断长期"空跑通过"）。
 
 ## 三层架构
