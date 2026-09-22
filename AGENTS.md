@@ -57,7 +57,6 @@ network_ops/
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
 │   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
-├── docs/compose/        # 历史设计文档（plans/ 与 spec/）；docs/ 整目录在 .gitignore 里
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
 │   └── src/{api,assets,components,composables,layout,router,stores,types,utils,views}
