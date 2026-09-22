@@ -1,6 +1,10 @@
 from django.urls import path
+from rest_framework.routers import SimpleRouter
 
-from . import analysis, configs, parsers, trace
+from . import accessflows, analysis, configs, parsers, trace
+
+router = SimpleRouter()
+router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-flow")
 
 urlpatterns = [
     path("trace/", trace.path_trace, name="path-trace"),
@@ -24,3 +28,5 @@ urlpatterns = [
     path("internet-analysis/analyze/", analysis.internet_analysis_run, name="internet-analysis-run"),
     path("internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
 ]
+
+urlpatterns += router.urls

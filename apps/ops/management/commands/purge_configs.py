@@ -36,7 +36,7 @@ from django.db import transaction
 
 from assets.models import ConfigBase, Device, DeviceConfig
 from ops.config_owner import resolve_config_owner
-from ops.models import InternetAnalysis
+from ops.models import AccessFlow, InternetAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,22 @@ class Command(BaseCommand):
         """配置解析产物 = ConfigBase 的全部子类（运行时枚举，新增模型自动纳入）。"""
         return sorted(ConfigBase.__subclasses__(), key=lambda model: model.__name__)
 
+    def _access_flow_q(self, owner_ids: list[int]):
+        """AccessFlow 的按设备过滤：contexts 里挂着任一目标设备的行。
+
+        它是跨设备聚合行、没有 device 字段，只能走 ``device_ids``（jsonb 数组）的
+        包含过滤，命中 GIN 索引。空列表必须显式给「查不到任何行」的条件——
+        ``Q()`` 是恒真，会把全表都算进来。
+        """
+        from django.db.models import Q
+
+        if not owner_ids:
+            return Q(pk__in=[])
+        query = Q()
+        for pk in owner_ids:
+            query |= Q(device_ids__contains=[pk])
+        return query
+
     def _collect(self, owner_ids: list[int], with_workflow: bool) -> list[tuple[str, list[tuple[Any, Any]]]]:
         from core.models import Stage, Task
 
@@ -149,7 +165,12 @@ class Command(BaseCommand):
             ),
             (
                 "派生缓存（由上面的表算出，必须跟着清）",
-                [(InternetAnalysis, InternetAnalysis.objects.filter(device_id__in=owner_ids))],
+                [
+                    (InternetAnalysis, InternetAnalysis.objects.filter(device_id__in=owner_ids)),
+                    # AccessFlow 是跨设备聚合行（没有归属设备字段），只要 contexts 里
+                    # 还挂着目标设备的行就都算它的产物，按 GIN 索引走 jsonb 包含过滤
+                    (AccessFlow, AccessFlow.objects.filter(self._access_flow_q(owner_ids)).distinct()),
+                ],
             ),
         ]
         if with_workflow:

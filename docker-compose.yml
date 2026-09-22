@@ -115,6 +115,61 @@ services:
       retries: 3
       start_period: 30s
 
+  # 访问流（AccessFlow）重建的生产者：只消费独立的 access_flow 队列（settings 的
+  # CELERY_TASK_ROUTES），与 worker 的三阶段任务隔离——展开再堵也拖不垮采集/解析/存储。
+  # 要再扩容量就复制本服务改 container_name（同队列多 worker 是安全的，锁按设备互斥）。
+  worker-access:
+    build: *app-build
+    image: network-ops:latest
+    container_name: netops-worker-access
+    restart: unless-stopped
+    env_file:
+      - env/app.env
+      - env/celery.env
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec celery -A netops worker -Q access_flow --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
+    secrets: *db-secrets
+    depends_on:
+      app:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A netops inspect ping -d \"celery@$$HOSTNAME\" --timeout 5 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # 访问流的单写者消费者：**只能跑一个实例**（消费者组会把消息摊给多个成员，多一个
+  # 就是多写者，「先查后合并」的前提就没了；不要靠 scale 起多份）。
+  # 心跳键 access_flow:heartbeat 由消费循环每轮盖章（TTL 300s），healthcheck 据此判活。
+  access-flow-consumer:
+    build: *app-build
+    image: network-ops:latest
+    container_name: netops-access-flow-consumer
+    restart: unless-stopped
+    env_file:
+      - env/app.env
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec python manage.py access_flow_consumer"]
+    secrets: *db-secrets
+    depends_on:
+      app:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,time,sys,redis; r=redis.Redis(host=os.environ.get('REDIS_HOST','localhost'),port=int(os.environ.get('REDIS_PORT',6379)),password=os.environ.get('REDIS_PASSWORD') or None); sys.exit(time.time()-float(r.get('access_flow:heartbeat') or 0)<120)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   nginx:
     image: nginx:1.31-alpine
     container_name: netops-nginx

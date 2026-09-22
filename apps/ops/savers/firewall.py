@@ -386,6 +386,15 @@ class PolicySaver(BaseSaver):
         self._replace_m2m(Policy, "source_addresses", source_map)
         self._replace_m2m(Policy, "destination_addresses", destination_map)
         self._replace_m2m(Policy, "services", service_map)
+
+        # 策略落库后重建该设备的访问流（AccessFlow）：投递即返回，真正的展开与入库
+        # 走独立的 access_flow 队列 + 单写者 consumer（见 ops/access_stream.py）。
+        # broker 不可达只告警不抛出——解析入库已经成功，重建可手工补。
+        # 延迟 import 并走 access_stream.request_rebuild：测试靠
+        # ACCESS_FLOW_DISPATCH=0（conftest 统一设置）在这里拦掉真实投递。
+        from ops.access_stream import request_rebuild
+
+        request_rebuild(device.pk)
         return (created, updated)
 
     def _replace_m2m(self, model, field_name: str, mapping: dict[int, set[int]]) -> None:

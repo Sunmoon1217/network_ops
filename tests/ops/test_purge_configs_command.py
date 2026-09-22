@@ -21,7 +21,7 @@ from assets.models import (
     Vrf,
 )
 from core.models import Stage, Task
-from ops.models import InternetAnalysis
+from ops.models import AccessFlow, InternetAnalysis
 
 
 def _device(hostname: str) -> Device:
@@ -154,6 +154,43 @@ def test_stack_backup_resolves_to_master():
     assert Route.objects.count() == 0
     assert Vrf.objects.count() == 0
     assert DeviceConfig.objects.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# 访问流（AccessFlow）：跨设备聚合行按 contexts 里的设备清理
+# ---------------------------------------------------------------------------
+
+
+def _access_flow(device: Device, *, src_ip: str = "10.0.0.1") -> AccessFlow:
+    """造一条挂着该设备上下文的访问流（AccessFlow 没有 device 字段，上下文里带着）"""
+    return AccessFlow.objects.create(
+        src_ip=src_ip,
+        src_prefix=32,
+        dst_ip="10.0.0.2",
+        dst_prefix=32,
+        protocol="tcp",
+        port="80",
+        contexts={f"{device.pk}:1": {"device_id": device.pk, "policy_pk": 1, "hostname": device.hostname}},
+        device_ids=[device.pk],
+        policy_ids=[1],
+    )
+
+
+@pytest.mark.django_db
+def test_access_flow_reported_then_removed_per_device():
+    target = _device("_t_purge_af")
+    other = _device("_t_purge_af_other")
+    mine = _access_flow(target)
+    theirs = _access_flow(other, src_ip="192.0.2.1")
+
+    output = _run("--device", target.hostname)
+    assert "AccessFlow" in output, "dry-run 报告里要出现访问流"
+    assert AccessFlow.objects.count() == 2, "dry-run 不删"
+
+    _run("--device", target.hostname, "--yes")
+
+    assert not AccessFlow.objects.filter(pk=mine.pk).exists(), "挂着目标设备的行要删"
+    assert AccessFlow.objects.filter(pk=theirs.pk).exists(), "只挂着别的设备的行不能误删"
 
 
 # ---------------------------------------------------------------------------
