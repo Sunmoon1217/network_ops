@@ -98,10 +98,10 @@ def test_update_password_resets_and_logs_new_one():
 
 @pytest.mark.django_db
 def test_custom_username_and_email():
-    output = run(username="opsadmin", email="ops@example.com")
+    output = run(username="opsadmin", email="ingest@example.com")
 
     user = User.objects.get(username="opsadmin")
-    assert user.email == "ops@example.com"
+    assert user.email == "ingest@example.com"
     assert user.check_password(logged_password(output))
 
 

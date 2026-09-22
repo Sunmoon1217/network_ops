@@ -1,4 +1,4 @@
-"""互联网资产分析缓存表从 ops（label=operator）迁入 analysis。
+"""互联网资产分析缓存表从 ingest（label=operator，2026-09 前原名 ops）迁入 analysis。
 
 **不重建表、不丢数据**：表 ``operator_internetanalysis`` 由 ``operator.0001`` 建出，
 已部署的库里已有行。这里分两步走：

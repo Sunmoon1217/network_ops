@@ -38,7 +38,7 @@ from assets.models import (
     Vlan,
     Vrf,
 )
-from ops.config_repo import save_config
+from ingest.config_repo import save_config
 
 from .serializers import (
     CabinetSerializer,
@@ -299,7 +299,7 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
             # 堆叠组备机没有自己的配置记录，查询统一回退到组内主设备
             device = Device.objects.filter(pk=device_id).first()
             if device:
-                from ops.config_owner import resolve_config_owner
+                from ingest.config_owner import resolve_config_owner
 
                 qs = qs.filter(device_id=resolve_config_owner(device).pk)
             else:
@@ -655,7 +655,7 @@ def _import_devices(ws):
 
 
 def _import_configs(ws):
-    from ops.workflow import submit_config_job
+    from ingest.workflow import submit_config_job
 
     created, skipped, errors = 0, 0, []
 
@@ -673,7 +673,7 @@ def _import_configs(ws):
             errors.append(f"行 {row_idx}: 设备 '{hostname}' 不存在，请先导入设备")
             continue
 
-        from ops.config_repo import CONFIG_REPO_PATH
+        from ingest.config_repo import CONFIG_REPO_PATH
 
         if config_dir:
             config_path = Path(config_dir) / filename

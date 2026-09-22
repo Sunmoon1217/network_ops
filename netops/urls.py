@@ -9,7 +9,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("core.api.urls")),
     path("api/", include("assets.api.urls")),
-    path("api/", include("ops.api.urls")),
+    path("api/", include("ingest.api.urls")),
     # 分析域：URL 前缀沿用拆分前的 /api/trace/、/api/internet-analysis/（前端零改动）
     path("api/", include("analysis.api.urls")),
     path("favicon.ico", views.favicon),

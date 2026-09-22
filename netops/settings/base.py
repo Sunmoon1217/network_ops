@@ -146,7 +146,7 @@ INSTALLED_APPS = [
     # GinIndex（AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
     "django.contrib.postgres",
     "core.apps.CoreConfig",
-    "ops.apps.OperatorConfig",
+    "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
     "analysis.apps.AnalysisConfig",
 ]
@@ -260,5 +260,5 @@ CELERY_TASK_SOFT_TIME_LIMIT = 3000
 # 访问流重建走独立队列：与采集/解析/存储三阶段任务隔离，堵在自己队列里不拖垮别的任务
 # （消费它的 worker 见 docker-compose 的 worker-access 服务）
 CELERY_TASK_ROUTES = {
-    "ops.rebuild_access_flows": {"queue": "access_flow"},
+    "ingest.rebuild_access_flows": {"queue": "access_flow"},
 }

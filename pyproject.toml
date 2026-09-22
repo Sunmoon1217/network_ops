@@ -34,7 +34,7 @@ select = ["E", "F", "I", "N", "W"]
 ignore = ["F405", "F403", "E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["analysis", "assets", "core", "ops"]
+known-first-party = ["analysis", "assets", "core", "ingest"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
