@@ -64,6 +64,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return
     try {
       await apichangesecert(from)
+      // const result = await apichangesecert(from)
+      // console.log("api返回结果", result)
+      return true
     } catch {
       return false
     }

@@ -37,7 +37,7 @@ const handle = async () => {
     try {
         const result = await authStore.changePassword(formData.value)
         if (result) {
-        ElMessage.success('密码修改成功')
+            ElMessage.success('密码修改成功')
         } else {
             ElMessage.error('密码修改失败')
         }

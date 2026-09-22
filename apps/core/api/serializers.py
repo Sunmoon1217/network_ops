@@ -88,14 +88,13 @@ class ChangePasswordSerializer(serializers.Serializer):
 
     def validate_old_password(self, value):
         """校验原密码是否正确"""
-        user = self.context["request"].user
-        if not user.check_password(value):
+        if self.instance and not self.instance.check_password(value):
             raise serializers.ValidationError("原密码不正确")
         return value
 
     def validate_new_password(self, value):
         """校验新密码强度"""
-        user = self.context["request"].user
+        user = self.instance
         try:
             validate_password(value, user)
         except DjangoValidationError as e:
