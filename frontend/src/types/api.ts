@@ -1,7 +1,8 @@
 
+/** 登录/注册响应（注册与登录同形）：后端只回 id / username，其余字段可选 */
 export interface LoginResponse {
     token: string
-    user: { id: number; username: string }
+    user: UserInfo
 }
 
 export interface UserInfo {

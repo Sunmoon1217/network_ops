@@ -4,7 +4,10 @@ import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
+import { useTablePrefs } from '@/composables/useTablePrefs'
 import api from '@/api/index'
+
+const { widthFor, onHeaderDragend } = useTablePrefs('devices.accounts')
 
 const { data: accounts, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
   useCrudApi()
@@ -35,30 +38,30 @@ onMounted(fetchAll)
       />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="accounts" :loading="loading">
-        <el-table-column prop="device_hostname" label="设备" width="150" sortable />
-        <el-table-column prop="username" label="用户名" width="140" sortable />
-        <el-table-column prop="auth_type" label="认证方式" width="110">
+      <DataTable :data="accounts" :loading="loading" @header-dragend="onHeaderDragend">
+        <el-table-column prop="device_hostname" label="设备" :width="widthFor('device_hostname', 150)" sortable />
+        <el-table-column prop="username" label="用户名" :width="widthFor('username', 140)" sortable />
+        <el-table-column prop="auth_type" label="认证方式" :width="widthFor('auth_type', 110)">
           <template #default="{ row }">
             <el-tag :type="(authTypeTag[row.auth_type] || 'info') as any" size="small">{{ authTypeLabel[row.auth_type] || row.auth_type }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="privilege" label="权限级别" width="100">
+        <el-table-column prop="privilege" label="权限级别" :width="widthFor('privilege', 100)">
           <template #default="{ row }">
             <el-tag :type="(privilegeTag[row.privilege] || 'info') as any" size="small">{{ privilegeLabel[row.privilege] || row.privilege }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="enabled" label="启用" width="80" align="center">
+        <el-table-column prop="enabled" label="启用" :width="widthFor('enabled', 80)" align="center">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="is_active" label="活跃" width="80" align="center">
+        <el-table-column prop="is_active" label="活跃" :width="widthFor('is_active', 80)" align="center">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="description" label="描述" :width="widthFor('description')" min-width="180" show-overflow-tooltip />
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

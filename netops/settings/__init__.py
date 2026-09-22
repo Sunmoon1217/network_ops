@@ -7,7 +7,7 @@
 - 覆盖顺序：`from .base import *` 先、`from .<env> import *` 后 → 环境文件的少数
   硬差异（prod 的 DEBUG=False、守卫即 import 副作用）胜出；dev 为空壳，无覆盖。
 - 另做两件事：把 base 的两个助手暴露到包上（tests/deploy 直接用
-  netops.settings._env_or_file）、把 apps/ 加进 sys.path（core/ops/assets 以顶层包出现）。
+  netops.settings._env_or_file）、把 apps/ 加进 sys.path（core/ingest/assets/analysis 以顶层包出现）。
 """
 
 import os

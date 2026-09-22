@@ -110,6 +110,13 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
+# 访问流（AccessFlow）重建链路的两个旋钮：
+# - 背压阈值：生产者投递前查 Stream 积压，超过就 self.retry 让路（不占 worker 进程）；
+# - 投递开关：测试里默认关（conftest 统一置 False），否则 PolicySaver 每保存一次
+#   就往真实 Redis 发消息。
+ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "50000"))
+ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
+
 
 # ---------------------------------------------------------------------------
 # 以下为环境无关的静态配置
@@ -136,9 +143,12 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
+    # GinIndex（AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
+    "django.contrib.postgres",
     "core.apps.CoreConfig",
-    "ops.apps.OperatorConfig",
+    "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
+    "analysis.apps.AnalysisConfig",
 ]
 
 MIDDLEWARE = [
@@ -242,8 +252,13 @@ REST_FRAMEWORK = {
 # Celery 行为（与环境无关；broker / result backend 的连接串见上方 Redis 段）
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = ["json"] if False else "json"
 CELERY_TIMEZONE = "Asia/Shanghai"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 3600
 CELERY_TASK_SOFT_TIME_LIMIT = 3000
+# 访问流重建走独立队列：与采集/解析/存储三阶段任务隔离，堵在自己队列里不拖垮别的任务
+# （消费它的 worker 见 docker-compose 的 worker-access 服务）
+CELERY_TASK_ROUTES = {
+    "ingest.rebuild_access_flows": {"queue": "access_flow"},
+}

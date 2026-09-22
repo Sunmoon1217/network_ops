@@ -12,7 +12,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from assets.models import Device, DeviceConfig, DeviceGroup, DeviceGroupMember
-from ops.config_owner import resolve_config_owner
+from ingest.config_owner import resolve_config_owner
 
 
 def _device(hostname: str) -> Device:
