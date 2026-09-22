@@ -10,7 +10,7 @@
     "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "types": ["node"],
+    // "types": ["node"],
     "noEmit": true,
     "paths": {
       "@/*": ["./src/*"]

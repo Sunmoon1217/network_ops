@@ -1,5 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
+from rest_framework.urls import app_name
 
 from . import auth, views
 
@@ -9,9 +10,11 @@ router = SimpleRouter(trailing_slash=True)
 router.register(r"tasks", views.TaskViewSet, basename="task")
 router.register(r"stages", views.StageViewSet, basename="stage")
 
+app_name = "core-api"  # noqa: F811
 urlpatterns = [
     path("auth/register/", auth.register, name="register"),
     path("auth/login/", auth.login, name="login"),
+    path("auth/change-password/", auth.changepassword, name="change-password"),
     path("auth/logout/", auth.logout, name="logout"),
     path("me/", auth.me, name="me"),
     path("", include(router.urls)),

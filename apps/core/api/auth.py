@@ -2,10 +2,10 @@ from django.contrib.auth import authenticate
 from rest_framework import status
 from rest_framework.authtoken.models import Token as DRFToken
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from core.api.serializers import RegisterSerializer
+from core.api.serializers import ChangePasswordSerializer, RegisterSerializer
 from core.models import User
 
 
@@ -38,10 +38,12 @@ def login(request):
     drf_token, _ = DRFToken.objects.get_or_create(user=user)
 
     u = User.objects.get(pk=user.pk)
-    return Response({
-        "token": drf_token.key,
-        "user": {"id": u.pk, "username": u.username},
-    })
+    return Response(
+        {
+            "token": drf_token.key,
+            "user": {"id": u.pk, "username": u.username},
+        }
+    )
 
 
 @api_view(["POST"])
@@ -79,11 +81,23 @@ def logout(request):
 @api_view(["GET"])
 def me(request):
     u = User.objects.get(pk=request.user.pk)
-    return Response({
-        "id": u.pk,
-        "username": u.username,
-        "email": u.email,
-        "is_staff": u.is_staff,
-        "phone": u.phone,
-        "avatar": u.avatar,
-    })
+    return Response(
+        {
+            "id": u.pk,
+            "username": u.username,
+            "email": u.email,
+            "is_staff": u.is_staff,
+            "phone": u.phone,
+            "avatar": u.avatar,
+        }
+    )
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def changepassword(request):
+    """修改密码。"""
+    serializer = ChangePasswordSerializer(request.user, data=request.data)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response({"success": True})

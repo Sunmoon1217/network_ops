@@ -1,60 +1,12 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
+import PageLayout from '@/layout/PageLayout.vue'
 import api from '@/api/index'
 import { InfoFilled } from '@element-plus/icons-vue'
 
-/** 消费者条目：解析器产出的键 → 实际消费它的 Saver */
-interface ParserConsumer {
-  key: string
-  saver: string
-}
-
-/** 单个解析器的映射关系 */
-interface ParserMappingItem {
-  vendor: string
-  device_type: string
-  class_name: string
-  template_name: string
-  template_exists: boolean
-  provides_keys: string[]
-  template_keys: string[]
-  keys_match: boolean
-  has_dynamic_group_names: boolean
-  consumers: ParserConsumer[]
-  unconsumed_keys: string[]
-}
-
-/** 契约缺口：Saver 消费了某个键，但没有任何解析器产出它 */
-interface MissingProducer {
-  device_type: string
-  key: string
-  saver: string
-  note: string
-}
-
-/** 顶部统计汇总 */
-interface MappingSummary {
-  parser_count: number
-  saver_count: number
-  keys_mismatch: number
-  missing_producer_count: number
-  unconsumed_count: number
-}
-
-/** GET /api/parsers/mapping/ 的响应结构 */
-interface MappingResult {
-  summary: MappingSummary
-  parsers: ParserMappingItem[]
-  missing_producers: MissingProducer[]
-}
-
-/** 统计卡片视图模型：level 决定异常计数的配色 */
-interface StatCard {
-  label: string
-  value: number
-  hint: string
-  level: 'normal' | 'warning' | 'danger'
-}
+import type {
+  ParserConsumer, ParserMappingItem, MissingProducer,
+  MappingSummary, MappingResult, StatCard,
+} from '@/types'
 
 const loading = ref(false)
 const result = ref<MappingResult | null>(null)

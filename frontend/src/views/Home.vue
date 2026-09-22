@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import api from '@/api/index'
-import StatCard from '@/ui/StatCard.vue'
-import ChartCard from '@/ui/ChartCard.vue'
+import StatCard from '@/components/StatCard.vue'
+import ChartCard from '@/components/ChartCard.vue'
 import { pieOpt, barOpt, gaugeOpt, lookup, mapItems } from '@/composables/useEcharts'
 
 const data = ref<any>(null)

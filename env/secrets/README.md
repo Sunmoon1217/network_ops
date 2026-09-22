@@ -7,7 +7,7 @@
 
 | 文件 | 容器内路径 | 谁读 |
 |------|-----------|------|
-| `postgres_user` | `/run/secrets/postgres_user` | db（postgres 官方镜像的 `POSTGRES_USER_FILE`）、app / worker（`settings.py` 的 `_env_or_file()`） |
+| `postgres_user` | `/run/secrets/postgres_user` | db（postgres 官方镜像的 `POSTGRES_USER_FILE`）、app / worker（`settings/base.py` 的 `_env_or_file()`） |
 | `postgres_password` | `/run/secrets/postgres_password` | 同上（`POSTGRES_PASSWORD_FILE`） |
 
 这两个文件**不入库**（`.gitignore` 排除）、不进构建上下文（`.dockerignore` 排除）。
@@ -38,5 +38,6 @@ bash env/secrets/generate.sh --force    # 覆盖已存在的文件
 - `POSTGRES_DB`（库名）不算密钥，在 `env/db.env` / `env/app.env` 里。
 - redis 密码**没有**走 secrets：redis 官方镜像没有 `*_FILE` 机制，`REDIS_PASSWORD` 仍是
   环境变量（留空即不启用）。
-- 宿主机直跑 Django 时不必用 secrets：`settings.py` 在没有 `*_FILE` 时会读同名的环境变量
-  （`set -a; . ./.env; set +a`），也可以自己 `export POSTGRES_PASSWORD_FILE=/path/to/file`。
+- 宿主机直跑 Django 时**不用 secrets**（约定：`*_FILE` 只在容器里设置）：读取链路统一在
+  `settings/base.py`（`*_FILE > 同名环境变量 > 默认值`）——`set -a; . ./.env; set +a` 后
+  `export POSTGRES_PASSWORD=<值>` 即可（不设 `_FILE` 自然走环境变量层，三环境不分叉）。

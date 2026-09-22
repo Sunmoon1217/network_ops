@@ -1,23 +1,7 @@
 <script setup lang="ts">
 import { getParsers, getParserTemplates, getParserTemplate, updateParserTemplate } from '@/api/parsers'
 
-interface ParserItem {
-  vendor: string
-  device_type: string
-  class_name: string
-  template_name: string
-  description?: string
-}
-
-interface TemplateItem {
-  name: string
-  group: string
-  size: number
-}
-
-interface TemplateRow extends TemplateItem {
-  parsers: ParserItem[]
-}
+import type { ParserItem, TemplateItem, TemplateRow } from '@/types'
 
 const parsers = ref<ParserItem[]>([])
 const templates = ref<TemplateItem[]>([])

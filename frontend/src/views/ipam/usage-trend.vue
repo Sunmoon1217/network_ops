@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
-import ChartCard from '@/ui/ChartCard.vue'
+import PageLayout from '@/layout/PageLayout.vue'
+import ChartCard from '@/components/ChartCard.vue'
 import { lineOpt } from '@/composables/useEcharts'
 import { fetchAllPages } from '@/utils/fetchAllPages'
 

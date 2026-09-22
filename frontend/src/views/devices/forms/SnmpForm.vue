@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import FormPage from '@/ui/FormPage.vue'
+import FormPage from '@/components/FormPage.vue'
 import { getSnmpConfig, createSnmpConfig, updateSnmpConfig } from '@/api/baseline'
 import { fetchAllPages } from '@/utils/fetchAllPages'
 

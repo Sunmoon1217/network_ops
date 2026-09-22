@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
+import PageLayout from '@/layout/PageLayout.vue'
 
 const ipVer = ref<'v4' | 'v6'>('v4')
 const input = ref('10.0.0.0/24')

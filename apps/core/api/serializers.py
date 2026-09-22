@@ -56,6 +56,74 @@ class RegisterSerializer(serializers.Serializer):
         return User.objects.create_user(**validated_data)
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    """修改密码序列化器"""
+
+    old_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        error_messages={
+            "required": "请输入原密码",
+            "blank": "原密码不能为空",
+        },
+    )
+    new_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "required": "请输入新密码",
+            "blank": "新密码不能为空",
+            "min_length": "新密码长度不能少于 8 位",
+        },
+    )
+    confirm_password = serializers.CharField(
+        required=True,
+        write_only=True,
+        error_messages={
+            "required": "请再次输入新密码",
+            "blank": "确认密码不能为空",
+        },
+    )
+
+    def validate_old_password(self, value):
+        """校验原密码是否正确"""
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("原密码不正确")
+        return value
+
+    def validate_new_password(self, value):
+        """校验新密码强度"""
+        user = self.context["request"].user
+        try:
+            validate_password(value, user)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
+
+    def validate(self, attrs):
+        """跨字段校验"""
+        old_password = attrs.get("old_password")
+        new_password = attrs.get("new_password")
+        confirm_password = attrs.get("confirm_password")
+
+        # 两次新密码一致
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "两次输入的新密码不一致"})
+
+        # 新旧密码不能相同
+        if old_password == new_password:
+            raise serializers.ValidationError({"new_password": "新密码不能与原密码相同"})
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        instance.set_password(validated_data["new_password"])
+        instance.save(update_fields=["password"])
+        return instance
+
+
 class StageSerializer(serializers.ModelSerializer):
     stage_type_display = serializers.CharField(source="get_stage_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)

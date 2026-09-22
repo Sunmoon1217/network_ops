@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import FormPage from '@/ui/FormPage.vue'
+import FormPage from '@/components/FormPage.vue'
 import { getIpAddress, createIpAddress, updateIpAddress } from '@/api/ipam'
 import { fetchAllPages } from '@/utils/fetchAllPages'
 

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
-import DataTable from '@/ui/DataTable.vue'
-import DataPagination from '@/ui/DataPagination.vue'
+import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataPagination from '@/components/DataPagination.vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import {
   getTasks, getTask, createTask, cancelTask, getTaskDeviceOptions,
-  type Task, type DeviceOption,
 } from '@/api/tasks'
+import type { Task, DeviceOption } from '@/types'
 
 const { data: tasks, loading, search, page, pageSize, total, fetchData, refetch, pageParams } =
   useCrudApi<Task>()

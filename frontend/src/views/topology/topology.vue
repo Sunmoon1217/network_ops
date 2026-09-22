@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import TopologyGraph from '@/ui/topology/TopologyGraph.vue'
-import TopologyToolbar from '@/ui/topology/TopologyToolbar.vue'
-import DeviceSelector from '@/ui/topology/DeviceSelector.vue'
-import TopologyNodePanel from '@/ui/topology/TopologyNodePanel.vue'
-import TopologyEdgePanel from '@/ui/topology/TopologyEdgePanel.vue'
+import TopologyGraph from './components/TopologyGraph.vue'
+import TopologyToolbar from './components/TopologyToolbar.vue'
+import DeviceSelector from './components/DeviceSelector.vue'
+import TopologyNodePanel from './components/TopologyNodePanel.vue'
+import TopologyEdgePanel from './components/TopologyEdgePanel.vue'
 import { getTopology, createTopology, updateTopology, deleteTopology } from '@/api/topology'
 import { fetchAllPages } from '@/utils/fetchAllPages'
-import { buildIconDataUri } from '@/ui/topology/device-icons'
+import { buildIconDataUri } from '@/assets/device-icons'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()

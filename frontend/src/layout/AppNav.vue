@@ -11,7 +11,7 @@ import {
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,
   IconIp, IconSubnet, IconTools, IconPathTrace, IconRouting,
   IconLayoutSide,
-} from './menu-icons'
+} from '@/assets/menu-icons'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,12 +22,7 @@ const renderIcon = (icon: Component) => {
   return () => h(ElIcon, null, { default: () => h(icon) })
 }
 
-interface MenuItem {
-  index: string
-  label: string
-  icon?: () => any
-  children?: MenuItem[]
-}
+import type { MenuItem } from '@/types'
 
 const menuOptions: MenuItem[] = [
   { index: '/', label: '总览', icon: renderIcon(IconOverview) },

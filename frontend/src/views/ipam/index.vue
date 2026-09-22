@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import PageLayout from '@/ui/PageLayout.vue'
-import DataTable from '@/ui/DataTable.vue'
-import DataPagination from '@/ui/DataPagination.vue'
+import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getSubnets, deleteSubnet } from '@/api/ipam'
 import { fetchAllPages } from '@/utils/fetchAllPages'

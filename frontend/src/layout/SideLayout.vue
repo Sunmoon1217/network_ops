@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
-import UserBar from '@/ui/UserBar.vue'
+import UserBar from '@/layout/UserBar.vue'
 
 const layoutStore = useLayoutStore()
 const isCollapsed = computed(() => layoutStore.collapsed)

@@ -4,27 +4,33 @@ import { getToken } from '@/utils/token'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('@/views/login/Login.vue'),
-      meta: { skipLayout: true },
-    },
+    // {
+    //   path: '/login',
+    //   name: 'login',
+    //   component: () => import('@/views/auth/Login.vue'),
+    //   meta: { skipLayout: true },
+    // },
     {
       path: '/register',
       name: 'register',
-      component: () => import('@/views/login/Register.vue'),
+      component: () => import('@/views/auth/Register.vue'),
       meta: { skipLayout: true },
+    },
+    {
+      path: '/auth/change-password',
+      name: 'change-password',
+      component: () => import('@/views/auth/ChangePassword.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/',
       name: 'home',
-      component: () => import('@/views/dashboard/Home.vue'),
+      component: () => import('@/views/Home.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/devices',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'device-list', component: () => import('@/views/devices/list.vue') },
@@ -49,7 +55,7 @@ const router = createRouter({
     },
     {
       path: '/config',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/config/slb' },
@@ -63,7 +69,7 @@ const router = createRouter({
     },
     {
       path: '/ipam',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/ipam/subnets' },
@@ -81,15 +87,15 @@ const router = createRouter({
     },
     {
       path: '/topology',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
-        { path: '', name: 'topology', component: () => import('@/views/tools/topology.vue') },
+        { path: '', name: 'topology', component: () => import('@/views/topology/topology.vue') },
       ],
     },
     {
       path: '/tasks',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'task-list', component: () => import('@/views/tasks/index.vue') },
@@ -97,7 +103,7 @@ const router = createRouter({
     },
     {
       path: '/tools',
-      component: () => import('@/views/devices/index.vue'),
+      // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/tools/path-trace' },
@@ -110,12 +116,22 @@ const router = createRouter({
 
       ],
     },
+    // 兜底：未注册路径（含 /login——它是不注册路由的"伪路径"，靠下面的守卫与 App.vue 协作）。
+    // 必须用「匹配组件」而不是 redirect：
+    //   ① redirect 到 '/' 会与守卫的 return '/login' 互相触发，形成无限重定向；
+    //   ② 401 跳转靠 pathname 能停在 /login 防循环（见 api/index.ts），redirect 会把 URL 改掉；
+    // 已登录访问乱路径时渲染总览页，避免 matched=[] 白屏。
+    { path: '/:pathMatch(.*)*', meta: { requiresAuth: true }, component: () => import('@/views/Home.vue') },
   ],
 })
 
 router.beforeEach((to) => {
+  // /login 已由兜底路由命中，不要再重定向它自己（return '/login' 会与自身相撞）
+  if (to.path === '/login') return true
   if (to.meta.requiresAuth && !getToken()) {
-    return { name: 'login' }
+    // 跳到 /login 伪路径后，App.vue 按「未登录」兜底渲染静态引入的 Login。
+    // 必须用字符串路径——命名路由 'login' 不存在，resolve 会直接抛错。
+    return '/login'
   }
 })
 
