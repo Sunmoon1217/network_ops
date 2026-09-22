@@ -18,7 +18,7 @@ def access_flow_dispatch_off(settings):
 def eager_celery(settings):
     """让 celery 任务在进程内同步执行，且失败时把状态反映到 result 而不是抛异常。
 
-    任务失败必须让 ``result.state`` 是 FAILURE（见 tests/ops/test_celery_tasks.py），
+    任务失败必须让 ``result.state`` 是 FAILURE（见 tests/ingest/test_celery_tasks.py），
     所以这里把 ``task_eager_propagates`` 关掉。
     """
     from netops.celery import app

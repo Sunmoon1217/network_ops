@@ -3,7 +3,7 @@
 原先 `_import_configs` 每行 `get_or_create(DeviceConfig)` 都会触发同步流水线，
 几十行配置就在**一个 HTTP 请求**里串行跑几十次「解析 + 全部 Saver 入库」
 （实测单台 0.2–12 s）。现在挂 `_defer_pipeline` 让信号跳过同步处理，改投递
-`ops.workflow.submit_config_job`（解析 → 存储）。
+`ingest.workflow.submit_config_job`（解析 → 存储）。
 """
 
 import pytest
@@ -33,11 +33,11 @@ def test_import_dispatches_async_and_skips_sync(device, tmp_path, monkeypatch):
     cfg.write_text("sysname IMP\nvlan 10\n", encoding="utf-8")
 
     sync_calls = []
-    monkeypatch.setattr("ops.pipeline.run_config_pipeline", lambda dev, config: sync_calls.append(config.pk))
+    monkeypatch.setattr("ingest.pipeline.run_config_pipeline", lambda dev, config: sync_calls.append(config.pk))
     monkeypatch.setattr("assets.api.views.save_config", lambda hostname, text, message="": "a" * 40)
 
     submitted = []
-    monkeypatch.setattr("ops.workflow.submit_config_job", lambda pk: submitted.append(pk))
+    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
 
     from assets.api.views import _import_configs
 
@@ -60,7 +60,7 @@ def test_import_skips_existing_commit_and_does_not_dispatch_again(device, tmp_pa
 
     monkeypatch.setattr("assets.api.views.save_config", lambda hostname, text, message="": "b" * 40)
     submitted = []
-    monkeypatch.setattr("ops.workflow.submit_config_job", lambda pk: submitted.append(pk))
+    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
 
     from assets.api.views import _import_configs
 
@@ -84,7 +84,7 @@ def test_import_reports_dispatch_failure_per_row(device, tmp_path, monkeypatch):
     def _boom(pk):
         raise RuntimeError("broker down")
 
-    monkeypatch.setattr("ops.workflow.submit_config_job", _boom)
+    monkeypatch.setattr("ingest.workflow.submit_config_job", _boom)
 
     from assets.api.views import _import_configs
 

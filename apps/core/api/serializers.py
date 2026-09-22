@@ -1,7 +1,7 @@
 """注册与任务相关的序列化器。
 
 ``Task`` 的写入只开放 ``device`` / ``task_type`` / ``params``——状态、结果、时间戳都由
-工作流（``ops.workflow``）与阶段任务维护，客户端不该直接改。
+工作流（``ingest.workflow``）与阶段任务维护，客户端不该直接改。
 """
 
 from django.contrib.auth.password_validation import validate_password
@@ -191,8 +191,8 @@ class TaskSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated_data):
-        """建任务即投递第一个阶段（采集），见 ``ops.workflow.start_task``。"""
-        from ops.workflow import start_task
+        """建任务即投递第一个阶段（采集），见 ``ingest.workflow.start_task``。"""
+        from ingest.workflow import start_task
 
         return start_task(
             device=validated_data["device"],

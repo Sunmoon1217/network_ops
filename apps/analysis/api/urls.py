@@ -1,0 +1,21 @@
+"""分析域的 API：路径追踪 / 路由采集 / DNS 查询 / 互联网资产分析。
+
+URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analysis/...``），
+前端 ``api/`` 与 ``views/tools/`` 无需任何改动——路由跟着 view 走，不跟 app 走。
+"""
+
+from django.urls import path
+
+from . import analysis, trace
+
+urlpatterns = [
+    path("trace/", trace.path_trace, name="path-trace"),
+    path("trace/route-collect/", trace.route_collect, name="route-collect"),
+    path("trace/route-collect-raw/", trace.route_collect_raw, name="route-collect-raw"),
+    path("trace/routes/", trace.route_list, name="route-list"),
+    path("trace/dns-query/", trace.dns_query, name="dns-query"),
+    # 互联网资产分析：结果走缓存，只有 analyze 才真正触发计算
+    path("internet-analysis/", analysis.internet_analysis, name="internet-analysis"),
+    path("internet-analysis/analyze/", analysis.internet_analysis_run, name="internet-analysis-run"),
+    path("internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
+]

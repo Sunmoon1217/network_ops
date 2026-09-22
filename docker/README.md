@@ -51,7 +51,7 @@ docker compose up -d app worker
 | `rm -rf .../site-packages /usr/local/bin/pip*` | 删掉基础镜像自带的系统 pip（约 7MB），依赖都在 `/opt/venv`。⚠️ 换 Python 版本要同步改这个路径 |
 | 不装 `gcc` / `musl-dev` | `psycopg2-binary`、`cffi` 都有 `cp312 musllinux` 轮子。真开始编轮子了再加，别预先装 |
 | `libpq` 与 `git` 分成两个 `RUN` | git 带十来个 APK 依赖、受限网络下更容易超时；分开后成功那层可复用，重跑只补 git |
-| 运行期必须有 `git` 可执行文件 | `apps/ops/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
+| 运行期必须有 `git` 可执行文件 | `apps/ingest/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
 
 ### 3.2 `uv sync` 的参数
 

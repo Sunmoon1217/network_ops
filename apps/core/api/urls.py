@@ -2,7 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 from rest_framework.urls import app_name
 
-from . import auth, views
+from . import auth, preferences, views
 
 router = SimpleRouter(trailing_slash=True)
 # 任务工作流：列表 / 详情 / 新建（新建即投递采集阶段）/ 取消，阶段只读。
@@ -17,5 +17,7 @@ urlpatterns = [
     path("auth/change-password/", auth.changepassword, name="change-password"),
     path("auth/logout/", auth.logout, name="logout"),
     path("me/", auth.me, name="me"),
+    # 前端配置（表格列宽等界面偏好）：按用户存取，语义见 preferences 模块
+    path("me/preferences/", preferences.preferences, name="preferences"),
     path("", include(router.urls)),
 ]

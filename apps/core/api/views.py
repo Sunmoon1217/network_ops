@@ -1,7 +1,7 @@
 """任务与阶段的 API。
 
 只提供「列表 / 详情 / 新建 / 取消」与阶段的只读查询：任务的推进完全由 celery 阶段任务
-与 ``ops/signals.py`` 的信号负责，接口不该能随意改状态（否则数据库里的 Task/Stage 会与
+与 ``ingest/signals.py`` 的信号负责，接口不该能随意改状态（否则数据库里的 Task/Stage 会与
 真实的 celery 执行状态脱节）。
 """
 
@@ -71,7 +71,7 @@ class TaskViewSet(
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
 
-        from ops.workflow import cancel_task
+        from ingest.workflow import cancel_task
 
         cancel_task(task)
         task.refresh_from_db()

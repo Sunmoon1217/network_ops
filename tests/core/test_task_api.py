@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from assets.models import Device, DeviceConnection, DeviceModel, Vendor
 from core.models import Stage, Task, User
-from ops import workflow
+from ingest import workflow
 
 TASKS_URL = "/api/tasks/"
 
