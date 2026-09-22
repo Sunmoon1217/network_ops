@@ -14,6 +14,7 @@ import pytest
 from django.test import Client
 from openpyxl import load_workbook
 
+from analysis.api.analysis import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS, analyze_device, build_path_rows
 from assets.models import (
     Device,
     GtmPool,
@@ -25,7 +26,6 @@ from assets.models import (
     LtmVirtualServer,
     ServerOwner,
 )
-from ops.api.analysis import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS, analyze_device, build_path_rows
 
 EXPORT_URL = "/api/internet-analysis/export/"
 ANALYZE_URL = "/api/internet-analysis/analyze/"
@@ -397,7 +397,7 @@ def test_target_separator_is_unambiguous_for_ipv6():
 
     换成分隔符之后必须能唯一地切回来，并且这个字符不可能出现在 IP 里。
     """
-    from ops.api.analysis import TARGET_SEPARATOR, _join_ip_port
+    from analysis.api.analysis import TARGET_SEPARATOR, _join_ip_port
 
     assert TARGET_SEPARATOR == "#"
     assert TARGET_SEPARATOR not in "2001:db8::1"  # IP 里不可能出现

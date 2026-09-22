@@ -114,7 +114,7 @@ def test_collect_saves_parsed_routes(client, device, monkeypatch):
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr("ops.api.trace.requests.get", lambda *args, **kwargs: _Resp())
+    monkeypatch.setattr("analysis.api.trace.requests.get", lambda *args, **kwargs: _Resp())
 
     class _FakeTTP:
         def __init__(self, *args, **kwargs):

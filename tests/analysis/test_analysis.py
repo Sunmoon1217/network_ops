@@ -9,6 +9,7 @@
 
 import pytest
 
+from analysis.api.analysis import analyze_device
 from assets.models import (
     Device,
     GtmPool,
@@ -19,7 +20,6 @@ from assets.models import (
     LtmPoolMember,
     LtmVirtualServer,
 )
-from ops.api.analysis import analyze_device
 
 
 def _device(hostname: str, device_type: str = "gslb") -> Device:
@@ -141,7 +141,7 @@ def test_pool_not_found_is_reported():
 
 def test_parse_member_entry_accepts_template_shape():
     """模板解析产出的形态"""
-    from ops.api.analysis import _parse_member_entry
+    from analysis.api.analysis import _parse_member_entry
 
     assert _parse_member_entry({"server_name": "s1", "vs_name": "vs1"})[:2] == ("s1", "vs1")
 
@@ -153,14 +153,14 @@ def test_parse_member_entry_accepts_saver_shape():
     于是 vs_name 恒为空，find_vserver 找不到 GTM 虚拟服务器，整条链路在第一步
     就被判成「GTM 虚拟服务器未找到」（member_ref 也会退化成 "s1:"）。
     """
-    from ops.api.analysis import _parse_member_entry
+    from analysis.api.analysis import _parse_member_entry
 
     assert _parse_member_entry({"server": "s1", "vserver": "vs1"})[:2] == ("s1", "vs1")
 
 
 def test_parse_member_entry_falls_back_to_name():
     """缺哪一半就用 "server:vs" 形式的 name 补哪一半"""
-    from ops.api.analysis import _parse_member_entry
+    from analysis.api.analysis import _parse_member_entry
 
     assert _parse_member_entry({"server": "s1", "name": "s1:vs1"})[:2] == ("s1", "vs1")
     assert _parse_member_entry({"name": "s1:vs1"})[:2] == ("s1", "vs1")

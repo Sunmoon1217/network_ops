@@ -23,7 +23,7 @@ def path_trace(request):
     if not src_ip or not dst_ip:
         return Response({"error": "src and dst 参数必填"}, status=http_status.HTTP_400_BAD_REQUEST)
 
-    from ops.path_tracer import trace_path
+    from analysis.path_tracer import trace_path
 
     result = trace_path(src_ip, dst_ip, dst_port)
 
@@ -105,14 +105,15 @@ def route_collect(request):
 
     # TTP 解析
     try:
-        from pathlib import Path
-
         from ttp import ttp
 
-        tmpls_dir = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+        # 模板是 ops 解析管道的资产，路径经其公开常量取（analysis → ops 单向依赖）。
+        # 别再手算相对路径：拆出 app 后 `parent.parent` 已指错——同「测试内资源定位」的坑。
+        from ops.parsers.template_keys import TMPLS_DIR
+
         template_path = None
         for subdir in ("configs", "running"):
-            candidate = tmpls_dir / subdir / f"{template_name}.ttp"
+            candidate = TMPLS_DIR / subdir / f"{template_name}.ttp"
             if candidate.exists():
                 template_path = str(candidate)
                 break

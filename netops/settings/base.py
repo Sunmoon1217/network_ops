@@ -148,6 +148,7 @@ INSTALLED_APPS = [
     "core.apps.CoreConfig",
     "ops.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
+    "analysis.apps.AnalysisConfig",
 ]
 
 MIDDLEWARE = [

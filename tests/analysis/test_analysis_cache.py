@@ -8,8 +8,8 @@
 import pytest
 from django.test import Client
 
+from analysis.models import InternetAnalysis
 from assets.models import Device, GtmPool, GtmServer, GtmVServer, GtmWideip, ServerOwner
-from ops.models import InternetAnalysis
 
 LIST_URL = "/api/internet-analysis/"
 ANALYZE_URL = "/api/internet-analysis/analyze/"

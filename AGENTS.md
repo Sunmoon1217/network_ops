@@ -32,21 +32,24 @@ network_ops/
 │   │   ├── serializers/{base.py, views.py}   # 序列化器（API 视图与解析入库共用）
 │   │   ├── management/commands/import_server_owners.py  # xlsx 导入服务器负责人
 │   │   └── api/{serializers.py, urls.py, views.py}
-│   └── ops/             # 操作层：解析、存储、路径追踪
-│       ├── api/{configs.py, parsers.py, trace.py, urls.py}
-│       ├── mapping.py        # 解析产出归一（键/字段别名）+ Saver→模型关联声明
-│       ├── parsers/{factory.py, template_keys.py, contract.py} + tmpls/{configs,running}/
-│       ├── savers/{base,registry,interface,lb,firewall,routing}.py
-│       ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
-│       ├── config_repo.py       # Git 配置仓库管理
-│       ├── path_tracer.py       # 路径追踪算法
-│       ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
-│       ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
-│       ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
-│       ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
-│       ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run）
+│   ├── ops/             # 数据采集与解析入库（配置管道：Git 仓库 → TTP 解析 → Saver 写库）
+│   │   ├── api/{configs.py, parsers.py, urls.py}
+│   │   ├── mapping.py        # 解析产出归一（键/字段别名）+ Saver→模型关联声明
+│   │   ├── parsers/{factory.py, template_keys.py, contract.py} + tmpls/{configs,running}/
+│   │   ├── savers/{base,registry,interface,lb,firewall,routing}.py
+│   │   ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
+│   │   ├── config_repo.py       # Git 配置仓库管理
+│   │   ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
+│   │   ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
+│   │   ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
+│   │   ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
+│   │   ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run，含 analysis 的缓存）
+│   │   └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
+│   └── analysis/        # 分析域（只读消费 ops 与 assets，不许被它们反向依赖）
+│       ├── api/{trace.py, analysis.py, urls.py}   # /api/trace/*、/api/internet-analysis/*（URL 前缀沿用拆分前）
+│       ├── path_tracer.py       # 路径追踪算法（模拟报文逐跳转发）
 │       ├── models.py            # InternetAnalysis（分析结果缓存）
-│       └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
+│       └── migrations/0001_initial.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
 ├── data/                 # 运行期数据（不入库）：configs 是 bind 进 app 的输入，config_repo 只是宿主机直跑用的那份
 │   ├── config_repo/     # 宿主机直跑时的 Git 配置仓库；**Docker 部署用的是命名卷 config_repo_data**，两者互不影响
 │   └── configs/         # Excel「配置文件」sheet 的 config_dir 源目录；→ app 的 /app/data/configs（只读 bind）
@@ -54,10 +57,11 @@ network_ops/
 │                        # 真身在用户级 `~/.dsh/skills`（独立 git 仓库），那里放第三方软件的实测行为，
 │                        # 目录清单自动进每个会话、正文按需加载（skill 工具或 /name）。见「知识库」一节
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
+│   ├── analysis/        # 资产分析 / 缓存 / 导出 / 路由采集
 │   ├── assets/          # device_group / serializer_migration / service_unique
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
-│   └── ops/             # parsers / parser_contract / pipeline / analysis / reparse
+│   └── ops/             # parsers / parser_contract / pipeline / reparse / saver / workflow
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
 │   └── src/{api,assets,components,composables,layout,router,stores,types,utils,views}
@@ -174,7 +178,7 @@ uv run ruff format
 - **settings：env 动态项在 base 只定义一遍，环境文件只放「不走环境变量的硬差异与守卫」（环境旋钮唯一 `DJANGO_ENV`，`DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`）**：`netops/settings/`——`base.py` 集中全部可被环境变量影响的配置（`SECRET_KEY` / `DEBUG` / `ALLOWED_HOSTS` / `CSRF` / `DATABASES` / Redis，凭据链 `*_FILE > 同名环境变量 > 默认值`），**同一段读取逻辑写一遍、靠各环境注入不同的值区分**，不在每个环境文件里重复接线；三个环境文件只放环境变量表达不了的东西：`dev.py` **空壳**（base 即 dev 语义）、`container.py` 两条 host 必填守卫（env_file 被误删一行时**启动即拒**，而不是退到 localhost 等首个请求才 connection refused——Django 连接是惰性的）、`prod.py` `DEBUG=False` **硬覆盖**（不吃 `DJANGO_DEBUG` 后门）+ 5 个守卫（`DJANGO_SECRET_KEY`、`ALLOWED_HOSTS` 空或 `*`、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST`——查 `os.environ` 原始值，因为 base 的 default 会兜底，缺失即拒绝启动）。环境选择：**不设 → dev**（manage/asgi/wsgi/celery 的 setdefault、pytest 都指包）；容器由 `env/app.env` 注入 `DJANGO_ENV=container`；生产显式 `DJANGO_ENV=prod`；**白名单**：未知值（拼错如 `prd`）拒绝启动，不静默落 dev。`*_FILE` secrets **只在容器里设置**（宿主操作上不用它，链路三环境不分叉）。**防循环硬规矩**：`base.py` 与三个环境文件禁止 `from netops.settings import ...` / `from . import ...`，只允许 `from .base import ...`（反向依赖父包执行结果会在 `__init__` 半初始化时炸——BASE_DIR 那次事故的形态）。守卫与分发矩阵由 `tests/deploy/test_settings_environments.py` 守。
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
-- **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`。
+- **应用注册**：`core.apps.CoreConfig`、`ops.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`。
 - **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ops/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ops/signals.py`）。**入口是 `/api/tasks/`**：`ops/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**：`PolicySaver` 保存成功后 `ops.access_stream.request_rebuild` 投递 `ops.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker-access` 消费）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `ops/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。
 - **DeviceConfig 的解析入库默认仍是同步的**：走 `ops.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ops.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
@@ -233,9 +237,9 @@ uv run ruff format
 | 路由与其它 | Route, Topology, ArpMac |
 | 人工维护 | ServerOwner（服务器 IP ↔ 负责人；不从设备配置提取，故不进 `ConfigBase`） |
 
-### 操作层 `ops/`
+### 数据管道层 `ops/`
 
-配置解析、存储与路径追踪。
+数据采集与解析入库（配置的「采、解、存」三段，与 Celery 三阶段工作流对应）。
 
 | 模块 | 职责 |
 |------|------|
@@ -245,15 +249,29 @@ uv run ruff format
 | `savers/base.py` | `BaseSaver`(ABC)，`__init_subclass__` 自动注册；`save()` 入口先归一再交 `_save` |
 | `savers/registry.py` | Saver 注册表（按**原始键**分组，含别名） |
 | `config_repo.py` | Git 配置仓库的读取、历史、diff |
-| `path_tracer.py` | 路径追踪（模拟报文逐跳转发） |
 | `signals.py` | `DeviceConfig` 保存后触发解析与入库 |
 | `config_owner.py` | 配置属主解析（堆叠组备机归属主设备） |
 | `parsers/template_keys.py` | 从 TTP 模板静态提取顶层数据键 |
 | `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
 | `pipeline.py` | 配置处理流水线，信号与 `reparse` 命令共用 |
 | `workflow.py` | 任务工作流的入口：`start_task`（建 Task + 投递采集阶段）、`dispatch_stage`、`cancel_task`、`submit_config_job` |
-| `models.py` | `InternetAnalysis`：互联网资产分析结果缓存 |
+
+**依赖方向**：`analysis → ops → assets` 单向；`ops` 可以用 assets 的模型与序列化器，
+**assets 不许 import ops**；`ops`（除 `purge_configs` 这类跨域运维工具外）**不许 import analysis**。
+
+### 分析层 `analysis/`
+
+路径追踪、路由采集、DNS 查询与互联网资产分析——**只读**消费 ops 与 assets 的产出，
+自身不采集、不写配置。2026-09 从 ops 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`
+保持不变，前端零改动）。
+
+| 模块 | 职责 |
+|------|------|
+| `path_tracer.py` | 路径追踪（模拟报文逐跳转发） |
+| `api/trace.py` | 路径追踪 / 路由采集 / DNS 查询接口（路由采集用 TTP 模板，路径经 `ops.parsers.template_keys.TMPLS_DIR` 取） |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
+| `models.py` | `InternetAnalysis`：分析结果缓存（每台 GSLB 一份最新结果） |
+| `migrations/0001_initial.py` | 从 `operator` 迁入：**不重建表**——operator.0003 只删 state，本迁移 `RunSQL RENAME`，数据随表走 |
 
 **已注册解析器**（`@ParserFactory.register`）：
 
@@ -266,7 +284,7 @@ uv run ruff format
 `ConfigBase` 下有 24 个子模型，其中 22 个已配 Saver。几个需要留意的点：
 
 - `Vlan` / `Route` / `SnmpConfig` / `NtpConfig` / `SyslogConfig` 原为裸 `models.Model`，已改为继承 `ConfigBase`（migration `0023` / `0024`）。代价与收益：`SnmpConfig` / `NtpConfig` / `SyslogConfig` 的 `device` 由一对一变成外键（基数 1:1 → 1:N），各自重复声明的 `created_at` / `updated_at` 与基类同名同义故删除，`related_name` 变为默认的 `<model>_set`；`Vlan.device` 由可空变为必填；`Route` 新增 `device`，与 `vrf.device` 冗余，Saver 入库时用 `vrf` 保证一致，缺失时挂到设备的 `default` VRF。
-- `LtmPoolMember` 原为裸 `models.Model`，只有 `pool_name` 字符串、没有 `device`，已改为继承 `ConfigBase`（migration `0026`）。**它保留 `pool_name` 而不是改成指向 `LtmPool` 的外键**：归属靠 `device` 限定，因为 `LtmPool` 的 `(device, name)` 唯一，「设备 + 池名」才能定位到唯一的池。唯一约束是 `(device, pool_name, name, port)`——必须带 `port`，F5 同一节点可以在多个端口上做成员，剥掉 `/Common/node_a:80` 的端口后 `name` 都是 `node_a`，只约束 `name` 会误杀合法数据。存量迁移只有 `pool_name` 可用，无法唯一映射到设备的行（孤儿 / 多台设备同名池）直接删除并在迁移输出里逐条打印，之后再按新唯一键去重。所有按 `pool_name` 查成员的地方（`LBPoolSaver`、`ops/api/analysis.py`、`ops/path_tracer.py`）都必须同时限定 `device`，否则不同设备上的同名池会互相串；`LBPoolSaver` 先删后建时也会跨设备误删。
+- `LtmPoolMember` 原为裸 `models.Model`，只有 `pool_name` 字符串、没有 `device`，已改为继承 `ConfigBase`（migration `0026`）。**它保留 `pool_name` 而不是改成指向 `LtmPool` 的外键**：归属靠 `device` 限定，因为 `LtmPool` 的 `(device, name)` 唯一，「设备 + 池名」才能定位到唯一的池。唯一约束是 `(device, pool_name, name, port)`——必须带 `port`，F5 同一节点可以在多个端口上做成员，剥掉 `/Common/node_a:80` 的端口后 `name` 都是 `node_a`，只约束 `name` 会误杀合法数据。存量迁移只有 `pool_name` 可用，无法唯一映射到设备的行（孤儿 / 多台设备同名池）直接删除并在迁移输出里逐条打印，之后再按新唯一键去重。所有按 `pool_name` 查成员的地方（`LBPoolSaver`、`analysis/api/analysis.py`、`analysis/path_tracer.py`）都必须同时限定 `device`，否则不同设备上的同名池会互相串；`LBPoolSaver` 先删后建时也会跨设备误删。
 - `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
 - `static_routes` 的模板字段名不统一（Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco 还带 `interface_name` 与 `metric`）：`subnet_mask → mask` 已由 `ops.mapping.FIELD_ALIASES` 在 Saver 入口归一，`RouteSaver` 只读 `mask`。
 - `SnmpConfigSaver` 兼容两种产出形态：Huawei / H3C router 的 `community` + `access_type` + `host_ip`，以及 H3C switch（Comware V7）的 `target_hosts[].ip` + `securityname`。
@@ -312,7 +330,7 @@ TTP 模板解析 → 结果写回 config_json
 
 ## API 路由
 
-`netops/urls.py` 依次 include 三个应用的 urls，全部挂载在 `/api/` 下。
+`netops/urls.py` 依次 include 四个应用的 urls，全部挂载在 `/api/` 下。
 
 **core**（`core/api/urls.py`）
 
@@ -356,11 +374,6 @@ tags, subnets, ip-addresses
 
 | 路径 | 说明 |
 |------|------|
-| `/api/trace/` | 路径追踪 |
-| `/api/trace/route-collect/` | 路由采集 |
-| `/api/trace/route-collect-raw/` | 路由采集（原始输出） |
-| `/api/trace/routes/` | 路由列表 |
-| `/api/trace/dns-query/` | DNS 查询 |
 | `/api/configs/git-content/` | 获取指定 commit 的配置内容 |
 | `/api/configs/git-diff/` | 对比两个版本的配置差异 |
 | `/api/configs/history/` | 设备配置变更历史 |
@@ -370,10 +383,20 @@ tags, subnets, ip-addresses
 | `/api/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
 | `/api/parsers/templates/<name>/` | 模板文件内容 |
 | `/api/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
+| `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤 |
+
+**analysis**（`analysis/api/urls.py`，前缀沿用拆分前，前端零改动）
+
+| 路径 | 说明 |
+|------|------|
+| `/api/trace/` | 路径追踪 |
+| `/api/trace/route-collect/` | 路由采集 |
+| `/api/trace/route-collect-raw/` | 路由采集（原始输出） |
+| `/api/trace/routes/` | 路由列表 |
+| `/api/trace/dns-query/` | DNS 查询 |
 | `/api/internet-analysis/` | 互联网资产分析结果（**只读缓存**，未分析过返回 404） |
 | `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
-| `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤 |
 
 ## 注意事项
 
@@ -381,11 +404,11 @@ tags, subnets, ip-addresses
 - **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
 - **F5 池成员的端口分隔符有两种**：名字是普通串或 IPv4 时用冒号（`/Common/node:80`），名字本身是 IPv6 字面量时 F5 改用一个点号（`/Common/2001:db8::1.80`）。所以 `f5_ltm.ttp` 的 `pools` 里成员有两条备选行（点号那条是回退），**并且端口必须限成纯数字**（`vars` 块里的 `PORT`）——不限的话冒号那条会把 IPv6 成员贪婪切成 `name="/Common/2001:db8:"`、`port="1.80"`，永远轮不到回退行，表现为「端口被相邻成员的值带偏」。
 - **TTP 模板的引擎行为**（细节 + 内置模式表 + 复现脚本：技能 `ttp-template-gotchas`）：① 模板是被当 **XML** 解析的，所以注释是纯文本——注释行里出现尖括号（直接写 `<vars>` / `<group>`）会被当成未闭合标签，整个模板解析失败（`ParseError: mismatched tag`）；② `re()` 的解析顺序是 `vars` → 内置模式表 → **原样当正则**，也就是说**可以内联写正则**（旧笔记里「不能内联写正则」的说法是**错的**，2026-09 实测纠正）；③ **单条命中给 `dict`、多条命中给 `list`**，消费方两种都要兼容（`savers/lb.py` 注释记的正是这个）；④ 内置 `IPV6` 正则只认十六进制与冒号、**不含点号**（`::ffff:192.168.1.1` 匹配不到）。
-- **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`ops/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
+- **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`analysis/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
 - **`apps/ops/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
-- `ops` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ops`。
-- **互联网资产分析走缓存**：结果存 `ops.models.InternetAnalysis`，只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
+- `ops` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ops`。**拆分只动 Python 路径、不动 label**：`InternetAnalysis` 的迁移历史留在 `operator.0001`（`operator.0003` 仅删 state；`0002_accessflow` 是主仓原有的 AccessFlow），新表名靠 `analysis.0001` 的 `RunSQL RENAME` 对齐——改 label 会让 `django_migrations` 里的历史对不上，别动。
+- **互联网资产分析走缓存**：结果存 `analysis.models.InternetAnalysis`（app `analysis`，2026-09 从 ops 拆出），只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
 - **资产分析的表格列**：后端 `build_path_rows` 与前端 `internet-asset.vue` 里的 `buildPathRows` 是**两份各自独立**的扁平化实现（列序必须手工保持一致）。当前 7 列：域名 / LLB_VS地址#端口 / LLB_Rule规则 / SLB_VS地址#端口 / SLB_Rule规则 / 服务器地址#端口 / 负责人。
 - **地址与端口之间用 `#`，不要用 `:`**：IPv6 地址本身带冒号，`2001:db8::1:80` 分不清哪一段是端口（回退写法 `[...]:80` 虽标准，但 IPv4 用方括号又多余）。`#` 不可能出现在 IPv4/IPv6 里，含义唯一且紧凑。分隔符是两端各一个常量——后端 `analysis.py` 的 `TARGET_SEPARATOR`、前端 `internet-asset.vue` 的同名常量，改要一起改（有测试守 `#` 不可能出现在 IP 里、且能唯一切回）。`ip_port` / `matched_ip_port` / `fallback_ip_port` 这几个内部字段也走同一个拼接函数，它们只出现在前端类型声明里、从未被展示。
 - **为什么只有 7 列**：**LLB 的池成员地址#端口 就是 SLB 虚拟服务器的地址#端口**（同一份数据，LLB 池成员指向下一级 SLB），所以不各占一列；「服务器地址#端口」是链路最后一跳的池成员（两级取 SLB 的、一级取 LLB 的，断链时回退到 GTM 地址，见 `_final_target`）。有测试 `test_llb_member_equals_slb_virtual_server` 守这个前提。
