@@ -30,8 +30,12 @@ import time
 from contextlib import contextmanager
 from functools import lru_cache
 from logging import getLogger
+from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
+
+if TYPE_CHECKING:
+    from celery import Task as CeleryTask
 
 logger = getLogger(__name__)
 
@@ -96,7 +100,13 @@ def encode_message(device, flows: list[dict]) -> dict[str, str]:
 
 def publish(device, flows: list[dict], client=None) -> None:
     client = client or get_redis()
-    client.xadd(STREAM, encode_message(device, flows), maxlen=stream_maxlen(), approximate=True)
+    # redis 8.1 的 xadd 形如 ``fields: Dict[FieldT, EncodableT]``：FieldT/EncodableT 是
+    # **值约束 TypeVar**（只认 str/bytes 等预设项）且嵌在不变（invariant）位置——pyright
+    # 拒绝从具体的 ``dict[str, str]`` 反推约束项（报 "str is not the same as FieldT"）。
+    # 运行期签名完全兼容，cast 掉这个推断限制（与 workflow.py 处理 celery-stubs 同一手法，
+    # 优于 ``# type: ignore``）。
+    fields = cast("Any", encode_message(device, flows))
+    client.xadd(STREAM, fields, maxlen=stream_maxlen(), approximate=True)
 
 
 def decode_message(fields: dict) -> tuple[int, list[dict]]:
@@ -145,7 +155,10 @@ def request_rebuild(device_id: int) -> None:
     from ingest.tasks import rebuild_access_flows
 
     try:
-        rebuild_access_flows.delay(device_id)
+        # celery-stubs 把 ``@shared_task`` 装饰后的函数仍声明成普通函数
+        # （FunctionType，上面没有 .delay）——运行期它其实是 Task 实例。显式 cast 回
+        # Task（与 workflow.py 处理 run_config_parsing 的手法一致，优于 ``# type: ignore``）
+        cast("CeleryTask", rebuild_access_flows).delay(device_id)
     except Exception:
         logger.warning(
             "投递 AccessFlow 重建失败（可用 rebuild_access_flows 手工补）: device=%s", device_id, exc_info=True

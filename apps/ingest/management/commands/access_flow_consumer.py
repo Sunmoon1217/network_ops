@@ -16,6 +16,7 @@
 
 import signal
 from logging import getLogger
+from typing import cast
 
 from django.core.management.base import BaseCommand
 
@@ -57,7 +58,15 @@ class Command(BaseCommand):
 
         while not stopping:
             try:
-                responses = client.xreadgroup(GROUP, name, {STREAM: ">"}, count=count, block=block)
+                # redis 的 xreadgroup 返回类型是宽 Union（XReadGroupResponse 里混着
+                # dict 分支，还叠了 Awaitable）——运行期这里拿到的形状固定是
+                # [(stream, [(msg_id, fields), ...]), ...]，block 超时时是 None。
+                # cast 成真实形状，避免 pyright 对 Union 的每个分支做迭代/解包推断
+                # （会错位报成 "int is not iterable"）。优于 ``# type: ignore``。
+                responses = cast(
+                    "list[tuple[str, list[tuple[str, dict]]]] | None",
+                    client.xreadgroup(GROUP, name, {STREAM: ">"}, count=count, block=block),
+                )
             except Exception:
                 logger.exception("XREADGROUP 失败，5 秒后重试")
                 if once:
