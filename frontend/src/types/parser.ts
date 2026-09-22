@@ -59,11 +59,3 @@ export interface MappingResult {
     parsers: ParserMappingItem[]
     missing_producers: MissingProducer[]
 }
-
-/** 统计卡片视图模型：level 决定异常计数的配色 */
-export interface StatCard {
-    label: string
-    value: number
-    hint: string
-    level: 'normal' | 'warning' | 'danger'
-}
