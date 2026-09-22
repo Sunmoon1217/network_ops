@@ -2,7 +2,7 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { fetchAllPages } from '@/utils/fetchAllPages'
 import api from '@/api/index'
@@ -56,15 +56,20 @@ onMounted(() => {
 <template>
   <PageLayout title="ARP / MAC 表">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
-      <el-select v-model="filterVlan" placeholder="VLAN" clearable style="width: 120px">
-        <el-option v-for="v in vlanOptions" :key="v" :label="v" :value="v" />
-      </el-select>
-      <el-select v-model="filterType" placeholder="ARP 类型" clearable style="width: 110px">
-        <el-option label="动态" value="dynamic" />
-        <el-option label="静态" value="static" />
-      </el-select>
-      <el-input v-model="search" placeholder="搜索 IP/MAC/设备/接口" clearable style="width: 220px" />
+      <FilterBar
+        v-model:device="filterDevice"
+        v-model:search="search"
+        search-placeholder="搜索 IP/MAC/设备/接口"
+        search-width="220px"
+      >
+        <el-select v-model="filterVlan" placeholder="VLAN" clearable style="width: 120px">
+          <el-option v-for="v in vlanOptions" :key="v" :label="v" :value="v" />
+        </el-select>
+        <el-select v-model="filterType" placeholder="ARP 类型" clearable style="width: 110px">
+          <el-option label="动态" value="dynamic" />
+          <el-option label="静态" value="static" />
+        </el-select>
+      </FilterBar>
     </template>
     <div class="table-wrapper">
       <DataTable :data="entries" :loading="loading">

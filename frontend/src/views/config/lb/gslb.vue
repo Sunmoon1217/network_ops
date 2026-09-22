@@ -2,14 +2,13 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
+import { useSearchSync } from '@/composables/useSearchSync'
 import { getGtmWideips, getGtmPools } from '@/api/config'
 
 const activeTab = ref('wideip')
 const filterDevice = ref<number | ''>('')
-// 页面级共享搜索词：两个 tab 各自的 useCrudApi 持有独立 search，这里同步写入
-const keyword = ref('')
 
 // Wide IP 与 Pool 各自持有独立的分页、搜索与加载状态
 const {
@@ -23,11 +22,8 @@ const {
   resetAndFetch: resetPool, search: poolSearch,
 } = useCrudApi()
 
-// 搜索词变化由 useCrudApi 内部防抖并带上最新参数重新请求，两个 tab 同步生效
-watch(keyword, (v) => {
-  wideipSearch.value = v
-  poolSearch.value = v
-})
+// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
+const keyword = useSearchSync(wideipSearch, poolSearch)
 
 // fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
 const loadWideips = () =>
@@ -52,8 +48,13 @@ onMounted(() => {
 <template>
   <PageLayout title="域名解析管理">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" device-type="gslb" />
-      <el-input v-model="keyword" placeholder="搜索域名/池/设备" clearable style="width: 220px" />
+      <FilterBar
+        v-model:device="filterDevice"
+        v-model:search="keyword"
+        device-type="gslb"
+        search-placeholder="搜索域名/池/设备"
+        search-width="220px"
+      />
     </template>
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Wide IP" name="wideip">
