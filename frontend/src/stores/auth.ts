@@ -4,11 +4,11 @@ import { login as apiLogin, logout as apiLogout, getCurrentUser, register as api
 import { getToken, setToken, removeToken } from '@/utils/token'
 import { resetUserPreferences } from '@/composables/useTablePrefs'
 
-import type { User } from '@/types'
+import type { UserInfo } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(getToken())
-  const user = ref<User | null>(null)
+  const user = ref<UserInfo | null>(null)
   const loading = ref(false)
 
   const isAuthenticated = computed(() => !!token.value)

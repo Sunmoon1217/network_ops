@@ -1,7 +1,10 @@
-/** 设备下拉项（只列 GSLB 设备）；与 api.ts 里任务下拉的 DeviceOption 字段不同，故单独命名 */
-export interface GslbDeviceOption {
-    id: number
-    hostname: string
+import type { DeviceOption } from './api'
+
+/**
+ * 设备下拉项（只列 GSLB 设备）；与任务下拉的 DeviceOption 字段不同故单独命名，
+ * 公共的 id / hostname 由 extends 复用（新增 device_type 等 GSLB 专有字段）。
+ */
+export interface GslbDeviceOption extends DeviceOption {
     device_type: string
     device_type_display?: string
     security_zone_name?: string
