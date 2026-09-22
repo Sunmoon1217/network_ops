@@ -37,11 +37,18 @@ def parser_list(request):
 
 @require_GET
 def parser_mapping(request):
-    """映射清单：解析器 → 模板 → 产出键 → Saver，并暴露契约缺口
+    """映射清单：解析器 → 模板 → 产出键 →（归一）→ Saver → 模型，并暴露契约缺口
 
     用于回答"这台设备会解析出什么、进哪些表"，以及发现
     「模板改了结构导致 Saver 静默失效」这类问题。
+
+    产出与消费的对账在**归一口径**（``ops.mapping.canonical_key``）下进行；
+    ``consumers`` 条目附 ``canonical_key`` 与 ``models``（Saver 写入的模型），
+    顶层另给 ``key_aliases`` / ``field_aliases`` 两张归一声明表与按 Saver
+    聚合的 ``savers`` 清单——即解析器 / 关键字内部结构差异 / Saver / 模型
+    的完整关联关系。
     """
+    from ops.mapping import FIELD_ALIASES, KEY_ALIASES, canonical_key
     from ops.parsers.contract import KNOWN_MISSING_PRODUCER
     from ops.parsers.template_keys import template_has_dynamic_groups, template_keys
     from ops.savers.registry import all_savers
@@ -58,7 +65,7 @@ def parser_mapping(request):
     for (vendor, device_type), parser_cls in sorted(ParserFactory._registry.items()):
         template_keys_actual = template_keys(parser_cls.template_name)
         declared_keys = list(parser_cls.provides_keys)
-        produced_by_type.setdefault(device_type, set()).update(declared_keys)
+        produced_by_type.setdefault(device_type, set()).update(canonical_key(k) for k in declared_keys)
 
         consumers = consumers_by_type.get(device_type, {})
         parsers_payload.append(
@@ -72,7 +79,17 @@ def parser_mapping(request):
                 "template_keys": template_keys_actual,
                 "keys_match": template_keys_actual == declared_keys,
                 "has_dynamic_group_names": template_has_dynamic_groups(parser_cls.template_name),
-                "consumers": [{"key": k, "saver": consumers[k]} for k in declared_keys if k in consumers],
+                "consumers": [
+                    {
+                        "key": k,
+                        "saver": consumers[k],
+                        "canonical_key": canonical_key(k),
+                        # 模型短名（如 "Policy"），完整点路径见顶层 savers 清单
+                        "models": [p.rsplit(".", 1)[-1] for p in savers[(device_type, k)].model_paths],
+                    }
+                    for k in declared_keys
+                    if k in consumers
+                ],
                 "unconsumed_keys": [k for k in declared_keys if k not in consumers],
             }
         )
@@ -85,8 +102,32 @@ def parser_mapping(request):
             "note": KNOWN_MISSING_PRODUCER.get((device_type, key), ""),
         }
         for (device_type, key), saver_cls in sorted(savers.items())
-        if key not in produced_by_type.get(device_type, set())
+        if canonical_key(key) not in produced_by_type.get(device_type, set())
     ]
+
+    # 按 Saver 类聚合的「Saver → 模型」清单（同一 Saver 的多个键 / 多个类型只列一次）
+    savers_payload: list[dict] = []
+    by_class: dict[str, dict] = {}
+    for (device_type, key), saver_cls in sorted(savers.items()):
+        entry = by_class.setdefault(
+            saver_cls.__name__,
+            {
+                "saver": saver_cls.__name__,
+                "device_types": [],
+                "keys": [],
+                "canonical_keys": [],
+                "model_paths": list(saver_cls.model_paths),
+                "models": [p.rsplit(".", 1)[-1] for p in saver_cls.model_paths],
+            },
+        )
+        if device_type not in entry["device_types"]:
+            entry["device_types"].append(device_type)
+        if key not in entry["keys"]:
+            entry["keys"].append(key)
+        ck = canonical_key(key)
+        if ck not in entry["canonical_keys"]:
+            entry["canonical_keys"].append(ck)
+    savers_payload = list(by_class.values())
 
     summary = {
         "parser_count": len(parsers_payload),
@@ -95,7 +136,16 @@ def parser_mapping(request):
         "missing_producer_count": len(missing_producers),
         "unconsumed_count": sum(len(p["unconsumed_keys"]) for p in parsers_payload),
     }
-    return JsonResponse({"summary": summary, "parsers": parsers_payload, "missing_producers": missing_producers})
+    return JsonResponse(
+        {
+            "summary": summary,
+            "parsers": parsers_payload,
+            "missing_producers": missing_producers,
+            "key_aliases": KEY_ALIASES,
+            "field_aliases": FIELD_ALIASES,
+            "savers": savers_payload,
+        }
+    )
 
 
 @require_GET

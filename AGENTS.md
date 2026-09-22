@@ -34,6 +34,7 @@ network_ops/
 │   │   └── api/{serializers.py, urls.py, views.py}
 │   └── ops/             # 操作层：解析、存储、路径追踪
 │       ├── api/{configs.py, parsers.py, trace.py, urls.py}
+│       ├── mapping.py        # 解析产出归一（键/字段别名）+ Saver→模型关联声明
 │       ├── parsers/{factory.py, template_keys.py, contract.py} + tmpls/{configs,running}/
 │       ├── savers/{base,registry,interface,lb,firewall,routing}.py
 │       ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
@@ -240,8 +241,9 @@ uv run ruff format
 |------|------|
 | `parsers/factory.py` | `ParserFactory` + `BaseParser`(ABC)，按 `(vendor, device_type)` 注册 |
 | `parsers/tmpls/` | TTP 解析模板（`configs/`、`running/`） |
-| `savers/base.py` | `BaseSaver`(ABC)，通过 `__init_subclass__` 自动注册 |
-| `savers/registry.py` | Saver 注册表 |
+| `mapping.py` | 解析产出归一（`KEY_ALIASES` / `FIELD_ALIASES`，纯函数幂等）与 Saver→模型关联（`model_paths`） |
+| `savers/base.py` | `BaseSaver`(ABC)，`__init_subclass__` 自动注册；`save()` 入口先归一再交 `_save` |
+| `savers/registry.py` | Saver 注册表（按**原始键**分组，含别名） |
 | `config_repo.py` | Git 配置仓库的读取、历史、diff |
 | `path_tracer.py` | 路径追踪（模拟报文逐跳转发） |
 | `signals.py` | `DeviceConfig` 保存后触发解析与入库 |
@@ -266,9 +268,9 @@ uv run ruff format
 - `Vlan` / `Route` / `SnmpConfig` / `NtpConfig` / `SyslogConfig` 原为裸 `models.Model`，已改为继承 `ConfigBase`（migration `0023` / `0024`）。代价与收益：`SnmpConfig` / `NtpConfig` / `SyslogConfig` 的 `device` 由一对一变成外键（基数 1:1 → 1:N），各自重复声明的 `created_at` / `updated_at` 与基类同名同义故删除，`related_name` 变为默认的 `<model>_set`；`Vlan.device` 由可空变为必填；`Route` 新增 `device`，与 `vrf.device` 冗余，Saver 入库时用 `vrf` 保证一致，缺失时挂到设备的 `default` VRF。
 - `LtmPoolMember` 原为裸 `models.Model`，只有 `pool_name` 字符串、没有 `device`，已改为继承 `ConfigBase`（migration `0026`）。**它保留 `pool_name` 而不是改成指向 `LtmPool` 的外键**：归属靠 `device` 限定，因为 `LtmPool` 的 `(device, name)` 唯一，「设备 + 池名」才能定位到唯一的池。唯一约束是 `(device, pool_name, name, port)`——必须带 `port`，F5 同一节点可以在多个端口上做成员，剥掉 `/Common/node_a:80` 的端口后 `name` 都是 `node_a`，只约束 `name` 会误杀合法数据。存量迁移只有 `pool_name` 可用，无法唯一映射到设备的行（孤儿 / 多台设备同名池）直接删除并在迁移输出里逐条打印，之后再按新唯一键去重。所有按 `pool_name` 查成员的地方（`LBPoolSaver`、`ops/api/analysis.py`、`ops/path_tracer.py`）都必须同时限定 `device`，否则不同设备上的同名池会互相串；`LBPoolSaver` 先删后建时也会跨设备误删。
 - `NatRule` 的三个匹配 M2M（`source_addresses` / `destination_addresses` / `services`）是 `blank=True`——不同厂商的 NAT 配置能提供的信息差别很大，cisco 的 `nat` group 只有 `network_name`/`host_ip`/`public_ip`，给不出任何 service。
-- `RouteSaver` 的 `static_routes` 模板键名不统一：Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco 还带 `interface_name` 与 `metric`。
+- `static_routes` 的模板字段名不统一（Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco 还带 `interface_name` 与 `metric`）：`subnet_mask → mask` 已由 `ops.mapping.FIELD_ALIASES` 在 Saver 入口归一，`RouteSaver` 只读 `mask`。
 - `SnmpConfigSaver` 兼容两种产出形态：Huawei / H3C router 的 `community` + `access_type` + `host_ip`，以及 H3C switch（Comware V7）的 `target_hosts[].ip` + `securityname`。
-- `PolicySaver` 消费 `policies` / `acl` / `rules` 三种形态。hillstone 的 `rules` 是扁平的分列地址，会先落成 `AddressBook` 再挂 M2M：带 `/` 的 `-ip` 是子网、不带是主机；`-address` 是**地址簿引用**（按名字取用，不存在则建占位记录，内容留给 AddressBookSaver 填）；`-range` 拆成 `ip_start` / `ip_end`；`-host` 是主机。`action` 各厂商用词不同（`permit` / `drop` ...），Saver 统一归一为模型的 `allow` / `deny`。
+- `PolicySaver` 消费 `policies` / `acl` / `rules` 三种**原始键**，键别名与字段差异（hillstone `rule_id`/`rule_name`、cisco `acl_name` → `policy_id`/`name`）由 `ops.mapping` 在 `BaseSaver.save` 入口归一；值语义与结构转换仍留在 Saver——hillstone 的 `rules` 是扁平的分列地址，会先落成 `AddressBook` 再挂 M2M：带 `/` 的 `-ip` 是子网、不带是主机；`-address` 是**地址簿引用**（按名字取用，不存在则建占位记录，内容留给 AddressBookSaver 填）；`-range` 拆成 `ip_start` / `ip_end`；`-host` 是主机。`action` 各厂商用词不同（`permit` / `drop` ...），Saver 统一归一为模型的 `allow` / `deny`。
 - hillstone 模板原先同时存在 `rules` 与 `rules2` 两套提取规则（同一批 `rule id` 会被解析两遍：`rules` 多一层 `src` / `dst` 嵌套但**完全不提取 range**）。现已合并为单一的 `rules`（扁平形态），并把 `src-range` / `dst-range` 的变量名分开——原先两者都叫 `range`，两个值会混进同一个列表而分不清源/目的。仅为旧 `rules` 服务的 `<vars>` 与 `<macro>` 也已移除。
 
 **尚未覆盖的两处**：
@@ -287,7 +289,7 @@ ParserFactory 按 (vendor, device_type) 选择解析器
     ↓
 TTP 模板解析 → 结果写回 config_json
     ↓
-按 key 分发给对应 Saver → 写入数据库
+按 key 分发给对应 Saver → save() 入口经 ops.mapping 归一（键/字段）→ 写入数据库
 ```
 
 `signals.py` 的处理器仅在 `created=True` 时触发，并用 `_processing` 集合防止递归。
@@ -373,6 +375,7 @@ tags, subnets, ip-addresses
 
 ## 注意事项
 
+- **解析器 / Saver / 模型的关联与归一**：三层关联 = 解析器按 (vendor, device_type) 产出**原始**键 → `ops.mapping` 归一（`KEY_ALIASES` 键别名、`FIELD_ALIASES` 字段别名；纯函数、幂等、**无厂商维度**——同一规范键下的字段同义性与厂商无关，无型号的 device 也要能归一）→ Saver 按 (device_type, key) 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`（模板方法，子类实现 `_save` 只读规范字段）而不是 pipeline：绕过分发直调 `save` 的调用方拿到同样结构。**分层规矩**：结构改名进声明表；**值语义**（permit→allow、enable/disable、route→layer3）留 Saver；**结构级差异**（SNMP 的 community/target_hosts 两形态、Hillstone 扁平地址拆 AddressBook）留 Saver——声明表只做纯改名，混入值转换会被误读成"字段同义"。契约测试：`tests/ops/test_parser_contract.py`（产出/消费对账切**归一口径**，`KNOWN_MISSING_PRODUCER` 因此只剩 slb 的 snat 两条）+ `tests/ops/test_mapping.py`（归一行为 + 声明不许说谎：死别名、未声明模型都会红）。清单接口 `/api/parsers/mapping/` 顶层新增 `key_aliases` / `field_aliases` / `savers`（按 Saver 聚合，带 `model_paths`），`consumers` 条目附 `canonical_key` / `models`——均为**增量字段**，前端旧消费不受影响。
 - **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
 - **F5 池成员的端口分隔符有两种**：名字是普通串或 IPv4 时用冒号（`/Common/node:80`），名字本身是 IPv6 字面量时 F5 改用一个点号（`/Common/2001:db8::1.80`）。所以 `f5_ltm.ttp` 的 `pools` 里成员有两条备选行（点号那条是回退），**并且端口必须限成纯数字**（`vars` 块里的 `PORT`）——不限的话冒号那条会把 IPv6 成员贪婪切成 `name="/Common/2001:db8:"`、`port="1.80"`，永远轮不到回退行，表现为「端口被相邻成员的值带偏」。
 - **TTP 模板的引擎行为**（细节 + 内置模式表 + 复现脚本：技能 `ttp-template-gotchas`）：① 模板是被当 **XML** 解析的，所以注释是纯文本——注释行里出现尖括号（直接写 `<vars>` / `<group>`）会被当成未闭合标签，整个模板解析失败（`ParseError: mismatched tag`）；② `re()` 的解析顺序是 `vars` → 内置模式表 → **原样当正则**，也就是说**可以内联写正则**（旧笔记里「不能内联写正则」的说法是**错的**，2026-09 实测纠正）；③ **单条命中给 `dict`、多条命中给 `list`**，消费方两种都要兼容（`savers/lb.py` 注释记的正是这个）；④ 内置 `IPV6` 正则只认十六进制与冒号、**不含点号**（`::ffff:192.168.1.1` 匹配不到）。

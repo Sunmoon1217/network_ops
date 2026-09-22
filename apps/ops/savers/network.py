@@ -19,8 +19,9 @@ class VlanSaver(BaseSaver):
 
     device_types = ["switch"]
     keys = ["vlans"]
+    model_paths = ["assets.models.Vlan"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Vlan
         from assets.serializers.views import VlanSerializer
 
@@ -49,8 +50,9 @@ class SnmpConfigSaver(BaseSaver):
 
     device_types = ["switch", "router"]
     keys = ["snmp"]
+    model_paths = ["assets.models.SnmpConfig"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import SnmpConfig
         from assets.serializers.views import SnmpConfigSerializer
 

@@ -13,9 +13,11 @@ logger = getLogger(__name__)
 class VrfSaver(BaseSaver):
     device_types = ["switch", "router"]
     keys = ["vrfs", "vpn_instances"]
+    model_paths = ["assets.models.Vrf"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        vrfs = as_list(parsed_data.get("vrfs") or parsed_data.get("vpn_instances"))
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
+        # vpn_instances 别名已由 ops.mapping 在 save 入口归一为 vrfs
+        vrfs = as_list(parsed_data.get("vrfs"))
         if not vrfs:
             return (0, 0)
 
@@ -41,8 +43,9 @@ class RouteSaver(BaseSaver):
     """静态路由保存器。
 
     模板产出形如 ``{"destination_network": "10.0.0.0", "mask": "255.255.0.0",
-    "next_hop": "10.0.0.1"}``（Maipu / Ruijie 用的是 ``subnet_mask``，cisco 的还带
-    ``interface_name`` 与 ``metric``）。
+    "next_hop": "10.0.0.1"}``——Maipu / Ruijie 产出的 ``subnet_mask`` 已由
+    ``ops.mapping.FIELD_ALIASES`` 归一为 ``mask``，cisco 的还带 ``interface_name``
+    与 ``metric``。
 
     Route 通过 ``vrf`` 表达归属，继承来的 ``device`` 与之冗余；产出里没有 VRF 信息，
     统一挂到该设备的 ``default`` VRF（不存在就建一个），与数据迁移时的回填口径一致。
@@ -50,8 +53,9 @@ class RouteSaver(BaseSaver):
 
     device_types = ["switch", "router", "firewall"]
     keys = ["static_routes"]
+    model_paths = ["assets.models.Route", "assets.models.Vrf"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Route
         from assets.serializers.views import RouteSerializer
 
@@ -63,7 +67,7 @@ class RouteSaver(BaseSaver):
 
         created, updated = 0, 0
         for item in routes:
-            mask = item.get("mask") or item.get("subnet_mask")
+            mask = item.get("mask")
             destination = self._to_cidr(item.get("destination_network"), mask)
             if not destination:
                 continue

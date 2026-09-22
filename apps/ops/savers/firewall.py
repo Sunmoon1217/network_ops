@@ -39,12 +39,14 @@ class AddressBookSaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["address_books", "addresses"]
+    model_paths = ["assets.models.AddressBook"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import AddressBook
         from assets.serializers.views import AddressBookSerializer
 
-        raw = parsed_data.get("address_books") or parsed_data.get("addresses")
+        # addresses 别名已由 ops.mapping 在 save 入口归一为 address_books
+        raw = parsed_data.get("address_books")
         if not raw:
             return (0, 0)
 
@@ -171,8 +173,9 @@ class NatRuleSaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["nat"]
+    model_paths = ["assets.models.NatRule", "assets.models.AddressBook"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import NatRule
         from assets.serializers.views import NatRuleSerializer
 
@@ -230,8 +233,9 @@ class NatRuleSaver(BaseSaver):
 class ServiceSaver(BaseSaver):
     device_types = ["firewall"]
     keys = ["services"]
+    model_paths = ["assets.models.Service"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Service
 
         services = as_list(parsed_data.get("services"))
@@ -261,9 +265,11 @@ class ServiceSaver(BaseSaver):
 class PolicySaver(BaseSaver):
     """防火墙策略保存器。
 
-    三种产出形态共用：
+    三种原始产出键（``policies`` / ``acl``（cisco）/ ``rules``（hillstone））与
+    字段差异（``rule_id`` / ``acl_name`` → ``policy_id``、``rule_name`` → ``name``）
+    都已在 ``BaseSaver.save`` 入口由 ``ops.mapping`` 归一，这里只处理**值语义**
+    与 hillstone 的结构级特征：
 
-    - ``policies`` / ``acl``（cisco）：带 ``policy_id`` / ``order`` / ``action`` / ``enabled``
     - ``rules``（hillstone）：扁平的分列地址——``src-ip`` / ``src-addr`` / ``src-range`` /
       ``dst-ip`` / ``dst-addr`` / ``dst-range`` / ``dst-host`` / ``service`` / ``rule_status``
 
@@ -278,12 +284,14 @@ class PolicySaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["policies", "acl", "rules"]
+    model_paths = ["assets.models.Policy", "assets.models.AddressBook", "assets.models.Service"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import AddressBook, Policy, Service
         from assets.serializers.views import AddressBookSerializer, PolicySerializer
 
-        policies = parsed_data.get("policies") or parsed_data.get("acl") or parsed_data.get("rules")
+        # acl / rules 别名已由 ops.mapping 在 save 入口归一为 policies
+        policies = parsed_data.get("policies")
         if not policies:
             return (0, 0)
 
@@ -297,7 +305,9 @@ class PolicySaver(BaseSaver):
         references: list[tuple[str, list[tuple[str, str]], list[tuple[str, str]], list[str]]] = []
 
         for index, item in enumerate(as_list(policies)):
-            policy_id = str(item.get("policy_id") or item.get("rule_id") or item.get("name") or "").strip()
+            # rule_id / acl_name / rule_name 已归一为 policy_id / name；
+            # 取不到 policy_id 的规则没有稳定标识，无法 upsert，只能跳过
+            policy_id = str(item.get("policy_id") or item.get("name") or "").strip()
             if not policy_id:
                 continue
 
@@ -305,7 +315,7 @@ class PolicySaver(BaseSaver):
                 {
                     "policy_id": policy_id,
                     "order": self._safe_int(item.get("order")) if item.get("order") is not None else index,
-                    "name": str(item.get("name") or item.get("rule_name") or policy_id),
+                    "name": str(item.get("name") or policy_id),
                     "action": self._normalize_action(item.get("action")),
                     "enabled": self._is_enabled(item),
                     "log": bool(item.get("log", False)),
