@@ -582,6 +582,11 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 class PolicySerializer(serializers.ModelSerializer):
     device_hostname = serializers.CharField(source="device.hostname", read_only=True, default="")
+    # 跨表展示字段：源/目的地址来自 AddressBook、端口来自 Service（三个 M2M），
+    # 直接给格式化好的字符串，前端表格列不必再逐条展开（配合视图侧的 prefetch_related）
+    source_addresses_display = serializers.SerializerMethodField()
+    destination_addresses_display = serializers.SerializerMethodField()
+    services_display = serializers.SerializerMethodField()
 
     class Meta:
         from assets.models import Policy
@@ -597,14 +602,58 @@ class PolicySerializer(serializers.ModelSerializer):
             "action",
             "enabled",
             "source_addresses",
+            "source_addresses_display",
             "destination_addresses",
+            "destination_addresses_display",
             "services",
+            "services_display",
             "log",
             "description",
             "is_active",
             "created_at",
         )
         read_only_fields = ("id", "created_at")
+
+    def get_source_addresses_display(self, obj) -> list[str]:
+        return [_format_address_entry(entry) for entry in obj.source_addresses.all()]
+
+    def get_destination_addresses_display(self, obj) -> list[str]:
+        return [_format_address_entry(entry) for entry in obj.destination_addresses.all()]
+
+    def get_services_display(self, obj) -> list[str]:
+        return [_format_service_entry(entry) for entry in obj.services.all()]
+
+
+def _format_address_entry(entry) -> str:
+    """地址簿条目的展示串：优先按类型拼出地址内容，再带上名字（若有且不同）。
+
+    - range → ``起始-结束``；subnet → ``地址/前缀``；host → 地址本身
+    - addressbook 引用没有自己的地址字段，只有名字，直接显示名字
+    """
+    if entry.address_type == "range" and entry.ip_start and entry.ip_end:
+        content = f"{entry.ip_start}-{entry.ip_end}"
+    elif entry.ip_address and entry.ip_netmask is not None:
+        content = f"{entry.ip_address}/{entry.ip_netmask}"
+    elif entry.ip_address:
+        content = str(entry.ip_address)
+    else:
+        content = ""
+    name = (entry.name or "").strip()
+    if content and name and name != content:
+        return f"{name}({content})"
+    return name or content
+
+
+def _format_service_entry(entry) -> str:
+    """服务条目的展示串：``协议/端口``（带结束端口时是 ``协议/起-止``）。"""
+    protocol = (entry.protocol or "").strip().lower()
+    port = (entry.port or "").strip()
+    port2 = (entry.port2 or "").strip()
+    if port and port2 and port2 != port:
+        port = f"{port}-{port2}"
+    if port and protocol:
+        return f"{protocol}/{port}"
+    return port or protocol or entry.name
 
 
 class NatRuleSerializer(serializers.ModelSerializer):

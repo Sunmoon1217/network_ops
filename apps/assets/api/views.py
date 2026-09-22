@@ -1005,10 +1005,23 @@ class PolicyViewSet(viewsets.ModelViewSet):
 
     from .serializers import PolicySerializer
 
-    queryset = Policy.objects.select_related("device").all()
+    # 列表要展示源/目的地址（AddressBook）与端口（Service），三个 M2M 用 prefetch
+    # 一次取回，避免逐行查询（N+1）
+    queryset = (
+        Policy.objects.select_related("device")
+        .prefetch_related("source_addresses", "destination_addresses", "services")
+        .all()
+    )
     serializer_class = PolicySerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "policy_id", "device__hostname")
+    search_fields = (
+        "name",
+        "policy_id",
+        "device__hostname",
+        "source_addresses__name",
+        "destination_addresses__name",
+        "services__name",
+    )
     ordering_fields = ("order", "created_at")
 
     def get_queryset(self):
