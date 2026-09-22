@@ -6,8 +6,8 @@ import { Refresh } from '@element-plus/icons-vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import {
   getTasks, getTask, createTask, cancelTask, getTaskDeviceOptions,
-  type Task, type DeviceOption,
 } from '@/api/tasks'
+import type { Task, DeviceOption } from '@/types'
 
 const { data: tasks, loading, search, page, pageSize, total, fetchData, refetch, pageParams } =
   useCrudApi<Task>()

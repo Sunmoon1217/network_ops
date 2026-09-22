@@ -1,5 +1,5 @@
-/** 设备下拉项（只列 GSLB 设备） */
-export interface DeviceOption_ {
+/** 设备下拉项（只列 GSLB 设备）；与 api.ts 里任务下拉的 DeviceOption 字段不同，故单独命名 */
+export interface GslbDeviceOption {
     id: number
     hostname: string
     device_type: string
@@ -41,7 +41,7 @@ export interface GtmVServerNode {
 }
 
 /** 链路解析三态：GTM VS 缺失 / 无对应 LTM VS / 完全解析 */
-type MemberStatus = 'vserver_not_found' | 'ltm_not_found' | 'resolved' | ''
+export type MemberStatus = 'vserver_not_found' | 'ltm_not_found' | 'resolved' | ''
 
 /** GTM 池成员节点 */
 export interface GtmMemberNode {
@@ -115,4 +115,7 @@ export interface PathRow {
     owner: string
     note: string
 }
+
+/** 路径的一级：本级虚拟服务器 + 指向下一级的池成员（终点时为 null） */
+export type LtmStep = [LtmNode, LtmMemberNode | null]
 

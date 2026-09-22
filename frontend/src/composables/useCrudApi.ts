@@ -1,7 +1,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-type Fetcher = () => Promise<any>
+import type { Fetcher } from '@/types'
 
 /**
  * 列表页数据获取 + 服务端分页的组合式函数。

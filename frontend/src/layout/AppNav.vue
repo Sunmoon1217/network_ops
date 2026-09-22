@@ -22,12 +22,7 @@ const renderIcon = (icon: Component) => {
   return () => h(ElIcon, null, { default: () => h(icon) })
 }
 
-interface MenuItem {
-  index: string
-  label: string
-  icon?: () => any
-  children?: MenuItem[]
-}
+import type { MenuItem } from '@/types'
 
 const menuOptions: MenuItem[] = [
   { index: '/', label: '总览', icon: renderIcon(IconOverview) },
