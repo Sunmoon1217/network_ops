@@ -2,8 +2,9 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
+import { useSearchSync } from '@/composables/useSearchSync'
 import { getLtmVirtualServers, getLtmPools } from '@/api/config'
 
 const activeTab = ref('vs')
@@ -13,13 +14,16 @@ const filterDevice = ref<number | ''>('')
 const {
   data: virtualServers, loading: vsLoading, page: vsPage, pageSize: vsPageSize,
   total: vsTotal, fetchData: fetchVsData, refetch: refetchVs, pageParams: vsPageParams,
-  resetAndFetch: resetVs,
+  resetAndFetch: resetVs, search: vsSearch,
 } = useCrudApi()
 const {
   data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
   total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool,
+  resetAndFetch: resetPool, search: poolSearch,
 } = useCrudApi()
+
+// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
+const keyword = useSearchSync(vsSearch, poolSearch)
 
 // fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
 const loadVirtualServers = () =>
@@ -44,7 +48,13 @@ onMounted(() => {
 <template>
   <PageLayout title="负载均衡管理">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
+      <FilterBar
+        v-model:device="filterDevice"
+        v-model:search="keyword"
+        device-type="slb"
+        search-placeholder="搜索名称/地址/池/设备"
+        search-width="220px"
+      />
     </template>
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Virtual Server" name="vs">

@@ -2,7 +2,7 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import api from '@/api/index'
 
@@ -20,8 +20,7 @@ onMounted(fetchAll)
 <template>
   <PageLayout title="访问策略">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
-      <el-input v-model="search" placeholder="搜索策略名称/ID" clearable style="width: 200px" />
+      <FilterBar v-model:device="filterDevice" v-model:search="search" search-placeholder="搜索策略名称/ID" />
     </template>
     <div class="table-wrapper">
       <DataTable :data="policies" :loading="loading">

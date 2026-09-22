@@ -2,7 +2,7 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { protocolTagType } from '@/composables/useTagType'
 import api from '@/api/index'
@@ -37,11 +37,11 @@ onMounted(fetchAll)
 <template>
   <PageLayout title="路由表">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
-      <el-select v-model="filterProtocol" placeholder="协议" clearable style="width: 100px">
-        <el-option v-for="p in protocolOptions" :key="p.value" :label="p.label" :value="p.value" />
-      </el-select>
-      <el-input v-model="search" placeholder="搜索" clearable style="width: 180px" />
+      <FilterBar v-model:device="filterDevice" v-model:search="search" search-width="180px">
+        <el-select v-model="filterProtocol" placeholder="协议" clearable style="width: 100px">
+          <el-option v-for="p in protocolOptions" :key="p.value" :label="p.label" :value="p.value" />
+        </el-select>
+      </FilterBar>
     </template>
     <div class="table-wrapper">
       <DataTable :data="routes" :loading="loading">
