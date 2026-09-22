@@ -134,6 +134,7 @@ RUN git config --system --add safe.directory '*'
 - nginx 探活用的 `curl` 是 `nginx:alpine` **自带**的（实测 8.22.0）；换基础镜像若不带 curl，healthcheck 会直接失败（`-f` 让 4xx/5xx 也算失败，负向验证要用「空目录 / 死端口」，别用一个随便的 404 路径——SPA 有 `try_files` 兜底）。
 - `static_data` 是**可丢弃**数据：入口脚本每次启动权威重铺，删了也能由重建镜像恢复。
 - 卷名 `config_repo_data` **刻意不复用**旧的 `network_ops_app_data`——那里面是上个方案的另一份历史，复用等于把两份不相干的历史静默合并。旧卷不会自动删除，确认空了再 `docker volume rm network_ops_app_data`。
+- **访问流链路的两个专用服务**（`worker-access` / `access-flow-consumer`）：策略展开走独立的 `access_flow` Celery 队列（`settings.CELERY_TASK_ROUTES`），**只由 `worker-access` 消费**——现有 `worker` 没带 `-Q access_flow`，不改它是刻意的（隔离故障域）。`access-flow-consumer` 是 AccessFlow 的**唯一写者**：只能跑一个实例（`scale` 起多份 = 多写者，先查后合并的前提就没了），它不挂任何卷、只连 db 与 redis；探活看 redis 里的 `access_flow:heartbeat` 键（消费循环每轮盖章、TTL 300s，healthcheck 阈值 120s），光看 PID 判断不了死循环卡住。背压阈值是 `ACCESS_FLOW_MAX_QUEUE`（env/app.env 可覆盖，默认 50000）：生产者投递前查 Stream 长度，超了就 `self.retry` 让路——绝不在任务里 sleep 等待（会占死 worker 进程）。
 
 ## 6. 其余主题去哪儿看
 

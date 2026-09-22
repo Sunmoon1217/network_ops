@@ -61,18 +61,20 @@ def test_csrf_origin_is_trusted_only_when_host_carries_port(caplog):
 
 def test_app_and_worker_share_the_django_runtime_env_file():
     """`DJANGO_CSRF_TRUSTED_ORIGINS` 等 Django 运行时变量在 `env/app.env` 里，
-    由 compose 给 app 与 worker **各注入一次**——两边都拿不到就会行为不一致
+    由 compose 给每个跑 Django/celery 的服务**各注入一次**——有的拿不到就会行为不一致
     （celery 也跑同一份 Django settings）。
 
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`env/*.env` 给容器、`env/secrets/*`
-    给凭据），所以这条契约现在守的是「文件内容 + 两个服务都注入它」，而不是锚点。
+    给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
+
+    当前注入方：app / worker / worker-access（访问流重建生产者）/ access-flow-consumer
+    （访问流单写者消费者）——新增跑 Django 的服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     app_env = (settings.BASE_DIR / "env" / "app.env").read_text(encoding="utf-8")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in app_env
-    # app 与 worker 各注入一次
-    assert compose.count("- env/app.env") == 2
+    assert compose.count("- env/app.env") == 4
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -83,7 +85,10 @@ def test_each_service_only_gets_its_own_env_file():
     assert (env_dir / "gunicorn.env").read_text(encoding="utf-8").count("GUNICORN_WORKERS=") == 1
     assert (env_dir / "celery.env").read_text(encoding="utf-8").count("CELERY_LOGLEVEL=") == 1
 
-    app_block, worker_block = compose.split("  worker:")[0], compose.split("  worker:")[1]
+    app_block = compose.split("  worker:")[0]
+    # worker 块切到下一个服务为止：后面还有 worker-access / access-flow-consumer，
+    # 跨着切会让「串味」断言被别的服务满足（假绿）
+    worker_block = compose.split("  worker:")[1].split("  worker-access:")[0]
     assert "- env/gunicorn.env" in app_block
     assert "- env/celery.env" not in app_block
     assert "- env/celery.env" in worker_block
@@ -112,10 +117,11 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
         assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in text
         assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in text
 
-    # compose 声明了这两个 secret，并挂给 db / app / worker 三个服务
+    # compose 声明了这两个 secret，并挂给全部需要数据库的服务
+    # （db / app / worker / worker-access / access-flow-consumer；新增时跟着加）
     assert "file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}" in compose
     assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}" in compose
-    assert compose.count("secrets: *db-secrets") == 3
+    assert compose.count("secrets: *db-secrets") == 5
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
     assert "${POSTGRES_PASSWORD:-" not in compose
