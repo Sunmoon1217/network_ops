@@ -8,18 +8,26 @@ import { getLtmVirtualServers, getLtmPools } from '@/api/config'
 
 const activeTab = ref('vs')
 const filterDevice = ref<number | ''>('')
+// 页面级共享搜索词：两个 tab 各自的 useCrudApi 持有独立 search，这里同步写入
+const keyword = ref('')
 
 // Virtual Server 与 Pool 各自持有独立的分页、搜索与加载状态
 const {
   data: virtualServers, loading: vsLoading, page: vsPage, pageSize: vsPageSize,
   total: vsTotal, fetchData: fetchVsData, refetch: refetchVs, pageParams: vsPageParams,
-  resetAndFetch: resetVs,
+  resetAndFetch: resetVs, search: vsSearch,
 } = useCrudApi()
 const {
   data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
   total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool,
+  resetAndFetch: resetPool, search: poolSearch,
 } = useCrudApi()
+
+// 搜索词变化由 useCrudApi 内部防抖并带上最新参数重新请求，两个 tab 同步生效
+watch(keyword, (v) => {
+  vsSearch.value = v
+  poolSearch.value = v
+})
 
 // fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
 const loadVirtualServers = () =>
@@ -44,7 +52,8 @@ onMounted(() => {
 <template>
   <PageLayout title="负载均衡管理">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
+      <DeviceFilter v-model="filterDevice" device-type="slb" />
+      <el-input v-model="keyword" placeholder="搜索名称/地址/池/设备" clearable style="width: 220px" />
     </template>
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Virtual Server" name="vs">

@@ -736,8 +736,8 @@ class LtmVirtualServerViewSet(viewsets.ModelViewSet):
     queryset = LtmVirtualServer.objects.select_related("device").all()
     serializer_class = LtmVirtualServerSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "device__hostname")
-    ordering_fields = ("name", "created_at")
+    search_fields = ("name", "vs_address", "vs_port", "pool", "device__hostname")
+    ordering_fields = ("name", "device__hostname", "created_at")
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -755,8 +755,8 @@ class LtmPoolViewSet(viewsets.ModelViewSet):
     queryset = LtmPool.objects.select_related("device").all()
     serializer_class = LtmPoolSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "device__hostname")
-    ordering_fields = ("name", "created_at")
+    search_fields = ("name", "mode", "device__hostname")
+    ordering_fields = ("name", "device__hostname", "created_at")
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -888,8 +888,8 @@ class GtmWideipViewSet(viewsets.ModelViewSet):
     queryset = GtmWideip.objects.select_related("device").all()
     serializer_class = GtmWideipSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "device__hostname")
-    ordering_fields = ("name", "created_at")
+    search_fields = ("name", "rtype", "lb_mode", "device__hostname")
+    ordering_fields = ("name", "device__hostname", "created_at")
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -907,7 +907,8 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
     queryset = GtmPool.objects.select_related("device").all()
     serializer_class = GtmPoolSerializer
     permission_classes = (AllowAny,)
-    search_fields = ("name", "device__hostname")
+    search_fields = ("name", "lb_mode", "fallback_ip", "device__hostname")
+    ordering_fields = ("name", "device__hostname", "created_at")
 
     def get_queryset(self):
         qs = super().get_queryset()
