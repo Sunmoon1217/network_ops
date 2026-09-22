@@ -48,7 +48,7 @@ const menuOptions: MenuItem[] = [
     children: [
       { index: '/config/slb', label: '负载均衡', icon: renderIcon(IconLoadBalancer) },
       { index: '/config/gslb', label: '域名解析', icon: renderIcon(IconDns) },
-      { index: '/config/firewall', label: '防火墙策略', icon: renderIcon(IconPolicy) },
+      { index: '/config/firewall', label: 'NAT管理', icon: renderIcon(IconPolicy) },
       { index: '/config/routing-table', label: '路由表', icon: renderIcon(IconRouting) },
       { index: '/config/arp-mac', label: 'ARP/MAC', icon: renderIcon(IconInterfaces) },
       { index: '/config/policy', label: '访问策略', icon: renderIcon(IconPolicy) },

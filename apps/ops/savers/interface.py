@@ -14,8 +14,9 @@ class InterfaceSaver(BaseSaver):
 
     device_types = ["switch", "router", "firewall"]
     keys = ["interfaces"]
+    model_paths = ["assets.models.Interface"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         interfaces = as_list(parsed_data.get("interfaces"))
         if not interfaces:
             return (0, 0)

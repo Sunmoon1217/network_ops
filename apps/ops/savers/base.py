@@ -26,10 +26,25 @@ def as_list(value: Any) -> list:
 
 
 class BaseSaver(ABC):
-    """基类，子类定义 device_types 和 keys 类属性即自动注册"""
+    """基类，子类定义 device_types、keys 与 model_paths 类属性即自动注册
+
+    关联关系（由 ``ops.mapping`` 与契约测试串起来）：
+
+    - ``keys``：该 Saver 消费的**原始**产出键，含别名（``PolicySaver`` 的
+      ``policies`` / ``acl`` / ``rules``）——注册表按原始键分组，保证解析产出
+      的每个键都能找到消费方；
+    - ``model_paths``：写入的模型点路径（首个是主模型），接口清单与契约测试
+      用它回答「这个关键字最终进哪些表」；
+    - 归一：``save()`` 是模板方法，先经 ``ops.mapping.normalize_config`` 把
+      键与字段归一成规范结构，子类 ``_save`` 只读规范字段——不同厂商的内部
+      结构差异在这一口被抹平。
+    """
 
     device_types: list[str] = []
     keys: list[str] = []
+    # 写入的模型，如 ["assets.models.Route", "assets.models.Vrf"]（字符串避免
+    # 在类体里引用模型：savers 的 import 时机早于 app registry 就绪是不可控的）
+    model_paths: list[str] = []
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -40,9 +55,20 @@ class BaseSaver(ABC):
                 for key in cls.keys:
                     _registry[(dt, key)] = cls
 
-    @abstractmethod
     def save(self, device, parsed_data: dict) -> tuple[int, int]:
-        """保存数据，返回 (created_count, updated_count)"""
+        """归一化后交给 :meth:`_save`，返回 (created_count, updated_count)。
+
+        所有调用路径（pipeline、Celery 存储、命令重跑、测试直调）都从这里
+        进入；归一放在这一口而不是 pipeline，保证绕过分发直调 ``save`` 的
+        调用方拿到同样的规范结构。
+        """
+        from ops.mapping import normalize_config
+
+        return self._save(device, normalize_config(parsed_data))
+
+    @abstractmethod
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
+        """保存数据（``parsed_data`` 已是规范键 + 规范字段），返回 (created, updated)"""
 
     def _safe_int(self, value: Any) -> int | None:
         if value is None:

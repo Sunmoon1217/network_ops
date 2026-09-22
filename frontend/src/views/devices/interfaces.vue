@@ -2,7 +2,7 @@
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import DeviceFilter from '@/components/DeviceFilter.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { modeTagType } from '@/composables/useTagType'
 import { getInterfaces } from '@/api/interfaces'
@@ -38,11 +38,11 @@ onMounted(fetchAll)
 <template>
   <PageLayout title="接口管理">
     <template #actions>
-      <DeviceFilter v-model="filterDevice" />
-      <el-select v-model="filterMode" placeholder="接口模式" clearable style="width: 120px">
-        <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
-      </el-select>
-      <el-input v-model="search" placeholder="搜索接口/IP/设备" clearable style="width: 200px" />
+      <FilterBar v-model:device="filterDevice" v-model:search="search" search-placeholder="搜索接口/IP/设备">
+        <el-select v-model="filterMode" placeholder="接口模式" clearable style="width: 120px">
+          <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+      </FilterBar>
     </template>
     <div class="table-wrapper">
       <DataTable :data="interfaces" :loading="loading">
