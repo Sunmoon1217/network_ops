@@ -18,8 +18,14 @@ class LBVirtualServerSaver(BaseSaver):
 
     device_types = ["slb"]
     keys = ["virtuals"]
+    model_paths = [
+        "assets.models.LtmVirtualServer",
+        "assets.models.LtmProfile",
+        "assets.models.LtmIRule",
+        "assets.models.LtmPersist",
+    ]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmIRule, LtmPersist, LtmProfile, LtmVirtualServer
         from assets.serializers.views import LtmIRuleSerializer, LtmPersistSerializer, LtmProfileSerializer
 
@@ -133,8 +139,9 @@ class LBVirtualServerSaver(BaseSaver):
 class LBPoolSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["pools"]
+    model_paths = ["assets.models.LtmPool", "assets.models.LtmPoolMember"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmPool, LtmPoolMember
 
         pools = as_list(parsed_data.get("pools"))
@@ -197,8 +204,9 @@ class LBPoolSaver(BaseSaver):
 class LBSnatSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["snat_pools", "snat"]
+    model_paths = ["assets.models.LtmSNAT"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import LtmSNAT
 
         snats = as_list(parsed_data.get("snat_pools") or parsed_data.get("snat"))
@@ -223,8 +231,9 @@ class LBSnatSaver(BaseSaver):
 class GTMWideipSaver(BaseSaver):
     device_types = ["gslb"]
     keys = ["wideips"]
+    model_paths = ["assets.models.GtmWideip"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import GtmWideip
 
         wideips = as_list(parsed_data.get("wideips"))
@@ -267,8 +276,9 @@ class GtmDatacenterSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["datacenters"]
+    model_paths = ["assets.models.GtmDatacenter"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import GtmDatacenter
         from assets.serializers.views import GtmDatacenterSerializer
 
@@ -288,8 +298,9 @@ class GtmServerSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["servers"]
+    model_paths = ["assets.models.GtmServer", "assets.models.GtmVServer"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import GtmServer, GtmVServer
         from assets.serializers.views import GtmServerSerializer, GtmVServerSerializer
 
@@ -355,8 +366,9 @@ class GtmPoolSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["pools"]
+    model_paths = ["assets.models.GtmPool"]
 
-    def save(self, device, parsed_data: dict) -> tuple[int, int]:
+    def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import GtmPool
         from assets.serializers.views import GtmPoolSerializer
 
