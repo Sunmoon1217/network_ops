@@ -1,9 +1,11 @@
 """策略展开：把 Policy 的 src/dst/service 三个 M2M 展开成访问流（AccessFlow）并合并入库。
 
 一条策略的三个维度是笛卡尔积（7×7×7 ≈ 343 行/策略），但**同一条访问流可能出现在
-多台设备、多条策略上**——所以唯一键是归一化后的九元组（地址每侧 ip/prefix/range_end
-三段 + protocol/port/port2 三段，见 ``AccessFlow``）， ``(device_id, policy_pk)`` 作为
-上下文聚进同一行的 ``contexts``（dict，键 ``"<device_id>:<policy_pk>"``）。
+多台设备、多条策略上**——所以唯一键是归一化后的**十元组**（地址每侧 ip/prefix/range_end
+三段 + protocol/port/port2 三段 + **action** 一位，见 ``AccessFlow``），
+``(device_id, policy_pk)`` 作为上下文聚进同一行的 ``contexts``（dict，键
+``"<device_id>:<policy_pk>"``）。同五元组被 allow 与 deny 策略命中时是**两行**——
+展开侧按含 action 的键聚合天然分开。
 
 contexts 的键语义（别改坏）：
 
@@ -39,13 +41,13 @@ ANY = "any"
 #: 相同，聚到一行是期望行为（见 AccessFlow 的 docstring）
 ANY_ADDR: tuple[str, int, str] = ("0.0.0.0", 0, "")
 
-#: 按 key 分块查已存在行时的块大小：OR 出上千个九元组会把 SQL 撑爆
+#: 按 key 分块查已存在行时的块大小：OR 出上千个键会把 SQL 撑爆
 _CHUNK = 500
 
 #: 归一化后的地址三段：(ip, 前缀长度, 范围结束地址)
 AddrPart = tuple[str, int, str]
-#: 唯一键九元组：(源ip, 源前缀, 源范围尾, 目的ip, 目的前缀, 目的范围尾, 协议, 起始端口, 结束端口)
-ComboKey = tuple[str, int, str, str, int, str, str, str, str]
+#: 唯一键十元组：(源ip, 源前缀, 源范围尾, 目的ip, 目的前缀, 目的范围尾, 协议, 起始端口, 结束端口, 动作)
+ComboKey = tuple[str, int, str, str, int, str, str, str, str, str]
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +169,13 @@ def expand_policy(policy) -> list[dict]:
 
     context_key = f"{policy.device_id}:{policy.pk}"
     context = _context_of(policy)
+    # action 归一进键：模型 choices 管不到「没走序列化器的手工数据」，与 _canon_port
+    # 同哲学——出口处兜一次底，键值恒为小写 allow/deny
+    action = str(policy.action or "allow").strip().lower() or "allow"
+    if action not in ("allow", "deny"):
+        action = "allow"
     return [
-        {"key": (*source, *destination, *service), "contexts": {context_key: context}}
+        {"key": (*source, *destination, *service, action), "contexts": {context_key: context}}
         for source, destination, service in product(sources, destinations, services)
     ]
 
@@ -217,6 +224,7 @@ def _row_key(row: AccessFlow) -> ComboKey:
         row.protocol,
         row.port,
         row.port2,
+        row.action,
     )
 
 
@@ -233,6 +241,7 @@ def _key_query(keys: list[ComboKey]) -> Q:
             protocol=key[6],
             port=key[7],
             port2=key[8],
+            action=key[9],
         )
     return query
 
@@ -290,6 +299,7 @@ def upsert_flows(flows: Iterable[dict]) -> tuple[int, int]:
                     protocol=key[6],
                     port=key[7],
                     port2=key[8],
+                    action=key[9],
                     contexts=contexts,
                     device_ids=_device_ids(contexts),
                     policy_ids=_policy_ids(contexts),
@@ -325,7 +335,7 @@ def remove_device_context(device_id: int, keep_flow_keys: set[ComboKey] | None =
 
     ``keep_flow_keys`` 给了就保留**行键在其中**的该设备上下文——sync 语义（先合并
     当前状态、再摘残留）靠它做到真幂等：重放同一批时 upsert 与 remove 都是空操作。
-    判据必须是**行键（九元组）**而不是 context 键：同一条策略的 context 会出现在它
+    判据必须是**行键（十元组）**而不是 context 键：同一条策略的 context 会出现在它
     笛卡尔积的每一行上，策略换了地址后旧行与本批是同一个 (设备, 策略) 键、行却不同，
     按 context 键保留就漏摘了。``None`` 表示全摘。
     """

@@ -2,8 +2,9 @@
 
 守护的语义：
 
-- 唯一键九元组的归一化规则（四形态地址 + 三段服务，NULL 哨兵坑不存在）；
+- 唯一键**十元组**的归一化规则（四形态地址 + 三段服务 + action，NULL 哨兵坑不存在）；
 - 同一键跨设备/跨策略聚合进一行 ``contexts``（键带策略主键，同设备重复策略不互覆盖）；
+- 同五元组按 action 分行（allow / deny 是两条独立的流——「遗漏」与「多开」审计各对照一行）；
 - 先查后合并的幂等性（跑两遍与跑一遍一致）——这是 acks_late 重放不脏数据的地基；
 - 摘除按设备前缀剥离、空行删除；整设备重建 = 摘旧 + 写新，同一事务。
 """
@@ -91,11 +92,12 @@ def _key(row: AccessFlow) -> tuple:
         row.protocol,
         row.port,
         row.port2,
+        row.action,
     )
 
 
 # ---------------------------------------------------------------------------
-# 归一化：唯一键的九个字段
+# 归一化：唯一键的十个字段
 # ---------------------------------------------------------------------------
 
 
@@ -111,8 +113,8 @@ def test_host_subnet_range_forms_map_to_expected_key():
 
     keys = {_key(row) for row in AccessFlow.objects.filter(device_ids__contains=[device.pk])}
     # 源=单 IP：前缀取满 32；目的=子网：前缀 24；目的=范围：prefix 0 + range_end 非空
-    assert ("10.0.0.1", 32, "", "10.0.0.0", 24, "", "tcp", "80", "8080") in keys
-    assert ("10.0.0.1", 32, "", "10.1.1.1", 0, "10.1.1.9", "tcp", "80", "8080") in keys
+    assert ("10.0.0.1", 32, "", "10.0.0.0", 24, "", "tcp", "80", "8080", "allow") in keys
+    assert ("10.0.0.1", 32, "", "10.1.1.1", 0, "10.1.1.9", "tcp", "80", "8080", "allow") in keys
 
 
 @pytest.mark.django_db
@@ -224,7 +226,7 @@ def test_expand_is_cartesian_product_with_single_context():
 @pytest.mark.django_db
 def test_upsert_merges_same_key_across_devices():
     """跨设备同键聚合成一行：contexts 两条、device_ids 两台——聚合审计的前提"""
-    key = ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "")
+    key = ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "", "allow")
     flows = []
     for index, hostname in enumerate(("_t_af_m1", "_t_af_m2"), start=1):
         device = _device(hostname)
@@ -273,6 +275,7 @@ def test_unique_constraint_rejects_duplicate_key():
         dst_prefix=32,
         protocol="tcp",
         port="80",
+        action="allow",
         contexts={},
         device_ids=[],
         policy_ids=[],
@@ -285,10 +288,43 @@ def test_unique_constraint_rejects_duplicate_key():
             dst_prefix=32,
             protocol="tcp",
             port="80",
+            action="allow",
             contexts={},
             device_ids=[],
             policy_ids=[],
         )
+
+
+@pytest.mark.django_db
+def test_unique_constraint_allows_same_key_different_action():
+    """十元组约束的核心语义：同五元组的 allow 行与 deny 行**必须**能共存——
+    「遗漏」审计拿 allow 行对照应放、「多开」拿 deny 行对照应拒，混一行两审计互斥"""
+    AccessFlow.objects.create(
+        src_ip="10.0.0.1",
+        src_prefix=32,
+        dst_ip="10.0.0.2",
+        dst_prefix=32,
+        protocol="tcp",
+        port="80",
+        action="allow",
+        contexts={},
+        device_ids=[],
+        policy_ids=[],
+    )
+    deny = AccessFlow.objects.create(
+        src_ip="10.0.0.1",
+        src_prefix=32,
+        dst_ip="10.0.0.2",
+        dst_prefix=32,
+        protocol="tcp",
+        port="80",
+        action="deny",
+        contexts={},
+        device_ids=[],
+        policy_ids=[],
+    )
+    assert AccessFlow.objects.count() == 2
+    assert deny.action == "deny"
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +347,7 @@ def test_remove_device_context_keeps_other_devices_and_deletes_empty_rows():
         protocol=key[6],
         port=key[7],
         port2=key[8],
+        action="allow",
         contexts=contexts,
         device_ids=[device_a.pk, device_b.pk],
         policy_ids=[1, 2],
@@ -322,6 +359,7 @@ def test_remove_device_context_keeps_other_devices_and_deletes_empty_rows():
         dst_prefix=32,
         protocol="tcp",
         port="22",
+        action="allow",
         contexts={f"{device_a.pk}:9": {"device_id": device_a.pk, "policy_pk": 9}},
         device_ids=[device_a.pk],
         policy_ids=[9],
@@ -347,6 +385,7 @@ def test_remove_device_context_does_not_touch_other_device_ids():
         dst_prefix=32,
         protocol="tcp",
         port="80",
+        action="allow",
         contexts={
             f"{device_1.pk}:1": {"device_id": device_1.pk, "policy_pk": 1},
             f"{device_11.pk}:2": {"device_id": device_11.pk, "policy_pk": 2},
@@ -450,3 +489,61 @@ def test_command_unknown_device_raises():
 
     with pytest.raises(CommandError, match="设备不存在"):
         _run_command("--device", "no-such-host")
+
+
+# ---------------------------------------------------------------------------
+# action 进键：同五元组按动作分行
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_same_five_tuple_allow_and_deny_land_as_two_rows():
+    """真实展开路径：同五元组被 allow 与 deny 策略命中 → 两行、action 各一
+
+    contexts 不混：allow 行只挂 allow 策略的 context（行级 action 恒等于其
+    contexts 内各 context 的 action）。
+    """
+    device = _device("_t_af_action")
+    src, dst = _host(device, "10.0.0.1"), _host(device, "10.0.0.2")
+    svc = _service(device, "http", protocol="tcp", port="80")
+    allow_policy = _policy(device, "1", src=(src,), dst=(dst,), svc=(svc,), order=0)
+    deny_policy = _policy(device, "2", src=(src,), dst=(dst,), svc=(svc,), order=1)
+    deny_policy.action = "deny"
+    deny_policy.save(update_fields=["action"])
+
+    rebuild_device(device)
+
+    rows = list(AccessFlow.objects.filter(device_ids__contains=[device.pk]))
+    assert len(rows) == 2, f"allow/deny 必须分行，实际 {len(rows)} 行"
+    assert {row.action for row in rows} == {"allow", "deny"}
+    # 各行只挂自己动作的 context
+    by_action = {row.action: row for row in rows}
+    assert set(by_action["allow"].contexts) == {f"{device.pk}:{allow_policy.pk}"}
+    assert set(by_action["deny"].contexts) == {f"{device.pk}:{deny_policy.pk}"}
+    # 行级 action 恒等于 contexts 内 context 的 action
+    for row in rows:
+        assert all(ctx["action"] == row.action for ctx in row.contexts.values())
+
+
+@pytest.mark.django_db
+def test_upsert_separates_actions_into_two_rows():
+    """直接喂 upsert：同九元组、不同 action 的两条 flow → 两行（键含 action 的直接证据）"""
+    base = ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "")
+    device = _device("_t_af_up_action")
+    context = {
+        "device_id": device.pk,
+        "hostname": device.hostname,
+        "policy_pk": 1,
+        "policy_id": "1",
+        "name": "p",
+        "action": "allow",
+        "order": 0,
+        "enabled": True,
+    }
+    flows = [
+        {"key": (*base, "allow"), "contexts": {f"{device.pk}:1": dict(context, action="allow")}},
+        {"key": (*base, "deny"), "contexts": {f"{device.pk}:2": dict(context, policy_pk=2, action="deny")}},
+    ]
+
+    assert upsert_flows(flows) == (2, 0)
+    assert AccessFlow.objects.count() == 2
