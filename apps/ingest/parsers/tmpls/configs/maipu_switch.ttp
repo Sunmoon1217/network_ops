@@ -24,7 +24,7 @@ interface {{ interface }}
  switchport access vlan {{ access_vlan }}
  switchport trunk allowed vlan {{ trunk_vlans }}
  ip address {{ ip_address }} {{ subnet_mask }}
- no shutdown {{ enabled | set(1) | default(0) }}
+ shutdown {{ enabled | set(0) | default(1) }}
 </group>
 
 # 静态路由配置

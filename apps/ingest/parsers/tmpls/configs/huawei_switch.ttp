@@ -23,7 +23,7 @@ interface {{ interface }}
  port default vlan {{ access_vlan }}
  port trunk allow-pass vlan {{ trunk_vlans }}
  ip address {{ ip_address }} {{ subnet_mask }}
- undo shutdown {{ enabled | set(1) | default(0) }}
+ shutdown {{ enabled | set(0) | default(1) }}
 </group>
 
 # 静态路由配置

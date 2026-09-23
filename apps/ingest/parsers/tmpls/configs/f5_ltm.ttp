@@ -3,6 +3,7 @@
 <group name="nodes">
 ltm node {{ name | _start_ }} {
     address {{ address }}
+    session {{ session-status }}
 } {{ _end_ }}
 </group>
 
@@ -25,9 +26,11 @@ ltm pool {{ name | _start_ }} {
         <group>
         {{ name | _start_ }}:{{ port | re("PORT") }} {
             address {{ address }}
+            session {{ session-status }}
         } {{ _end_ }}
         {{ name | _start_ }}.{{ port | re("PORT") }} {
             address {{ address }}
+            session {{ session-status }}
         } {{ _end_ }}
         </group>
     } {{ _end_ }}
@@ -43,7 +46,7 @@ ltm pool {{ name | _start_ }} {
 ltm virtual {{ name | _start_ }} {
     destination /Common/{{ vs_address | re("IP") }}:{{ vs_port }}
     destination /Common/{{ vs_address | re("IPV6") }}.{{ vs_port }}
-    {{ status | equal("disabled") | default("enabled") }}
+    disabled {{ enabled | set(0) | default(1) }}
     ip-protocol {{ protocol }}
     mask {{ mask }}
     <group name="persist">
