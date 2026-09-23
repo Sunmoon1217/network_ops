@@ -104,6 +104,27 @@ def test_invalid_filter_param_is_400(client):
 
 
 @pytest.mark.django_db
+def test_action_filter(client):
+    """?action=allow|deny 行级过滤（action 进唯一键后面板的允许/拒绝筛选）"""
+    device = _device("_t_afapi_action")
+    _seed(device, 1)  # key 带 allow → 行 action=allow
+    deny_row = _seed(device, 2, src_ip="192.0.2.9", port="53")
+    AccessFlow.objects.filter(pk=deny_row.pk).update(action="deny")
+
+    body = client.get(URL, {"action": "deny"}).json()
+    assert body["count"] == 1
+    assert body["results"][0]["action"] == "deny"
+
+    body = client.get(URL, {"action": "allow"}).json()
+    assert body["count"] == 1
+    assert body["results"][0]["action"] == "allow"
+
+    resp = client.get(URL, {"action": "yes"})
+    assert resp.status_code == 400
+    assert "action" in resp.json()
+
+
+@pytest.mark.django_db
 def test_search_matches_ip_and_port(client):
     device = _device("_t_afapi_search")
     _seed(device, 1, src_ip="10.9.8.7", port="8080")
