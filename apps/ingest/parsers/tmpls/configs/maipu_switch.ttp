@@ -6,8 +6,7 @@ hostname {{ hostname }}
 </group>
 
 <group name="version">
-show version
-Software Version: {{ version | re('.+') }}
+!software version {{ version }}
 </group>
 
 # VLAN配置
