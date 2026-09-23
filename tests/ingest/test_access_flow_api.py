@@ -40,7 +40,7 @@ def _seed(device: Device, policy_pk: int, *, src_ip: str = "10.0.0.1", port: str
         "order": 0,
         "enabled": True,
     }
-    key = (src_ip, 32, "", "10.0.0.2", 32, "", "tcp", port, "")
+    key = (src_ip, 32, "", "10.0.0.2", 32, "", "tcp", port, "", "allow")
     upsert_flows([{"key": key, "contexts": {f"{device.pk}:{policy_pk}": context}}])
     return AccessFlow.objects.get(src_ip=src_ip, port=port)
 
@@ -64,6 +64,7 @@ def test_list_returns_paginated_flows_with_key_fields(client):
     assert row["src_prefix"] == 32
     assert row["protocol"] == "tcp"
     assert row["port"] == "80"
+    assert row["action"] == "allow", "action 进唯一键后必须出现在 API 返回里"
     assert row["device_ids"] == [device.pk]
     assert list(row["contexts"]) == [f"{device.pk}:1"], "contexts 键形如 <device_pk>:<policy_pk>"
 

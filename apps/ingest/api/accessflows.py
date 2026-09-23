@@ -7,7 +7,7 @@
 
 - ``?device=<id>``：contexts 里挂着这台设备的行（``device_ids`` GIN 包含过滤）；
 - ``?policy=<id>``：命中这条策略的行（``policy_ids`` GIN 包含过滤）；
-- ``?search=<词>``：九字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
+- ``?search=<词>``：键字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
 """
 
 from rest_framework import serializers, viewsets
@@ -30,6 +30,7 @@ class AccessFlowSerializer(serializers.ModelSerializer):
             "protocol",
             "port",
             "port2",
+            "action",
             "contexts",
             "device_ids",
             "policy_ids",
@@ -41,7 +42,7 @@ class AccessFlowSerializer(serializers.ModelSerializer):
 class AccessFlowViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AccessFlowSerializer
     search_fields = ("src_ip", "dst_ip", "src_range_end", "dst_range_end", "protocol", "port", "port2")
-    ordering_fields = ("src_ip", "dst_ip", "protocol", "port", "updated_at")
+    ordering_fields = ("src_ip", "dst_ip", "protocol", "port", "action", "updated_at")
 
     def get_queryset(self):
         queryset = AccessFlow.objects.all()

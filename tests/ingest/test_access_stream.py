@@ -51,11 +51,33 @@ def test_encode_decode_roundtrip_preserves_keys_and_contexts():
     assert device_id == device.pk
     assert len(flows) == 1
     flow = flows[0]
-    assert flow["key"] == ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "")
+    assert flow["key"] == ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "", "allow")
     context = flow["contexts"][f"{device.pk}:{policy.pk}"]
     assert context["device_id"] == device.pk
     assert context["hostname"] == device.hostname
     assert context["policy_id"] == "1"
+
+
+def test_decode_legacy_nine_tuple_key_pads_action():
+    """升级前的旧 wire 消息是九元组（无 action 一位）：decode 必须补 allow——
+
+    不补的话消费侧 upsert 的 key[9] 直接 IndexError 崩掉 consumer；
+    deny 混行由下一次 rebuild 的 sync_device 拆正。
+    """
+    import json
+
+    legacy_key = ["10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", ""]
+    fields = {
+        "device_id": "7",
+        "hostname": "legacy-host",
+        "flows": json.dumps([[legacy_key, []]]),
+    }
+
+    device_id, flows = decode_message(fields)
+
+    assert device_id == 7
+    assert flows[0]["key"] == (*legacy_key, "allow")
+    assert len(flows[0]["key"]) == 10
 
 
 @pytest.mark.django_db
