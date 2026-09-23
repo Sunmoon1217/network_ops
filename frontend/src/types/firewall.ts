@@ -51,9 +51,10 @@ export interface FlowContext {
 /**
  * 访问流列表行（`/api/access-flows/`）。
  *
- * 键是九个字段（地址每侧 ip + prefix + range_end 三段，服务 protocol + port + port2
- * 三段），全非空参与唯一约束；`range_end` / `port2` 非该形态时为空串，
- * 任意（any）归一到 `0.0.0.0/0`。
+ * 键是**十个字段**（地址每侧 ip + prefix + range_end 三段，服务 protocol + port +
+ * port2 三段，**action 一位**），全非空参与唯一约束；同五元组的 allow 行与 deny 行
+ * 是两行。「遗漏」审计拿 allow 行对照应放、「多开」拿 deny 行对照应拒。
+ * `range_end` / `port2` 非该形态时为空串，任意（any）归一到 `0.0.0.0/0`。
  */
 export interface AccessFlowItem {
   id: number
@@ -66,6 +67,8 @@ export interface AccessFlowItem {
   protocol: string
   port: string
   port2: string
+  /** 行级动作（进唯一键）：allow / deny——与 contexts 内各 context 的 action 一致 */
+  action: 'allow' | 'deny'
   /** 命中上下文，键形如 `"3:17"`（device_pk:policy_pk） */
   contexts: Record<string, FlowContext>
   device_ids: number[]
