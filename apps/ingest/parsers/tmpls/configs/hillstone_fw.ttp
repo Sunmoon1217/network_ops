@@ -13,12 +13,12 @@ zone "{{ zone_name }}"
 exit {{ _end_ }}
 </group>
 
-<group name="interfaces*.{{ interface }}">
+<group name="interfaces.{{ interface }}">
 interface {{ interface }}
 exit {{ _end_ }}
 </group>
 
-<group name="services*.{{ service_name }}">
+<group name="services.{{ service_name }}">
 service "{{ service_name }}"
   <group>
   {{ protocol }} {{ port_type }} {{ port }}

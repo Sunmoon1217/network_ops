@@ -238,12 +238,12 @@ class ServiceSaver(BaseSaver):
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Service
 
-        services = as_list(parsed_data.get("services"))
-        if not services:
+        entries = self._entries(parsed_data.get("services"))
+        if not entries:
             return (0, 0)
 
         created, updated = 0, 0
-        for svc in services:
+        for svc in entries:
             name = svc.get("name")
             if not name:
                 continue
@@ -251,7 +251,7 @@ class ServiceSaver(BaseSaver):
                 device=device,
                 name=name,
                 defaults={
-                    "protocol": svc.get("protocol", "tcp"),
+                    "protocol": svc.get("protocol") or "tcp",
                     "port": str(svc.get("port", "")),
                     "port2": str(svc.get("port2", "")),
                     "description": svc.get("description", ""),
@@ -260,6 +260,68 @@ class ServiceSaver(BaseSaver):
             created += 1 if is_created else 0
             updated += 0 if is_created else 1
         return (created, updated)
+
+    def _entries(self, raw) -> list[dict]:
+        """把产出归一成 ``[{name, protocol, port, ...}]``。
+
+        三种形态（结构级差异，按分层约定留在 Saver，先例 ``AddressBookSaver._entries``）：
+
+        ① 平铺单条 ``{name: ..., protocol: ...}``——手工喂入 / 普通组单条命中；
+        ② 动态字典 ``{服务名: 内容}``——hillstone 模板动态组名
+          ``services.{{ service_name }}`` 的产出，内容单行给 dict、多行给 list
+          （TTP 单/多条规则）；
+        ③ 旧的带星列表 ``[{服务名: 内容}, ...]``——去星前的存量 config_json 兜底。
+        """
+        if isinstance(raw, dict):
+            return [raw] if "name" in raw else self._expand(raw)
+        rows: list[dict] = []
+        for item in as_list(raw):
+            if not isinstance(item, dict):
+                continue
+            rows.extend(self._expand(item)) if "name" not in item else rows.append(item)
+        return rows
+
+    @classmethod
+    def _expand(cls, body: dict) -> list[dict]:
+        """``{服务名: 内容}`` → ``[{name: 服务名, **合并后的行字段}]``"""
+        records = []
+        for name, content in body.items():
+            rows = [row for row in (content if isinstance(content, list) else [content]) if isinstance(row, dict)]
+            records.append({"name": name, **cls._merge_rows(rows)})
+        return records
+
+    @staticmethod
+    def _merge_rows(rows: list[dict]) -> dict:
+        """多行 service 定义（``tcp dst 80`` + ``udp src 53``）合并成一条记录的字段。
+
+        - dst 行（或未标 ``port_type`` 的行）→ ``port``，多行逗号拼；
+        - src 行 → ``description``（``src: ...``），**不进 port2**——port2 的既定语义是
+          "端口范围第二端"（AccessFlow 按范围拆），塞 src 端口会污染范围语义；
+        - ``protocol`` 取第一个非空行。
+        """
+        dst_ports: list[str] = []
+        src_ports: list[str] = []
+        extra_desc: list[str] = []
+        protocol = ""
+        for row in rows:
+            if not protocol and row.get("protocol"):
+                protocol = str(row["protocol"])
+            if row.get("description"):
+                extra_desc.append(str(row["description"]))
+            port = row.get("port")
+            if not port:
+                continue
+            if str(row.get("port_type") or "dst").lower() == "src":
+                src_ports.append(str(port))
+            else:
+                dst_ports.append(str(port))
+        if src_ports:
+            extra_desc.append("src: " + ",".join(src_ports))
+        return {
+            "protocol": protocol,
+            "port": ",".join(dst_ports),
+            "description": "; ".join(extra_desc),
+        }
 
 
 class PolicySaver(BaseSaver):

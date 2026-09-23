@@ -16,8 +16,21 @@ class InterfaceSaver(BaseSaver):
     keys = ["interfaces"]
     model_paths = ["assets.models.Interface"]
 
+    @staticmethod
+    def _entries(raw) -> list[dict]:
+        """把产出归一成 ``[{interface: 名字, ...}]``。
+
+        hillstone 模板的动态组名 ``interfaces.{{ interface }}`` 产出 ``{接口名: 内容}``
+        （变量被抬成字典键、值里没有 ``interface`` 字段）——展开成平铺记录；
+        普通组的平铺 dict / 列表原样返回。结构级差异留在 Saver（分层约定，
+        先例 ``AddressBookSaver._entries``）。
+        """
+        if isinstance(raw, dict) and "interface" not in raw:
+            return [{"interface": name, **(body if isinstance(body, dict) else {})} for name, body in raw.items()]
+        return as_list(raw)
+
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        interfaces = as_list(parsed_data.get("interfaces"))
+        interfaces = self._entries(parsed_data.get("interfaces"))
         if not interfaces:
             return (0, 0)
 
