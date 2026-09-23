@@ -450,3 +450,81 @@ def test_command_unknown_device_raises():
 
     with pytest.raises(CommandError, match="设备不存在"):
         _run_command("--device", "no-such-host")
+
+
+# ---------------------------------------------------------------------------
+# 服务拆行的端到端（真实模板 → 真实 Saver 顺序 → AccessFlow 两组合）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_multi_protocol_service_expands_into_two_flow_rows():
+    """同名 service 两行（tcp 22 + udp 53）→ Service 两行、策略挂两行、
+    AccessFlow 出 tcp/udp **两个组合**——修复前合并成一条 (tcp, "22,53")，
+    udp/53 的流整条缺失（审计漏流）。
+
+    走 build_saver_payloads 的真实执行顺序（registry 已保证 ServiceSaver 先于
+    PolicySaver——先有稳定行、再挂 M2M）。
+    """
+    from ingest.parsers.factory import ParserFactory
+    from ingest.savers.registry import build_saver_payloads
+
+    device = _device("_t_svc_flow")
+    parsed = ParserFactory.get_parser_by_keys("Hillstone", "firewall").parse(
+        'service "X-wrapper"\n  tcp dst 22\n  udp dst 53\nexit\n'
+        'rule id 1\n  action permit\n  src-ip 10.0.0.1\n  dst-ip 10.0.0.2\n'
+        '  service "X-wrapper"\n  name "r1"\nexit\n'
+    )
+    assert parsed.get("services"), "样例应解析出 services（真实模板路径）"
+
+    payloads = build_saver_payloads("firewall", parsed)
+    # 排序保证：被引用的维表（ServiceSaver）必须排在引用方（PolicySaver）之前
+    saver_names = [type(saver).__name__ for saver, _ in payloads]
+    assert saver_names[0] == "ServiceSaver", f"ServiceSaver 应先跑，实际顺序 {saver_names}"
+    for saver, payload in payloads:
+        saver.save(device, payload)
+
+    # 1) Service 拆两行
+    svc_rows = {(s.protocol, s.port) for s in Service.objects.filter(device=device, name="X-wrapper")}
+    assert svc_rows == {("tcp", "22"), ("udp", "53")}
+
+    # 2) 策略挂上全部两行（引用名字 = 挂它的全部端口定义）
+    policy = Policy.objects.get(device=device)
+    assert policy.services.count() == 2
+
+    # 3) AccessFlow 展开 tcp/udp 两个组合（下游漏流修复的最终证据）
+    rebuild_device(device)
+    flows = {
+        (row.protocol, row.port)
+        for row in AccessFlow.objects.filter(device_ids__contains=[device.pk])
+    }
+    assert flows == {("tcp", "22"), ("udp", "53")}
+
+
+@pytest.mark.django_db
+def test_policy_reference_gets_all_rows_even_when_defined_first():
+    """Service 先于 Policy 跑（registry 排序）时，引用拿到的是全部行——
+    补充场景：占位逻辑不应发生（真行已存在 → missing 为空 → 无 any 占位混入）"""
+    from ingest.savers.registry import build_saver_payloads
+
+    device = _device("_t_svc_noplace")
+    parsed = {
+        "services": {"DUAL": [{"protocol": "tcp", "port": "80"}, {"protocol": "udp", "port": "80"}]},
+        "policies": {
+            "policy_id": "1",
+            "action": "allow",
+            "service": ["DUAL"],
+            "src-ip": ["10.0.0.1"],
+            "dst-ip": ["10.0.0.2"],
+            "name": "r1",
+        },
+    }
+    for saver, payload in build_saver_payloads("firewall", parsed):
+        saver.save(device, payload)
+
+    assert Service.objects.filter(device=device, name="DUAL").count() == 2
+    assert not Service.objects.filter(device=device, name="DUAL", protocol="any").exists(), (
+        "真行已存在时不该再建 any 占位——占位混入会让 AccessFlow 多出一个 any 组合"
+    )
+    policy = Policy.objects.get(device=device)
+    assert policy.services.count() == 2
