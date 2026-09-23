@@ -242,23 +242,55 @@ class ServiceSaver(BaseSaver):
         if not entries:
             return (0, 0)
 
-        created, updated = 0, 0
+        # 按服务名分组后做**自然键差量**：一个 service 块的多行（tcp 22 / udp 53）
+        # 是同一个名字下的多个端口定义——逐行落库，不再合并进一条 protocol/port。
+        # 差量而不是「先清后建」：在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
+        # 只建缺失、删多余（多余=配置里真删了的端口行，其关联随 PolicySaver 同批
+        # _replace_m2m 全量重建——顺序由 registry.build_saver_payloads 保证本 Saver 先跑）。
+        by_name: dict[str, list[dict]] = {}
         for svc in entries:
-            name = svc.get("name")
-            if not name:
-                continue
-            _, is_created = Service.objects.update_or_create(
-                device=device,
-                name=name,
-                defaults={
-                    "protocol": svc.get("protocol") or "tcp",
-                    "port": str(svc.get("port", "")),
-                    "port2": str(svc.get("port2", "")),
-                    "description": svc.get("description", ""),
-                },
-            )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
+            name = str(svc.get("name") or "").strip()
+            if name:
+                by_name.setdefault(name, []).append(svc)
+
+        created, updated = 0, 0
+        for name, rows in by_name.items():
+            want: dict[tuple[str, str, str], str] = {}
+            for row in rows:
+                key = (str(row.get("protocol") or "tcp"), str(row.get("port", "")), str(row.get("port2", "")))
+                want[key] = str(row.get("description") or "")  # 同自然键后行覆盖前行
+
+            existing = {
+                (item.protocol, item.port, item.port2): item
+                for item in Service.objects.filter(device=device, name=name)
+            }
+            to_create, to_update, to_delete = [], [], []
+            for key, description in want.items():
+                hit = existing.get(key)
+                if hit is None:
+                    to_create.append(
+                        Service(
+                            device=device,
+                            name=name,
+                            protocol=key[0],
+                            port=key[1],
+                            port2=key[2],
+                            description=description,
+                        )
+                    )
+                elif hit.description != description:
+                    hit.description = description
+                    to_update.append(hit)
+            to_delete = [item for key, item in existing.items() if key not in want]
+
+            if to_create:
+                Service.objects.bulk_create(to_create, batch_size=500)
+                created += len(to_create)
+            if to_update:
+                Service.objects.bulk_update(to_update, ["description"], batch_size=500)
+                updated += len(to_update)
+            if to_delete:
+                Service.objects.filter(pk__in=[item.pk for item in to_delete]).delete()
         return (created, updated)
 
     def _entries(self, raw) -> list[dict]:
@@ -283,45 +315,23 @@ class ServiceSaver(BaseSaver):
 
     @classmethod
     def _expand(cls, body: dict) -> list[dict]:
-        """``{服务名: 内容}`` → ``[{name: 服务名, **合并后的行字段}]``"""
+        """``{服务名: 内容}`` → ``[{name: 服务名, **该行字段}, ...]``——**每行一条**。
+
+        多行内容（``tcp dst 22`` + ``udp dst 53``）逐行产出、不合并：合并会把多协议
+        压进一条 protocol/port（udp 语义丢失、port 变成 "22,53" 脏值）——2026-09 修复。
+        src 行单独成行：``port`` 照落端口值、``description`` 标注 ``src: ...`` 保留
+        源端口语义（表里没有独立的源端口字段）。
+        """
         records = []
         for name, content in body.items():
-            rows = [row for row in (content if isinstance(content, list) else [content]) if isinstance(row, dict)]
-            records.append({"name": name, **cls._merge_rows(rows)})
+            for row in content if isinstance(content, list) else [content]:
+                if not isinstance(row, dict):
+                    continue
+                record = {"name": name, **row}
+                if str(row.get("port_type") or "dst").lower() == "src" and row.get("port"):
+                    record["description"] = f"src: {row['port']}"
+                records.append(record)
         return records
-
-    @staticmethod
-    def _merge_rows(rows: list[dict]) -> dict:
-        """多行 service 定义（``tcp dst 80`` + ``udp src 53``）合并成一条记录的字段。
-
-        - dst 行（或未标 ``port_type`` 的行）→ ``port``，多行逗号拼；
-        - src 行 → ``description``（``src: ...``），**不进 port2**——port2 的既定语义是
-          "端口范围第二端"（AccessFlow 按范围拆），塞 src 端口会污染范围语义；
-        - ``protocol`` 取第一个非空行。
-        """
-        dst_ports: list[str] = []
-        src_ports: list[str] = []
-        extra_desc: list[str] = []
-        protocol = ""
-        for row in rows:
-            if not protocol and row.get("protocol"):
-                protocol = str(row["protocol"])
-            if row.get("description"):
-                extra_desc.append(str(row["description"]))
-            port = row.get("port")
-            if not port:
-                continue
-            if str(row.get("port_type") or "dst").lower() == "src":
-                src_ports.append(str(port))
-            else:
-                dst_ports.append(str(port))
-        if src_ports:
-            extra_desc.append("src: " + ",".join(src_ports))
-        return {
-            "protocol": protocol,
-            "port": ",".join(dst_ports),
-            "description": "; ".join(extra_desc),
-        }
 
 
 class PolicySaver(BaseSaver):
@@ -413,13 +423,19 @@ class PolicySaver(BaseSaver):
         # 服务只按名字定位，协议未知时先记 any（等 ServiceSaver 补全）。
         # 这里不能用 bulk_upsert：它会用 payload 覆盖已有记录，把 ServiceSaver
         # 填好的 protocol 冲成 any，与原先 get_or_create 的语义不符。
-        service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
-        missing = [name for name in service_specs if name not in service_ids]
+        # 同名允许多行端口定义（自然键唯一）——dict[name→单pk] 会互相覆盖、策略只挂
+        # 上其中一行，改收集 name→[pks]，引用一个服务名 = 挂它的全部端口行。
+        ids_by_name: dict[str, list[int]] = {}
+        for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
+            ids_by_name.setdefault(name, []).append(pk)
+        missing = [name for name in service_specs if name not in ids_by_name]
         if missing:
             Service.objects.bulk_create(
                 [Service(device=device, name=name, protocol="any") for name in missing], batch_size=500
             )
-            service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
+            ids_by_name = {}
+            for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
+                ids_by_name.setdefault(name, []).append(pk)
 
         address_ids = {
             (name, address_type): pk
@@ -443,7 +459,7 @@ class PolicySaver(BaseSaver):
                 continue
             source_map[policy_pk] = {address_ids[key] for key in source_keys if key in address_ids}
             destination_map[policy_pk] = {address_ids[key] for key in destination_keys if key in address_ids}
-            service_map[policy_pk] = {service_ids[name] for name in names if name in service_ids}
+            service_map[policy_pk] = {pk for name in names for pk in ids_by_name.get(name, ())}
 
         self._replace_m2m(Policy, "source_addresses", source_map)
         self._replace_m2m(Policy, "destination_addresses", destination_map)

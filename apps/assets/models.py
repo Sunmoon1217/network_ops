@@ -785,9 +785,17 @@ class Service(ConfigBase):
     class Meta:
         verbose_name = "服务"
         verbose_name_plural = verbose_name
-        # 唯一性按设备隔离：不同设备可以有同名服务。Saver 也是按 (device, name) 做
-        # upsert 的，若用 name 全局唯一，第二台设备入库同名服务时会撞约束。
-        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_service_name"),)
+        # 行级自然键唯一：一个服务名允许多行端口定义（tcp 22 与 udp 53 各一行，
+        # 2026-09 修复——原先按 (device, name) 唯一，多协议端口被迫合并进一条
+        # protocol/port，udp 语义直接丢失）。仍按设备隔离：不同设备可以有同名服务；
+        # 同名内靠 (protocol, port, port2) 区分行，ServiceSaver 按这组自然键做差量
+        # （建缺、删多、description 变才更新），详见 models 注释与 ServiceSaver。
+        constraints = (
+            models.UniqueConstraint(
+                fields=["device", "name", "protocol", "port", "port2"],
+                name="uni_service_natural_key",
+            ),
+        )
         ordering = ("name",)
 
 
