@@ -47,10 +47,15 @@ HEARTBEAT_KEY = "access_flow:heartbeat"
 
 @lru_cache(maxsize=1)
 def get_redis():
-    """进程内共享一个连接池（decode_responses=False：消息体按 bytes 处理）。"""
+    """进程内共享一个连接池（decode_responses=False：消息体按 bytes 处理）。
+
+    ``socket_timeout`` 必须**大于**消费端 ``XREADGROUP`` 的 ``block``（5s）：两者相等时
+    stream 一空，服务端恰好阻塞满 5s 才回包、客户端 5s 就断读，每轮必抛 TimeoutError
+    （实测消费循环因此空转、心跳停更）。
+    """
     import redis
 
-    return redis.from_url(settings.REDIS_URL)
+    return redis.from_url(settings.REDIS_URL, socket_timeout=10, socket_connect_timeout=5)
 
 
 def stream_maxlen() -> int:

@@ -257,8 +257,8 @@ CELERY_TIMEZONE = "Asia/Shanghai"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 3600
 CELERY_TASK_SOFT_TIME_LIMIT = 3000
-# 访问流重建走独立队列：与采集/解析/存储三阶段任务隔离，堵在自己队列里不拖垮别的任务
-# （消费它的 worker 见 docker-compose 的 worker-access 服务）
+# 访问流重建走独立队列：队列仍独立（积压可观测、将来可随时拆出独占 worker），
+# 当前由 docker-compose 的 worker 一并消费（-Q celery,access_flow，两条链皆低频）
 CELERY_TASK_ROUTES = {
     "ingest.rebuild_access_flows": {"queue": "access_flow"},
 }
