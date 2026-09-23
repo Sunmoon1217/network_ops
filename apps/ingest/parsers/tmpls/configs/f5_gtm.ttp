@@ -28,6 +28,7 @@ gtm server {{ server_name | _line_ }} {
         {{ vs_name }} {
             destination {{ vs_address | re("IP") }}:{{ vs_port }}
             destination {{ vs_address | re("IPV6") }}.{{ vs_port }}
+            disabled {{ enabled | set(0) | default(1) }}
             monitor {{ vs_monitor | strip('"') | ORPHRASE }}
         } {{ _end_ }}
         </group>

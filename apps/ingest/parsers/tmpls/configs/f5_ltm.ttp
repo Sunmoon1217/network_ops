@@ -3,6 +3,7 @@
 <group name="nodes">
 ltm node {{ name | _start_ }} {
     address {{ address }}
+    session {{ session-status }}
 } {{ _end_ }}
 </group>
 
@@ -25,9 +26,11 @@ ltm pool {{ name | _start_ }} {
         <group>
         {{ name | _start_ }}:{{ port | re("PORT") }} {
             address {{ address }}
+            session {{ session-status }}
         } {{ _end_ }}
         {{ name | _start_ }}.{{ port | re("PORT") }} {
             address {{ address }}
+            session {{ session-status }}
         } {{ _end_ }}
         </group>
     } {{ _end_ }}
