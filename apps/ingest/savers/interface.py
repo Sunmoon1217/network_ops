@@ -51,8 +51,17 @@ class InterfaceSaver(BaseSaver):
                 mode = "layer3"
 
             enabled = iface.get("enabled")
-            if isinstance(enabled, (int, float)):
-                enabled = enabled == 0
+            if isinstance(enabled, str):
+                # 防御：模板若输出字符串 "1"/"0" 也按同一语义解析。
+                # bool("0") 是 True——直接 bool() 会把禁用存成启用。
+                text = enabled.strip().lower()
+                enabled = None if text == "" else text not in ("0", "false", "disabled", "disable")
+            elif isinstance(enabled, (int, float)):
+                # 四家交换机模板（h3c/huawei/maipu/ruijie）统一输出 int：1=启用、
+                # 0=禁用（set(0)/set(1)/default(1)，2026-09 实测三态 1/0/1）。
+                # 旧代码 `enabled == 0` 把方向弄反了：1（启用）→ False、0（禁用）
+                # → True——接口启停状态整体颠倒。
+                enabled = bool(enabled)
 
             rows.append(
                 {

@@ -9,11 +9,13 @@
 """
 
 import pytest
+from django.conf import settings
 
 from assets.models import AddressBook, Device, Interface, Policy, Service
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import AddressBookSaver, PolicySaver, ServiceSaver
 from ingest.savers.interface import InterfaceSaver
+from ingest.savers.registry import build_saver_payloads
 
 HILLSTONE_CONFIG = """interface ge0/1
 exit
@@ -101,3 +103,256 @@ def test_flat_manual_payload_still_accepted():
 
     assert InterfaceSaver().save(device, {"interfaces": {"interface": "eth9", "mode": "access"}}) == (1, 0)
     assert Interface.objects.get(device=device, interface="eth9").mode == "access"
+
+
+# ---------------------------------------------------------------------------
+# 全厂商样例端到端：有产出 + 有 Saver 的键必须入库 >0 行
+# ---------------------------------------------------------------------------
+
+SAMPLES = [
+    ("cisco_fw", "Cisco", "firewall"),
+    ("h3c_router", "H3C", "router"),
+    ("h3c_switch", "H3C", "switch"),
+    ("huawei_switch", "Huawei", "switch"),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("fname,vendor,dtype", SAMPLES, ids=[s[0] for s in SAMPLES])
+def test_sample_config_lands_in_db(fname, vendor, dtype):
+    """样例配置走**生产分组路径**（build_saver_payloads）喂真实 Saver。
+
+    判据只有一条：凡是「模板有产出、注册表有 Saver」的键，``created + updated``
+    必须 > 0——hillstone service/interface 那类结构错位在键级测试下是绿的，
+    在这里表现为静默 0 行并直接红灯。
+    """
+    from pathlib import Path
+
+    cfg_path = Path(settings.BASE_DIR) / "data" / "configs" / f"{fname}.txt"
+    if not cfg_path.exists():
+        pytest.skip(f"缺少样例配置 {fname}.txt")
+    cfg = cfg_path.read_text(encoding="utf-8")
+
+    parsed = ParserFactory.get_parser_by_keys(vendor, dtype).parse(cfg)
+    device = Device.objects.create(hostname=f"_t_sample_{fname}", device_type=dtype)
+
+    payloads = build_saver_payloads(dtype, parsed)
+    assert payloads, f"{fname}: 没有任何 Saver 被分组——键级对位已坏"
+
+    for saver, payload in payloads:
+        created, updated = saver.save(device, payload)
+        assert created + updated > 0, (
+            f"{fname}: {type(saver).__name__} 收到键 {sorted(payload)} 却 0 行入库"
+            "——模板产出结构/字段与 Saver 不匹配（hillstone service 同类问题）"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 无样例文件厂商的内联配置端到端（F5 / A10 / Maipu / Ruijie）
+# ---------------------------------------------------------------------------
+
+_INLINE = [
+    (
+        "f5_slb",
+        "F5",
+        "slb",
+        """ltm node /Common/node_a {
+    address 10.0.0.1
+}
+ltm pool /Common/pool_x {
+    load-balancing-mode round-robin
+    monitor /Common/http
+    members {
+        /Common/node_a:80 {
+            address 10.0.0.1
+        }
+    }
+}
+ltm virtual /Common/vs_x {
+    destination /Common/10.0.0.100:80
+    enabled
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool /Common/pool_x
+    profiles {
+        /Common/http { }
+    }
+    rules {
+        /Common/rule_1
+    }
+    source-address-translation {
+        pool /Common/snat_pool
+        type snat
+    }
+}
+""",
+    ),
+    (
+        "f5_gtm",
+        "F5",
+        "gslb",
+        """gtm datacenter DC1 { }
+gtm server /Common/gtm-server1 {
+    datacenter DC1
+    monitor /Common/gtm_http
+    product standard
+}
+gtm pool A /Common/gtm-pool {
+    members {
+        /Common/gtm-server:/Common/vs1 {
+            member-order 1
+        }
+    }
+    monitor /Common/gtm_http
+    ttl 30
+}
+gtm wideip A www.example.com {
+    pool-lb-mode round-robin
+    pools {
+        /Common/gtm-pool {
+            order 1
+        }
+    }
+}
+""",
+    ),
+    (
+        "a10_slb",
+        "A10",
+        "slb",
+        """slb server server1 10.1.1.1
+   port 80 tcp
+slb service-group sg1 tcp
+    method round-robin
+slb virtual-server vs1 10.2.2.2
+    port 80 tcp
+       service-group sg1
+""",
+    ),
+    (
+        "maipu_switch",
+        "Maipu",
+        "switch",
+        """vlan 10
+ name users
+interface GigabitEthernet0/1
+ description uplink
+ switchport mode access
+ switchport access vlan 10
+ switchport trunk allowed vlan 10,20
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+""",
+    ),
+    (
+        "ruijie_switch",
+        "Ruijie",
+        "switch",
+        """vlan 10
+ name users
+interface GigabitEthernet0/1
+ description uplink
+ switchport mode access
+ switchport access vlan 10
+ switchport trunk allowed vlan 10,20
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+""",
+    ),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("cid,vendor,dtype,cfg", _INLINE, ids=[c[0] for c in _INLINE])
+def test_inline_config_lands_in_db(cid, vendor, dtype, cfg):
+    """内联配置端到端，判据同上：有产出有 Saver 必须入库 >0 行。
+
+    A10 的全部顶层键（servers/service_groups/virtual_server）目前都在
+    KNOWN_UNCONSUMED_PRODUCTS 里（无 Saver 是登记在案的缺口）——它验证的是
+    「产出键没有出现新的未消费缺口」，而不是入库行数。
+    """
+    from ingest.mapping import canonical_key
+    from ingest.parsers.contract import KNOWN_UNCONSUMED_PRODUCTS
+
+    parsed = ParserFactory.get_parser_by_keys(vendor, dtype).parse(cfg)
+    device = Device.objects.create(hostname=f"_t_inline_{cid}", device_type=dtype)
+    payloads = build_saver_payloads(dtype, parsed)
+
+    if not payloads:
+        known = KNOWN_UNCONSUMED_PRODUCTS.get(dtype, set())
+        produced = {canonical_key(k) for k, v in parsed.items() if v}
+        assert produced and produced <= known, (
+            f"{cid}: 产出 {sorted(produced)} 无任何 Saver，且不在 KNOWN_UNCONSUMED_PRODUCTS"
+        )
+        pytest.skip(f"{cid}: 全部产出键为登记在案的未消费缺口，无 Saver 可验")
+
+    for saver, payload in payloads:
+        created, updated = saver.save(device, payload)
+        assert created + updated > 0, f"{cid}: {type(saver).__name__} 收到 {sorted(payload)} 却 0 行入库"
+
+
+# ---------------------------------------------------------------------------
+# 接口 enabled 三态：启用行 / 禁用行 / 无行（真机默认启用）
+# ---------------------------------------------------------------------------
+
+_H3C_STYLE = """interface GigabitEthernet1/0/1
+ {up}
+ ip address 10.0.0.1 255.255.255.0
+interface GigabitEthernet1/0/2
+ shutdown
+ ip address 10.0.0.2 255.255.255.0
+interface GigabitEthernet1/0/3
+ ip address 10.0.0.3 255.255.255.0
+"""
+
+
+def _seven_line_cfg(up_line: str) -> str:
+    """maipu / ruijie 的接口组是严格 7 行行序（description/switchport 系列必须给），
+    三态各占一个接口：启用行 / 禁用行 / 无 shutdown 行。"""
+    blocks = []
+    for index, up in enumerate([up_line, "shutdown", ""], start=1):
+        lines = [
+            f"interface GigabitEthernet1/0/{index}",
+            " description uplink",
+            " switchport mode access",
+            " switchport access vlan 10",
+            " switchport trunk allowed vlan 10,20",
+            f" ip address 10.0.0.{index} 255.255.255.0",
+        ]
+        if up:
+            lines.append(f" {up}")
+        blocks.append("\n".join(lines))
+    return "\n".join(blocks) + "\n"
+
+
+_ENABLED_CASES = [
+    ("h3c", "H3C", _H3C_STYLE.format(up="undo shutdown")),
+    ("huawei", "Huawei", _H3C_STYLE.format(up="undo shutdown")),
+    ("maipu", "Maipu", _seven_line_cfg("no shutdown")),
+    ("ruijie", "Ruijie", _seven_line_cfg("no shutdown")),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("cid,vendor,template", _ENABLED_CASES, ids=[c[0] for c in _ENABLED_CASES])
+def test_interface_enabled_three_states(cid, vendor, template):
+    """enabled 落库三态：启用行→True、禁用行→False、无行→True（默认启用）。
+
+    历史 bug 链（2026-09 实测）：① 模板行 ``undo shutdown`` 前缀匹配不到禁用写法
+    ``shutdown``、恒走 default；② default 曾是 0（无行=禁用，与真机相反）；
+    ③ Saver 只认 int/float，``bool("0") is True`` 让禁用状态彻底丢失——三处叠加
+    的结果是**接口永远存成启用**。此测试三态逐一断言，任何一环回退都会红。
+    """
+    from assets.models import Interface
+    from ingest.savers.interface import InterfaceSaver
+
+    cfg = template.format(if_up="GigabitEthernet1/0/1", if_down="GigabitEthernet1/0/2", if_none="GigabitEthernet1/0/3")
+    parsed = ParserFactory.get_parser_by_keys(vendor, "switch").parse(cfg)
+    device = Device.objects.create(hostname=f"_t_en_{cid}", device_type="switch")
+    created, _ = InterfaceSaver().save(device, parsed)
+    assert created == 3, f"{cid}: 只入库 {created}/3 个接口"
+
+    state = {i.interface: i.enabled for i in Interface.objects.filter(device=device)}
+    assert state["GigabitEthernet1/0/1"] is True, f"{cid}: 启用行接口存成了 {state['GigabitEthernet1/0/1']}"
+    assert state["GigabitEthernet1/0/2"] is False, f"{cid}: 禁用行接口存成了启用（bool('0') 类 bug 回归）"
+    assert state["GigabitEthernet1/0/3"] is True, f"{cid}: 无 shutdown 行应按真机默认启用"
