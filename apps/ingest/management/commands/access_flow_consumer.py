@@ -57,6 +57,10 @@ class Command(BaseCommand):
         beat(client)
 
         while not stopping:
+            # 心跳在**每轮开头**盖：语义是「进程还活着」，不能等 xreadgroup 成功——
+            # 读超时走进 except 分支时也得盖章，否则读持续失败会让心跳停更，
+            # healthcheck 把活着的进程判死（反过来心跳新鲜才判死就更拧了）。
+            beat(client)
             try:
                 # redis 的 xreadgroup 返回类型是宽 Union（XReadGroupResponse 里混着
                 # dict 分支，还叠了 Awaitable）——运行期这里拿到的形状固定是
@@ -76,7 +80,6 @@ class Command(BaseCommand):
                 time.sleep(5)
                 continue
 
-            beat(client)
             for _stream_name, messages in responses or []:
                 for message_id, fields in messages:
                     self._process(client, message_id, fields)
