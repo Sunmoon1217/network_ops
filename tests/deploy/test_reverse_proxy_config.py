@@ -67,14 +67,14 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`env/*.env` 给容器、`env/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：app / worker / worker-access（访问流重建生产者）/ access-flow-consumer
-    （访问流单写者消费者）——新增跑 Django 的服务时这个计数要跟着加。
+    当前注入方：app / worker（celery 双队列）/ access-flow-consumer（访问流单写者消费者）
+    ——新增跑 Django 的服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     app_env = (settings.BASE_DIR / "env" / "app.env").read_text(encoding="utf-8")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in app_env
-    assert compose.count("- env/app.env") == 4
+    assert compose.count("- env/app.env") == 3
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -86,9 +86,9 @@ def test_each_service_only_gets_its_own_env_file():
     assert (env_dir / "celery.env").read_text(encoding="utf-8").count("CELERY_LOGLEVEL=") == 1
 
     app_block = compose.split("  worker:")[0]
-    # worker 块切到下一个服务为止：后面还有 worker-access / access-flow-consumer，
+    # worker 块切到下一个服务为止：后面还有 access-flow-consumer，
     # 跨着切会让「串味」断言被别的服务满足（假绿）
-    worker_block = compose.split("  worker:")[1].split("  worker-access:")[0]
+    worker_block = compose.split("  worker:")[1].split("  access-flow-consumer:")[0]
     assert "- env/gunicorn.env" in app_block
     assert "- env/celery.env" not in app_block
     assert "- env/celery.env" in worker_block
@@ -118,10 +118,10 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
         assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in text
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务
-    # （db / app / worker / worker-access / access-flow-consumer；新增时跟着加）
+    # （db / app / worker / access-flow-consumer；新增时跟着加）
     assert "file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}" in compose
     assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}" in compose
-    assert compose.count("secrets: *db-secrets") == 5
+    assert compose.count("secrets: *db-secrets") == 4
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
     assert "${POSTGRES_PASSWORD:-" not in compose
