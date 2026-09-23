@@ -1,11 +1,11 @@
 <group name="servers*">
 slb server {{ name }} {{ address }}
    health-check {{ server_monitor | ORPHRASE }}
-   {{ enable | equal("disable") | default("enable") }}
+   disable {{ enabled | set(0) | default(1) }}
    {{ server_nocheck | ORPHRASE | equal("no health-check") }}
    <group name="services*">
    port {{ port }}  {{ protocol }}
-       {{ enable | equal("disable") | default("enable") }}
+       disable {{ enabled | set(0) | default(1) }}
        health-check {{ monitor | ORPHRASE }}
        {{ nocheck | ORPHRASE | equal("no health-check") }}
    </group>
@@ -27,7 +27,7 @@ slb service-group {{ name }} {{ protocol }}
 slb virtual-server {{ name }} {{ address }}
    <group name="virtual_services*">
    port {{ port }}  {{ protocol }}
-      {{ enabled | equal("disabled") | default("enabled") }}
+      disabled {{ enabled | set(0) | default(1) }}
       source-nat {{ snat_type }} {{ snat_pool }}
       service-group {{ service_group }}
       template http {{ http_tmpl }}
