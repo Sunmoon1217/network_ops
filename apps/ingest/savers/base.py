@@ -25,6 +25,34 @@ def as_list(value: Any) -> list:
     return []
 
 
+#: 各厂商禁用词形（2026-09 统一模板后，模板产出只有 int 0/1，本集合服务手工
+#: payload 与旧 config_json 的 str 形态）：enable/disable/enabled/disabled/1/0/...
+_STATUS_OFF = {"0", "false", "no", "off", "down", "disable", "disabled"}
+
+
+def status_enabled(item: dict, *legacy_keys: str, default: bool = True) -> bool:
+    """启停状态双轨解析——新旧形态并存期的统一入口。
+
+    - **新形态**（模板统一 ``禁用词 {{ enabled | set(0) | default(1) }}``）：
+      ``enabled`` 为 int 0/1（1=启用），全部状态行已收编成这一种写法；
+    - **旧/手工形态**：legacy 键（``status`` / ``rule_status`` / ``pool_status`` /
+      ``member_status`` 等），值为 ``enabled/disabled`` 或 ``enable/disable``；
+    - 都没有 → ``default``（模板的 ``default(1)`` 其实已保证，这里给手工 payload 兜底）。
+    """
+    val = item.get("enabled")
+    if val is None:
+        for key in legacy_keys:
+            if item.get(key) is not None:
+                val = item[key]
+                break
+    if val is None:
+        return default
+    if isinstance(val, str):
+        text = val.strip().lower()
+        return default if text == "" else text not in _STATUS_OFF
+    return bool(val)
+
+
 class BaseSaver(ABC):
     """基类，子类定义 device_types、keys 与 model_paths 类属性即自动注册
 

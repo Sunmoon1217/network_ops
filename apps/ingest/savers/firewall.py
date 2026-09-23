@@ -4,7 +4,7 @@ import ipaddress
 from logging import getLogger
 from typing import Any
 
-from .base import BaseSaver, as_list
+from .base import BaseSaver, as_list, status_enabled
 
 logger = getLogger(__name__)
 
@@ -489,11 +489,8 @@ class PolicySaver(BaseSaver):
         return _ACTION_ALIASES.get(str(action or "").strip().lower(), "allow")
 
     def _is_enabled(self, item: dict) -> bool:
-        """hillstone 用 rule_status（enable/disable），其它形态用 enabled"""
-        status = item.get("rule_status")
-        if status is not None:
-            return str(status).strip().lower() not in {"disable", "disabled"}
-        return bool(item.get("enabled", True))
+        """双轨：新模板统一 ``enabled`` 0/1；旧/手工形态 hillstone 给 rule_status（enable/disable）"""
+        return status_enabled(item, "rule_status")
 
     def _address_entries(self, item: dict, side: str) -> list[dict]:
         """把分列地址与通用列表两种形态统一成 ``[{kind, value}]``

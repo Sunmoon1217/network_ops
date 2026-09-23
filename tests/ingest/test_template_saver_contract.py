@@ -400,3 +400,57 @@ interface GigabitEthernet0/1
     rows = rows if isinstance(rows, list) else [rows]
     first = next(row for row in rows if row.get("interface") == "GigabitEthernet0/0")
     assert first.get("nameif") == "outside"
+
+
+# ---------------------------------------------------------------------------
+# 状态行统一模式（禁用词 {{ enabled | set(0) | default(1) }}）的落库两态
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_f5_virtual_status_two_states_after_unify():
+    """f5 virtuals 统一模式落库两态：disabled 行→status=disabled、无行→enabled。
+
+    模板已从 ``{{ status | equal("disabled") | default("enabled") }}`` 收编为
+    字面禁用词行（字段统一 ``enabled`` 0/1）；LtmVirtualServer.status 是 str
+    字段，由 Saver 侧 ``status_enabled`` 双轨转换。
+    """
+    from assets.models import LtmVirtualServer
+    from ingest.savers.lb import LBVirtualServerSaver
+
+    cfg = """ltm virtual /Common/v1 {
+    destination /Common/10.2.2.1:80
+    disabled
+    ip-protocol tcp
+    mask 255.255.255.255
+}
+ltm virtual /Common/v2 {
+    destination /Common/10.2.2.2:80
+    ip-protocol tcp
+    mask 255.255.255.255
+}
+"""
+    parsed = ParserFactory.get_parser_by_keys("F5", "slb").parse(cfg)
+    device = Device.objects.create(hostname="_t_f5_status", device_type="slb")
+    created, _ = LBVirtualServerSaver().save(device, parsed)
+    assert created == 2
+
+    assert LtmVirtualServer.objects.get(device=device, name="v1").status == "disabled"
+    assert LtmVirtualServer.objects.get(device=device, name="v2").status == "enabled"
+
+
+@pytest.mark.django_db
+def test_manual_legacy_status_payload_still_accepted():
+    """手工 payload 的 legacy 形态（status/pool_status/rule_status str）不许被统一改造弄丢——
+    这是既有测试与存量 config_json 的契约。"""
+    from ingest.savers.base import status_enabled
+
+    assert status_enabled({"status": "disabled"}, "status") is False
+    assert status_enabled({"status": "enabled"}, "status") is True
+    assert status_enabled({"rule_status": "disable"}, "rule_status") is False
+    assert status_enabled({"pool_status": "disabled"}, "pool_status") is False
+    # 新模板形态
+    assert status_enabled({"enabled": 0}) is False
+    assert status_enabled({"enabled": 1}) is True
+    # 缺失 → default
+    assert status_enabled({}, "status") is True
+    assert status_enabled({}, "status", default=False) is False
