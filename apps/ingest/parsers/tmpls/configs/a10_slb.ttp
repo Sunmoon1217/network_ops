@@ -1,11 +1,3 @@
-<vars>
-# members 用四个同名组接力（v4/v6 × 无词/带词）：组间按配置流顺序尝试——组内备选
-# 两行在单行成员结构下 1:1 顺序消费会丢行，组间接力则错族/错态的组失配即让位。
-# 族区分在地址位由 re("IP")/re("IPV6") 显式验证（错族直接失配）；port 限纯数字
-# 兜底，防地址段部分匹配后的脏端口（F5 模板同款教训：port 不限数字会被切坏）。
-PORT = r"[0-9]+"
-</vars>
-
 <group name="servers*">
 slb server {{ name }} {{ address }}
    health-check {{ server_monitor | ORPHRASE }}
@@ -20,21 +12,26 @@ slb server {{ name }} {{ address }}
 {{ raw_lines | _line_ | joinmatches("\n") }}
 </group>
 
+# members 四组接力（v4/v6 × 无词/带词）：组间按配置流顺序尝试——组内备选两行在
+# 单行成员结构下 1:1 顺序消费会丢行，组间接力则错族/错态的组失配即让位下一组。
+# 族区分在地址位由 re("IP")/re("IPV6") 显式验证。port 不需要显式模式：默认变量
+# 不吃空格，带词行靠「行尾剩 disable 失配」让位；失配行进 raw_lines 与脏值入库
+# 一样是静默（raw_lines 无 Saver 消费），两版 8/8 实测等价（2026-09）。
 <group name="service_groups*">
 slb service-group {{ name }} {{ protocol }}
     method {{ method }}
     health-check {{ monitor | ORPHRASE | strip('"') | default("None") }}
     <group name="members*">
-    member {{ address | re("IP") | let(enable, 1) }}:{{ port | re("PORT") }}
+    member {{ address | re("IP") | let(enable, 1) }}:{{ port }}
     </group>
     <group name="members*">
-    member {{ address | re("IP") }}:{{ port | re("PORT") }} {{ enable | let(0) }}
+    member {{ address | re("IP") }}:{{ port }} {{ enable | let(0) }}
     </group>
     <group name="members*">
-    member {{ address | re("IPV6") | let(enable, 1) }}.{{ port | re("PORT") }}
+    member {{ address | re("IPV6") | let(enable, 1) }}.{{ port }}
     </group>
     <group name="members*">
-    member {{ address | re("IPV6") }}.{{ port | re("PORT") }} {{ enable | let(0) }}
+    member {{ address | re("IPV6") }}.{{ port }} {{ enable | let(0) }}
     </group>
 {{ raw_lines | _line_ | joinmatches("\n") }}
 </group>
