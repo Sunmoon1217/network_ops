@@ -338,16 +338,21 @@ _ENABLED_CASES = [
 def test_interface_enabled_three_states(cid, vendor, template):
     """enabled 落库三态：启用行→True、禁用行→False、无行→True（默认启用）。
 
-    历史 bug 链（2026-09 实测）：① 模板行 ``undo shutdown`` 前缀匹配不到禁用写法
-    ``shutdown``、恒走 default；② default 曾是 0（无行=禁用，与真机相反）；
-    ③ Saver 只认 int/float，``bool("0") is True`` 让禁用状态彻底丢失——三处叠加
-    的结果是**接口永远存成启用**。此测试三态逐一断言，任何一环回退都会红。
+    **真实配置文件只有两态**（只落盘偏离默认的状态）：无行=启用、``shutdown``=禁用；
+    ``undo/no shutdown`` 是改状态的命令、改完即消失、**不会出现在配置文件里**——
+    第一个用例里的 undo/no shutdown 行是防御性覆盖（出现了也必须解析正确），真实
+    输入是第二、三个接口的形态。
+
+    历史 bug 链（2026-09 实测）：① 旧模板行 ``undo shutdown`` 在真实配置里是死分支
+    （那行永不出现），实际恒走 default；② default 曾是 0（无行=禁用，与真机默认
+    启用相反）；③ Saver 只认 int/float 且 ``enabled == 0`` 判向反转、``bool("0")``
+    is True——三处叠加的结果是**接口永远存成启用**。此测试三态逐一断言，任何一环
+    回退都会红。
     """
     from assets.models import Interface
     from ingest.savers.interface import InterfaceSaver
 
-    cfg = template.format(if_up="GigabitEthernet1/0/1", if_down="GigabitEthernet1/0/2", if_none="GigabitEthernet1/0/3")
-    parsed = ParserFactory.get_parser_by_keys(vendor, "switch").parse(cfg)
+    parsed = ParserFactory.get_parser_by_keys(vendor, "switch").parse(template)
     device = Device.objects.create(hostname=f"_t_en_{cid}", device_type="switch")
     created, _ = InterfaceSaver().save(device, parsed)
     assert created == 3, f"{cid}: 只入库 {created}/3 个接口"
@@ -356,3 +361,42 @@ def test_interface_enabled_three_states(cid, vendor, template):
     assert state["GigabitEthernet1/0/1"] is True, f"{cid}: 启用行接口存成了 {state['GigabitEthernet1/0/1']}"
     assert state["GigabitEthernet1/0/2"] is False, f"{cid}: 禁用行接口存成了启用（bool('0') 类 bug 回归）"
     assert state["GigabitEthernet1/0/3"] is True, f"{cid}: 无 shutdown 行应按真机默认启用"
+
+
+@pytest.mark.django_db
+def test_cisco_interface_shutdown_two_states():
+    """cisco/ASA 的真实两态：禁用接口有 shutdown 行（惯例在 nameif 前）、启用接口无行。
+
+    旧模板把 enabled 放在 ip address 之后的裸变量行，永远捕获不到位置在前部的
+    shutdown 行——禁用接口恒存启用。修复：字面 ``shutdown`` 行插到 interface 之后
+    （带 default(1) 使行可选），与四家交换机同款。
+    """
+    from assets.models import Interface
+    from ingest.savers.interface import InterfaceSaver
+
+    cfg = """interface GigabitEthernet0/0
+ shutdown
+ nameif outside
+ security-level 0
+ ip address 203.0.113.1 255.255.255.0
+!
+interface GigabitEthernet0/1
+ nameif inside
+ security-level 100
+ ip address 10.0.0.1 255.255.255.0
+!
+"""
+    parsed = ParserFactory.get_parser_by_keys("Cisco", "firewall").parse(cfg)
+    device = Device.objects.create(hostname="_t_en_cisco", device_type="firewall")
+    created, _ = InterfaceSaver().save(device, parsed)
+    assert created == 2
+
+    state = {i.interface: i.enabled for i in Interface.objects.filter(device=device)}
+    assert state["GigabitEthernet0/0"] is False, "有 shutdown 行的接口应为禁用"
+    assert state["GigabitEthernet0/1"] is True, "无行应按默认启用"
+    # shutdown 行被正确消耗后，后续行序不乱（nameif 照常提取）。校验在解析层：
+    # nameif 不落库——InterfaceSaver 不消费它（模板提取但 Saver 不读的字段）。
+    rows = parsed.get("interfaces")
+    rows = rows if isinstance(rows, list) else [rows]
+    first = next(row for row in rows if row.get("interface") == "GigabitEthernet0/0")
+    assert first.get("nameif") == "outside"

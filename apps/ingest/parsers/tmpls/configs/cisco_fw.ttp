@@ -13,10 +13,10 @@ hostname {{ hostname }}
 # 接口配置
 <group name="interfaces">
 interface {{ interface }}
+ shutdown {{ enabled | set(0) | default(1) }}
  nameif {{ nameif }}
  security-level {{ security_level }}
  ip address {{ ip_address }} {{ subnet_mask }}
- {{ enabled | set(1) | default(1) }}
 </group>
 
 # 静态路由配置
