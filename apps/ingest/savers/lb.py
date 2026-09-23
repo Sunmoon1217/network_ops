@@ -3,7 +3,7 @@
 from logging import getLogger
 from typing import Any
 
-from .base import BaseSaver, as_list
+from .base import BaseSaver, as_list, status_enabled
 
 logger = getLogger(__name__)
 
@@ -52,7 +52,8 @@ class LBVirtualServerSaver(BaseSaver):
                     "vs_port": vs.get("vs_port", ""),
                     "mask": vs.get("mask"),
                     "protocol": vs.get("protocol", ""),
-                    "status": vs.get("status", "enabled"),
+                    # 双轨：新模板 enabled 0/1；手工 payload / 旧 config_json 给 status str
+                    "status": "enabled" if status_enabled(vs, "status") else "disabled",
                     "source": vs.get("source"),
                     "pool": self._leaf(vs.get("pool")),
                     # 新模板把 snat 收进 source-address-translation 子块，这里兼容旧格式
@@ -386,7 +387,7 @@ class GtmPoolSaver(BaseSaver):
                 "ttl": self._safe_int(pool.get("ttl")) or 30,
                 "monitor": [monitor] if monitor else [],
                 "members": self._normalize_members(pool),
-                "is_active": pool.get("pool_status", "enabled") != "disabled",
+                "is_active": status_enabled(pool, "pool_status"),
             }
             # fallback_ip 是 GenericIPAddressField，空串会被序列化器判为非法
             fallback_ip = pool.get("fallback-ip")
@@ -407,7 +408,8 @@ class GtmPoolSaver(BaseSaver):
                 {
                     "server": server,
                     "vserver": self._leaf(member.get("vs_name")),
-                    "status": member.get("member_status", "enabled"),
+                    # 双轨：新模板 enabled 0/1；手工 payload 给 status / 旧模板给 member_status
+                    "status": "enabled" if status_enabled(member, "member_status", "status") else "disabled",
                     "order": self._safe_int(member.get("member_order")) or 0,
                     "ratio": self._safe_int(member.get("member_ratio")) or 1,
                     "monitor": self._leaf(member.get("member_monitor")),

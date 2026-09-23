@@ -7,7 +7,9 @@
 
 - ``?device=<id>``：contexts 里挂着这台设备的行（``device_ids`` GIN 包含过滤）；
 - ``?policy=<id>``：命中这条策略的行（``policy_ids`` GIN 包含过滤）；
-- ``?search=<词>``：九字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
+- ``?action=allow|deny``：按行级动作过滤（action 进唯一键后每行动作单一，面板的
+  「允许/拒绝」筛选走这里；非法值 400）；
+- ``?search=<词>``：键字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
 """
 
 from rest_framework import serializers, viewsets
@@ -30,6 +32,7 @@ class AccessFlowSerializer(serializers.ModelSerializer):
             "protocol",
             "port",
             "port2",
+            "action",
             "contexts",
             "device_ids",
             "policy_ids",
@@ -41,7 +44,7 @@ class AccessFlowSerializer(serializers.ModelSerializer):
 class AccessFlowViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AccessFlowSerializer
     search_fields = ("src_ip", "dst_ip", "src_range_end", "dst_range_end", "protocol", "port", "port2")
-    ordering_fields = ("src_ip", "dst_ip", "protocol", "port", "updated_at")
+    ordering_fields = ("src_ip", "dst_ip", "protocol", "port", "action", "updated_at")
 
     def get_queryset(self):
         queryset = AccessFlow.objects.all()
@@ -51,6 +54,11 @@ class AccessFlowViewSet(viewsets.ReadOnlyModelViewSet):
         policy = self._int_param("policy")
         if policy is not None:
             queryset = queryset.filter(policy_ids__contains=[policy])
+        action = self.request.query_params.get("action")
+        if action:
+            if action not in ("allow", "deny"):
+                raise ValidationError({"action": "必须是 allow 或 deny"})
+            queryset = queryset.filter(action=action)
         return queryset
 
     def _int_param(self, name: str) -> int | None:

@@ -9,13 +9,14 @@ import type { AccessFlowItem, AccessFlowPolicyFilter, FlowAuditFlags, FlowContex
 /**
  * 访问流面板：策略展开后的业务流审计视图（数据源 `/api/access-flows/`，只读）。
  *
- * 与「策略列表」是两个视角：这里一行 = 一条 (源, 目的, 服务) 访问流，
+ * 与「策略列表」是两个视角：这里一行 = 一条 (源, 目的, 服务, 动作) 访问流，
  * `contexts` 列展开命中它的全部设备/策略；同一行出现
  * - 同设备多条策略 → 「设备内重复」（重复/多开）
- * - allow 与 deny 并存 → 「动作冲突」
+ * - （action 进唯一键后 allow/deny 已分行，「动作冲突」只可能是历史数据——
+ *   auditFlags 保留该分支作兼容，新数据恒为 false）
  *
- * 过滤：设备（`?device=`，GIN 包含）、策略（`?policy=`，从策略列表「展开」带入），
- * 搜索走九字段子串（IP / 端口 / 协议）。
+ * 过滤：设备（`?device=`，GIN 包含）、策略（`?policy=`，从策略列表「展开」带入）、
+ * 动作（`?action=allow|deny`，行级），搜索走键字段子串（IP / 端口 / 协议）。
  */
 const props = defineProps<{
   /** 从策略列表带过来的策略过滤条件；null 表示不按策略过滤 */
@@ -39,6 +40,8 @@ const {
 } = useCrudApi<AccessFlowItem>()
 
 const filterDevice = ref<number | ''>('')
+/** 行级动作筛选（action 进唯一键后面板可按允许/拒绝分流） */
+const filterAction = ref<'' | 'allow' | 'deny'>('')
 
 const fetchAll = () =>
   fetchData(() =>
@@ -46,11 +49,13 @@ const fetchAll = () =>
       params: pageParams({
         device: filterDevice.value || undefined,
         policy: props.policyFilter?.id,
+        action: filterAction.value || undefined,
       }),
     }),
   )
 
 watch(filterDevice, resetAndFetch)
+watch(filterAction, resetAndFetch)
 watch(
   () => props.policyFilter,
   () => resetAndFetch(),
@@ -100,6 +105,15 @@ const auditFlags = (contexts: Record<string, FlowContext> | undefined): FlowAudi
   <div class="flow-panel">
     <div class="panel-filter">
       <FilterBar v-model:device="filterDevice" v-model:search="search" search-placeholder="搜索 IP/端口/协议">
+        <el-select
+          v-model="filterAction"
+          clearable
+          placeholder="动作"
+          style="width: 104px"
+        >
+          <el-option label="允许" value="allow" />
+          <el-option label="拒绝" value="deny" />
+        </el-select>
         <el-tag
           v-if="policyFilter"
           type="warning"
@@ -121,6 +135,13 @@ const auditFlags = (contexts: Record<string, FlowContext> | undefined): FlowAudi
         </el-table-column>
         <el-table-column label="服务" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ serviceLabel(row.protocol, row.port, row.port2) }}</template>
+        </el-table-column>
+        <el-table-column label="动作" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.action === 'deny' ? 'danger' : 'success'" size="small">
+              {{ actionLabel(row.action) }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="命中" width="110" align="center">
           <template #default="{ row }">

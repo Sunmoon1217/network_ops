@@ -131,8 +131,13 @@ def decode_message(fields: dict) -> tuple[int, list[dict]]:
         for context in contexts:
             filled = {**context, "device_id": device_id, "hostname": hostname}
             context_map[f"{device_id}:{filled['policy_pk']}"] = filled
-        # 键按九元组原样还原（长度由模型的唯一约束决定，这里不做假设）
-        flows.append({"key": tuple(key), "contexts": context_map})
+        # 键按唯一约束原样还原；升级前的旧 wire 消息是九元组（没有 action 一位）——
+        # 按 allow 兜底，否则消费侧 key[9] 直接 IndexError 崩掉 consumer；
+        # deny 混行由下一次 rebuild 的 sync_device 拆正。
+        key = tuple(key)
+        if len(key) == 9:
+            key = (*key, "allow")
+        flows.append({"key": key, "contexts": context_map})
     return device_id, flows
 
 

@@ -440,9 +440,13 @@ def _resolve_translated_ip(name: str) -> str | None:
 
 
 def _resolve_translated_port(name: str) -> str | None:
-    """解析NAT转换后的端口"""
-    svc = Service.objects.filter(name=name).first()
-    return svc.port if svc and svc.port else None
+    """解析NAT转换后的端口。
+
+    同名允许多行端口定义（2026-09 拆行）：跳过空 port 的 any 占位行、按 pk 序取
+    首个真实定义——否则 first() 恰好命中占位时会把存在的端口答成 None。
+    """
+    svc = Service.objects.filter(name=name).exclude(port="").order_by("pk").first()
+    return svc.port if svc else None
 
 
 def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:

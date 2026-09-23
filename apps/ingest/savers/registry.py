@@ -48,6 +48,10 @@ def build_saver_payloads(device_type: str, config_json: dict) -> list[tuple[Base
         payload = {key: config_json[key] for key in keys if config_json.get(key)}
         if payload:
             payloads.append((saver, payload))
+    # 被引用的维表先写：Service 的行 pk 稳定后 Policy 才挂 M2M——同批全量解析下
+    # PolicySaver._replace_m2m 会按最新 ids 全量重建关联；若反序（Policy 先建关联、
+    # Service 后删改端口行），级联删除会打断关联且无人重建。稳定排序，其余相对序不变。
+    payloads.sort(key=lambda pair: 0 if type(pair[0]).__name__ == "ServiceSaver" else 1)
     return payloads
 
 

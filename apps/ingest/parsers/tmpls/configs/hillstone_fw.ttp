@@ -13,12 +13,12 @@ zone "{{ zone_name }}"
 exit {{ _end_ }}
 </group>
 
-<group name="interfaces*.{{ interface }}">
+<group name="interfaces.{{ interface }}">
 interface {{ interface }}
 exit {{ _end_ }}
 </group>
 
-<group name="services*.{{ service_name }}">
+<group name="services.{{ service_name }}">
 service "{{ service_name }}"
   <group>
   {{ protocol }} {{ port_type }} {{ port }}
@@ -44,7 +44,7 @@ exit {{ _end_ }}
 <group name="rules*">
 rule id {{ rule_id }}
   action {{ action }}
-  {{ rule_status | equal("disable") | default("enable") }}
+  disable {{ enabled | set(0) | default(1) }}
   src-zone "{{ source_zone | default("any") }}"
   dst-zone "{{ destination_zone | default("any") }}"
   src-ip {{ src-ip | joinmatches() | to_list }}

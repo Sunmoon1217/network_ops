@@ -40,7 +40,7 @@ def _seed(device: Device, policy_pk: int, *, src_ip: str = "10.0.0.1", port: str
         "order": 0,
         "enabled": True,
     }
-    key = (src_ip, 32, "", "10.0.0.2", 32, "", "tcp", port, "")
+    key = (src_ip, 32, "", "10.0.0.2", 32, "", "tcp", port, "", "allow")
     upsert_flows([{"key": key, "contexts": {f"{device.pk}:{policy_pk}": context}}])
     return AccessFlow.objects.get(src_ip=src_ip, port=port)
 
@@ -64,6 +64,7 @@ def test_list_returns_paginated_flows_with_key_fields(client):
     assert row["src_prefix"] == 32
     assert row["protocol"] == "tcp"
     assert row["port"] == "80"
+    assert row["action"] == "allow", "action 进唯一键后必须出现在 API 返回里"
     assert row["device_ids"] == [device.pk]
     assert list(row["contexts"]) == [f"{device.pk}:1"], "contexts 键形如 <device_pk>:<policy_pk>"
 
@@ -100,6 +101,27 @@ def test_invalid_filter_param_is_400(client):
     resp = client.get(URL, {"device": "not-a-number"})
     assert resp.status_code == 400
     assert "device" in resp.json()
+
+
+@pytest.mark.django_db
+def test_action_filter(client):
+    """?action=allow|deny 行级过滤（action 进唯一键后面板的允许/拒绝筛选）"""
+    device = _device("_t_afapi_action")
+    _seed(device, 1)  # key 带 allow → 行 action=allow
+    deny_row = _seed(device, 2, src_ip="192.0.2.9", port="53")
+    AccessFlow.objects.filter(pk=deny_row.pk).update(action="deny")
+
+    body = client.get(URL, {"action": "deny"}).json()
+    assert body["count"] == 1
+    assert body["results"][0]["action"] == "deny"
+
+    body = client.get(URL, {"action": "allow"}).json()
+    assert body["count"] == 1
+    assert body["results"][0]["action"] == "allow"
+
+    resp = client.get(URL, {"action": "yes"})
+    assert resp.status_code == 400
+    assert "action" in resp.json()
 
 
 @pytest.mark.django_db

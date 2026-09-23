@@ -28,6 +28,7 @@ gtm server {{ server_name | _line_ }} {
         {{ vs_name }} {
             destination {{ vs_address | re("IP") }}:{{ vs_port }}
             destination {{ vs_address | re("IPV6") }}.{{ vs_port }}
+            disabled {{ enabled | set(0) | default(1) }}
             monitor {{ vs_monitor | strip('"') | ORPHRASE }}
         } {{ _end_ }}
         </group>
@@ -60,7 +61,7 @@ gtm monitor {{ type }} {{ name }} {
 
 <group name="pools*">
 gtm pool {{ pool_type | upper }} {{ pool_name }} {
-    {{ pool_status | equal("disabled") | default("enabled") }}
+    disabled {{ enabled | set(0) | default(1) }}
     alternate-mode {{ alternate-mode | default("round-robin") }}
     fallback-ip {{ fallback-ip }}
     fallback-mode {{ fallback-mode | default("return-to-dns") }}
@@ -69,7 +70,7 @@ gtm pool {{ pool_type | upper }} {{ pool_name }} {
     members { {{ _start_ }}
         <group>
         {{ server_name | re("PTN") | replaceall("\\") }}:{{ vs_name }} {
-            {{ member_status | equal("disabled") | default("enabled") }}
+            disabled {{ enabled | set(0) | default(1) }}
             member-order {{ member_order }}
             ratio {{ member_ratio | default(1) }}
             monitor {{ member_monitor | strip('"') | ORPHRASE }}

@@ -6,17 +6,18 @@ hostname {{ hostname }}
 </group>
 
 <group name="version">
-: Saved
-: {{ version | re('.+') }}
+ASA Version {{ version }}
 </group>
 
 # 接口配置
 <group name="interfaces">
 interface {{ interface }}
+ description {{ description | ORPHRASE }}
+ shutdown {{ enabled | set(0) | default(1) }}
  nameif {{ nameif }}
  security-level {{ security_level }}
  ip address {{ ip_address }} {{ subnet_mask }}
- {{ enabled | set(1) | default(0) }}
+ ip address {{ ip_address }} {{ subnet_mask }} standby {{ ip_standby }}
 </group>
 
 # 静态路由配置
@@ -41,4 +42,9 @@ object network {{ network_name }}
 object-group network {{ group_name }}
  network-object host {{ host_ip }}
  network-object {{ network }} {{ mask }}
+</group>
+
+
+<group name="usernames.{{ username }}">
+username {{ username }} password {{ ignore }} encrypted privilege {{ privilege }}
 </group>

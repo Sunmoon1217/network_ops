@@ -4,7 +4,7 @@ import ipaddress
 from logging import getLogger
 from typing import Any
 
-from .base import BaseSaver, as_list
+from .base import BaseSaver, as_list, status_enabled
 
 logger = getLogger(__name__)
 
@@ -238,28 +238,100 @@ class ServiceSaver(BaseSaver):
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from assets.models import Service
 
-        services = as_list(parsed_data.get("services"))
-        if not services:
+        entries = self._entries(parsed_data.get("services"))
+        if not entries:
             return (0, 0)
 
+        # 按服务名分组后做**自然键差量**：一个 service 块的多行（tcp 22 / udp 53）
+        # 是同一个名字下的多个端口定义——逐行落库，不再合并进一条 protocol/port。
+        # 差量而不是「先清后建」：在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
+        # 只建缺失、删多余（多余=配置里真删了的端口行，其关联随 PolicySaver 同批
+        # _replace_m2m 全量重建——顺序由 registry.build_saver_payloads 保证本 Saver 先跑）。
+        by_name: dict[str, list[dict]] = {}
+        for svc in entries:
+            name = str(svc.get("name") or "").strip()
+            if name:
+                by_name.setdefault(name, []).append(svc)
+
         created, updated = 0, 0
-        for svc in services:
-            name = svc.get("name")
-            if not name:
-                continue
-            _, is_created = Service.objects.update_or_create(
-                device=device,
-                name=name,
-                defaults={
-                    "protocol": svc.get("protocol", "tcp"),
-                    "port": str(svc.get("port", "")),
-                    "port2": str(svc.get("port2", "")),
-                    "description": svc.get("description", ""),
-                },
-            )
-            created += 1 if is_created else 0
-            updated += 0 if is_created else 1
+        for name, rows in by_name.items():
+            want: dict[tuple[str, str, str], str] = {}
+            for row in rows:
+                key = (str(row.get("protocol") or "tcp"), str(row.get("port", "")), str(row.get("port2", "")))
+                want[key] = str(row.get("description") or "")  # 同自然键后行覆盖前行
+
+            existing = {
+                (item.protocol, item.port, item.port2): item
+                for item in Service.objects.filter(device=device, name=name)
+            }
+            to_create, to_update, to_delete = [], [], []
+            for key, description in want.items():
+                hit = existing.get(key)
+                if hit is None:
+                    to_create.append(
+                        Service(
+                            device=device,
+                            name=name,
+                            protocol=key[0],
+                            port=key[1],
+                            port2=key[2],
+                            description=description,
+                        )
+                    )
+                elif hit.description != description:
+                    hit.description = description
+                    to_update.append(hit)
+            to_delete = [item for key, item in existing.items() if key not in want]
+
+            if to_create:
+                Service.objects.bulk_create(to_create, batch_size=500)
+                created += len(to_create)
+            if to_update:
+                Service.objects.bulk_update(to_update, ["description"], batch_size=500)
+                updated += len(to_update)
+            if to_delete:
+                Service.objects.filter(pk__in=[item.pk for item in to_delete]).delete()
         return (created, updated)
+
+    def _entries(self, raw) -> list[dict]:
+        """把产出归一成 ``[{name, protocol, port, ...}]``。
+
+        三种形态（结构级差异，按分层约定留在 Saver，先例 ``AddressBookSaver._entries``）：
+
+        ① 平铺单条 ``{name: ..., protocol: ...}``——手工喂入 / 普通组单条命中；
+        ② 动态字典 ``{服务名: 内容}``——hillstone 模板动态组名
+          ``services.{{ service_name }}`` 的产出，内容单行给 dict、多行给 list
+          （TTP 单/多条规则）；
+        ③ 旧的带星列表 ``[{服务名: 内容}, ...]``——去星前的存量 config_json 兜底。
+        """
+        if isinstance(raw, dict):
+            return [raw] if "name" in raw else self._expand(raw)
+        rows: list[dict] = []
+        for item in as_list(raw):
+            if not isinstance(item, dict):
+                continue
+            rows.extend(self._expand(item)) if "name" not in item else rows.append(item)
+        return rows
+
+    @classmethod
+    def _expand(cls, body: dict) -> list[dict]:
+        """``{服务名: 内容}`` → ``[{name: 服务名, **该行字段}, ...]``——**每行一条**。
+
+        多行内容（``tcp dst 22`` + ``udp dst 53``）逐行产出、不合并：合并会把多协议
+        压进一条 protocol/port（udp 语义丢失、port 变成 "22,53" 脏值）——2026-09 修复。
+        src 行单独成行：``port`` 照落端口值、``description`` 标注 ``src: ...`` 保留
+        源端口语义（表里没有独立的源端口字段）。
+        """
+        records = []
+        for name, content in body.items():
+            for row in content if isinstance(content, list) else [content]:
+                if not isinstance(row, dict):
+                    continue
+                record = {"name": name, **row}
+                if str(row.get("port_type") or "dst").lower() == "src" and row.get("port"):
+                    record["description"] = f"src: {row['port']}"
+                records.append(record)
+        return records
 
 
 class PolicySaver(BaseSaver):
@@ -351,13 +423,19 @@ class PolicySaver(BaseSaver):
         # 服务只按名字定位，协议未知时先记 any（等 ServiceSaver 补全）。
         # 这里不能用 bulk_upsert：它会用 payload 覆盖已有记录，把 ServiceSaver
         # 填好的 protocol 冲成 any，与原先 get_or_create 的语义不符。
-        service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
-        missing = [name for name in service_specs if name not in service_ids]
+        # 同名允许多行端口定义（自然键唯一）——dict[name→单pk] 会互相覆盖、策略只挂
+        # 上其中一行，改收集 name→[pks]，引用一个服务名 = 挂它的全部端口行。
+        ids_by_name: dict[str, list[int]] = {}
+        for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
+            ids_by_name.setdefault(name, []).append(pk)
+        missing = [name for name in service_specs if name not in ids_by_name]
         if missing:
             Service.objects.bulk_create(
                 [Service(device=device, name=name, protocol="any") for name in missing], batch_size=500
             )
-            service_ids = dict(Service.objects.filter(device=device).values_list("name", "pk"))
+            ids_by_name = {}
+            for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
+                ids_by_name.setdefault(name, []).append(pk)
 
         address_ids = {
             (name, address_type): pk
@@ -381,7 +459,7 @@ class PolicySaver(BaseSaver):
                 continue
             source_map[policy_pk] = {address_ids[key] for key in source_keys if key in address_ids}
             destination_map[policy_pk] = {address_ids[key] for key in destination_keys if key in address_ids}
-            service_map[policy_pk] = {service_ids[name] for name in names if name in service_ids}
+            service_map[policy_pk] = {pk for name in names for pk in ids_by_name.get(name, ())}
 
         self._replace_m2m(Policy, "source_addresses", source_map)
         self._replace_m2m(Policy, "destination_addresses", destination_map)
@@ -427,11 +505,8 @@ class PolicySaver(BaseSaver):
         return _ACTION_ALIASES.get(str(action or "").strip().lower(), "allow")
 
     def _is_enabled(self, item: dict) -> bool:
-        """hillstone 用 rule_status（enable/disable），其它形态用 enabled"""
-        status = item.get("rule_status")
-        if status is not None:
-            return str(status).strip().lower() not in {"disable", "disabled"}
-        return bool(item.get("enabled", True))
+        """双轨：新模板统一 ``enabled`` 0/1；旧/手工形态 hillstone 给 rule_status（enable/disable）"""
+        return status_enabled(item, "rule_status")
 
     def _address_entries(self, item: dict, side: str) -> list[dict]:
         """把分列地址与通用列表两种形态统一成 ``[{kind, value}]``
