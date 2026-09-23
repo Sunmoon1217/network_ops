@@ -14,7 +14,7 @@ class AccessFlow(models.Model):
     由防火墙策略（``assets.Policy`` 的 src/dst/service 三个 M2M）展开而来，
     用于跨设备审计同一条访问流的**遗漏**（该放行没放行）与**多开**（不该放行却放行了）。
 
-    键的形状（九个字段全非空，一起构成唯一约束）：
+    键的形状（**十个字段全非空**，一起构成唯一约束）：
 
     - 地址每侧三段：``ip``（GenericIPAddressField，主机地址或网络地址）+ ``prefix``
       （前缀长度：子网=实际值、单 IP=v4 的 32 / v6 的 128、范围与任意=0）+
@@ -25,6 +25,11 @@ class AccessFlow(models.Model):
       ``0.0.0.0/0`` 子网同键——语义本就相同，聚到一行是期望行为。
     - 服务三段：``protocol``（choices，与 ``Service.protocol`` 同一套，空值归 any）+
       ``port`` / ``port2``（范围结束，非范围为空串；icmp 等无端口时两者皆空）。
+    - **动作一位**：``action``（allow / deny，与 ``Policy.action`` 同一套归一词）——
+      同一条五元组访问流被放行策略和拒绝策略命中时是**两条独立的流**（两行），
+      「遗漏 / 多开」审计要拿 allow 行对照应放、deny 行对照应拒，混在一行里两种
+      审计互斥。行级 action 恒等于其 ``contexts`` 内各 context 的 action（展开侧
+      按 action 分组建行保证；升级迁移已把存量混合行拆开）。
     - **不挂外键**：``AddressBook`` / ``Service`` 都按设备隔离（``ConfigBase.device``），
       用外键 id 做键的话同一条访问流会在每台设备各落一行，跨设备聚合的目的就落空了。
       键值全部来自归一化（IPv6 大小写/压缩写法先经 ``ipaddress`` 规整）。
@@ -52,6 +57,13 @@ class AccessFlow(models.Model):
         ("any", "ANY"),
     )
 
+    #: 与 assets.Policy.action 同一套取值（那边归一后落库；同样不 import——理由同
+    #: PROTOCOL_CHOICES）。进唯一键，所以不带 blank/default：写入侧必须给值。
+    ACTION_CHOICES = (
+        ("allow", "放行"),
+        ("deny", "拒绝"),
+    )
+
     src_ip = models.GenericIPAddressField(protocol="both", verbose_name="源地址")
     src_prefix = models.PositiveSmallIntegerField(verbose_name="源前缀长度")
     # range_end 存 CharField 而不是 GenericIPAddressField：后者 blank=True 时 Django
@@ -64,6 +76,7 @@ class AccessFlow(models.Model):
     protocol = models.CharField(max_length=10, choices=PROTOCOL_CHOICES, verbose_name="协议")
     port = models.CharField(max_length=15, blank=True, default="", verbose_name="起始端口")
     port2 = models.CharField(max_length=15, blank=True, default="", verbose_name="结束端口")
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES, verbose_name="动作")
 
     contexts = models.JSONField(default=dict, verbose_name="命中上下文")
     device_ids = models.JSONField(default=list, verbose_name="设备ID列表")
@@ -86,8 +99,9 @@ class AccessFlow(models.Model):
                     "protocol",
                     "port",
                     "port2",
+                    "action",
                 ],
-                name="uni_accessflow_key",
+                name="uni_accessflow_action_key",
             ),
         )
         indexes = (
