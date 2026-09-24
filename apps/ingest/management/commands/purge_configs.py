@@ -34,13 +34,12 @@ from django.apps import apps as django_apps
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from analysis.models import InternetAnalysis
+from analysis.models import AccessFlow, InternetAnalysis
 from assets.models import ConfigBase, Device, DeviceConfig
 from ingest.config_owner import resolve_config_owner
-from ingest.models import AccessFlow
 
-# InternetAnalysis 住在 analysis app，但**清理仍归本命令**：purge_configs 的语义是
-# 「配置解析产物一把清」，它是跨域的运维工具（工具层允许跨域 import），别把这段搬走。
+# InternetAnalysis / AccessFlow 住在 analysis app，但**清理仍归本命令**：purge_configs
+# 的语义是「配置解析产物一把清」，它是跨域的运维工具（工具层允许跨域 import），别把这段搬走。
 
 logger = logging.getLogger(__name__)
 

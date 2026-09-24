@@ -46,10 +46,14 @@ network_ops/
 │   │   ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run，含 analysis 的缓存）
 │   │   └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
 │   └── analysis/        # 分析域（只读消费 ingest 与 assets，不许被它们反向依赖）
-│       ├── api/{trace.py, analysis.py, urls.py}   # /api/trace/*、/api/internet-analysis/*（URL 前缀沿用拆分前）
+│       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*（URL 前缀沿用拆分前）
 │       ├── path_tracer.py       # 路径追踪算法（模拟报文逐跳转发）
-│       ├── models.py            # InternetAnalysis（分析结果缓存）
-│       └── migrations/0001_initial.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
+│       ├── policy_expand.py     # 访问流：策略 M2M 笛卡尔积展开 + 合并入库（单写者路径）
+│       ├── access_stream.py     # 访问流：Redis Stream 编解码 / 背压 / 设备锁 / 心跳
+│       ├── tasks.py             # 访问流重建任务 analysis.rebuild_access_flows（独立队列）
+│       ├── management/commands/{access_flow_consumer, rebuild_access_flows}.py  # 单写者消费者 / 手工重建
+│       ├── models.py            # InternetAnalysis（分析结果缓存）+ AccessFlow（访问流，2026-09 由 ingest 迁入）
+│       └── migrations/{0001_initial,0002_accessflow}.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
 ├── data/                 # 运行期数据（不入库）：configs 是 bind 进 app 的输入，config_repo 只是宿主机直跑用的那份
 │   ├── config_repo/     # 宿主机直跑时的 Git 配置仓库；**Docker 部署用的是命名卷 config_repo_data**，两者互不影响
 │   └── configs/         # Excel「配置文件」sheet 的 config_dir 源目录；→ app 的 /app/data/configs（只读 bind）
@@ -57,11 +61,11 @@ network_ops/
 │                        # 真身在用户级 `~/.dsh/skills`（独立 git 仓库），那里放第三方软件的实测行为，
 │                        # 目录清单自动进每个会话、正文按需加载（skill 工具或 /name）。见「知识库」一节
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
-│   ├── analysis/        # 资产分析 / 缓存 / 导出 / 路由采集
+│   ├── analysis/        # 资产分析 / 缓存 / 导出 / 路由采集 / 访问流（policy_expand / stream / 任务 / API）
 │   ├── assets/          # device_group / serializer_migration / service_unique
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
-│   └── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow
+│   └── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
 │   └── src/{api,assets,components,composables,constants,layout,router,stores,types,utils,views}
@@ -180,7 +184,7 @@ uv run ruff format
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`。
-- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**：`PolicySaver` 保存成功后 `ingest.access_stream.request_rebuild` 投递 `ingest.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `ingest/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。
 - **DeviceConfig 的解析入库默认仍是同步的**：走 `ingest.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ingest.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
 - **反向代理与容器化**：`nginx/` 作为统一入口（80/443）：`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django），`/assets/*`、`/static/*` 由 nginx 直出。静态资源的流向是**宿主机**（`pnpm build` + `collectstatic`）→ `Dockerfile.app` COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`）→ 启动时 `docker/entrypoint.sh` 复制**另一份**到命名卷 `static_data` → nginx 只读挂载。详见 `nginx/README.md`。
@@ -258,23 +262,33 @@ uv run ruff format
 | `parsers/contract.py` | 解析器 / Saver 的契约缺口清单（测试与接口共用） |
 | `pipeline.py` | 配置处理流水线，信号与 `reparse` 命令共用 |
 | `workflow.py` | 任务工作流的入口：`start_task`（建 Task + 投递采集阶段）、`dispatch_stage`、`cancel_task`、`submit_config_job` |
+| `access_flow_trigger.py` | 访问流重建的**投递触点**：按 `settings.ACCESS_FLOW_TASK` 任务名 `send_task`（不 import analysis，依赖方向单向） |
 
 **依赖方向**：`analysis → ingest → assets` 单向；`ingest` 可以用 assets 的模型与序列化器，
 **assets 不许 import ingest**；`ingest`（除 `purge_configs` 这类跨域运维工具外）**不许 import analysis**。
 
 ### 分析层 `analysis/`
 
-路径追踪、路由采集、DNS 查询与互联网资产分析——**只读**消费 ingest 与 assets 的产出，
-自身不采集、不写配置。2026-09 从 ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`
+路径追踪、路由采集、DNS 查询、互联网资产分析与**访问流（AccessFlow）**——消费 ingest 与
+assets 的产出做分析与聚合，自身不采集、不写配置（写的是自己的派生缓存表）。2026-09 从
+ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/access-flows/`
 保持不变，前端零改动）。
 
 | 模块 | 职责 |
 |------|------|
 | `path_tracer.py` | 路径追踪（模拟报文逐跳转发） |
+| `policy_expand.py` | 访问流：Policy 三个 M2M 笛卡尔积展开 + 先查后合并入库（单写者路径） |
+| `access_stream.py` | 访问流：Redis Stream 编解码、背压、设备锁、心跳（生产者-消费者通道） |
+| `tasks.py` | `analysis.rebuild_access_flows`：展开一台设备投进 Stream（独立 `access_flow` 队列） |
+| `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建） |
 | `api/trace.py` | 路径追踪 / 路由采集 / DNS 查询接口（路由采集用 TTP 模板，路径经 `ingest.parsers.template_keys.TMPLS_DIR` 取） |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
-| `models.py` | `InternetAnalysis`：分析结果缓存（每台 GSLB 一份最新结果） |
-| `migrations/0001_initial.py` | 从 `operator` 迁入：**不重建表**——operator.0003 只删 state，本迁移 `RunSQL RENAME`，数据随表走 |
+| `api/accessflows.py` | `/api/access-flows/` 只读列表（GIN 包含过滤，唯一写入口是 consumer） |
+| `models.py` | `InternetAnalysis`（分析结果缓存）+ `AccessFlow`（访问流，2026-09 由 ingest 迁入） |
+| `migrations/0001_initial.py` | InternetAnalysis 从 `operator` 迁入：**不重建表**——operator.0003 只删 state，本迁移 `RunSQL RENAME`，数据随表走 |
+| `migrations/0002_accessflow.py` | AccessFlow 同款迁入（operator.0005 state-only 摘除 + `operator_accessflow` → `analysis_accessflow` RENAME） |
+
+**依赖边界的例外说明**：访问流链的**触发点**在 ingest（`PolicySaver` 落库后要重建），但链路整体在 analysis——所以 ingest 侧只留 `access_flow_trigger.py` 按**任务名字符串**投递，不 import analysis；`purge_configs` 是另一个获准跨域 import 的运维工具。
 
 **已注册解析器**（`@ParserFactory.register`）：
 
@@ -386,7 +400,6 @@ tags, subnets, ip-addresses
 | `/api/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
 | `/api/parsers/templates/<name>/` | 模板文件内容 |
 | `/api/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
-| `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤 |
 
 **analysis**（`analysis/api/urls.py`，前缀沿用拆分前，前端零改动）
 
@@ -400,6 +413,7 @@ tags, subnets, ip-addresses
 | `/api/internet-analysis/` | 互联网资产分析结果（**只读缓存**，未分析过返回 404） |
 | `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
+| `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤（2026-09 由 ingest 迁入，URL 不变） |
 
 ## 注意事项
 
@@ -410,7 +424,7 @@ tags, subnets, ip-addresses
 - **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`analysis/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
 - **`apps/ingest/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
-- `ingest` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ingest`。**拆分只动 Python 路径、不动 label**：`InternetAnalysis` 的迁移历史留在 `operator.0001`（`operator.0003` 仅删 state；`0002_accessflow` 是主仓原有的 AccessFlow），新表名靠 `analysis.0001` 的 `RunSQL RENAME` 对齐——改 label 会让 `django_migrations` 里的历史对不上，别动。
+- `ingest` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ingest`。**拆分只动 Python 路径、不动 label**：`InternetAnalysis` 的迁移历史留在 `operator.0001`（`operator.0003` 仅删 state；`0002_accessflow` / `0004_accessflow_action_key` 是主仓原有的 AccessFlow 建表与加键），新表名靠 `analysis.0001`（InternetAnalysis）与 `analysis.0002`（AccessFlow）的 `RunSQL RENAME` 对齐，模型摘除由 `operator.0005` 的 state-only（`SeparateDatabaseAndState`，**绝不 DROP**）完成——改 label 会让 `django_migrations` 里的历史对不上，别动。
 - **互联网资产分析走缓存**：结果存 `analysis.models.InternetAnalysis`（app `analysis`，2026-09 从 ingest 拆出），只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
 - **资产分析的表格列**：后端 `build_path_rows` 与前端 `internet-asset.vue` 里的 `buildPathRows` 是**两份各自独立**的扁平化实现（列序必须手工保持一致）。当前 7 列：域名 / LLB_VS地址#端口 / LLB_Rule规则 / SLB_VS地址#端口 / SLB_Rule规则 / 服务器地址#端口 / 负责人。
 - **地址与端口之间用 `#`，不要用 `:`**：IPv6 地址本身带冒号，`2001:db8::1:80` 分不清哪一段是端口（回退写法 `[...]:80` 虽标准，但 IPv4 用方括号又多余）。`#` 不可能出现在 IPv4/IPv6 里，含义唯一且紧凑。分隔符是两端各一个常量——后端 `analysis.py` 的 `TARGET_SEPARATOR`、前端 `internet-asset.vue` 的同名常量，改要一起改（有测试守 `#` 不可能出现在 IP 里、且能唯一切回）。`ip_port` / `matched_ip_port` / `fallback_ip_port` 这几个内部字段也走同一个拼接函数，它们只出现在前端类型声明里、从未被展示。
@@ -422,7 +436,7 @@ tags, subnets, ip-addresses
 - **「负责人」列**：按链路**最后的 IP**反查 `ServerOwner`，回退顺序是 `slb_member_address → llb_member_address → gtm_ip`（见 `_final_ip`）。匹配前两边都过 `_normalize_ip`，否则 `2001:DB8::1` 与压缩写法对不上。负责人**不进分析缓存**——它挂在 `build_path_rows`/`GET` 响应上现查，改了负责人不必重跑分析。前端表格自己扁平化、拿不到数据库，所以 GET 响应额外给一份 `owners`（键是链路最后 IP 的**原始写法**，与前端用同一份回退规则取值），避免在 JS 里重实现 IPv6 规范化。
 - `Topology` 是单模型，图数据存于 `graph_data` JSON 字段，没有独立的节点/边表。
 - `Device` 没有 `address` 字段，地址信息在 `DeviceConnection` 中。
-- **app 改名 `ingest`**（2026-09 由 `ops` 改，作用域＝数据采集与解析入库的「采、解、存」三段）：目录 / `AppConfig.name` / 全部 `import` / **celery 任务名**（`ingest.run_*`、`ingest.rebuild_access_flows`，`task_routes` 同步改）一起改；**`label` 仍是 `operator`**（上一条，迁移历史挂在它上面）、`OperatorConfig` 类名同理保留。**URL 全部不变**，前端零改动。**部署注意**：任务名变了，Redis 里未消费的旧 `ops.*` 消息会 `Unknown task`——升级前停 worker、清空队列再滚动。
+- **app 改名 `ingest`**（2026-09 由 `ops` 改，作用域＝数据采集与解析入库的「采、解、存」三段）：目录 / `AppConfig.name` / 全部 `import` / **celery 任务名**（`ingest.run_*`，`task_routes` 同步改；访问流的 `rebuild_access_flows` 后来随域拆分迁成了 `analysis.rebuild_access_flows`）一起改；**`label` 仍是 `operator`**（上一条，迁移历史挂在它上面）、`OperatorConfig` 类名同理保留。**URL 全部不变**，前端零改动。**部署注意**：任务名变了，Redis 里未消费的旧消息会 `Unknown task`（当年是 `ops.*`，本次是 `ingest.rebuild_access_flows`）——升级前停 worker、清空队列再滚动。
 - 前端拓扑图使用 `@antv/g6` 5.x。
 
 ## 语言约定

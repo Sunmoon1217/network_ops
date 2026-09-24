@@ -2,7 +2,7 @@
 
 链路（Celery 与本模块各管一段，标识体系互不混用）::
 
-    celery worker（ingest.rebuild_access_flows，独立队列 access_flow，多进程并行）
+    celery worker（analysis.rebuild_access_flows，独立队列 access_flow，多进程并行）
         展开一台设备的策略 ──XADD──> access_flow_stream
                                           │
     access_flow_consumer（独立进程，**唯一**写 AccessFlow 的人）
@@ -19,6 +19,10 @@ XAUTOCLAIM 接管重投，而 ``handle_message`` 是幂等的（dict 覆盖 + �
 
 **消费者只能跑一个实例**：消费者组会把消息分摊给多个成员，多起一个就变成多写者，
 「先查后合并」的前提就没了。
+
+（2026-09 由 ingest 迁入 analysis。任务的**投递触发**不在这里：PolicySaver 在
+ingest 侧经 ``ingest.access_flow_trigger`` 按任务名 send_task——依赖方向
+analysis → ingest 单向，ingest 不许 import analysis。）
 """
 
 from __future__ import annotations
@@ -30,12 +34,9 @@ import time
 from contextlib import contextmanager
 from functools import lru_cache
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from django.conf import settings
-
-if TYPE_CHECKING:
-    from celery import Task as CeleryTask
 
 logger = getLogger(__name__)
 
@@ -147,32 +148,10 @@ def handle_message(fields: dict) -> tuple[int, int]:
     ``sync_device`` = 先合并写入、再摘残留，同一事务——整台设备自足，一条消息就是
     完整状态；重复投递 / 乱序重放都收敛到同一份最终状态（两步皆空操作）。
     """
-    from ingest.policy_expand import sync_device
+    from analysis.policy_expand import sync_device
 
     device_id, flows = decode_message(fields)
     return sync_device(device_id, flows)
-
-
-def request_rebuild(device_id: int) -> None:
-    """投递「重建一台设备的访问流」任务。
-
-    broker 不可达只告警不抛出：解析入库已经成功，重建晚一点没关系（``rebuild_access_flows
-    --device`` 可以手工补）。开关 ``ACCESS_FLOW_DISPATCH`` 供测试默认关闭——否则
-    PolicySaver 每保存一次就把消息发进真实 Redis。
-    """
-    if not settings.ACCESS_FLOW_DISPATCH:
-        return
-    from ingest.tasks import rebuild_access_flows
-
-    try:
-        # celery-stubs 把 ``@shared_task`` 装饰后的函数仍声明成普通函数
-        # （FunctionType，上面没有 .delay）——运行期它其实是 Task 实例。显式 cast 回
-        # Task（与 workflow.py 处理 run_config_parsing 的手法一致，优于 ``# type: ignore``）
-        cast("CeleryTask", rebuild_access_flows).delay(device_id)
-    except Exception:
-        logger.warning(
-            "投递 AccessFlow 重建失败（可用 rebuild_access_flows 手工补）: device=%s", device_id, exc_info=True
-        )
 
 
 @contextmanager

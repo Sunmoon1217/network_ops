@@ -1,7 +1,9 @@
-"""访问流重建任务（ingest.rebuild_access_flows）的契约。
+"""访问流重建任务（analysis.rebuild_access_flows）的契约。
 
-守护三点：
+守护四点：
 
+- **任务名三处一致**：settings.ACCESS_FLOW_TASK（唯一定义处）== 任务装饰器 name ==
+  CELERY_TASK_ROUTES 的 key——ingest 的投递触点只认字符串，改名不同步这里就红；
 - **只在本任务上开 acks_late**：worker 崩溃任务能重投；但绝不能泄漏成全局设置
   （现有采集/解析/存储三阶段任务的行为不许被顺手改掉）；
 - **独立队列路由**：access_flow 与 celery（默认队列）隔离，堵了不拖垮别的任务；
@@ -15,12 +17,15 @@ import pytest
 from celery.exceptions import Retry
 from django.conf import settings
 
-from ingest.tasks import rebuild_access_flows, run_collection_stage, run_config_storage
+from analysis.tasks import rebuild_access_flows
+from ingest.tasks import run_collection_stage, run_config_storage
 
 
-def test_task_routed_to_dedicated_queue():
-    routes = settings.CELERY_TASK_ROUTES
-    assert routes["ingest.rebuild_access_flows"] == {"queue": "access_flow"}
+def test_task_name_matches_settings_and_routes():
+    """任务名的三处对账：settings 常量、装饰器 name、路由 key 必须是同一个字符串"""
+    assert settings.ACCESS_FLOW_TASK == "analysis.rebuild_access_flows"
+    assert rebuild_access_flows.name == settings.ACCESS_FLOW_TASK
+    assert settings.CELERY_TASK_ROUTES[settings.ACCESS_FLOW_TASK] == {"queue": "access_flow"}
 
 
 def test_acks_late_is_scoped_to_rebuild_task_only():
@@ -34,7 +39,7 @@ def test_acks_late_is_scoped_to_rebuild_task_only():
 
 def test_backpressure_releases_task_via_retry(monkeypatch):
     """队列积压超阈值 → self.retry（任务结束、进程释放），而不是在任务里等待"""
-    monkeypatch.setattr("ingest.access_stream.backlog", lambda: settings.ACCESS_FLOW_MAX_QUEUE + 1)
+    monkeypatch.setattr("analysis.access_stream.backlog", lambda: settings.ACCESS_FLOW_MAX_QUEUE + 1)
 
     with pytest.raises(Retry):
         rebuild_access_flows(999999)
@@ -42,13 +47,13 @@ def test_backpressure_releases_task_via_retry(monkeypatch):
 
 def test_busy_lock_releases_task_via_retry(monkeypatch):
     """同设备锁被占（acks_late 重投撞上原件）→ 同样立刻退出重试"""
-    monkeypatch.setattr("ingest.access_stream.backlog", lambda: 0)
+    monkeypatch.setattr("analysis.access_stream.backlog", lambda: 0)
 
     @contextmanager
     def _busy(_device_id, timeout=600):
         yield False
 
-    monkeypatch.setattr("ingest.access_stream.device_lock", _busy)
+    monkeypatch.setattr("analysis.access_stream.device_lock", _busy)
 
     with pytest.raises(Retry):
         rebuild_access_flows(999999)
