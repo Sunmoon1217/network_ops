@@ -723,6 +723,9 @@ class GtmVServer(ConfigBase):
     port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
     monitor = models.CharField(max_length=255, blank=True, default="", verbose_name="监控")
 
+    if TYPE_CHECKING:
+        server_id: int
+
     class Meta:
         verbose_name = "GTM Virtual Server"
         verbose_name_plural = verbose_name
