@@ -20,6 +20,8 @@ urlpatterns = [
     path("internet-analysis/export/", analysis.internet_analysis_export, name="internet-analysis-export"),
     # 关联链聚合：VS→池→成员 / WideIP→池→GTM虚拟服务器，一行返回整链
     path("lb-chain/slb/", lb_chain.ltm_chains, name="lb-chain-slb"),
+    path("lb-chain/slb/export/", lb_chain.ltm_export, name="lb-chain-slb-export"),
     path("lb-chain/gslb/", lb_chain.gtm_chains, name="lb-chain-gslb"),
     path("lb-chain/gslb/facets/", lb_chain.gtm_facets, name="lb-chain-gslb-facets"),
+    path("lb-chain/gslb/export/", lb_chain.gtm_export, name="lb-chain-gslb-export"),
 ]

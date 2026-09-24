@@ -6,7 +6,7 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { getGtmChain, getGtmChainFacets } from '@/api/config'
+import { exportGtmChain, getGtmChain, getGtmChainFacets } from '@/api/config'
 import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbTreeRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
@@ -112,6 +112,30 @@ const buildTree = (r: GtmChainRow): LbTreeRow => ({
 
 const treeRows = computed(() => rows.value.map(buildTree))
 
+/** 导出扁平宽表为 xlsx（后端 openpyxl 生成、前端只下载 Blob；全量、带当前过滤/搜索） */
+const exportLoading = ref(false)
+const handleExport = async () => {
+  exportLoading.value = true
+  try {
+    const res = await exportGtmChain({
+      device: filterDevice.value || undefined,
+      rtype: filterRtype.value || undefined,
+      monitor: filterMonitor.value || undefined,
+      search: search.value || undefined,
+    })
+    const url = URL.createObjectURL(res.data as Blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dn-chains-${new Date().toISOString().slice(0, 10)}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
 /** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
 const viewMode = ref<'tree' | 'flat'>('tree')
 const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
@@ -215,6 +239,9 @@ onMounted(() => {
       </FilterBar>
       <el-button size="small" @click="toggleView">
         切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+      </el-button>
+      <el-button v-if="viewMode === 'flat'" size="small" :loading="exportLoading" @click="handleExport">
+        导出
       </el-button>
     </template>
     <div class="table-wrapper">
