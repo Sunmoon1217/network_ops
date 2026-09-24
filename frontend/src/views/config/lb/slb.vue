@@ -46,16 +46,12 @@ const buildPoolTree = (device: number, pool: LtmChainPool, members: LtmChainRow[
     `负载模式：${pool.mode || '-'}`,
     pool.monitors?.length ? `监控：${pool.monitors.join('、')}` : '',
   ].filter(Boolean),
-  detail: [pool.mode, pool.monitors?.length ? `监控 ${pool.monitors.join('、')}` : '']
-    .filter(Boolean)
-    .join(' · '),
   children: members.map((m, idx) => ({
     // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
     id: `member-${device}-${pool.name}-${idx}`,
     kind: 'member' as const,
     label: m.address ? addrPort(m.address, m.port) : m.name,
     tipLines: [m.name],
-    detail: '',
   })),
 })
 
@@ -65,11 +61,15 @@ const buildTree = (r: LtmChainRow): LbTreeRow => ({
   kind: 'vs',
   // 透明 VS 没有地址时回退显示名字
   label: r.vs_address ? addrPort(r.vs_address, r.vs_port) : r.name,
-  tipLines: r.vs_address ? [r.name] : [],
-  detail: [r.protocol && `协议 ${r.protocol}`, r.snat_type && `SNAT ${r.snat_type}`, r.persist && `会话保持 ${r.persist}`]
-    .filter(Boolean)
-    .join(' · '),
+  // name 已升为独立列，hover 只补没上列的信息（SNAT 等次要字段）
+  tipLines: [r.snat_type ? `SNAT：${r.snat_type}` : ''].filter(Boolean),
   device: r.device_hostname,
+  vsName: r.name,
+  protocol: r.protocol || '-',
+  poolName: r.pool?.name || '-',
+  profiles: r.profiles || [],
+  persist: r.persist || '-',
+  rules: r.rules || [],
   children: r.pool ? [buildPoolTree(r.device, r.pool, r.members)] : undefined,
 })
 
@@ -114,15 +114,24 @@ onMounted(loadRows)
           </template>
         </DataColumn>
         <DataColumn prop="device" label="设备" min-width="130" />
-        <DataColumn label="类型" column-key="kind" min-width="110">
+        <DataColumn label="类型" column-key="kind" min-width="90">
           <template #default="{ row }">
             <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
           </template>
         </DataColumn>
-        <DataColumn prop="detail" label="详情" min-width="320">
+        <!-- 以下六列只有一级 VS 行有值：池/成员行留空，层级聚焦在 VS 自身的配置上 -->
+        <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
+        <DataColumn prop="protocol" label="协议" min-width="70" />
+        <DataColumn prop="poolName" label="关联池" min-width="140" />
+        <DataColumn label="Profile" column-key="profiles" min-width="150">
           <template #default="{ row }">
-            <span v-if="row.detail">{{ row.detail }}</span>
-            <span v-else class="muted">-</span>
+            <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
+          </template>
+        </DataColumn>
+        <DataColumn prop="persist" label="会话保持" min-width="100" />
+        <DataColumn label="iRule" column-key="rules" min-width="150">
+          <template #default="{ row }">
+            <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
           </template>
         </DataColumn>
       </DataTable>
@@ -133,5 +142,4 @@ onMounted(loadRows)
 
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
-.muted { color: #c0c4cc; }
 </style>

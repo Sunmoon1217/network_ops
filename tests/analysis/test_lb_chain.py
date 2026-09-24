@@ -30,7 +30,13 @@ def _slb_device(hostname: str = "_t_lb_slb") -> Device:
 
 def _seed_ltm(device: Device):
     LtmVirtualServer.objects.create(
-        device=device, name="/Common/vs_web", vs_address="10.0.0.100", vs_port="443", pool="pool_web"
+        device=device,
+        name="/Common/vs_web",
+        vs_address="10.0.0.100",
+        vs_port="443",
+        pool="pool_web",
+        profiles=["/Common/http", "/Common/tcp"],
+        rules=["/Common/irule_redirect"],
     )
     LtmPool.objects.create(device=device, name="pool_web", mode="round-robin", monitors=["http"])
     LtmPoolMember.objects.create(
@@ -53,6 +59,9 @@ def test_ltm_chain_joins_pool_and_members(api):
     assert row["device_hostname"] == "_t_lb_slb"
     assert row["vs_address"] == "10.0.0.100"
     assert row["pool"] == {"name": "pool_web", "mode": "round-robin", "monitors": ["http"]}
+    # 一级 VS 行单独展示的字段：profile / iRule 名字列表随行返回
+    assert row["profiles"] == ["/Common/http", "/Common/tcp"]
+    assert row["rules"] == ["/Common/irule_redirect"]
     assert {(m["address"], m["port"]) for m in row["members"]} == {("10.1.1.1", "80"), ("10.1.1.2", "80")}
     # name 字段仍在，前端拿去做 hover 弹出
     assert {m["name"] for m in row["members"]} == {"/Common/node_a", "/Common/node_b"}

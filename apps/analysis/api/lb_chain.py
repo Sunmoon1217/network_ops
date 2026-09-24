@@ -161,6 +161,9 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
                 "status": vs.status,
                 "snat_type": vs.snat_type or "",
                 "persist": vs.persist or "",
+                # 一级 VS 行单独展示的字段：profile / iRule 是模型上的 JSON 名字列表
+                "profiles": vs.profiles or [],
+                "rules": vs.rules or [],
                 "pool": (
                     {
                         "name": pool.name,
