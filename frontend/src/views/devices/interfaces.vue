@@ -5,11 +5,12 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { useTablePrefs } from '@/composables/useTablePrefs'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import { modeTagType } from '@/composables/useTagType'
 import { getInterfaces } from '@/api/interfaces'
 
 const router = useRouter()
-const { widthFor, onHeaderDragend } = useTablePrefs('devices.interfaces')
+const { widthFor, onHeaderDragend } = useTablePrefs(TABLE_KEYS.deviceInterfaces)
 const { data: interfaces, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
   useCrudApi()
 const filterDevice = ref<number | ''>('')

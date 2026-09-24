@@ -5,9 +5,10 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { useTablePrefs } from '@/composables/useTablePrefs'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import api from '@/api/index'
 
-const { widthFor, onHeaderDragend } = useTablePrefs('devices.accounts')
+const { widthFor, onHeaderDragend } = useTablePrefs(TABLE_KEYS.deviceAccounts)
 
 const { data: accounts, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
   useCrudApi()

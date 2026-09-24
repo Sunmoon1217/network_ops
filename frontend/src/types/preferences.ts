@@ -1,3 +1,8 @@
+import { TABLE_KEYS } from '@/constants/tableKeys'
+
+/** 已注册的表格 key（useTablePrefs 的唯一合法入参）——由注册表派生，往 TABLE_KEYS 加键即进联合类型 */
+export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS]
+
 /** 用户前端偏好（表格列宽等界面配置）：偏好键 → 任意 JSON 值 */
 export type UserPreferences = Record<string, unknown>
 
