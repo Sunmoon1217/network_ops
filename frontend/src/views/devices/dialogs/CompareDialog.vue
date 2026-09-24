@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { CodeDiff } from 'v-code-diff'
-import { getGitConfigContent, getConfigHistory } from '@/api/devices'
+import CodeDiffView from '@/components/CodeDiffView.vue'
+import { getGitDiff, getConfigHistory } from '@/api/devices'
 
 const props = defineProps<{
   visible: boolean
@@ -12,13 +12,8 @@ const emit = defineEmits<{ 'update:visible': [v: boolean] }>()
 const history = ref<any[]>([])
 const oldHash = ref('')
 const newHash = ref('')
-const oldText = ref('')
-const newText = ref('')
+const diffText = ref('')
 const loading = ref(false)
-const outputFormat = ref<'side-by-side' | 'line-by-line'>('side-by-side')
-
-// 两段全文已在本地，直接比对即可判断有无变更（组件内部同口径）
-const hasChange = computed(() => oldText.value !== newText.value)
 
 const fetchHistory = async () => {
   try {
@@ -33,12 +28,8 @@ const fetchDiff = async () => {
   if (!oldHash.value || !newHash.value || !props.hostname) return
   loading.value = true
   try {
-    const [oldRes, newRes] = await Promise.all([
-      getGitConfigContent(props.hostname, oldHash.value),
-      getGitConfigContent(props.hostname, newHash.value),
-    ])
-    oldText.value = oldRes.data.config_text || ''
-    newText.value = newRes.data.config_text || ''
+    const diffRes = await getGitDiff(props.hostname, oldHash.value, newHash.value)
+    diffText.value = diffRes.data.diff || ''
   } catch {
     ElMessage.error('获取配置失败')
   } finally {
@@ -49,8 +40,7 @@ const fetchDiff = async () => {
 const handleClose = () => {
   oldHash.value = ''
   newHash.value = ''
-  oldText.value = ''
-  newText.value = ''
+  diffText.value = ''
   emit('update:visible', false)
 }
 
@@ -72,21 +62,11 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
           :label="`${new Date(h.date).toLocaleString('zh-CN')} — ${h.hash}`"
           :value="h.full_hash" />
       </el-select>
-      <el-radio-group v-if="oldHash && newHash" v-model="outputFormat" size="small" class="format-toggle">
-        <el-radio-button value="side-by-side">并排</el-radio-button>
-        <el-radio-button value="line-by-line">行对行</el-radio-button>
-      </el-radio-group>
     </div>
 
     <div class="compare-body" v-loading="loading">
-      <div v-if="hasChange" class="diff-view">
-        <CodeDiff
-          :old-string="oldText"
-          :new-string="newText"
-          :output-format="outputFormat"
-          :filename="oldHash.slice(0, 8)"
-          :new-filename="newHash.slice(0, 8)"
-        />
+      <div v-if="oldHash && newHash && diffText" class="diff-view">
+        <CodeDiffView :diff="diffText" />
       </div>
       <div v-else-if="oldHash && newHash && !loading" class="diff-empty">两个版本相同，无变更</div>
       <div v-else class="diff-empty">请选择两个版本进行对比</div>
@@ -107,9 +87,6 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
 .arrow {
   font-size: 16px;
   color: #909399;
-}
-.format-toggle {
-  margin-left: auto;
 }
 .compare-body {
   height: 65vh;

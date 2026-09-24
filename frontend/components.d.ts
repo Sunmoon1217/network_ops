@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']
+    CodeDiffView: typeof import('./src/components/CodeDiffView.vue')['default']
     ColumnSettings: typeof import('./src/components/ColumnSettings.vue')['default']
     DataColumn: typeof import('./src/components/DataColumn.vue')['default']
     DataPagination: typeof import('./src/components/DataPagination.vue')['default']
