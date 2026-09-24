@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import api from '@/api/index'
 import { InfoFilled } from '@element-plus/icons-vue'
 
@@ -124,19 +126,19 @@ onMounted(() => {
 
           <el-empty v-if="!parsers.length" description="暂无解析器映射数据" />
 
-          <DataTable v-else :data="parsers" size="small" class="mapping-table" :row-class-name="rowClassName">
-            <el-table-column prop="vendor" label="厂商" width="90" />
-            <el-table-column label="设备类型" width="150">
+          <DataTable :table-key="TABLE_KEYS.parserMapping" v-else :data="parsers" size="small" class="mapping-table" :row-class-name="rowClassName">
+            <DataColumn prop="vendor" label="厂商" width="90" />
+            <DataColumn label="设备类型" width="150">
               <template #default="{ row }">
                 <span class="mono">{{ row.device_type || '—' }}</span>
               </template>
-            </el-table-column>
-            <el-table-column label="解析器类" min-width="150">
+            </DataColumn>
+            <DataColumn label="解析器类" min-width="150">
               <template #default="{ row }">
                 <span class="mono">{{ row.class_name || '—' }}</span>
               </template>
-            </el-table-column>
-            <el-table-column label="模板文件" min-width="180">
+            </DataColumn>
+            <DataColumn label="模板文件" min-width="180">
               <template #default="{ row }">
                 <div class="template-cell">
                   <span class="mono">{{ row.template_name || '—' }}</span>
@@ -147,20 +149,20 @@ onMounted(() => {
                   </el-tooltip>
                 </div>
               </template>
-            </el-table-column>
+            </DataColumn>
 
             <!-- 声明键：解析器 provides_keys -->
-            <el-table-column label="产出键（声明）" min-width="170">
+            <DataColumn label="产出键（声明）" min-width="170">
               <template #default="{ row }">
                 <div v-if="row.provides_keys.length" class="tag-group">
                   <el-tag v-for="key in row.provides_keys" :key="key" size="small" effect="plain">{{ key }}</el-tag>
                 </div>
                 <el-tag v-else size="small" type="warning" effect="plain">无声明</el-tag>
               </template>
-            </el-table-column>
+            </DataColumn>
 
             <!-- 模板实际键：keys_match 为 false 时与声明列并排对比 -->
-            <el-table-column label="模板实际键" min-width="170">
+            <DataColumn label="模板实际键" min-width="170">
               <template #default="{ row }">
                 <el-tag v-if="row.keys_match" size="small" type="success" effect="plain">与声明一致</el-tag>
                 <div v-else-if="row.template_keys.length" class="tag-group">
@@ -176,10 +178,10 @@ onMounted(() => {
                 </div>
                 <el-tag v-else size="small" type="danger" effect="plain">模板未提取到键</el-tag>
               </template>
-            </el-table-column>
+            </DataColumn>
 
             <!-- 消费者：产出键 → Saver -->
-            <el-table-column label="消费者（键 → Saver）" min-width="220">
+            <DataColumn label="消费者（键 → Saver）" min-width="220">
               <template #default="{ row }">
                 <div v-if="row.consumers.length" class="tag-group">
                   <el-tag
@@ -194,10 +196,10 @@ onMounted(() => {
                 </div>
                 <el-tag v-else size="small" type="danger" effect="plain">无 Saver 消费</el-tag>
               </template>
-            </el-table-column>
+            </DataColumn>
 
             <!-- 未消费键：产出但无人消费，warning 色 -->
-            <el-table-column label="未消费键" min-width="170">
+            <DataColumn label="未消费键" min-width="170">
               <template #default="{ row }">
                 <div v-if="row.unconsumed_keys.length" class="tag-group">
                   <el-tag
@@ -212,7 +214,7 @@ onMounted(() => {
                 </div>
                 <span v-else class="muted">—</span>
               </template>
-            </el-table-column>
+            </DataColumn>
           </DataTable>
         </el-card>
 
@@ -228,27 +230,27 @@ onMounted(() => {
 
           <el-empty v-if="!missingProducers.length" description="没有发现契约缺口" :image-size="60" />
 
-          <DataTable v-else :data="missingProducers" size="small">
-            <el-table-column label="设备类型" width="160">
+          <DataTable :table-key="TABLE_KEYS.parserMappingMissing" v-else :data="missingProducers" size="small">
+            <DataColumn label="设备类型" width="160">
               <template #default="{ row }">
                 <span class="mono">{{ row.device_type || '—' }}</span>
               </template>
-            </el-table-column>
-            <el-table-column label="消费键" width="180">
+            </DataColumn>
+            <DataColumn label="消费键" width="180">
               <template #default="{ row }">
                 <el-tag size="small" type="warning" effect="plain">{{ row.key }}</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="Saver" min-width="180">
+            </DataColumn>
+            <DataColumn label="Saver" min-width="180">
               <template #default="{ row }">
                 <span class="mono">{{ row.saver || '—' }}</span>
               </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="240">
+            </DataColumn>
+            <DataColumn label="说明" min-width="240">
               <template #default="{ row }">
                 <span class="muted">{{ row.note || '—' }}</span>
               </template>
-            </el-table-column>
+            </DataColumn>
           </DataTable>
         </el-card>
       </template>

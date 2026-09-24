@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getTags, deleteTag } from '@/api/ipam'
@@ -23,21 +25,21 @@ onMounted(fetchAll)
       <el-button type="primary" @click="router.push('/ipam/tags/create')">新增标签</el-button>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="tags" :loading="loading">
-        <el-table-column prop="name" label="标签名称" width="200" sortable />
-        <el-table-column prop="color" label="颜色" width="100">
+      <DataTable :table-key="TABLE_KEYS.ipamTags" :data="tags" :loading="loading">
+        <DataColumn prop="name" label="标签名称" width="200" sortable />
+        <DataColumn prop="color" label="颜色" width="100">
           <template #default="{ row }">
             <span :style="{ display: 'inline-block', width: '16px', height: '16px', borderRadius: '3px', background: row.color, verticalAlign: 'middle', marginRight: '6px' }" />
             {{ row.color }}
           </template>
-        </el-table-column>
-        <el-table-column prop="subnet_count" label="关联网段" width="100" />
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        </DataColumn>
+        <DataColumn prop="subnet_count" label="关联网段" width="100" />
+        <DataColumn label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/ipam/tags/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
           </template>
-        </el-table-column>
+        </DataColumn>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

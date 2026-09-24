@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import AccessFlowPanel from './AccessFlowPanel.vue'
@@ -69,41 +71,41 @@ onMounted(fetchAll)
 
       <template v-if="activeTab === 'policy'">
         <div class="table-wrapper">
-          <DataTable :data="policies" :loading="loading">
-            <el-table-column prop="device_hostname" label="设备" width="140" />
-            <el-table-column prop="policy_id" label="策略ID" width="100" />
-            <el-table-column prop="name" label="策略名称" width="150" show-overflow-tooltip />
-            <el-table-column prop="action" label="动作" width="80" align="center">
+          <DataTable :table-key="TABLE_KEYS.firewallPolicy" :data="policies" :loading="loading">
+            <DataColumn prop="device_hostname" label="设备" width="140" />
+            <DataColumn prop="policy_id" label="策略ID" width="100" />
+            <DataColumn prop="name" label="策略名称" width="150" show-overflow-tooltip />
+            <DataColumn prop="action" label="动作" width="80" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.action === 'allow' ? 'success' : 'danger'" size="small">
                   {{ actionLabel(row.action) }}
                 </el-tag>
               </template>
-            </el-table-column>
-            <el-table-column prop="source_addresses_display" label="源地址" min-width="160" show-overflow-tooltip>
+            </DataColumn>
+            <DataColumn prop="source_addresses_display" label="源地址" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ joinList(row.source_addresses_display) }}</template>
-            </el-table-column>
-            <el-table-column prop="destination_addresses_display" label="目的地址" min-width="160" show-overflow-tooltip>
+            </DataColumn>
+            <DataColumn prop="destination_addresses_display" label="目的地址" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ joinList(row.destination_addresses_display) }}</template>
-            </el-table-column>
-            <el-table-column prop="services_display" label="端口" min-width="130" show-overflow-tooltip>
+            </DataColumn>
+            <DataColumn prop="services_display" label="端口" min-width="130" show-overflow-tooltip>
               <template #default="{ row }">{{ joinList(row.services_display) }}</template>
-            </el-table-column>
-            <el-table-column prop="enabled" label="状态" width="80" align="center">
+            </DataColumn>
+            <DataColumn prop="enabled" label="状态" width="80" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column prop="log" label="日志" width="70" align="center">
+            </DataColumn>
+            <DataColumn prop="log" label="日志" width="70" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.log ? 'warning' : 'info'" size="small">{{ row.log ? '开' : '关' }}</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="操作" width="80" align="center" fixed="right">
+            </DataColumn>
+            <DataColumn label="操作" width="80" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openFlows(row.id, row.name, row.policy_id)">展开</el-button>
               </template>
-            </el-table-column>
+            </DataColumn>
           </DataTable>
         </div>
         <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

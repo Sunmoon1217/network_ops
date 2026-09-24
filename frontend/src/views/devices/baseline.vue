@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import {
   getSnmpConfigs, deleteSnmpConfig,
@@ -57,28 +59,28 @@ onMounted(() => { loadTab(activeTab.value) })
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/snmp/create')">新增</el-button>
         </div>
-        <DataTable :data="snmpList" :loading="snmpLoading" size="small" height="">
-          <el-table-column prop="device_hostname" label="设备" width="150" />
-          <el-table-column prop="version" label="版本" width="80" />
-          <el-table-column prop="community_read" label="读社区" width="120" show-overflow-tooltip />
-          <el-table-column prop="community_write" label="写社区" width="120" show-overflow-tooltip />
-          <el-table-column prop="port" label="端口" width="80" />
-          <el-table-column prop="trap_enabled" label="Trap" width="70" align="center">
+        <DataTable :table-key="TABLE_KEYS.baselineSnmp" :data="snmpList" :loading="snmpLoading" size="small" height="">
+          <DataColumn prop="device_hostname" label="设备" width="150" />
+          <DataColumn prop="version" label="版本" width="80" />
+          <DataColumn prop="community_read" label="读社区" width="120" show-overflow-tooltip />
+          <DataColumn prop="community_write" label="写社区" width="120" show-overflow-tooltip />
+          <DataColumn prop="port" label="端口" width="80" />
+          <DataColumn prop="trap_enabled" label="Trap" width="70" align="center">
             <template #default="{ row }">
               <el-tag :type="row.trap_enabled ? 'success' : 'info'" size="small">{{ row.trap_enabled ? '开' : '关' }}</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column prop="enabled" label="启用" width="70" align="center">
+          </DataColumn>
+          <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
               <el-switch v-model="row.enabled" size="small" @change="updateSnmpConfig(row.id, { enabled: row.enabled })" />
             </template>
-          </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right" align="center">
+          </DataColumn>
+          <DataColumn label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/snmp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSnmpRow('SNMP配置', () => deleteSnmpConfig(row.id), refetchSnmp)">删除</el-button>
             </template>
-          </el-table-column>
+          </DataColumn>
         </DataTable>
         <DataPagination v-model:page="snmpPage" v-model:page-size="snmpPageSize" :total="snmpTotal" @change="refetchSnmp" />
       </el-tab-pane>
@@ -87,24 +89,24 @@ onMounted(() => { loadTab(activeTab.value) })
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/ntp/create')">新增</el-button>
         </div>
-        <DataTable :data="ntpList" :loading="ntpLoading" size="small" height="">
-          <el-table-column prop="device_hostname" label="设备" width="150" />
-          <el-table-column prop="server1" label="NTP服务器1" width="150" />
-          <el-table-column prop="server2" label="NTP服务器2" width="150" />
-          <el-table-column prop="server3" label="NTP服务器3" width="150" />
-          <el-table-column prop="timezone" label="时区" width="100" />
-          <el-table-column prop="sync_interval" label="同步间隔" width="90" />
-          <el-table-column prop="enabled" label="启用" width="70" align="center">
+        <DataTable :table-key="TABLE_KEYS.baselineNtp" :data="ntpList" :loading="ntpLoading" size="small" height="">
+          <DataColumn prop="device_hostname" label="设备" width="150" />
+          <DataColumn prop="server1" label="NTP服务器1" width="150" />
+          <DataColumn prop="server2" label="NTP服务器2" width="150" />
+          <DataColumn prop="server3" label="NTP服务器3" width="150" />
+          <DataColumn prop="timezone" label="时区" width="100" />
+          <DataColumn prop="sync_interval" label="同步间隔" width="90" />
+          <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
               <el-switch v-model="row.enabled" size="small" @change="updateNtpConfig(row.id, { enabled: row.enabled })" />
             </template>
-          </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right" align="center">
+          </DataColumn>
+          <DataColumn label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/ntp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteNtpRow('NTP配置', () => deleteNtpConfig(row.id), refetchNtp)">删除</el-button>
             </template>
-          </el-table-column>
+          </DataColumn>
         </DataTable>
         <DataPagination v-model:page="ntpPage" v-model:page-size="ntpPageSize" :total="ntpTotal" @change="refetchNtp" />
       </el-tab-pane>
@@ -113,24 +115,24 @@ onMounted(() => { loadTab(activeTab.value) })
         <div class="tab-toolbar">
           <el-button type="primary" size="small" @click="router.push('/devices/baseline/syslog/create')">新增</el-button>
         </div>
-        <DataTable :data="syslogList" :loading="syslogLoading" size="small" height="">
-          <el-table-column prop="device_hostname" label="设备" width="150" />
-          <el-table-column prop="server1" label="日志服务器1" width="150" />
-          <el-table-column prop="server2" label="日志服务器2" width="150" />
-          <el-table-column prop="port" label="端口" width="80" />
-          <el-table-column prop="facility" label="Facility" width="100" />
-          <el-table-column prop="level" label="日志级别" width="120" />
-          <el-table-column prop="enabled" label="启用" width="70" align="center">
+        <DataTable :table-key="TABLE_KEYS.baselineSyslog" :data="syslogList" :loading="syslogLoading" size="small" height="">
+          <DataColumn prop="device_hostname" label="设备" width="150" />
+          <DataColumn prop="server1" label="日志服务器1" width="150" />
+          <DataColumn prop="server2" label="日志服务器2" width="150" />
+          <DataColumn prop="port" label="端口" width="80" />
+          <DataColumn prop="facility" label="Facility" width="100" />
+          <DataColumn prop="level" label="日志级别" width="120" />
+          <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
               <el-switch v-model="row.enabled" size="small" @change="updateSyslogConfig(row.id, { enabled: row.enabled })" />
             </template>
-          </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right" align="center">
+          </DataColumn>
+          <DataColumn label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/syslog/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSyslogRow('Syslog配置', () => deleteSyslogConfig(row.id), refetchSyslog)">删除</el-button>
             </template>
-          </el-table-column>
+          </DataColumn>
         </DataTable>
         <DataPagination v-model:page="syslogPage" v-model:page-size="syslogPageSize" :total="syslogTotal" @change="refetchSyslog" />
       </el-tab-pane>

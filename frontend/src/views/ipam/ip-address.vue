@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { statusTagType } from '@/composables/useTagType'
@@ -48,22 +50,22 @@ onMounted(fetchAll)
       <el-button type="primary" @click="router.push('/ipam/ip-addresses/create')">新增 IP</el-button>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="ipList" :loading="loading">
-        <el-table-column prop="ip_address" label="IP 地址" width="150" sortable />
-        <el-table-column prop="subnet_network" label="所属网段" width="140" />
-        <el-table-column prop="status" label="状态" width="90">
+      <DataTable :table-key="TABLE_KEYS.ipamAddresses" :data="ipList" :loading="loading">
+        <DataColumn prop="ip_address" label="IP 地址" width="150" sortable />
+        <DataColumn prop="subnet_network" label="所属网段" width="140" />
+        <DataColumn prop="status" label="状态" width="90">
           <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag></template>
-        </el-table-column>
-        <el-table-column prop="device_hostname" label="关联设备" width="140" />
-        <el-table-column prop="interface" label="接口" width="120" />
-        <el-table-column prop="security_zone_name" label="安全区" width="100" />
-        <el-table-column prop="description" label="描述" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        </DataColumn>
+        <DataColumn prop="device_hostname" label="关联设备" width="140" />
+        <DataColumn prop="interface" label="接口" width="120" />
+        <DataColumn prop="security_zone_name" label="安全区" width="100" />
+        <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
+        <DataColumn label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/ipam/ip-addresses/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
           </template>
-        </el-table-column>
+        </DataColumn>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
