@@ -428,7 +428,6 @@ def gtm_facets(request):
 # ---------------------------------------------------------------------------
 
 SLB_EXPORT_HEADERS = [
-    "名称",  # 成员地址#端口；回退行是池名 / VS地址#端口
     "设备",
     "VS地址#端口",
     "VS名称",
@@ -440,35 +439,39 @@ SLB_EXPORT_HEADERS = [
     "关联池",
     "池负载模式",
     "池监控",
+    "名称",  # 成员地址#端口；回退行是池名 / VS地址#端口
 ]
-SLB_EXPORT_COLUMN_WIDTHS = (24, 16, 22, 24, 8, 12, 12, 30, 30, 16, 14, 22)
+SLB_EXPORT_COLUMN_WIDTHS = (16, 22, 24, 8, 12, 12, 30, 30, 16, 14, 22, 24)
 
 GSLB_EXPORT_HEADERS = [
-    "名称",  # 成员地址#端口；回退行是池名 / 域名
     "设备",
     "域名",
     "记录类型",
     "WideIP算法",
+    "池Order",
+    "池Ratio",
     "池名",
+    "池监控",
     "池算法",
     "fallback",
     "TTL",
-    "池监控",
-    "池Order",
-    "池Ratio",
+    "名称",  # 成员地址#端口；回退行是池名 / 域名
     "成员Order",
     "成员Ratio",
     "成员监控",
     "数据中心",
     "状态",
 ]
-GSLB_EXPORT_COLUMN_WIDTHS = (24, 16, 24, 10, 14, 16, 24, 20, 8, 22, 10, 10, 12, 12, 14, 14, 10)
+GSLB_EXPORT_COLUMN_WIDTHS = (16, 24, 10, 14, 10, 10, 16, 22, 24, 20, 8, 24, 12, 12, 14, 14, 10)
 
 _STATE_LABELS = {"ok": "正常", "disabled": "停用", "lost": "未找到"}
 
 
 def _ltm_flat_rows(chain_rows: list[dict]) -> list[list]:
-    """SLB 扁平宽表：以链最深层为行（成员→池→VS 回退），VS/池字段整条下填。"""
+    """SLB 扁平宽表：以链最深层为行（成员→池→VS 回退），VS/池字段整条下填。
+
+    列序按链层级排：VS 段 → 池段 → 成员段（名称列收尾）。
+    """
     rows: list[list] = []
     for r in chain_rows:
         vs_label = _join_ip_port(r["vs_address"], r["vs_port"]) if r["vs_address"] else r["name"]
@@ -487,36 +490,39 @@ def _ltm_flat_rows(chain_rows: list[dict]) -> list[list]:
         if pool and r["members"]:
             for m in r["members"]:
                 label = _join_ip_port(m["address"], m["port"]) if m["address"] else m["name"]
-                rows.append([label] + base + pool_seg)
+                rows.append(base + pool_seg + [label])
         else:
-            rows.append([pool["name"] if pool else vs_label] + base + pool_seg)
+            rows.append(base + pool_seg + [pool["name"] if pool else vs_label])
     return rows
 
 
 def _gtm_flat_rows(chain_rows: list[dict]) -> list[list]:
-    """GSLB 扁平宽表：粒度规则同 LTM；池级 Order/Ratio = 池内成员取值集合去重。"""
+    """GSLB 扁平宽表：粒度规则同 LTM；池级 Order/Ratio = 池内成员取值集合去重。
+
+    列序按链层级排：wideip 段 → 池段（权重→名→监控→算法/fallback/TTL）→ 成员段（名称领头）。
+    """
     rows: list[list] = []
     for w in chain_rows:
         wide = [w["device_hostname"], w["name"], w["rtype"] or "-", w["lb_mode"] or "-"]
-        empty_pool = ["-"] * 7  # 池名/池算法/fallback/TTL/池监控/池Order/池Ratio
+        empty_pool = ["-"] * 7  # 池Order/池Ratio/池名/池监控/池算法/fallback/TTL
         empty_member = ["", "", "", "", "-"]  # 成员Order/成员Ratio/成员监控/数据中心/状态
         if not w["pools"]:
-            rows.append([w["name"]] + wide + empty_pool + empty_member)
+            rows.append(wide + empty_pool + [w["name"]] + empty_member)
             continue
         for p in w["pools"]:
             algo = " / ".join(x for x in (p["lb_mode"], p["alternate_mode"]) if x) or "-"
             fallback = (p["fallback_mode"] or "") + (f"（{p['fallback_ip']}）" if p["fallback_ip"] else "")
             pool_seg = [
+                "、".join(str(x) for x in sorted({m["order"] for m in p["members"] if m["order"] is not None})) or "-",
+                "、".join(str(x) for x in sorted({m["ratio"] for m in p["members"] if m["ratio"] is not None})) or "-",
                 p["name"],
+                "、".join(p["monitor"]) or "-",
                 algo,
                 fallback or "-",
                 str(p["ttl"]) if p["ttl"] is not None else "-",
-                "、".join(p["monitor"]) or "-",
-                "、".join(str(x) for x in sorted({m["order"] for m in p["members"] if m["order"] is not None})) or "-",
-                "、".join(str(x) for x in sorted({m["ratio"] for m in p["members"] if m["ratio"] is not None})) or "-",
             ]
             if not p["members"]:
-                rows.append([p["name"]] + wide + pool_seg + empty_member)
+                rows.append(wide + pool_seg + [p["name"]] + empty_member)
                 continue
             for m in p["members"]:
                 label = (
@@ -532,7 +538,7 @@ def _gtm_flat_rows(chain_rows: list[dict]) -> list[list]:
                     m["datacenter"],
                     _STATE_LABELS.get(state_key, "-"),
                 ]
-                rows.append([label] + wide + pool_seg + member_seg)
+                rows.append(wide + pool_seg + [label] + member_seg)
     return rows
 
 

@@ -232,19 +232,8 @@ onMounted(loadRows)
             </template>
           </DataColumn>
         </template>
-        <!-- 扁平宽表列组：以叶子为行、VS/池字段整条下填；SNAT/池负载模式/池监控一并上列 -->
+        <!-- 扁平宽表列组：按链层级排序——VS 段 → 池段 → 成员段；SNAT/池负载模式/池监控一并上列 -->
         <template v-else>
-          <DataColumn label="名称" column-key="label" min-width="220">
-            <template #default="{ row }">
-              <el-tooltip v-if="row.tipLines?.length" placement="top">
-                <template #content>
-                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
-                </template>
-                <span>{{ row.label }}</span>
-              </el-tooltip>
-              <span v-else>{{ row.label }}</span>
-            </template>
-          </DataColumn>
           <DataColumn prop="device" label="设备" min-width="120" />
           <DataColumn prop="vsLabel" label="VS地址#端口" min-width="150" show-overflow-tooltip />
           <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
@@ -264,6 +253,17 @@ onMounted(loadRows)
           <DataColumn prop="poolName" label="关联池" min-width="130" />
           <DataColumn prop="poolMode" label="池负载模式" min-width="110" />
           <DataColumn prop="poolMonitors" label="池监控" min-width="140" />
+          <DataColumn label="名称" column-key="label" min-width="220">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
         </template>
       </DataTable>
     </div>

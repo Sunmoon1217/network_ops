@@ -331,14 +331,15 @@ def test_ltm_export_flat_rows(api):
     rows = [[c.value for c in row] for row in sheet.iter_rows(min_row=2)]
     # 每成员一行（2）+ 无池 VS 行（1）
     assert len(rows) == 3
-    member_rows = [r for r in rows if r[0] == "10.1.1.1#80"]
+    # 列序按链层级：设备/VS地址#端口/VS名称/协议/SNAT/会话保持/Profile/iRule/关联池/池负载模式/池监控/名称
+    member_rows = [r for r in rows if r[11] == "10.1.1.1#80"]
     assert len(member_rows) == 1
-    assert member_rows[0][2] == "10.0.0.100#443"  # VS地址#端口下填
-    assert member_rows[0][3] == "/Common/vs_web"  # VS名称下填
-    assert member_rows[0][9] == "pool_web"  # 关联池下填
-    assert member_rows[0][11] == "http"  # 池监控
-    bare = [r for r in rows if r[0] == "10.0.0.102#80"]
-    assert bare and bare[0][4] == "tcp"  # 回退 VS 行携带自身字段
+    assert member_rows[0][1] == "10.0.0.100#443"  # VS地址#端口下填
+    assert member_rows[0][2] == "/Common/vs_web"  # VS名称下填
+    assert member_rows[0][8] == "pool_web"  # 关联池下填
+    assert member_rows[0][10] == "http"  # 池监控
+    bare = [r for r in rows if r[11] == "10.0.0.102#80"]
+    assert bare and bare[0][3] == "tcp"  # 回退 VS 行携带自身字段
 
 
 @pytest.mark.django_db
@@ -357,10 +358,10 @@ def test_gtm_export_flat_rows_and_widths(api):
     rows = [[c.value for c in row] for row in sheet.iter_rows(min_row=2)]
     # _seed_gtm_search：www 1 池 1 成员 + api 1 池 1 成员 = 2 成员行
     assert len(rows) == 2
-    # 列序：名称/设备/域名/记录类型/WideIP算法/池名/池算法/fallback/TTL/池监控/
-    #       池Order/池Ratio/成员Order/成员Ratio/成员监控/数据中心/状态
-    www = [r for r in rows if r[2] == "www.example.com"][0]
-    assert www[9] == "gtm_https、icmp"  # 池监控
+    # 列序按链层级：设备/域名/记录类型/WideIP算法/池Order/池Ratio/池名/池监控/池算法/fallback/
+    #       TTL/名称/成员Order/成员Ratio/成员监控/数据中心/状态
+    www = [r for r in rows if r[1] == "www.example.com"][0]
+    assert www[7] == "gtm_https、icmp"  # 池监控
     assert www[12] in ("", None)  # 成员Order：seed 成员 dict 无 order → 空（xlsx 空格读回 None）
-    assert www[10] == "-"  # 池Order：成员集合为空 → '-'
+    assert www[4] == "-"  # 池Order：成员集合为空 → '-'
     assert www[16] == "正常"  # 成员 found（vsA 有 GtmVServer）→ 状态中文标签

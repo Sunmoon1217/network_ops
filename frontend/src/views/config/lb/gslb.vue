@@ -301,8 +301,19 @@ onMounted(() => {
             </template>
           </DataColumn>
         </template>
-        <!-- 扁平宽表列组：以叶子为行、wideip/池字段整条下填；TTL/池监控/成员监控一并上列 -->
+        <!-- 扁平宽表列组：按链层级排序——wideip 段 → 池段（权重/名/监控）→ 成员段 -->
         <template v-else>
+          <DataColumn prop="device" label="设备" min-width="120" />
+          <DataColumn prop="domain" label="域名" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="rtype" label="记录类型" min-width="85" />
+          <DataColumn prop="wideAlgo" label="WideIP算法" min-width="110" />
+          <DataColumn prop="poolOrder" label="池Order" min-width="95" />
+          <DataColumn prop="poolRatio" label="池Ratio" min-width="95" />
+          <DataColumn prop="poolName" label="池名" min-width="130" />
+          <DataColumn prop="poolMonitor" label="池监控" min-width="130" />
+          <DataColumn prop="poolAlgo" label="池算法" min-width="150" />
+          <DataColumn prop="fallback" label="fallback" min-width="160" />
+          <DataColumn prop="ttl" label="TTL" min-width="70" />
           <DataColumn label="名称" column-key="label" min-width="200">
             <template #default="{ row }">
               <el-tooltip v-if="row.tipLines?.length" placement="top">
@@ -314,17 +325,6 @@ onMounted(() => {
               <span v-else>{{ row.label }}</span>
             </template>
           </DataColumn>
-          <DataColumn prop="device" label="设备" min-width="120" />
-          <DataColumn prop="domain" label="域名" min-width="170" show-overflow-tooltip />
-          <DataColumn prop="rtype" label="记录类型" min-width="85" />
-          <DataColumn prop="wideAlgo" label="WideIP算法" min-width="110" />
-          <DataColumn prop="poolName" label="池名" min-width="130" />
-          <DataColumn prop="poolAlgo" label="池算法" min-width="150" />
-          <DataColumn prop="fallback" label="fallback" min-width="160" />
-          <DataColumn prop="ttl" label="TTL" min-width="70" />
-          <DataColumn prop="poolMonitor" label="池监控" min-width="130" />
-          <DataColumn prop="poolOrder" label="池Order" min-width="95" />
-          <DataColumn prop="poolRatio" label="池Ratio" min-width="95" />
           <DataColumn prop="order" label="成员Order" min-width="95" />
           <DataColumn prop="ratio" label="成员Ratio" min-width="95" />
           <DataColumn prop="memberMonitor" label="成员监控" min-width="110" />
