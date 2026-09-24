@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
 import api from '@/api/index'
 
 import type {
@@ -355,7 +356,7 @@ onMounted(() => {
           </span>
         </div>
 
-        <el-table :data="rows" size="small" :row-key="rowKey" class="asset-table" border>
+        <DataTable :data="rows" size="small" :row-key="rowKey" class="asset-table">
           <el-table-column prop="wideip" label="域名" width="240" fixed show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono strong">{{ row.wideip || '-' }}</span>
@@ -403,7 +404,7 @@ onMounted(() => {
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
-        </el-table>
+        </DataTable>
       </template>
 
       <el-empty v-else description="暂无分析结果，请点击「立即分析」" />

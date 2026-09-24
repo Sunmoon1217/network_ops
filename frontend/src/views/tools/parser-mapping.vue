@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
 import api from '@/api/index'
 import { InfoFilled } from '@element-plus/icons-vue'
 
@@ -123,7 +124,7 @@ onMounted(() => {
 
           <el-empty v-if="!parsers.length" description="暂无解析器映射数据" />
 
-          <el-table v-else :data="parsers" size="small" class="mapping-table" :row-class-name="rowClassName">
+          <DataTable v-else :data="parsers" size="small" class="mapping-table" :row-class-name="rowClassName">
             <el-table-column prop="vendor" label="厂商" width="90" />
             <el-table-column label="设备类型" width="150">
               <template #default="{ row }">
@@ -212,7 +213,7 @@ onMounted(() => {
                 <span v-else class="muted">—</span>
               </template>
             </el-table-column>
-          </el-table>
+          </DataTable>
         </el-card>
 
         <!-- 契约缺口：Saver 消费了但没有任何解析器产出 -->
@@ -227,7 +228,7 @@ onMounted(() => {
 
           <el-empty v-if="!missingProducers.length" description="没有发现契约缺口" :image-size="60" />
 
-          <el-table v-else :data="missingProducers" size="small">
+          <DataTable v-else :data="missingProducers" size="small">
             <el-table-column label="设备类型" width="160">
               <template #default="{ row }">
                 <span class="mono">{{ row.device_type || '—' }}</span>
@@ -248,7 +249,7 @@ onMounted(() => {
                 <span class="muted">{{ row.note || '—' }}</span>
               </template>
             </el-table-column>
-          </el-table>
+          </DataTable>
         </el-card>
       </template>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getParsers, getParserTemplates, getParserTemplate, updateParserTemplate } from '@/api/parsers'
+import DataTable from '@/components/DataTable.vue'
 
 import type { ParserItem, TemplateItem, TemplateRow } from '@/types'
 
@@ -126,11 +127,10 @@ onMounted(() => {
           <el-checkbox v-model="onlyUnlinked" size="small">仅看未关联</el-checkbox>
         </div>
         <div class="table-wrap">
-          <el-table
+          <DataTable
             ref="tableRef"
             :data="visibleRows"
             size="small"
-            height="100%"
             highlight-current-row
             :span-method="groupSpan"
             @row-click="handleRowClick"
@@ -150,7 +150,7 @@ onMounted(() => {
                 <span v-if="!row.parsers.length" class="muted">未关联解析器</span>
               </template>
             </el-table-column>
-          </el-table>
+          </DataTable>
         </div>
       </div>
 

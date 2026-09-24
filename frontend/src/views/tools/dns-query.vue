@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import ChartCard from '@/components/ChartCard.vue'
+import DataTable from '@/components/DataTable.vue'
 import { pieOpt } from '@/composables/useEcharts'
 import api from '@/api/index'
 
@@ -171,11 +172,11 @@ const isSameResult = (a: any[], b: any[]): boolean => {
               </div>
             </div>
             <el-alert v-if="group.error" type="warning" :closable="false" style="margin: 0 0 8px 0;">{{ group.error }}</el-alert>
-            <el-table v-if="group.records.length" :data="group.records" stripe size="small" style="width: 100%">
+            <DataTable v-if="group.records.length" :data="group.records" size="small">
               <el-table-column prop="type" label="类型" width="70" />
               <el-table-column prop="value" label="值" min-width="140" />
               <el-table-column prop="ttl" label="TTL" width="60" />
-            </el-table>
+            </DataTable>
           </div>
         </div>
 
@@ -202,7 +203,7 @@ const isSameResult = (a: any[], b: any[]): boolean => {
 
         <!-- 批量明细表格 -->
         <div v-if="batchDetails.length" class="batch-table-wrap">
-          <el-table :data="batchDetails" stripe border size="small" style="width: 100%">
+          <DataTable :data="batchDetails" size="small">
             <el-table-column prop="domain" label="域名" width="200" sortable />
             <el-table-column prop="server" label="DNS" width="130" />
             <el-table-column label="结果" min-width="200">
@@ -216,7 +217,7 @@ const isSameResult = (a: any[], b: any[]): boolean => {
             <el-table-column prop="time" label="耗时" width="80" sortable>
               <template #default="{ row }">{{ row.time }}ms</template>
             </el-table-column>
-          </el-table>
+          </DataTable>
         </div>
       </template>
 
