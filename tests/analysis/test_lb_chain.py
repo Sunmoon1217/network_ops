@@ -105,19 +105,30 @@ def _seed_gtm(device: Device, members: list[dict]):
 
 @pytest.mark.django_db
 def test_gtm_chain_resolves_member_ip_via_vserver(api):
-    """成员按 (device, server 名, vs 名) 折算出 IP/端口；server/vserver 名保留供 hover。"""
+    """成员按 (device, server 名, vs 名) 折算出 IP/端口；server/vserver 名保留供 hover，
+    并携带二级/三级增列字段：池级 算法与 fallback、成员级 order/ratio/monitor/datacenter。"""
     device = _gslb_device()
-    _seed_gtm(device, [{"server": "srv1", "vserver": "vs1", "status": "enabled"}])
-    server = GtmServer.objects.create(device=device, name="srv1")
+    _seed_gtm(
+        device,
+        [{"server": "srv1", "vserver": "vs1", "status": "enabled", "order": 2, "ratio": 10, "monitor": "icmp"}],
+    )
+    server = GtmServer.objects.create(device=device, name="srv1", datacenter="DC1")
     GtmVServer.objects.create(device=device, server=server, name="vs1", ip_address="10.2.2.2", port="53")
 
     pool = api.get("/api/lb-chain/gslb/").data["results"][0]["pools"][0]
 
     assert pool["name"] == "pool_dns"
+    # 二级：负载算法与 fallback 是 GtmPool 的模型字段（默认值）
+    assert pool["lb_mode"] == "round-robin"
+    assert pool["alternate_mode"] == "round-robin"
+    assert pool["fallback_mode"] == "return-to-dns"
     member = pool["members"][0]
     assert member["found"] is True
     assert (member["address"], member["port"]) == ("10.2.2.2", "53")
     assert (member["server"], member["vserver"]) == ("srv1", "vs1")
+    # 三级：成员调度权重 + 成员级健康检查 + 所属 server 的数据中心
+    assert (member["order"], member["ratio"], member["monitor"]) == (2, 10, "icmp")
+    assert member["datacenter"] == "DC1"
 
 
 @pytest.mark.django_db

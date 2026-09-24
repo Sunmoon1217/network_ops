@@ -62,24 +62,38 @@ const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } 
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
 
+/** 去重后顿号连接：二级池行的 order/ratio 显示池内成员的取值集合（逐成员值看三级行） */
+const uniqJoin = (vals: (number | null | undefined)[]) =>
+  [...new Set(vals.filter((v) => v !== null && v !== undefined))].join('、')
+
 /** 池及其成员 → 池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
 const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
   id: `pool-${device}-${pool.name}`,
   kind: 'pool',
   label: pool.name,
   tipLines: [
-    `负载模式：${pool.lb_mode || '-'}`,
+    `负载算法：${pool.lb_mode || '-'} / 备选：${pool.alternate_mode || '-'}`,
     `回退IP：${pool.fallback_ip || '-'}`,
     `TTL：${pool.ttl ?? '-'}`,
     `健康检查：${pool.monitor?.length ? pool.monitor.join('、') : '-'}`,
   ],
-  mode: pool.lb_mode || '-',
+  // 负载算法 = lb_mode / alternate_mode；fallback = 模式 + 回退IP
+  mode: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
+  fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
+  monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
+  order: uniqJoin(pool.members.map((m) => m.order)),
+  ratio: uniqJoin(pool.members.map((m) => m.ratio)),
   children: pool.members.map((m, idx) => ({
     id: `member-${device}-${pool.name}-${idx}`,
     kind: 'member' as const,
     // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
     label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
     tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
+    // 三级行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
+    order: m.order != null ? String(m.order) : '',
+    ratio: m.ratio != null ? String(m.ratio) : '',
+    monitor: m.monitor || '',
+    datacenter: m.datacenter || '',
     state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
   })),
 })
@@ -155,7 +169,13 @@ onMounted(() => {
           </template>
         </DataColumn>
         <DataColumn prop="rtype" label="记录类型" min-width="90" />
-        <DataColumn prop="mode" label="负载模式" min-width="130" />
+        <!-- 一级显示自身 lb_mode，二级显示 池 lb_mode / alternate_mode -->
+        <DataColumn prop="mode" label="负载算法" min-width="150" />
+        <DataColumn prop="fallback" label="fallback" min-width="160" />
+        <DataColumn prop="monitor" label="监控" min-width="130" />
+        <DataColumn prop="order" label="Order" min-width="90" />
+        <DataColumn prop="ratio" label="Ratio" min-width="90" />
+        <DataColumn prop="datacenter" label="数据中心" min-width="110" />
         <DataColumn label="状态" column-key="state" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>

@@ -46,15 +46,24 @@ export interface GtmChainMember {
   port: string
   status: string
   found: boolean
+  /** 成员的调度权重信息（入库形态为 int；手工/旧模板缺省时为 null） */
+  order: number | null
+  ratio: number | null
+  /** 成员级健康检查（单值） */
+  monitor: string
+  /** 所属 server 的数据中心（vs 缺失时也给得出） */
+  datacenter: string
 }
 
 /** GTM 池（wideip.pools 按 设备+池名 反查；池记录缺失时给空骨架） */
 export interface GtmChainPool {
   name: string
   lb_mode: string
+  alternate_mode: string
+  fallback_mode: string
   fallback_ip: string
   ttl: number | null
-  /** 健康检查类型列表（池级 monitor，hover 弹出里展示） */
+  /** 池级健康检查类型列表（hover 弹出与监控列共用） */
   monitor: string[]
   members: GtmChainMember[]
 }
@@ -101,8 +110,17 @@ export interface LbTreeRow {
   rules?: string[]
   /** 记录类型（仅 GTM WideIP 行） */
   rtype?: string
-  /** 负载模式（仅 GTM 的 WideIP / 池行） */
+  /** 负载算法（GTM：一级 lb_mode；二级 池 lb_mode / alternate_mode） */
   mode?: string
+  /** fallback 策略（仅 GTM 二级池行，已拼好 mode(ip)） */
+  fallback?: string
+  /** 健康检查（GTM 二级池级列表 join / 三级成员单值） */
+  monitor?: string
+  /** 调度权重（GTM 二级 = 池内成员取值集合去重 / 三级 = 成员自身值） */
+  order?: string
+  ratio?: string
+  /** 数据中心（仅 GTM 三级成员行，来自其所属 server） */
+  datacenter?: string
   /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器 */
   state?: 'ok' | 'disabled' | 'lost'
   children?: LbTreeRow[]

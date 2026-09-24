@@ -240,9 +240,7 @@ def _pool_q_via_servers(name_icontains: str = "", monitor_icontains: str = "") -
 def _pool_q_via_vservers(vs_cond: Q) -> Q:
     """GtmVServer 命中（名字/地址/端口/健康检查）→ 池条件（成员以 server+vs 引用它）。"""
     q = Q()
-    triples = GtmVServer.objects.filter(vs_cond).values_list("device_id", "server__name", "name")[
-        :MAX_SEARCH_PAIRS
-    ]
+    triples = GtmVServer.objects.filter(vs_cond).values_list("device_id", "server__name", "name")[:MAX_SEARCH_PAIRS]
     for device_id, server_name, vs_name in triples:
         q |= Q(device_id=device_id, members__contains=[{"server": server_name, "vserver": vs_name}])
     return q
@@ -291,10 +289,19 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
             for p in GtmPool.objects.filter(device_id__in=device_ids, name__in=wideip_pool_names)
         }
 
-    # (device_id, server 名, vs 名) → GtmVServer；server 是 FK，名字在 GtmServer 上
+    # (device_id, server 名, vs 名) → GtmVServer；server 是 FK，名字与数据中心在 GtmServer 上
     vserver_index: dict[tuple[int, str, str], GtmVServer] = {}
+    server_dc: dict[tuple[int, str], str] = {}
+    server_names: dict[int, str] = {}
     if device_ids:
-        server_names = dict(GtmServer.objects.filter(device_id__in=device_ids).values_list("id", "name").iterator())
+        # 一次查询同时建 id→名（vserver 索引用）与 (device_id, 名)→数据中心（成员列用）两个索引；
+        # 后者的键必须是 device_id——写成 server.id 会在两者恰好相等时「蒙对」，套跑即错
+        servers_qs = GtmServer.objects.filter(device_id__in=device_ids).values_list(
+            "id", "device_id", "name", "datacenter"
+        )
+        for sid, sdev, sname, sdc in servers_qs.iterator():
+            server_names[sid] = sname
+            server_dc[(sdev, sname)] = sdc or ""
         for vs in GtmVServer.objects.filter(device_id__in=device_ids).select_related("server"):
             vserver_index[(vs.device_id, server_names.get(vs.server_id) or vs.server.name, vs.name)] = vs
 
@@ -308,15 +315,22 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
                 for entry in pool.members or []:
                     server_name, vs_name, raw = _parse_member_entry(entry)
                     target = vserver_index.get((w.device_id, server_name, vs_name))
+                    # order / ratio / monitor：入库形态是 Saver 归一后的键，
+                    # 手工 payload / 旧模板给的是 member_* 前缀，两种都要认
                     member_out.append(
                         {
                             "server": server_name,
                             "vserver": vs_name,
                             "status": str(raw.get("status") or raw.get("member_status") or ""),
-                            # 找不到 GtmVServer 就没有 IP——前端回退显示 server/vserver 名字
+                            "order": raw.get("order", raw.get("member_order")),
+                            "ratio": raw.get("ratio", raw.get("member_ratio")),
+                            "monitor": str(raw.get("monitor") or raw.get("member_monitor") or ""),
+                            # 找不到 GtmVServer 就没有 IP——前端回退显示 server/vserver 名字；
+                            # 数据中心只挂在 server 上，vs 缺失时仍能给出
                             "address": target.ip_address if target else None,
                             "port": (target.port if target else "") or "",
                             "found": target is not None,
+                            "datacenter": server_dc.get((w.device_id, server_name), ""),
                         }
                     )
             pool_out.append(
@@ -324,6 +338,8 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
                     "name": pool_name,
                     # wideip 引用了但池记录不存在：给空骨架，前端才能显示「池缺失」而不是吞掉
                     "lb_mode": pool.lb_mode if pool else "",
+                    "alternate_mode": pool.alternate_mode if pool else "",
+                    "fallback_mode": pool.fallback_mode if pool else "",
                     "fallback_ip": (pool.fallback_ip if pool else None) or "",
                     "ttl": pool.ttl if pool else None,
                     "monitor": (pool.monitor if pool else []) or [],
