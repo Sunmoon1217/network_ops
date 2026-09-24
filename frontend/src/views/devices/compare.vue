@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { getDevice, getGitConfigContent, getGitDiff } from '@/api/devices'
+import { CodeDiff } from 'v-code-diff'
+import { getDevice, getGitConfigContent } from '@/api/devices'
 
 const route = useRoute()
 const router = useRouter()
@@ -9,10 +10,13 @@ const deviceId = Number(route.params.id)
 const device = ref<any>(null)
 const oldText = ref('')
 const newText = ref('')
-const diffText = ref('')
 const oldHash = ref('')
 const newHash = ref('')
 const loading = ref(true)
+const outputFormat = ref<'side-by-side' | 'line-by-line'>('side-by-side')
+
+// 两段全文已在本地，直接比对即可判断有无变更（组件内部同口径）
+const hasChange = computed(() => oldText.value !== newText.value)
 
 const fetchConfigs = async () => {
   loading.value = true
@@ -35,9 +39,6 @@ const fetchConfigs = async () => {
     ])
     oldText.value = oldRes.data.config_text || ''
     newText.value = newRes.data.config_text || ''
-
-    const diffRes = await getGitDiff(hostname, oldHash.value, newHash.value)
-    diffText.value = diffRes.data.diff || ''
   } catch {
     ElMessage.error('加载失败')
   } finally {
@@ -59,11 +60,21 @@ onMounted(fetchConfigs)
       <span>基准: <code>{{ oldHash.slice(0, 8) }}</code></span>
       <span>→</span>
       <span>对比: <code>{{ newHash.slice(0, 8) }}</code></span>
+      <el-radio-group v-model="outputFormat" size="small" class="format-toggle">
+        <el-radio-button value="side-by-side">并排</el-radio-button>
+        <el-radio-button value="line-by-line">行对行</el-radio-button>
+      </el-radio-group>
     </div>
 
     <div v-if="loading" v-loading="true" class="compare-body" />
-    <div v-else-if="diffText" class="compare-body">
-      <pre class="diff-text">{{ diffText }}</pre>
+    <div v-else-if="oldHash && newHash && hasChange" class="compare-body diff-scroll">
+      <CodeDiff
+        :old-string="oldText"
+        :new-string="newText"
+        :output-format="outputFormat"
+        :filename="oldHash.slice(0, 8)"
+        :new-filename="newHash.slice(0, 8)"
+      />
     </div>
     <el-empty v-else description="缺少对比参数或无变更" class="compare-body" />
   </div>
@@ -106,6 +117,9 @@ onMounted(fetchConfigs)
   border-radius: 4px;
   font-family: monospace;
 }
+.format-toggle {
+  margin-left: auto;
+}
 .compare-body {
   flex: 1;
   min-height: 0;
@@ -113,15 +127,7 @@ onMounted(fetchConfigs)
   border-radius: 8px;
   overflow: hidden;
 }
-.diff-text {
-  margin: 0;
-  padding: 16px;
-  height: 100%;
+.diff-scroll {
   overflow: auto;
-  font-size: 13px;
-  font-family: 'Courier New', monospace;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  background: #fafafa;
 }
 </style>
