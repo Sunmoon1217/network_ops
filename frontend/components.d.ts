@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']
+    ColumnSettings: typeof import('./src/components/ColumnSettings.vue')['default']
     DataColumn: typeof import('./src/components/DataColumn.vue')['default']
     DataPagination: typeof import('./src/components/DataPagination.vue')['default']
     DataTable: typeof import('./src/components/DataTable.vue')['default']
@@ -46,7 +47,6 @@ declare module 'vue' {
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSubMenu: typeof import('element-plus/es')['ElSubMenu']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
-    ElTable: typeof import('element-plus/es')['ElTable']
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTabPane: typeof import('element-plus/es')['ElTabPane']
     ElTabs: typeof import('element-plus/es')['ElTabs']
