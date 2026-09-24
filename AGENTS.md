@@ -108,7 +108,7 @@ network_ops/
 | `uv-package-and-lockfile` | uv 不读 pip 配置（只有 `UV_DEFAULT_INDEX` 有效）、`uv.lock` 固化 registry / wheel URL、依赖层镜像的重建时机 |
 | `ttp-template-gotchas` | 模板按 **XML** 解析（注释里的尖括号会炸）、`re()` 可内联正则、**单条命中给 dict / 多条给 list**、内置 `IPV6` 不含点号 |
 | `frontend-types` | 前端数据类型组织：具名类型进 `src/types/` + `import type ... from '@/types'`、barrel 撞名语义化改名、`.ts` / `.d.ts` 分工、忘 export / 复制不接线的坑 |
-| `git-branch-flow` | **本仓分支模型**：feature 一律从 `develop` 切（**不从 master**）、合并只在 develop 侧、master 只整批收 develop 的发布合并；commit/merge message 用中文；含切分支→提交→合并→推送命令序列 |
+| `git-branch-flow` | **本仓分支模型**：feature 一律从 `develop` 切（**不从 master**）、**一个需求一个 feature 分支、修 bug 用 fix 分支**、**新分支必须用 worktree 建在 `.worktrees/` 下开发**、**每一个改动及时 commit**；合并只在 develop 侧、master 只整批收 develop 的发布合并；除非用户主动要求不执行合并；commit/merge message 用中文；含建 worktree→提交→合并→推送命令序列 |
 
 **为什么放技能而不是本文档**：
 
