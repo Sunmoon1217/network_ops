@@ -15,12 +15,19 @@ URL 前缀 ``/api/lb-chain/`` 沿用 analysis「路由跟 view 走」的惯例�
 ``analysis.api.analysis._parse_member_entry``，避免两处各写一份漂移。
 """
 
+from datetime import date
+from io import BytesIO
+from urllib.parse import quote
+
 from django.db.models import Q
+from django.http import HttpResponse
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from analysis.api.analysis import _parse_member_entry
+from analysis.api.analysis import _join_ip_port, _parse_member_entry
 from assets.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 from netops.pagination import StandardPagination
 
@@ -411,3 +418,195 @@ def gtm_facets(request):
     monitors.update(v for v in GtmServer.objects.values_list("monitor", flat=True) if v)
     monitors.update(v for v in GtmVServer.objects.values_list("monitor", flat=True) if v)
     return Response({"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)})
+
+
+# ---------------------------------------------------------------------------
+# 导出：扁平宽表 xlsx（openpyxl 后端生成、前端只下载 Blob——与互联网资产分析同模式）
+#
+# **列序与前端 slb.vue / gslb.vue 的扁平列组手工保持一致**（表格渲染在前端、
+# 导出在后端的两份扁平化并存是项目既定先例，见 internet-asset 的 build_path_rows）。
+# ---------------------------------------------------------------------------
+
+SLB_EXPORT_HEADERS = [
+    "设备",
+    "VS地址#端口",
+    "VS名称",
+    "协议",
+    "SNAT",
+    "会话保持",
+    "Profile",
+    "iRule",
+    "关联池",
+    "池负载模式",
+    "池监控",
+    "名称",  # 成员地址#端口；回退行是池名 / VS地址#端口
+]
+SLB_EXPORT_COLUMN_WIDTHS = (16, 22, 24, 8, 12, 12, 30, 30, 16, 14, 22, 24)
+
+GSLB_EXPORT_HEADERS = [
+    "设备",
+    "域名",
+    "记录类型",
+    "WideIP算法",
+    "池Order",
+    "池Ratio",
+    "池名",
+    "池监控",
+    "池算法",
+    "fallback",
+    "TTL",
+    "名称",  # 成员地址#端口；回退行是池名 / 域名
+    "成员Order",
+    "成员Ratio",
+    "成员监控",
+    "数据中心",
+    "状态",
+]
+GSLB_EXPORT_COLUMN_WIDTHS = (16, 24, 10, 14, 10, 10, 16, 22, 24, 20, 8, 24, 12, 12, 14, 14, 10)
+
+_STATE_LABELS = {"ok": "正常", "disabled": "停用", "lost": "未找到"}
+
+
+def _ltm_flat_rows(chain_rows: list[dict]) -> list[list]:
+    """SLB 扁平宽表：以链最深层为行（成员→池→VS 回退），VS/池字段整条下填。
+
+    列序按链层级排：VS 段 → 池段 → 成员段（名称列收尾）。
+    """
+    rows: list[list] = []
+    for r in chain_rows:
+        vs_label = _join_ip_port(r["vs_address"], r["vs_port"]) if r["vs_address"] else r["name"]
+        base = [
+            r["device_hostname"],
+            vs_label,
+            r["name"],
+            r["protocol"] or "-",
+            r["snat_type"] or "-",
+            r["persist"] or "-",
+            "、".join(r["profiles"]) or "-",
+            "、".join(r["rules"]) or "-",
+        ]
+        pool = r.get("pool")
+        pool_seg = [pool["name"], pool["mode"] or "-", "、".join(pool["monitors"]) or "-"] if pool else ["-", "-", "-"]
+        if pool and r["members"]:
+            for m in r["members"]:
+                label = _join_ip_port(m["address"], m["port"]) if m["address"] else m["name"]
+                rows.append(base + pool_seg + [label])
+        else:
+            rows.append(base + pool_seg + [pool["name"] if pool else vs_label])
+    return rows
+
+
+def _gtm_flat_rows(chain_rows: list[dict]) -> list[list]:
+    """GSLB 扁平宽表：粒度规则同 LTM；池级 Order/Ratio = 池内成员取值集合去重。
+
+    列序按链层级排：wideip 段 → 池段（权重→名→监控→算法/fallback/TTL）→ 成员段（名称领头）。
+    """
+    rows: list[list] = []
+    for w in chain_rows:
+        wide = [w["device_hostname"], w["name"], w["rtype"] or "-", w["lb_mode"] or "-"]
+        empty_pool = ["-"] * 7  # 池Order/池Ratio/池名/池监控/池算法/fallback/TTL
+        empty_member = ["", "", "", "", "-"]  # 成员Order/成员Ratio/成员监控/数据中心/状态
+        if not w["pools"]:
+            rows.append(wide + empty_pool + [w["name"]] + empty_member)
+            continue
+        for p in w["pools"]:
+            algo = " / ".join(x for x in (p["lb_mode"], p["alternate_mode"]) if x) or "-"
+            fallback = (p["fallback_mode"] or "") + (f"（{p['fallback_ip']}）" if p["fallback_ip"] else "")
+            pool_seg = [
+                "、".join(str(x) for x in sorted({m["order"] for m in p["members"] if m["order"] is not None})) or "-",
+                "、".join(str(x) for x in sorted({m["ratio"] for m in p["members"] if m["ratio"] is not None})) or "-",
+                p["name"],
+                "、".join(p["monitor"]) or "-",
+                algo,
+                fallback or "-",
+                str(p["ttl"]) if p["ttl"] is not None else "-",
+            ]
+            if not p["members"]:
+                rows.append(wide + pool_seg + [p["name"]] + empty_member)
+                continue
+            for m in p["members"]:
+                label = (
+                    _join_ip_port(m["address"], m["port"])
+                    if m["found"] and m["address"]
+                    else f"{m['server']}/{m['vserver']}"
+                )
+                state_key = "lost" if not m["found"] else ("disabled" if m["status"] == "disabled" else "ok")
+                member_seg = [
+                    "" if m["order"] is None else str(m["order"]),
+                    "" if m["ratio"] is None else str(m["ratio"]),
+                    m["monitor"],
+                    m["datacenter"],
+                    _STATE_LABELS.get(state_key, "-"),
+                ]
+                rows.append(wide + pool_seg + [label] + member_seg)
+    return rows
+
+
+def _xlsx_response(headers: list[str], widths: tuple, rows: list[list], title: str, filename: str):
+    """表头 + 行写进 xlsx 返回附件响应（列宽按 get_column_letter 逐列设置）。"""
+    workbook = Workbook()
+    sheet = workbook.active
+    if sheet is None:
+        sheet = workbook.create_sheet()
+    sheet.title = title
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(row)
+    # 列宽跟着表头走：写死列字母在加列时会静默少设宽度（与互联网资产分析同约定）
+    assert len(widths) == len(headers)  # noqa: S101 —— 测试里另有断言守，这里尽早炸
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def ltm_export(request):
+    """导出 SLB 扁平宽表：GET /api/lb-chain/slb/export/?device=&search=
+
+    全量导出（不分页），过滤/搜索参数与列表接口同语义。
+    """
+    qs = _device_filter(request, LtmVirtualServer.objects.select_related("device").all())
+    search = (request.query_params.get("search") or "").strip()
+    if search:
+        qs = _ltm_search(qs, search)
+    rows = _ltm_flat_rows(_ltm_rows(list(qs.order_by(*DEFAULT_ORDER))))
+    return _xlsx_response(
+        SLB_EXPORT_HEADERS,
+        SLB_EXPORT_COLUMN_WIDTHS,
+        rows,
+        "负载均衡关联链",
+        f"lb-chains-{date.today():%Y%m%d}.xlsx",
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gtm_export(request):
+    """导出 GSLB 扁平宽表：GET /api/lb-chain/gslb/export/?device=&rtype=&monitor=&search="""
+    qs = _device_filter(request, GtmWideip.objects.select_related("device").all())
+    rtype = (request.query_params.get("rtype") or "").strip()
+    if rtype:
+        qs = qs.filter(rtype__iexact=rtype)
+    monitor = (request.query_params.get("monitor") or "").strip()
+    if monitor:
+        qs = _gtm_filter_monitor(qs, monitor)
+    search = (request.query_params.get("search") or "").strip()
+    if search:
+        qs = _gtm_search(qs, search)
+    rows = _gtm_flat_rows(_gtm_rows(list(qs.order_by(*DEFAULT_ORDER))))
+    return _xlsx_response(
+        GSLB_EXPORT_HEADERS,
+        GSLB_EXPORT_COLUMN_WIDTHS,
+        rows,
+        "域名解析关联链",
+        f"dn-chains-{date.today():%Y%m%d}.xlsx",
+    )

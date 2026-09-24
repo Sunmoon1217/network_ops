@@ -68,6 +68,63 @@ export interface GtmChainPool {
   members: GtmChainMember[]
 }
 
+/**
+ * SLB 扁平宽表行：**以链最深层为行粒度**（有成员每成员一行，池无成员则池行，
+ * 无池则 VS 行），VS 与池的字段整条下填、融合成一张大表。
+ * 与树形模式是两套列——扁平不是「去缩进」，而是 join 展开。
+ */
+export interface LtmFlatRow {
+  /** 行唯一：链根 + 层级标记 + 序号 */
+  id: string
+  kind: 'vs' | 'pool' | 'member'
+  /** 主标识：成员地址#端口；回退行是池名 / VS地址#端口 */
+  label: string
+  /** hover：成员 name 与链路归属 */
+  tipLines: string[]
+  device: string
+  vsLabel: string
+  vsName: string
+  protocol: string
+  snat: string
+  persist: string
+  profiles: string[]
+  rules: string[]
+  poolName: string
+  poolMode: string
+  poolMonitors: string
+}
+
+/**
+ * GSLB 扁平宽表行：粒度规则同 LtmFlatRow——
+ * wideip 字段 + 池字段 + 成员字段三段全部下填到叶子行。
+ */
+export interface GtmFlatRow {
+  id: string
+  kind: 'wideip' | 'pool' | 'member'
+  label: string
+  tipLines: string[]
+  device: string
+  /** wideip 段 */
+  domain: string
+  rtype: string
+  wideAlgo: string
+  /** 池段 */
+  poolName: string
+  poolAlgo: string
+  fallback: string
+  ttl: string
+  poolMonitor: string
+  /** 池级调度权重 = 池内成员取值集合去重（与树形二级池行同义），与成员自身值分列 */
+  poolOrder: string
+  poolRatio: string
+  /** 成员段（回退行为空串/ '-'） */
+  order: string
+  ratio: string
+  memberMonitor: string
+  datacenter: string
+  state?: 'ok' | 'disabled' | 'lost'
+}
+
 /** 域名解析关联链行：WideIP → 池 → 虚拟服务器 */
 export interface GtmChainRow {
   device: number

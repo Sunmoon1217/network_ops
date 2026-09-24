@@ -21,6 +21,13 @@ export const getLtmChain = (params?: Record<string, any>) =>
 export const getGtmChain = (params?: Record<string, any>) =>
   api.get('/api/lb-chain/gslb/', { params })
 
+// 扁平宽表导出（xlsx 后端生成、前端只下载 Blob）：过滤/搜索参数与列表同语义，全量导出
+export const exportLtmChain = (params?: Record<string, any>) =>
+  api.get('/api/lb-chain/slb/export/', { params, responseType: 'blob' })
+
+export const exportGtmChain = (params?: Record<string, any>) =>
+  api.get('/api/lb-chain/gslb/export/', { params, responseType: 'blob' })
+
 // GSLB 过滤下拉选项：记录类型 + 健康检查类型（三处 monitor 合集）
 export const getGtmChainFacets = () => api.get('/api/lb-chain/gslb/facets/')
 

@@ -293,3 +293,75 @@ def test_gtm_facets(api):
     data = api.get("/api/lb-chain/gslb/facets/").data
     assert data["rtypes"] == ["A", "AAAA"]
     assert data["monitors"] == ["dns", "gtm_https", "gtm_tcp", "icmp"]
+
+
+# ---------------------------------------------------------------------------
+# 扁平宽表导出（xlsx）
+# ---------------------------------------------------------------------------
+
+
+def _read_xlsx(resp):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    return load_workbook(BytesIO(resp.content)).active
+
+
+@pytest.mark.django_db
+def test_ltm_export_flat_rows(api):
+    """SLB 导出：以叶子为行、VS/池字段下填；无池 VS 以 VS 为行。"""
+    _seed_ltm(_slb_device())
+    LtmVirtualServer.objects.create(
+        device=Device.objects.get(hostname="_t_lb_slb"),
+        name="vs_bare",
+        vs_address="10.0.0.102",
+        vs_port="80",
+        protocol="tcp",
+    )
+
+    resp = api.get("/api/lb-chain/slb/export/")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("application/vnd.openxmlformats")
+    sheet = _read_xlsx(resp)
+
+    from analysis.api.lb_chain import SLB_EXPORT_HEADERS
+
+    assert [c.value for c in sheet[1]] == SLB_EXPORT_HEADERS
+    rows = [[c.value for c in row] for row in sheet.iter_rows(min_row=2)]
+    # 每成员一行（2）+ 无池 VS 行（1）
+    assert len(rows) == 3
+    # 列序按链层级：设备/VS地址#端口/VS名称/协议/SNAT/会话保持/Profile/iRule/关联池/池负载模式/池监控/名称
+    member_rows = [r for r in rows if r[11] == "10.1.1.1#80"]
+    assert len(member_rows) == 1
+    assert member_rows[0][1] == "10.0.0.100#443"  # VS地址#端口下填
+    assert member_rows[0][2] == "/Common/vs_web"  # VS名称下填
+    assert member_rows[0][8] == "pool_web"  # 关联池下填
+    assert member_rows[0][10] == "http"  # 池监控
+    bare = [r for r in rows if r[11] == "10.0.0.102#80"]
+    assert bare and bare[0][3] == "tcp"  # 回退 VS 行携带自身字段
+
+
+@pytest.mark.django_db
+def test_gtm_export_flat_rows_and_widths(api):
+    """GSLB 导出：池级/成员级 Order/Ratio 分列；列宽条数与表头一致（防加列静默少设宽）。"""
+    _seed_gtm_search(_gslb_device())
+
+    resp = api.get("/api/lb-chain/gslb/export/")
+    assert resp.status_code == 200
+    sheet = _read_xlsx(resp)
+
+    from analysis.api.lb_chain import GSLB_EXPORT_COLUMN_WIDTHS, GSLB_EXPORT_HEADERS
+
+    assert len(GSLB_EXPORT_COLUMN_WIDTHS) == len(GSLB_EXPORT_HEADERS)
+    assert [c.value for c in sheet[1]] == GSLB_EXPORT_HEADERS
+    rows = [[c.value for c in row] for row in sheet.iter_rows(min_row=2)]
+    # _seed_gtm_search：www 1 池 1 成员 + api 1 池 1 成员 = 2 成员行
+    assert len(rows) == 2
+    # 列序按链层级：设备/域名/记录类型/WideIP算法/池Order/池Ratio/池名/池监控/池算法/fallback/
+    #       TTL/名称/成员Order/成员Ratio/成员监控/数据中心/状态
+    www = [r for r in rows if r[1] == "www.example.com"][0]
+    assert www[7] == "gtm_https、icmp"  # 池监控
+    assert www[12] in ("", None)  # 成员Order：seed 成员 dict 无 order → 空（xlsx 空格读回 None）
+    assert www[4] == "-"  # 池Order：成员集合为空 → '-'
+    assert www[16] == "正常"  # 成员 found（vsA 有 GtmVServer）→ 状态中文标签
