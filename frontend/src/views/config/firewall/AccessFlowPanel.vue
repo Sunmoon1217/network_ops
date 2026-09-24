@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -126,36 +128,36 @@ const auditFlags = (contexts: Record<string, FlowContext> | undefined): FlowAudi
     </div>
 
     <div class="table-wrapper">
-      <DataTable :data="flows" :loading="loading">
-        <el-table-column label="源地址" min-width="150" show-overflow-tooltip>
+      <DataTable :table-key="TABLE_KEYS.accessFlows" :data="flows" :loading="loading">
+        <DataColumn label="源地址" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ addrLabel(row.src_ip, row.src_prefix, row.src_range_end) }}</template>
-        </el-table-column>
-        <el-table-column label="目的地址" min-width="150" show-overflow-tooltip>
+        </DataColumn>
+        <DataColumn label="目的地址" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ addrLabel(row.dst_ip, row.dst_prefix, row.dst_range_end) }}</template>
-        </el-table-column>
-        <el-table-column label="服务" min-width="120" show-overflow-tooltip>
+        </DataColumn>
+        <DataColumn label="服务" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ serviceLabel(row.protocol, row.port, row.port2) }}</template>
-        </el-table-column>
-        <el-table-column label="动作" width="80" align="center">
+        </DataColumn>
+        <DataColumn label="动作" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.action === 'deny' ? 'danger' : 'success'" size="small">
               {{ actionLabel(row.action) }}
             </el-tag>
           </template>
-        </el-table-column>
-        <el-table-column label="命中" width="110" align="center">
+        </DataColumn>
+        <DataColumn label="命中" width="110" align="center">
           <template #default="{ row }">
             {{ auditFlags(row.contexts).devices }} 台 / {{ auditFlags(row.contexts).policies }} 条
           </template>
-        </el-table-column>
-        <el-table-column label="审计" width="110" align="center">
+        </DataColumn>
+        <DataColumn label="审计" width="110" align="center">
           <template #default="{ row }">
             <el-tag v-if="auditFlags(row.contexts).conflict" type="danger" size="small">动作冲突</el-tag>
             <el-tag v-else-if="auditFlags(row.contexts).dupDevices" type="warning" size="small">设备内重复</el-tag>
             <el-tag v-else type="success" size="small">正常</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column label="命中明细（设备 · 策略）" min-width="300">
+        </DataColumn>
+        <DataColumn label="命中明细（设备 · 策略）" min-width="300">
           <template #default="{ row }">
             <div class="ctx-list">
               <el-tag
@@ -170,7 +172,7 @@ const auditFlags = (contexts: Record<string, FlowContext> | undefined): FlowAudi
               </el-tag>
             </div>
           </template>
-        </el-table-column>
+        </DataColumn>
       </DataTable>
     </div>
 

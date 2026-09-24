@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -59,15 +61,15 @@ onMounted(() => {
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Virtual Server" name="vs">
         <div class="table-wrapper">
-          <DataTable :data="virtualServers" :loading="vsLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="名称" width="180" sortable />
-            <el-table-column prop="vs_address" label="虚拟地址" width="140" />
-            <el-table-column prop="vs_port" label="端口" width="80" />
-            <el-table-column prop="protocol" label="协议" width="80" />
-            <el-table-column prop="pool" label="关联池" width="140" />
-            <el-table-column prop="snat_type" label="SNAT" width="100" />
-            <el-table-column prop="persist" label="会话保持" width="100" />
+          <DataTable :table-key="TABLE_KEYS.slbVirtualServers" :data="virtualServers" :loading="vsLoading" size="small">
+            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
+            <DataColumn prop="name" label="名称" width="180" sortable />
+            <DataColumn prop="vs_address" label="虚拟地址" width="140" />
+            <DataColumn prop="vs_port" label="端口" width="80" />
+            <DataColumn prop="protocol" label="协议" width="80" />
+            <DataColumn prop="pool" label="关联池" width="140" />
+            <DataColumn prop="snat_type" label="SNAT" width="100" />
+            <DataColumn prop="persist" label="会话保持" width="100" />
           </DataTable>
         </div>
         <DataPagination
@@ -79,16 +81,16 @@ onMounted(() => {
       </el-tab-pane>
       <el-tab-pane label="Pool" name="pool">
         <div class="table-wrapper">
-          <DataTable :data="pools" :loading="poolLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="名称" width="180" sortable />
-            <el-table-column prop="mode" label="负载模式" width="120" />
-            <el-table-column prop="monitors" label="监控" min-width="200">
+          <DataTable :table-key="TABLE_KEYS.slbPools" :data="pools" :loading="poolLoading" size="small">
+            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
+            <DataColumn prop="name" label="名称" width="180" sortable />
+            <DataColumn prop="mode" label="负载模式" width="120" />
+            <DataColumn prop="monitors" label="监控" min-width="200">
               <template #default="{ row }">
                 <el-tag v-for="m in (row.monitors || [])" :key="m" size="small" style="margin-right: 4px">{{ m }}</el-tag>
                 <span v-if="!row.monitors?.length" style="color: #c0c4cc">-</span>
               </template>
-            </el-table-column>
+            </DataColumn>
           </DataTable>
         </div>
         <DataPagination

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import ChartCard from '@/components/ChartCard.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import { pieOpt } from '@/composables/useEcharts'
 import api from '@/api/index'
 
@@ -171,11 +174,11 @@ const isSameResult = (a: any[], b: any[]): boolean => {
               </div>
             </div>
             <el-alert v-if="group.error" type="warning" :closable="false" style="margin: 0 0 8px 0;">{{ group.error }}</el-alert>
-            <el-table v-if="group.records.length" :data="group.records" stripe size="small" style="width: 100%">
-              <el-table-column prop="type" label="类型" width="70" />
-              <el-table-column prop="value" label="值" min-width="140" />
-              <el-table-column prop="ttl" label="TTL" width="60" />
-            </el-table>
+            <DataTable :table-key="TABLE_KEYS.dnsQuery" v-if="group.records.length" :data="group.records" size="small">
+              <DataColumn prop="type" label="类型" width="70" />
+              <DataColumn prop="value" label="值" min-width="140" />
+              <DataColumn prop="ttl" label="TTL" width="60" />
+            </DataTable>
           </div>
         </div>
 
@@ -202,21 +205,21 @@ const isSameResult = (a: any[], b: any[]): boolean => {
 
         <!-- 批量明细表格 -->
         <div v-if="batchDetails.length" class="batch-table-wrap">
-          <el-table :data="batchDetails" stripe border size="small" style="width: 100%">
-            <el-table-column prop="domain" label="域名" width="200" sortable />
-            <el-table-column prop="server" label="DNS" width="130" />
-            <el-table-column label="结果" min-width="200">
+          <DataTable :table-key="TABLE_KEYS.dnsQueryBatch" :data="batchDetails" size="small">
+            <DataColumn prop="domain" label="域名" width="200" sortable />
+            <DataColumn prop="server" label="DNS" width="130" />
+            <DataColumn label="结果" min-width="200">
               <template #default="{ row }">
                 <template v-if="row.records.length">
                   <el-tag v-for="r in row.records" :key="r.value" size="small" style="margin: 2px;">{{ r.value }}</el-tag>
                 </template>
                 <span v-else style="color: var(--el-text-color-placeholder);">{{ row.error || '-' }}</span>
               </template>
-            </el-table-column>
-            <el-table-column prop="time" label="耗时" width="80" sortable>
+            </DataColumn>
+            <DataColumn prop="time" label="耗时" width="80" sortable>
               <template #default="{ row }">{{ row.time }}ms</template>
-            </el-table-column>
-          </el-table>
+            </DataColumn>
+          </DataTable>
         </div>
       </template>
 

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import api from '@/api/index'
 
 import type {
@@ -355,55 +358,55 @@ onMounted(() => {
           </span>
         </div>
 
-        <el-table :data="rows" size="small" :row-key="rowKey" class="asset-table" border>
-          <el-table-column prop="wideip" label="域名" width="240" fixed show-overflow-tooltip>
+        <DataTable :table-key="TABLE_KEYS.internetAsset" :data="rows" size="small" :row-key="rowKey" class="asset-table">
+          <DataColumn prop="wideip" label="域名" width="240" fixed show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono strong">{{ row.wideip || '-' }}</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column label="LLB_VS地址#端口" width="200">
+          <DataColumn label="LLB_VS地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.llbTarget" class="mono">{{ row.llbTarget }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column prop="llbRules" label="LLB_Rule规则" width="200" show-overflow-tooltip>
+          <DataColumn prop="llbRules" label="LLB_Rule规则" width="200" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.llbRules" class="mono">{{ row.llbRules }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column label="SLB_VS地址#端口" width="200">
+          <DataColumn label="SLB_VS地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.slbTarget" class="mono">{{ row.slbTarget }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column prop="slbRules" label="SLB_Rule规则" width="200" show-overflow-tooltip>
+          <DataColumn prop="slbRules" label="SLB_Rule规则" width="200" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.slbRules" class="mono">{{ row.slbRules }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column label="服务器地址#端口" width="200">
+          <DataColumn label="服务器地址#端口" width="200">
             <template #default="{ row }">
               <span v-if="row.serverTarget" class="mono">{{ row.serverTarget }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
+          </DataColumn>
 
-          <el-table-column prop="owner" label="负责人" width="120">
+          <DataColumn prop="owner" label="负责人" width="120">
             <template #default="{ row }">
               <span v-if="row.owner">{{ row.owner }}</span>
               <span v-else class="muted">-</span>
             </template>
-          </el-table-column>
-        </el-table>
+          </DataColumn>
+        </DataTable>
       </template>
 
       <el-empty v-else description="暂无分析结果，请点击「立即分析」" />

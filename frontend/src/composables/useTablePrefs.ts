@@ -1,8 +1,9 @@
 import { ref, computed } from 'vue'
 import { getPreferences, savePreference } from '@/api/preferences'
 import { getToken } from '@/utils/token'
+import { TABLE_KEY_RENAMES } from '@/constants/tableKeys'
 
-import type { DraggableColumn, TableColumnWidths, UserPreferences } from '@/types'
+import type { DraggableColumn, TableColumnWidths, TableKey, UserPreferences } from '@/types'
 
 /**
  * 用户前端偏好的模块级缓存：整个会话只在首次用到时拉一次，
@@ -43,11 +44,27 @@ const flushPreference = (prefKey: string) => {
   })
 }
 
-export const useTablePrefs = (tableKey: string) => {
-  const prefKey = `table:${tableKey}:column-widths`
+/** tableKey → 偏好键（`table:<key>:column-widths`） */
+const prefKeyOf = (tableKey: string) => `table:${tableKey}:column-widths`
+
+/**
+ * @param tableKey 只接受注册表里的 key（`TABLE_KEYS.xxx`），拼错/未注册编译期即报错——
+ *   后端不解析 key，撞名或写错的后果只能由前端在这里挡住
+ */
+export const useTablePrefs = (tableKey: TableKey) => {
+  const prefKey = prefKeyOf(tableKey)
   ensureLoaded()
 
-  const widths = computed(() => (preferences.value[prefKey] ?? {}) as TableColumnWidths)
+  // key 改名回退：新键还没数据时读旧键（TABLE_KEY_RENAMES 登记过 旧→新 才生效）；
+  // 一旦拖动任意一列，写回的就是新键 = 整份宽度完成迁移
+  const legacyKey = Object.keys(TABLE_KEY_RENAMES).find((old) => TABLE_KEY_RENAMES[old] === tableKey)
+
+  const widths = computed(() => {
+    const current = preferences.value[prefKey]
+    if (current) return current as TableColumnWidths
+    if (legacyKey) return (preferences.value[prefKeyOf(legacyKey)] ?? {}) as TableColumnWidths
+    return {}
+  })
 
   /** 取某列保存的宽度；没有保存过就回退到页面默认宽度（或 undefined，走 min-width） */
   const widthFor = (columnKey: string, fallback?: number | string) => widths.value[columnKey] ?? fallback

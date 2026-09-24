@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -59,17 +61,17 @@ onMounted(() => {
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="Wide IP" name="wideip">
         <div class="table-wrapper">
-          <DataTable :data="wideips" :loading="wideipLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="域名" width="220" sortable />
-            <el-table-column prop="rtype" label="记录类型" width="100" />
-            <el-table-column prop="lb_mode" label="负载模式" width="120" />
-            <el-table-column prop="pools" label="关联池" min-width="200">
+          <DataTable :table-key="TABLE_KEYS.gslbWideips" :data="wideips" :loading="wideipLoading" size="small">
+            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
+            <DataColumn prop="name" label="域名" width="220" sortable />
+            <DataColumn prop="rtype" label="记录类型" width="100" />
+            <DataColumn prop="lb_mode" label="负载模式" width="120" />
+            <DataColumn prop="pools" label="关联池" min-width="200">
               <template #default="{ row }">
                 <el-tag v-for="p in (row.pools || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
                 <span v-if="!row.pools?.length" style="color: #c0c4cc">-</span>
               </template>
-            </el-table-column>
+            </DataColumn>
           </DataTable>
         </div>
         <DataPagination
@@ -81,14 +83,14 @@ onMounted(() => {
       </el-tab-pane>
       <el-tab-pane label="Pool" name="pool">
         <div class="table-wrapper">
-          <DataTable :data="pools" :loading="poolLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="名称" width="180" sortable />
-            <el-table-column prop="lb_mode" label="负载模式" width="120" />
-            <el-table-column prop="alternate_mode" label="备选模式" width="120" />
-            <el-table-column prop="fallback_mode" label="回退模式" width="120" />
-            <el-table-column prop="fallback_ip" label="回退IP" width="140" />
-            <el-table-column prop="ttl" label="TTL" width="70" />
+          <DataTable :table-key="TABLE_KEYS.gslbPools" :data="pools" :loading="poolLoading" size="small">
+            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
+            <DataColumn prop="name" label="名称" width="180" sortable />
+            <DataColumn prop="lb_mode" label="负载模式" width="120" />
+            <DataColumn prop="alternate_mode" label="备选模式" width="120" />
+            <DataColumn prop="fallback_mode" label="回退模式" width="120" />
+            <DataColumn prop="fallback_ip" label="回退IP" width="140" />
+            <DataColumn prop="ttl" label="TTL" width="70" />
           </DataTable>
         </div>
         <DataPagination

@@ -64,7 +64,7 @@ network_ops/
 │   └── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
-│   └── src/{api,assets,components,composables,layout,router,stores,types,utils,views}
+│   └── src/{api,assets,components,composables,constants,layout,router,stores,types,utils,views}
 ├── nginx/               # 反向代理（静态直出 + API 代理）
 │   ├── conf.d/          # netops.conf(80)、netops-ssl.conf.disabled(443)
 │   ├── docker-entrypoint.d/  # 05-netops-resolver.sh：启动时把 runtime 的 DNS 写成 resolver.conf
@@ -206,6 +206,8 @@ uv run ruff format
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
 - **前端数据类型集中管理**：所有具名 `interface` / `type` / `enum` 定义在 `frontend/src/types/`（按域分文件 + `index.ts` barrel `export *` 聚合），引用一律 `import type { ... } from '@/types'`——业务文件（`.ts` / `.vue`）不落具名类型定义，也**不做类型中转导出**；例外只有匿名内联参数类型与第三方库类型转发（`useG6.ts` 的 `GraphData`）。barrel 同名不同结构必须**语义化改名**（`GslbDeviceOption` 先例，勿用 `Xxx_` 下划线避让）；`types/index.ts` 用 `.ts` 不是 `.d.ts`（`.d.ts` 只留给 auto-imports / components / vite-env 这类工具生成与环境声明）。自检（应只剩 useG6 的 GraphData 转发一行）：
   `grep -rnE "^(export )?(interface|type|enum) " frontend/src --include=*.ts --include=*.vue | grep -v "^src/types/"`。细节与三个实测坑：技能 `frontend-types`。
+- **表格列宽偏好的 tableKey 只认注册表**：全部 key 集中在 `frontend/src/constants/tableKeys.ts`（`TABLE_KEYS`，命名 `<路由顶级域>.<路径余段>[.<表区分>]`，一页多表各一条、**全局唯一**），**页面不再自己调 `useTablePrefs` / `widthFor`**——只在 `<DataTable :table-key="TABLE_KEYS.xxx">` 传注册表常量，类型 `TableKey` 由注册表派生，拼错编译期即红；列宽读偏好与拖拽持久化都在 DataTable 内部完成（单实例，读写同处）。**后端 `/api/me/preferences/` 只是按用户存取的不透明 JSON KV，从不解析 key/value**，撞名/写错的防线全在前端这一处，所以不要在页面里散写字符串字面量。改 key 走同文件的 `TABLE_KEY_RENAMES`（旧→新）登记，读端自动回退旧键、用户已存宽度不丢。不传 `table-key` = 无持久化（DeviceSelector 弹窗即刻意不挂）。
+- **表格列一律用 `DataColumn`，不要在页面裸写 `el-table-column`**：`<DataColumn>`（`frontend/src/components/DataColumn.vue`）在列级封装两件事——① 列 key（`column-key > prop`）经 DataTable 下发的 context 解析偏好宽度；② **宽度档位自动选**：锚点列（`anchor` 或带 `fixed` 的列，如操作列）用固定 `width` 所拖即所得，**内容列一律走 `min-width` 参与容器富余空间的比例分配**——即「列总宽至少 100%、超出即横向滚动」，宽屏不再留白。单元格照旧用默认插槽写任意组件（el-tag / 按钮 / 进度条），不给插槽走 el-table-column 原生 `row[prop]` 文本渲染；页面想要极窄列不被拉伸时显式加 `anchor`。
 - **Ruff**：`line-length = 120`；`select = ["E","F","I","N","W"]`，忽略 `F405/F403/E402`；`known-first-party = ["assets","core","ingest"]`；`**/migrations/*` 忽略 `E501`，并通过 `[tool.ruff.format]` 排除（迁移文件不参与格式化）。
 - **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`（pyproject；不设 `DJANGO_ENV` → 默认 dev，环境机制见上文 settings 条目），`testpaths = ["tests"]`；测试统一放项目根 `tests/<应用>/`（不散落在应用目录内，应用下不留脚手架的 `tests.py`——pytest 不收集该文件名），各层带 `__init__.py`，路径形如 `tests.assets.test_analysis`。
 - **测试内的资源定位**：用包路径（`Path(ingest.__file__).parent / ...`）或 `settings.BASE_DIR`，**不要**用 `Path(__file__).parent.parent`——依赖测试文件自身位置，目录一挪就静默失效（踩过一次，测试因 `exists()` 判断长期"空跑通过"）。

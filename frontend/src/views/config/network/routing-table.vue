@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -44,18 +46,18 @@ onMounted(fetchAll)
       </FilterBar>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="routes" :loading="loading">
-        <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-        <el-table-column prop="vrf_name" label="VRF" width="100" />
-        <el-table-column prop="destination" label="目的网段" width="160" />
-        <el-table-column prop="nexthop" label="下一跳" width="140" />
-        <el-table-column prop="interface" label="出接口" width="150" />
-        <el-table-column prop="protocol" label="协议" width="90">
+      <DataTable :table-key="TABLE_KEYS.routingTable" :data="routes" :loading="loading">
+        <DataColumn prop="device_hostname" label="设备" width="140" sortable />
+        <DataColumn prop="vrf_name" label="VRF" width="100" />
+        <DataColumn prop="destination" label="目的网段" width="160" />
+        <DataColumn prop="nexthop" label="下一跳" width="140" />
+        <DataColumn prop="interface" label="出接口" width="150" />
+        <DataColumn prop="protocol" label="协议" width="90">
           <template #default="{ row }">
             <el-tag :type="protocolTagType(row.protocol)" size="small">{{ row.protocol }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="metric" label="度量值" width="80" />
+        </DataColumn>
+        <DataColumn prop="metric" label="度量值" width="80" />
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

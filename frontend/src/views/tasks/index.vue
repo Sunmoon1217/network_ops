@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -215,26 +217,26 @@ onMounted(() => {
     </template>
 
     <div class="table-wrapper">
-      <DataTable :data="tasks" :loading="loading">
-        <el-table-column prop="device_hostname" label="设备" min-width="150" show-overflow-tooltip />
-        <el-table-column label="类型" width="130">
+      <DataTable :table-key="TABLE_KEYS.taskList" :data="tasks" :loading="loading">
+        <DataColumn prop="device_hostname" label="设备" min-width="150" show-overflow-tooltip />
+        <DataColumn label="类型" width="130">
           <template #default="{ row }">{{ taskTypeLabel(row) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="110">
+        </DataColumn>
+        <DataColumn label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status) as any" size="small">{{ statusLabel(row.status, row.status_display) }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column label="进度" width="180">
+        </DataColumn>
+        <DataColumn label="进度" width="180">
           <template #default="{ row }">
             <el-progress :percentage="row.progress" :stroke-width="10" />
           </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180" />
-        <el-table-column label="完成时间" width="180">
+        </DataColumn>
+        <DataColumn prop="created_at" label="创建时间" width="180" />
+        <DataColumn label="完成时间" width="180">
           <template #default="{ row }">{{ row.completed_at || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right" align="center">
+        </DataColumn>
+        <DataColumn label="操作" width="150" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="openDetail(row.id)">详情</el-button>
             <el-button
@@ -243,7 +245,7 @@ onMounted(() => {
               @click="cancelRow(row.id)"
             >取消</el-button>
           </template>
-        </el-table-column>
+        </DataColumn>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
@@ -287,18 +289,18 @@ onMounted(() => {
 
           <div class="section-title">阶段列表</div>
           <div class="stage-wrapper">
-            <DataTable :data="detailTask.stages || []">
-              <el-table-column label="阶段" width="120">
+            <DataTable :table-key="TABLE_KEYS.taskStages" :data="detailTask.stages || []">
+              <DataColumn label="阶段" width="120">
                 <template #default="{ row }">{{ stageTypeLabel(row) }}</template>
-              </el-table-column>
-              <el-table-column label="状态" width="100">
+              </DataColumn>
+              <DataColumn label="状态" width="100">
                 <template #default="{ row }">
                   <el-tag :type="stageStatusTag(row) as any" size="small">{{ stageStatusLabel(row) }}</el-tag>
                 </template>
-              </el-table-column>
-              <el-table-column prop="started_at" label="开始时间" width="180" />
-              <el-table-column prop="completed_at" label="结束时间" width="180" />
-              <el-table-column prop="error_message" label="错误信息" min-width="160" show-overflow-tooltip />
+              </DataColumn>
+              <DataColumn prop="started_at" label="开始时间" width="180" />
+              <DataColumn prop="completed_at" label="结束时间" width="180" />
+              <DataColumn prop="error_message" label="错误信息" min-width="160" show-overflow-tooltip />
             </DataTable>
           </div>
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -72,26 +74,26 @@ onMounted(() => {
       </FilterBar>
     </template>
     <div class="table-wrapper">
-      <DataTable :data="entries" :loading="loading">
-        <el-table-column prop="device_hostname" label="设备" width="150" sortable />
-        <el-table-column prop="vlan" label="VLAN" width="100" sortable />
-        <el-table-column prop="interface" label="接口" width="200" show-overflow-tooltip />
-        <el-table-column prop="ip_address" label="IP 地址" width="150" sortable />
-        <el-table-column prop="mac_address" label="MAC 地址" width="170" sortable />
-        <el-table-column prop="vendor" label="厂商" width="120" />
-        <el-table-column prop="arp_type" label="类型" width="80">
+      <DataTable :table-key="TABLE_KEYS.arpMac" :data="entries" :loading="loading">
+        <DataColumn prop="device_hostname" label="设备" width="150" sortable />
+        <DataColumn prop="vlan" label="VLAN" width="100" sortable />
+        <DataColumn prop="interface" label="接口" width="200" show-overflow-tooltip />
+        <DataColumn prop="ip_address" label="IP 地址" width="150" sortable />
+        <DataColumn prop="mac_address" label="MAC 地址" width="170" sortable />
+        <DataColumn prop="vendor" label="厂商" width="120" />
+        <DataColumn prop="arp_type" label="类型" width="80">
           <template #default="{ row }">
             <el-tag :type="row.arp_type === 'static' ? 'primary' : 'info'" size="small">{{ row.arp_type === 'static' ? '静态' : '动态' }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="learned_at" label="学习时间" width="170" sortable>
+        </DataColumn>
+        <DataColumn prop="learned_at" label="学习时间" width="170" sortable>
           <template #default="{ row }">{{ row.learned_at || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        </DataColumn>
+        <DataColumn prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status)" size="small">{{ statusLabel[row.status] || row.status }}</el-tag>
           </template>
-        </el-table-column>
+        </DataColumn>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
