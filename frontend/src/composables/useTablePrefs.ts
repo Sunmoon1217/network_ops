@@ -3,7 +3,7 @@ import { getPreferences, savePreference } from '@/api/preferences'
 import { getToken } from '@/utils/token'
 import { TABLE_KEY_RENAMES } from '@/constants/tableKeys'
 
-import type { DraggableColumn, TableColumnWidths, TableKey, UserPreferences } from '@/types'
+import type { DraggableColumn, TableColumnLayout, TableColumnWidths, TableKey, UserPreferences } from '@/types'
 
 /**
  * 用户前端偏好的模块级缓存：整个会话只在首次用到时拉一次，
@@ -47,6 +47,9 @@ const flushPreference = (prefKey: string) => {
 /** tableKey → 偏好键（`table:<key>:column-widths`） */
 const prefKeyOf = (tableKey: string) => `table:${tableKey}:column-widths`
 
+/** tableKey → 列布局偏好键（`table:<key>:column-layout`，存 {order, hidden}） */
+const layoutKeyOf = (tableKey: string) => `table:${tableKey}:column-layout`
+
 /**
  * @param tableKey 只接受注册表里的 key（`TABLE_KEYS.xxx`），拼错/未注册编译期即报错——
  *   后端不解析 key，撞名或写错的后果只能由前端在这里挡住
@@ -82,5 +85,66 @@ export const useTablePrefs = (tableKey: TableKey) => {
     saveTimers[prefKey] = window.setTimeout(() => flushPreference(prefKey), 500)
   }
 
-  return { prefKey, widths, widthFor, onHeaderDragend, ensureLoaded }
+  // ── 列布局（列设置弹窗）：顺序与显隐，独立偏好键存取 ──────────────────────
+  const layoutPrefKey = layoutKeyOf(tableKey)
+
+  const layout = computed(() => {
+    const current = preferences.value[layoutPrefKey]
+    if (current) return current as TableColumnLayout
+    if (legacyKey) return (preferences.value[layoutKeyOf(legacyKey)] ?? {}) as TableColumnLayout
+    return {}
+  })
+
+  /** 列 key 顺序；空数组 = 默认槽序 */
+  const columnOrder = computed(() => layout.value.order ?? [])
+  /** 被隐藏的列 key 集合 */
+  const hiddenKeys = computed(() => new Set(layout.value.hidden ?? []))
+
+  const saveLayout = (patch: Partial<TableColumnLayout>) => {
+    preferences.value = {
+      ...preferences.value,
+      [layoutPrefKey]: { ...layout.value, ...patch },
+    }
+    window.clearTimeout(saveTimers[layoutPrefKey])
+    saveTimers[layoutPrefKey] = window.setTimeout(() => flushPreference(layoutPrefKey), 500)
+  }
+
+  /** 上/下移一列（order 里没有的 key 先按当前有效序展开再移动） */
+  const moveColumn = (key: string, delta: -1 | 1) => {
+    const effective = [...new Set([...columnOrder.value, key])]
+    const from = effective.indexOf(key)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= effective.length) return
+    ;[effective[from], effective[to]] = [effective[to], effective[from]]
+    saveLayout({ order: effective })
+  }
+
+  /** 切换列显隐 */
+  const toggleColumn = (key: string) => {
+    const hidden = new Set(layout.value.hidden ?? [])
+    if (hidden.has(key)) hidden.delete(key)
+    else hidden.add(key)
+    saveLayout({ hidden: [...hidden] })
+  }
+
+  /** 恢复默认布局（删偏好条目，value=null 即删） */
+  const resetColumnLayout = () => {
+    const next = { ...preferences.value }
+    delete next[layoutPrefKey]
+    preferences.value = next
+    if (getToken()) savePreference({ key: layoutPrefKey, value: null }).catch(() => {})
+  }
+
+  return {
+    prefKey,
+    widths,
+    widthFor,
+    onHeaderDragend,
+    ensureLoaded,
+    columnOrder,
+    hiddenKeys,
+    moveColumn,
+    toggleColumn,
+    resetColumnLayout,
+  }
 }
