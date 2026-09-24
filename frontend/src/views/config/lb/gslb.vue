@@ -112,6 +112,28 @@ const buildTree = (r: GtmChainRow): LbTreeRow => ({
 
 const treeRows = computed(() => rows.value.map(buildTree))
 
+/** 视图模式：树形（分级展开）⇄ 扁平（所有节点同级一行），列与 hover 字段两模式完全一致 */
+const viewMode = ref<'tree' | 'flat'>('tree')
+const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
+
+/**
+ * 扁平行 = 深度优先拉平（WideIP / 池 / 成员各占一行，去掉缩进层级）。
+ * 拉平后行会失去树的缩进上下文，所以补两样：子行继承所属设备、
+ * hover 首行加「链路」指明它属于哪个域名 → 哪个池。
+ */
+const flattenRows = computed(() =>
+  treeRows.value.flatMap((w: LbTreeRow) => {
+    const out: LbTreeRow[] = [{ ...w }]
+    for (const p of w.children ?? []) {
+      out.push({ ...p, device: w.device, tipLines: [`链路：${w.label}`, ...p.tipLines] })
+      for (const m of p.children ?? []) {
+        out.push({ ...m, device: w.device, tipLines: [`链路：${w.label} → ${p.label}`, ...m.tipLines] })
+      }
+    }
+    return out
+  }),
+)
+
 watch(filterDevice, resetAndFetch)
 watch(filterRtype, resetAndFetch)
 watch(filterMonitor, resetAndFetch)
@@ -138,16 +160,20 @@ onMounted(() => {
           <el-option v-for="m in monitorOptions" :key="m" :label="m" :value="m" />
         </el-select>
       </FilterBar>
+      <el-button size="small" @click="toggleView">
+        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+      </el-button>
     </template>
     <div class="table-wrapper">
-      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
+           扁平模式 tree-props 传 undefined 即关闭层级，行数据与列完全不变 -->
       <DataTable
         :table-key="TABLE_KEYS.gslbWideips"
-        :data="treeRows"
+        :data="viewMode === 'tree' ? treeRows : flattenRows"
         :loading="loading"
         row-key="id"
-        :tree-props="{ children: 'children' }"
-        default-expand-all
+        :tree-props="viewMode === 'tree' ? { children: 'children' } : undefined"
+        :default-expand-all="viewMode === 'tree'"
         size="small"
       >
         <!-- 名称列 = 树首列：主显示域名/池名/成员地址，name 字段收进 hover -->

@@ -75,6 +75,33 @@ const buildTree = (r: LtmChainRow): LbTreeRow => ({
 
 const treeRows = computed(() => rows.value.map(buildTree))
 
+/** 视图模式：树形（分级展开）⇄ 扁平（所有节点同级一行），列与 hover 字段两模式完全一致 */
+const viewMode = ref<'tree' | 'flat'>('tree')
+const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
+
+/**
+ * 扁平行 = 深度优先拉平（VS / 池 / 成员各占一行，去掉缩进层级）。
+ * 拉平后行会失去树的缩进上下文，所以补三样：子行继承所属设备、
+ * 成员行的「关联池」列填父池名（列语义吻合）、hover 首行加「链路」指明归属。
+ */
+const flattenRows = computed(() =>
+  treeRows.value.flatMap((vs: LbTreeRow) => {
+    const out: LbTreeRow[] = [{ ...vs }]
+    for (const pool of vs.children ?? []) {
+      out.push({ ...pool, device: vs.device, tipLines: [`链路：${vs.label}`, ...pool.tipLines] })
+      for (const m of pool.children ?? []) {
+        out.push({
+          ...m,
+          device: vs.device,
+          poolName: pool.label,
+          tipLines: [`链路：${vs.label} → ${pool.label}`, ...m.tipLines],
+        })
+      }
+    }
+    return out
+  }),
+)
+
 watch(filterDevice, resetAndFetch)
 onMounted(loadRows)
 </script>
@@ -89,16 +116,20 @@ onMounted(loadRows)
         search-placeholder="搜索 名称/地址/地址:端口/池/成员IP:端口"
         search-width="220px"
       />
+      <el-button size="small" @click="toggleView">
+        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+      </el-button>
     </template>
     <div class="table-wrapper">
-      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
+           扁平模式 tree-props 传 undefined 即关闭层级，行数据与列完全不变 -->
       <DataTable
         :table-key="TABLE_KEYS.slbVirtualServers"
-        :data="treeRows"
+        :data="viewMode === 'tree' ? treeRows : flattenRows"
         :loading="loading"
         row-key="id"
-        :tree-props="{ children: 'children' }"
-        default-expand-all
+        :tree-props="viewMode === 'tree' ? { children: 'children' } : undefined"
+        :default-expand-all="viewMode === 'tree'"
         size="small"
       >
         <!-- 名称列 = 树首列：主显示地址#端口，VS/池/成员的 name 收进 hover -->
@@ -119,7 +150,7 @@ onMounted(loadRows)
             <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
           </template>
         </DataColumn>
-        <!-- 以下六列只有一级 VS 行有值：池/成员行留空，层级聚焦在 VS 自身的配置上 -->
+        <!-- 以下六列：VS 行填自身配置；扁平模式下成员行的关联池由 flattenRows 补父池名 -->
         <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
         <DataColumn prop="protocol" label="协议" min-width="70" />
         <DataColumn prop="poolName" label="关联池" min-width="140" />
