@@ -267,11 +267,6 @@ onMounted(() => {
               <span v-else>{{ row.label }}</span>
             </template>
           </DataColumn>
-          <DataColumn label="类型" column-key="kind" min-width="80">
-            <template #default="{ row }">
-              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
-            </template>
-          </DataColumn>
           <DataColumn prop="device" label="设备" min-width="120" />
           <DataColumn prop="domain" label="域名" min-width="170" show-overflow-tooltip />
           <DataColumn prop="rtype" label="记录类型" min-width="85" />
