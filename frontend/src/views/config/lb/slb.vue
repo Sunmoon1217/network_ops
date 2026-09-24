@@ -162,6 +162,12 @@ onMounted(loadRows)
 <template>
   <PageLayout title="负载均衡管理">
     <template #actions>
+      <el-button v-if="viewMode === 'flat'" size="small" :loading="exportLoading" @click="handleExport">
+        导出
+      </el-button>
+      <el-button size="small" @click="toggleView">
+        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+      </el-button>
       <FilterBar
         v-model:device="filterDevice"
         v-model:search="search"
@@ -169,12 +175,6 @@ onMounted(loadRows)
         search-placeholder="搜索 名称/地址/地址:端口/池/成员IP:端口"
         search-width="220px"
       />
-      <el-button size="small" @click="toggleView">
-        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
-      </el-button>
-      <el-button v-if="viewMode === 'flat'" size="small" :loading="exportLoading" @click="handleExport">
-        导出
-      </el-button>
     </template>
     <div class="table-wrapper">
       <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
