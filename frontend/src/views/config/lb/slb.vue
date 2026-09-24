@@ -7,7 +7,7 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getLtmChain } from '@/api/config'
-import type { LbTreeRow, LtmChainPool, LtmChainRow } from '@/types'
+import type { LbTreeRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 
@@ -75,48 +75,63 @@ const buildTree = (r: LtmChainRow): LbTreeRow => ({
 
 const treeRows = computed(() => rows.value.map(buildTree))
 
-/** 视图模式：树形（分级展开）⇄ 扁平（所有节点同级一行），列与 hover 字段两模式完全一致 */
+/** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
 const viewMode = ref<'tree' | 'flat'>('tree')
 const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
 
 /**
- * 扁平行 = 深度优先拉平（VS / 池 / 成员各占一行，去掉缩进层级）。
- *
- * **必须剥掉 children**：el-table 的 treeProps 默认值是 {children:'children'}——
- * 曾用「tree-props 传 undefined 关层级」的写法，Vue 会跳过 undefined 属性、
- * el-table 回落到默认值，扁平父行带着 children 就又被渲染成树
- * （箭头残留 + 子行重复展开）。数据里没有 children 才是真正的平铺。
- *
- * 拉平后行会失去树的缩进上下文，所以补三样：子行继承所属设备、
- * 成员行的「关联池」列填父池名（列语义吻合）、hover 首行加「链路」指明归属。
+ * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
+ * 有成员则每成员一行（VS + 池字段整条下填），池无成员则以池为行，
+ * 无池则以 VS 为行；配合专属宽表列（SNAT/池模式/池监控…）融合成一张大表。
  */
-const stripChildren = (row: LbTreeRow): LbTreeRow => {
-  const copy = { ...row }
-  delete copy.children
-  return copy
-}
-
-const flattenRows = computed(() =>
-  treeRows.value.flatMap((vs: LbTreeRow) => {
-    const out: LbTreeRow[] = [stripChildren(vs)]
-    for (const pool of vs.children ?? []) {
-      out.push({
-        ...stripChildren(pool),
-        device: vs.device,
-        tipLines: [`链路：${vs.label}`, ...pool.tipLines],
-      })
-      for (const m of pool.children ?? []) {
-        out.push({
-          ...m,
-          device: vs.device,
-          poolName: pool.label,
-          tipLines: [`链路：${vs.label} → ${pool.label}`, ...m.tipLines],
-        })
-      }
+const flatRows = computed(() => {
+  const out: LtmFlatRow[] = []
+  for (const r of rows.value) {
+    const vsLabel = r.vs_address ? addrPort(r.vs_address, r.vs_port) : r.name
+    const base = {
+      device: r.device_hostname,
+      vsLabel,
+      vsName: r.name,
+      protocol: r.protocol || '-',
+      snat: r.snat_type || '-',
+      persist: r.persist || '-',
+      profiles: r.profiles || [],
+      rules: r.rules || [],
+      poolName: r.pool?.name || '-',
+      poolMode: r.pool?.mode || '-',
+      poolMonitors: r.pool?.monitors?.length ? r.pool.monitors.join('、') : '-',
     }
-    return out
-  }),
-)
+    const prefix = `flat-vs-${r.device}-${r.name}`
+    if (r.pool && r.members.length) {
+      r.members.forEach((m: LtmChainRow['members'][number], idx: number) =>
+        out.push({
+          ...base,
+          id: `${prefix}-m${idx}`,
+          kind: 'member',
+          label: m.address ? addrPort(m.address, m.port) : m.name,
+          tipLines: [m.name, `链路：${vsLabel} → ${r.pool!.name}`],
+        }),
+      )
+    } else if (r.pool) {
+      out.push({
+        ...base,
+        id: `${prefix}-p`,
+        kind: 'pool',
+        label: r.pool.name,
+        tipLines: [`链路：${vsLabel}（池无成员，以池为行）`],
+      })
+    } else {
+      out.push({
+        ...base,
+        id: `${prefix}-v`,
+        kind: 'vs',
+        label: vsLabel,
+        tipLines: [r.snat_type ? `SNAT：${r.snat_type}` : ''].filter(Boolean),
+      })
+    }
+  }
+  return out
+})
 
 watch(filterDevice, resetAndFetch)
 onMounted(loadRows)
@@ -138,49 +153,89 @@ onMounted(loadRows)
     </template>
     <div class="table-wrapper">
       <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
-           扁平模式的行已剥掉 children（见 flattenRows），el-table 视其为叶子即自然平铺 -->
+           扁平行没有 children（join 展开行），el-table 视其为叶子即自然平铺 -->
       <DataTable
         :table-key="TABLE_KEYS.slbVirtualServers"
-        :data="viewMode === 'tree' ? treeRows : flattenRows"
+        :data="viewMode === 'tree' ? treeRows : flatRows"
         :loading="loading"
         row-key="id"
         :tree-props="{ children: 'children' }"
         default-expand-all
         size="small"
       >
-        <!-- 名称列 = 树首列：主显示地址#端口，VS/池/成员的 name 收进 hover -->
-        <DataColumn prop="label" label="名称" min-width="240">
-          <template #default="{ row }">
-            <el-tooltip v-if="row.tipLines?.length" placement="top">
-              <template #content>
-                <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
-              </template>
-              <span>{{ row.label }}</span>
-            </el-tooltip>
-            <span v-else>{{ row.label }}</span>
-          </template>
-        </DataColumn>
-        <DataColumn prop="device" label="设备" min-width="130" />
-        <DataColumn label="类型" column-key="kind" min-width="90">
-          <template #default="{ row }">
-            <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
-          </template>
-        </DataColumn>
-        <!-- 以下六列：VS 行填自身配置；扁平模式下成员行的关联池由 flattenRows 补父池名 -->
-        <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
-        <DataColumn prop="protocol" label="协议" min-width="70" />
-        <DataColumn prop="poolName" label="关联池" min-width="140" />
-        <DataColumn label="Profile" column-key="profiles" min-width="150">
-          <template #default="{ row }">
-            <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
-          </template>
-        </DataColumn>
-        <DataColumn prop="persist" label="会话保持" min-width="100" />
-        <DataColumn label="iRule" column-key="rules" min-width="150">
-          <template #default="{ row }">
-            <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
-          </template>
-        </DataColumn>
+        <!-- 树形列组：分级展示，VS/池/成员的 name 收进 hover -->
+        <template v-if="viewMode === 'tree'">
+          <DataColumn prop="label" label="名称" min-width="240">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="device" label="设备" min-width="130" />
+          <DataColumn label="类型" column-key="kind" min-width="90">
+            <template #default="{ row }">
+              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+            </template>
+          </DataColumn>
+          <!-- 以下六列：VS 行填自身配置；池/成员行留空，层级聚焦在 VS 自身的配置上 -->
+          <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="protocol" label="协议" min-width="70" />
+          <DataColumn prop="poolName" label="关联池" min-width="140" />
+          <DataColumn label="Profile" column-key="profiles" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="persist" label="会话保持" min-width="100" />
+          <DataColumn label="iRule" column-key="rules" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
+            </template>
+          </DataColumn>
+        </template>
+        <!-- 扁平宽表列组：以叶子为行、VS/池字段整条下填；SNAT/池负载模式/池监控一并上列 -->
+        <template v-else>
+          <DataColumn label="名称" column-key="label" min-width="220">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn label="类型" column-key="kind" min-width="90">
+            <template #default="{ row }">
+              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+            </template>
+          </DataColumn>
+          <DataColumn prop="device" label="设备" min-width="120" />
+          <DataColumn prop="vsLabel" label="VS地址#端口" min-width="150" show-overflow-tooltip />
+          <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="protocol" label="协议" min-width="70" />
+          <DataColumn prop="snat" label="SNAT" min-width="90" />
+          <DataColumn prop="persist" label="会话保持" min-width="95" />
+          <DataColumn label="Profile" column-key="profiles" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn label="iRule" column-key="rules" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="poolName" label="关联池" min-width="130" />
+          <DataColumn prop="poolMode" label="池负载模式" min-width="110" />
+          <DataColumn prop="poolMonitors" label="池监控" min-width="140" />
+        </template>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

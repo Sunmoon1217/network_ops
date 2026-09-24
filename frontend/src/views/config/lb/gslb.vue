@@ -7,7 +7,7 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getGtmChain, getGtmChainFacets } from '@/api/config'
-import type { GtmChainPool, GtmChainRow, LbTreeRow } from '@/types'
+import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbTreeRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
@@ -112,43 +112,69 @@ const buildTree = (r: GtmChainRow): LbTreeRow => ({
 
 const treeRows = computed(() => rows.value.map(buildTree))
 
-/** 视图模式：树形（分级展开）⇄ 扁平（所有节点同级一行），列与 hover 字段两模式完全一致 */
+/** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
 const viewMode = ref<'tree' | 'flat'>('tree')
 const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
 
 /**
- * 扁平行 = 深度优先拉平（WideIP / 池 / 成员各占一行，去掉缩进层级）。
- *
- * **必须剥掉 children**：el-table 的 treeProps 默认值是 {children:'children'}——
- * 曾用「tree-props 传 undefined 关层级」的写法，Vue 会跳过 undefined 属性、
- * el-table 回落到默认值，扁平父行带着 children 就又被渲染成树
- * （箭头残留 + 子行重复展开）。数据里没有 children 才是真正的平铺。
- *
- * 拉平后行会失去树的缩进上下文，所以补两样：子行继承所属设备、
- * hover 首行加「链路」指明它属于哪个域名 → 哪个池。
+ * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
+ * 有成员则每成员一行（wideip + 池字段整条下填），池无成员则以池为行，
+ * 无池则以 WideIP 为行；配合专属宽表列（TTL/池监控/成员监控…）融合成一张大表。
  */
-const stripChildren = (row: LbTreeRow): LbTreeRow => {
-  const copy = { ...row }
-  delete copy.children
-  return copy
-}
-
-const flattenRows = computed(() =>
-  treeRows.value.flatMap((w: LbTreeRow) => {
-    const out: LbTreeRow[] = [stripChildren(w)]
-    for (const p of w.children ?? []) {
-      out.push({
-        ...stripChildren(p),
-        device: w.device,
-        tipLines: [`链路：${w.label}`, ...p.tipLines],
-      })
-      for (const m of p.children ?? []) {
-        out.push({ ...m, device: w.device, tipLines: [`链路：${w.label} → ${p.label}`, ...m.tipLines] })
-      }
+const flatRows = computed(() => {
+  const out: GtmFlatRow[] = []
+  for (const w of rows.value) {
+    const wide = { device: w.device_hostname, domain: w.name, rtype: w.rtype || '-', wideAlgo: w.lb_mode || '-' }
+    const emptyPool = { poolName: '-', poolAlgo: '-', fallback: '-', ttl: '-', poolMonitor: '-' }
+    const emptyMember = { order: '', ratio: '', memberMonitor: '', datacenter: '' }
+    const prefix = `flat-w-${w.device}-${w.name}`
+    if (!w.pools.length) {
+      out.push({ ...wide, ...emptyPool, ...emptyMember, id: prefix, kind: 'wideip', label: w.name, tipLines: [] })
+      continue
     }
-    return out
-  }),
-)
+    for (const p of w.pools) {
+      const pool = {
+        poolName: p.name,
+        poolAlgo: [p.lb_mode, p.alternate_mode].filter(Boolean).join(' / ') || '-',
+        fallback: [p.fallback_mode, p.fallback_ip ? `（${p.fallback_ip}）` : ''].filter(Boolean).join('') || '-',
+        ttl: p.ttl != null ? String(p.ttl) : '-',
+        poolMonitor: p.monitor?.length ? p.monitor.join('、') : '-',
+      }
+      if (!p.members.length) {
+        out.push({
+          ...wide,
+          ...pool,
+          ...emptyMember,
+          id: `${prefix}-${p.name}-p`,
+          kind: 'pool',
+          label: p.name,
+          tipLines: [`链路：${w.name}（池无成员，以池为行）`],
+        })
+        continue
+      }
+      p.members.forEach((m: GtmChainPool['members'][number], idx: number) =>
+        out.push({
+          ...wide,
+          ...pool,
+          ...emptyMember,
+          id: `${prefix}-${p.name}-m${idx}`,
+          kind: 'member',
+          // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
+          label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
+          tipLines: [`${m.server} / ${m.vserver}`, `链路：${w.name} → ${p.name}`, m.found ? '' : '未找到虚拟服务器'].filter(
+            Boolean,
+          ),
+          order: m.order != null ? String(m.order) : '',
+          ratio: m.ratio != null ? String(m.ratio) : '',
+          memberMonitor: m.monitor || '',
+          datacenter: m.datacenter || '',
+          state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+        }),
+      )
+    }
+  }
+  return out
+})
 
 watch(filterDevice, resetAndFetch)
 watch(filterRtype, resetAndFetch)
@@ -182,50 +208,92 @@ onMounted(() => {
     </template>
     <div class="table-wrapper">
       <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
-           扁平模式的行已剥掉 children（见 flattenRows），el-table 视其为叶子即自然平铺 -->
+           扁平行没有 children（join 展开行），el-table 视其为叶子即自然平铺 -->
       <DataTable
         :table-key="TABLE_KEYS.gslbWideips"
-        :data="viewMode === 'tree' ? treeRows : flattenRows"
+        :data="viewMode === 'tree' ? treeRows : flatRows"
         :loading="loading"
         row-key="id"
         :tree-props="{ children: 'children' }"
         default-expand-all
         size="small"
       >
-        <!-- 名称列 = 树首列：主显示域名/池名/成员地址，name 字段收进 hover -->
-        <DataColumn prop="label" label="域名 / 名称" min-width="240">
-          <template #default="{ row }">
-            <el-tooltip v-if="row.tipLines?.length" placement="top">
-              <template #content>
-                <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
-              </template>
-              <span>{{ row.label }}</span>
-            </el-tooltip>
-            <span v-else>{{ row.label }}</span>
-          </template>
-        </DataColumn>
-        <DataColumn prop="device" label="设备" min-width="130" />
-        <DataColumn label="类型" column-key="kind" min-width="100">
-          <template #default="{ row }">
-            <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
-          </template>
-        </DataColumn>
-        <DataColumn prop="rtype" label="记录类型" min-width="90" />
-        <!-- 一级显示自身 lb_mode，二级显示 池 lb_mode / alternate_mode -->
-        <DataColumn prop="mode" label="负载算法" min-width="150" />
-        <DataColumn prop="fallback" label="fallback" min-width="160" />
-        <DataColumn prop="monitor" label="监控" min-width="130" />
-        <DataColumn prop="order" label="Order" min-width="90" />
-        <DataColumn prop="ratio" label="Ratio" min-width="90" />
-        <DataColumn prop="datacenter" label="数据中心" min-width="110" />
-        <DataColumn label="状态" column-key="state" min-width="90">
-          <template #default="{ row }">
-            <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
-            <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
-            <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
-            <span v-else class="muted">-</span>
-          </template>
-        </DataColumn>
+        <!-- 树形列组：分级展示，主显示域名/池名/成员地址，name 字段收进 hover -->
+        <template v-if="viewMode === 'tree'">
+          <DataColumn prop="label" label="域名 / 名称" min-width="240">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="device" label="设备" min-width="130" />
+          <DataColumn label="类型" column-key="kind" min-width="100">
+            <template #default="{ row }">
+              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+            </template>
+          </DataColumn>
+          <DataColumn prop="rtype" label="记录类型" min-width="90" />
+          <!-- 一级显示自身 lb_mode，二级显示 池 lb_mode / alternate_mode -->
+          <DataColumn prop="mode" label="负载算法" min-width="150" />
+          <DataColumn prop="fallback" label="fallback" min-width="160" />
+          <DataColumn prop="monitor" label="监控" min-width="130" />
+          <DataColumn prop="order" label="Order" min-width="90" />
+          <DataColumn prop="ratio" label="Ratio" min-width="90" />
+          <DataColumn prop="datacenter" label="数据中心" min-width="110" />
+          <DataColumn label="状态" column-key="state" min-width="90">
+            <template #default="{ row }">
+              <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
+              <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
+              <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
+              <span v-else class="muted">-</span>
+            </template>
+          </DataColumn>
+        </template>
+        <!-- 扁平宽表列组：以叶子为行、wideip/池字段整条下填；TTL/池监控/成员监控一并上列 -->
+        <template v-else>
+          <DataColumn label="名称" column-key="label" min-width="200">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn label="类型" column-key="kind" min-width="80">
+            <template #default="{ row }">
+              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+            </template>
+          </DataColumn>
+          <DataColumn prop="device" label="设备" min-width="120" />
+          <DataColumn prop="domain" label="域名" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="rtype" label="记录类型" min-width="85" />
+          <DataColumn prop="wideAlgo" label="WideIP算法" min-width="110" />
+          <DataColumn prop="poolName" label="池名" min-width="130" />
+          <DataColumn prop="poolAlgo" label="池算法" min-width="150" />
+          <DataColumn prop="fallback" label="fallback" min-width="160" />
+          <DataColumn prop="ttl" label="TTL" min-width="70" />
+          <DataColumn prop="poolMonitor" label="池监控" min-width="130" />
+          <DataColumn prop="order" label="Order" min-width="85" />
+          <DataColumn prop="ratio" label="Ratio" min-width="85" />
+          <DataColumn prop="memberMonitor" label="成员监控" min-width="110" />
+          <DataColumn prop="datacenter" label="数据中心" min-width="105" />
+          <DataColumn label="状态" column-key="state" min-width="85">
+            <template #default="{ row }">
+              <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
+              <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
+              <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
+              <span v-else class="muted">-</span>
+            </template>
+          </DataColumn>
+        </template>
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
