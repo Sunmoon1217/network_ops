@@ -125,7 +125,15 @@ const flatRows = computed(() => {
   const out: GtmFlatRow[] = []
   for (const w of rows.value) {
     const wide = { device: w.device_hostname, domain: w.name, rtype: w.rtype || '-', wideAlgo: w.lb_mode || '-' }
-    const emptyPool = { poolName: '-', poolAlgo: '-', fallback: '-', ttl: '-', poolMonitor: '-' }
+    const emptyPool = {
+      poolName: '-',
+      poolAlgo: '-',
+      fallback: '-',
+      ttl: '-',
+      poolMonitor: '-',
+      poolOrder: '-',
+      poolRatio: '-',
+    }
     const emptyMember = { order: '', ratio: '', memberMonitor: '', datacenter: '' }
     const prefix = `flat-w-${w.device}-${w.name}`
     if (!w.pools.length) {
@@ -139,6 +147,9 @@ const flatRows = computed(() => {
         fallback: [p.fallback_mode, p.fallback_ip ? `（${p.fallback_ip}）` : ''].filter(Boolean).join('') || '-',
         ttl: p.ttl != null ? String(p.ttl) : '-',
         poolMonitor: p.monitor?.length ? p.monitor.join('、') : '-',
+        // 池级权重 = 池内成员取值集合去重（与树形二级池行同义），成员行也带上下文
+        poolOrder: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.order)) || '-',
+        poolRatio: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.ratio)) || '-',
       }
       if (!p.members.length) {
         out.push({
@@ -276,8 +287,10 @@ onMounted(() => {
           <DataColumn prop="fallback" label="fallback" min-width="160" />
           <DataColumn prop="ttl" label="TTL" min-width="70" />
           <DataColumn prop="poolMonitor" label="池监控" min-width="130" />
-          <DataColumn prop="order" label="Order" min-width="85" />
-          <DataColumn prop="ratio" label="Ratio" min-width="85" />
+          <DataColumn prop="poolOrder" label="池Order" min-width="95" />
+          <DataColumn prop="poolRatio" label="池Ratio" min-width="95" />
+          <DataColumn prop="order" label="成员Order" min-width="95" />
+          <DataColumn prop="ratio" label="成员Ratio" min-width="95" />
           <DataColumn prop="memberMonitor" label="成员监控" min-width="110" />
           <DataColumn prop="datacenter" label="数据中心" min-width="105" />
           <DataColumn label="状态" column-key="state" min-width="85">

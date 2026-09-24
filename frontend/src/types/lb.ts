@@ -114,6 +114,9 @@ export interface GtmFlatRow {
   fallback: string
   ttl: string
   poolMonitor: string
+  /** 池级调度权重 = 池内成员取值集合去重（与树形二级池行同义），与成员自身值分列 */
+  poolOrder: string
+  poolRatio: string
   /** 成员段（回退行为空串/ '-'） */
   order: string
   ratio: string
