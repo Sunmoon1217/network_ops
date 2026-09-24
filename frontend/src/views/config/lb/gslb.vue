@@ -228,14 +228,13 @@ onMounted(() => {
         v-if="viewMode === 'flat'"
         type="success"
         plain
-        size="small"
         :loading="exportLoading"
         @click="handleExport"
       >
         <el-icon v-if="!exportLoading"><Download /></el-icon>
         导出
       </el-button>
-      <el-button type="primary" plain size="small" @click="toggleView">
+      <el-button type="primary" plain @click="toggleView">
         <el-icon><Switch /></el-icon>
         切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
       </el-button>
