@@ -6,45 +6,38 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { useSearchSync } from '@/composables/useSearchSync'
-import { getGtmWideips, getGtmPools } from '@/api/config'
+import { getGtmChain } from '@/api/config'
+import type { GtmChainRow } from '@/types'
 
-const activeTab = ref('wideip')
 const filterDevice = ref<number | ''>('')
 
-// Wide IP 与 Pool 各自持有独立的分页、搜索与加载状态
+// 单表聚合：每行一条 域名 → 池 → 虚拟服务器 关联链（/api/lb-chain/gslb/），
+// 原来 Wide IP / Pool 两个 tab 拼不出关联，现在压进一行
 const {
-  data: wideips, loading: wideipLoading, page: wideipPage, pageSize: wideipPageSize,
-  total: wideipTotal, fetchData: fetchWideipData, refetch: refetchWideips, pageParams: wideipPageParams,
-  resetAndFetch: resetWideips, search: wideipSearch,
-} = useCrudApi()
-const {
-  data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
-  total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool, search: poolSearch,
-} = useCrudApi()
+  data: rows,
+  loading,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  search,
+} = useCrudApi<GtmChainRow>()
 
-// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
-const keyword = useSearchSync(wideipSearch, poolSearch)
+const loadRows = () =>
+  fetchData(() => getGtmChain(pageParams({ device: filterDevice.value || undefined })))
 
-// fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
-const loadWideips = () =>
-  fetchWideipData(() => getGtmWideips(wideipPageParams({ device: filterDevice.value || undefined })))
+/** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
+const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
 
-const loadPools = () =>
-  fetchPoolData(() => getGtmPools(poolPageParams({ device: filterDevice.value || undefined })))
+/** 成员的 hover 文案：找到就是 server/vserver 名，没找到说明链在这里断了 */
+const memberTip = (m: { server: string; vserver: string; found: boolean }) =>
+  m.found ? `${m.server} / ${m.vserver}` : `${m.server} / ${m.vserver}（未找到虚拟服务器）`
 
-// 设备筛选变化时两个表格都回到第 1 页并重新拉取
-const handleDeviceChange = () => {
-  resetWideips()
-  resetPool()
-}
-
-watch(filterDevice, handleDeviceChange)
-onMounted(() => {
-  loadWideips()
-  loadPools()
-})
+watch(filterDevice, resetAndFetch)
+onMounted(loadRows)
 </script>
 
 <template>
@@ -52,61 +45,63 @@ onMounted(() => {
     <template #actions>
       <FilterBar
         v-model:device="filterDevice"
-        v-model:search="keyword"
+        v-model:search="search"
         device-type="gslb"
         search-placeholder="搜索域名/池/设备"
         search-width="220px"
       />
     </template>
-    <el-tabs v-model="activeTab" class="page-tabs">
-      <el-tab-pane label="Wide IP" name="wideip">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.gslbWideips" :data="wideips" :loading="wideipLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="域名" width="220" sortable />
-            <DataColumn prop="rtype" label="记录类型" width="100" />
-            <DataColumn prop="lb_mode" label="负载模式" width="120" />
-            <DataColumn prop="pools" label="关联池" min-width="200">
-              <template #default="{ row }">
-                <el-tag v-for="p in (row.pools || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
-                <span v-if="!row.pools?.length" style="color: #c0c4cc">-</span>
-              </template>
-            </DataColumn>
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="wideipPage"
-          v-model:page-size="wideipPageSize"
-          :total="wideipTotal"
-          @change="refetchWideips"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="Pool" name="pool">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.gslbPools" :data="pools" :loading="poolLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="名称" width="180" sortable />
-            <DataColumn prop="lb_mode" label="负载模式" width="120" />
-            <DataColumn prop="alternate_mode" label="备选模式" width="120" />
-            <DataColumn prop="fallback_mode" label="回退模式" width="120" />
-            <DataColumn prop="fallback_ip" label="回退IP" width="140" />
-            <DataColumn prop="ttl" label="TTL" width="70" />
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="poolPage"
-          v-model:page-size="poolPageSize"
-          :total="poolTotal"
-          @change="refetchPools"
-        />
-      </el-tab-pane>
-    </el-tabs>
+    <div class="table-wrapper">
+      <DataTable :table-key="TABLE_KEYS.gslbWideips" :data="rows" :loading="loading" size="small">
+        <DataColumn prop="device_hostname" label="设备" width="130" sortable />
+        <!-- 主显示是域名本身 -->
+        <DataColumn prop="name" label="域名" min-width="210" sortable show-overflow-tooltip />
+        <DataColumn prop="rtype" label="记录类型" min-width="90" />
+        <DataColumn prop="lb_mode" label="负载模式" min-width="110" />
+        <!-- 解析链：池名（hover 出池参数）→ 成员 IP#端口（hover 出 server/vserver 名） -->
+        <DataColumn label="解析链" column-key="chain" min-width="380">
+          <template #default="{ row }">
+            <div v-if="row.pools?.length" class="chain">
+              <div v-for="p in row.pools" :key="p.name" class="chain-seg">
+                <el-tooltip placement="top">
+                  <template #content>
+                    <div>{{ p.name }}</div>
+                    <div>负载模式：{{ p.lb_mode || '-' }}</div>
+                    <div>回退IP：{{ p.fallback_ip || '-' }}</div>
+                    <div>TTL：{{ p.ttl ?? '-' }}</div>
+                  </template>
+                  <span class="name-hot">{{ p.name }}</span>
+                </el-tooltip>
+                <span class="arrow">→</span>
+                <template v-if="p.members?.length">
+                  <el-tooltip
+                    v-for="(m, idx) in p.members"
+                    :key="idx"
+                    :content="memberTip(m)"
+                    placement="top"
+                  >
+                    <el-tag size="small" :type="m.found ? 'success' : 'warning'">
+                      {{ m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}` }}
+                    </el-tag>
+                  </el-tooltip>
+                </template>
+                <span v-else class="muted">无成员</span>
+              </div>
+            </div>
+            <span v-else class="muted">未关联池</span>
+          </template>
+        </DataColumn>
+      </DataTable>
+    </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 
 <style scoped>
-.page-tabs { flex: 1; min-height: 0; }
-.page-tabs :deep(.el-tabs__content) { display: flex; flex-direction: column; }
-.page-tabs :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.chain { display: flex; flex-direction: column; gap: 4px; }
+.chain-seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.arrow { color: #c0c4cc; }
+.name-hot { font-weight: 500; }
+.muted { color: #c0c4cc; }
 </style>

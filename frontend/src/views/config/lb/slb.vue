@@ -6,45 +6,34 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { useSearchSync } from '@/composables/useSearchSync'
-import { getLtmVirtualServers, getLtmPools } from '@/api/config'
+import { getLtmChain } from '@/api/config'
+import type { LtmChainRow } from '@/types'
 
-const activeTab = ref('vs')
 const filterDevice = ref<number | ''>('')
 
-// Virtual Server 与 Pool 各自持有独立的分页、搜索与加载状态
+// 单表聚合：每行一条 VS → 池 → 成员 关联链（/api/lb-chain/slb/ 按页拼好整链），
+// 原来 VS / Pool 两个 tab 各看各的、拼不出关联，现在压进一行
 const {
-  data: virtualServers, loading: vsLoading, page: vsPage, pageSize: vsPageSize,
-  total: vsTotal, fetchData: fetchVsData, refetch: refetchVs, pageParams: vsPageParams,
-  resetAndFetch: resetVs, search: vsSearch,
-} = useCrudApi()
-const {
-  data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
-  total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool, search: poolSearch,
-} = useCrudApi()
+  data: rows,
+  loading,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  search,
+} = useCrudApi<LtmChainRow>()
 
-// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
-const keyword = useSearchSync(vsSearch, poolSearch)
+const loadRows = () =>
+  fetchData(() => getLtmChain(pageParams({ device: filterDevice.value || undefined })))
 
-// fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
-const loadVirtualServers = () =>
-  fetchVsData(() => getLtmVirtualServers(vsPageParams({ device: filterDevice.value || undefined })))
+/** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
+const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
 
-const loadPools = () =>
-  fetchPoolData(() => getLtmPools(poolPageParams({ device: filterDevice.value || undefined })))
-
-// 设备筛选变化时两个表格都回到第 1 页并重新拉取
-const handleDeviceChange = () => {
-  resetVs()
-  resetPool()
-}
-
-watch(filterDevice, handleDeviceChange)
-onMounted(() => {
-  loadVirtualServers()
-  loadPools()
-})
+watch(filterDevice, resetAndFetch)
+onMounted(loadRows)
 </script>
 
 <template>
@@ -52,61 +41,77 @@ onMounted(() => {
     <template #actions>
       <FilterBar
         v-model:device="filterDevice"
-        v-model:search="keyword"
+        v-model:search="search"
         device-type="slb"
         search-placeholder="搜索名称/地址/池/设备"
         search-width="220px"
       />
     </template>
-    <el-tabs v-model="activeTab" class="page-tabs">
-      <el-tab-pane label="Virtual Server" name="vs">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.slbVirtualServers" :data="virtualServers" :loading="vsLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="名称" width="180" sortable />
-            <DataColumn prop="vs_address" label="虚拟地址" width="140" />
-            <DataColumn prop="vs_port" label="端口" width="80" />
-            <DataColumn prop="protocol" label="协议" width="80" />
-            <DataColumn prop="pool" label="关联池" width="140" />
-            <DataColumn prop="snat_type" label="SNAT" width="100" />
-            <DataColumn prop="persist" label="会话保持" width="100" />
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="vsPage"
-          v-model:page-size="vsPageSize"
-          :total="vsTotal"
-          @change="refetchVs"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="Pool" name="pool">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.slbPools" :data="pools" :loading="poolLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="名称" width="180" sortable />
-            <DataColumn prop="mode" label="负载模式" width="120" />
-            <DataColumn prop="monitors" label="监控" min-width="200">
-              <template #default="{ row }">
-                <el-tag v-for="m in (row.monitors || [])" :key="m" size="small" style="margin-right: 4px">{{ m }}</el-tag>
-                <span v-if="!row.monitors?.length" style="color: #c0c4cc">-</span>
+    <div class="table-wrapper">
+      <DataTable :table-key="TABLE_KEYS.slbVirtualServers" :data="rows" :loading="loading" size="small">
+        <DataColumn prop="device_hostname" label="设备" width="130" sortable />
+        <!-- 主显示是 IP:端口，VS 的 name 收进 hover -->
+        <DataColumn prop="vs_address" label="虚拟地址" min-width="170">
+          <template #default="{ row }">
+            <el-tooltip :content="row.name" placement="top">
+              <span>{{ addrPort(row.vs_address, row.vs_port) }}</span>
+            </el-tooltip>
+          </template>
+        </DataColumn>
+        <DataColumn prop="protocol" label="协议" min-width="80" />
+        <!-- 关联池：池只有名字可显示，负载模式 / 监控放 hover -->
+        <DataColumn label="关联池" column-key="pool" min-width="170">
+          <template #default="{ row }">
+            <el-tooltip v-if="row.pool" placement="top">
+              <template #content>
+                <div>{{ row.pool.name }}</div>
+                <div>负载模式：{{ row.pool.mode || '-' }}</div>
+                <div>监控：{{ row.pool.monitors?.length ? row.pool.monitors.join('、') : '-' }}</div>
               </template>
-            </DataColumn>
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="poolPage"
-          v-model:page-size="poolPageSize"
-          :total="poolTotal"
-          @change="refetchPools"
-        />
-      </el-tab-pane>
-    </el-tabs>
+              <span class="name-hot">{{ row.pool.name }}</span>
+            </el-tooltip>
+            <span v-else class="muted">未关联池</span>
+          </template>
+        </DataColumn>
+        <!-- 成员显示 地址#端口，成员 name 收进 hover -->
+        <DataColumn label="池成员" column-key="members" min-width="300">
+          <template #default="{ row }">
+            <div v-if="row.members?.length" class="chips">
+              <el-tooltip
+                v-for="m in row.members"
+                :key="`${m.name}:${m.port}`"
+                :content="m.name"
+                placement="top"
+              >
+                <el-tag size="small" type="info">
+                  {{ m.address ? addrPort(m.address, m.port) : m.name }}
+                </el-tag>
+              </el-tooltip>
+            </div>
+            <span v-else class="muted">-</span>
+          </template>
+        </DataColumn>
+        <DataColumn prop="snat_type" label="SNAT" min-width="110">
+          <template #default="{ row }">
+            <span v-if="row.snat_type">{{ row.snat_type }}</span>
+            <span v-else class="muted">-</span>
+          </template>
+        </DataColumn>
+        <DataColumn prop="persist" label="会话保持" min-width="110">
+          <template #default="{ row }">
+            <span v-if="row.persist">{{ row.persist }}</span>
+            <span v-else class="muted">-</span>
+          </template>
+        </DataColumn>
+      </DataTable>
+    </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 
 <style scoped>
-.page-tabs { flex: 1; min-height: 0; }
-.page-tabs :deep(.el-tabs__content) { display: flex; flex-direction: column; }
-.page-tabs :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.name-hot { font-weight: 500; }
+.muted { color: #c0c4cc; }
 </style>
