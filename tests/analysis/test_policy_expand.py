@@ -1,4 +1,4 @@
-"""策略展开（ingest.policy_expand）：归一化、笛卡尔积、合并入库、上下文摘除与重建。
+"""策略展开（analysis.policy_expand）：归一化、笛卡尔积、合并入库、上下文摘除与重建。
 
 守护的语义：
 
@@ -16,9 +16,8 @@ import pytest
 from django.core.management import call_command
 from django.db import IntegrityError, transaction
 
-from assets.models import AddressBook, Device, Policy, Service
-from ingest.models import AccessFlow
-from ingest.policy_expand import (
+from analysis.models import AccessFlow
+from analysis.policy_expand import (
     ANY,
     ANY_ADDR,
     collect_device_flows,
@@ -28,6 +27,7 @@ from ingest.policy_expand import (
     service_parts,
     upsert_flows,
 )
+from assets.models import AddressBook, Device, Policy, Service
 
 # ---------------------------------------------------------------------------
 # 造数据助手
@@ -465,7 +465,7 @@ def test_command_sync_rebuilds_in_process():
 def test_command_dispatches_by_default(monkeypatch):
     device = _device("_t_af_cmd2")
     calls: list[int] = []
-    monkeypatch.setattr("ingest.access_stream.request_rebuild", calls.append)
+    monkeypatch.setattr("ingest.access_flow_trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname)
 
@@ -476,7 +476,7 @@ def test_command_dispatches_by_default(monkeypatch):
 def test_command_dedupes_repeated_devices(monkeypatch):
     device = _device("_t_af_cmd3")
     calls: list[int] = []
-    monkeypatch.setattr("ingest.access_stream.request_rebuild", calls.append)
+    monkeypatch.setattr("ingest.access_flow_trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname, "--device", device.hostname)
 

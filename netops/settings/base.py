@@ -110,12 +110,16 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
-# 访问流（AccessFlow）重建链路的两个旋钮：
+# 访问流（AccessFlow）重建链路的旋钮与任务名约定：
 # - 背压阈值：生产者投递前查 Stream 积压，超过就 self.retry 让路（不占 worker 进程）；
 # - 投递开关：测试里默认关（conftest 统一置 False），否则 PolicySaver 每保存一次
-#   就往真实 Redis 发消息。
+#   就往真实 Redis 发消息；
+# - 任务名唯一定义处：ingest 的投递触点（access_flow_trigger）按它 send_task——不 import
+#   analysis（依赖方向单向）；analysis.tasks 的 name= 与下方 CELERY_TASK_ROUTES 的 key
+#   必须与之一致，tests/analysis/test_access_flow_task.py 有对账断言。
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "50000"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
+ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +147,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
-    # GinIndex（AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
+    # GinIndex（analysis.AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
     "django.contrib.postgres",
     "core.apps.CoreConfig",
     "ingest.apps.OperatorConfig",
@@ -260,5 +264,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = 3000
 # 访问流重建走独立队列：队列仍独立（积压可观测、将来可随时拆出独占 worker），
 # 当前由 docker-compose 的 worker 一并消费（-Q celery,access_flow，两条链皆低频）
 CELERY_TASK_ROUTES = {
-    "ingest.rebuild_access_flows": {"queue": "access_flow"},
+    # 键 = ACCESS_FLOW_TASK（2026-09 随域拆分由 ingest.rebuild_access_flows 迁来；
+    # 任务名变更 → Redis 里未消费的旧消息会 Unknown task，升级前停 worker 清队列）
+    "analysis.rebuild_access_flows": {"queue": "access_flow"},
 }

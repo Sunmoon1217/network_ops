@@ -1,10 +1,6 @@
 from django.urls import path
-from rest_framework.routers import SimpleRouter
 
-from . import accessflows, configs, parsers
-
-router = SimpleRouter()
-router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-flow")
+from . import configs, parsers
 
 urlpatterns = [
     # 配置仓库：前端 api/config.ts、api/devices.ts 已在调用，此前未注册路由（404）
@@ -18,7 +14,5 @@ urlpatterns = [
     path("parsers/templates/", parsers.parser_template_list, name="parser-template-list"),
     path("parsers/templates/<str:name>/", parsers.parser_template_detail, name="parser-template-detail"),
     path("parsers/templates/<str:name>/update/", parsers.parser_template_update, name="parser-template-update"),
-    # 路径追踪 / 资产分析已拆去 analysis.api.urls（URL 前缀不变，见 netops/urls.py）
+    # 路径追踪 / 资产分析 / 访问流已拆去 analysis.api.urls（URL 前缀不变，见 netops/urls.py）
 ]
-
-urlpatterns += router.urls

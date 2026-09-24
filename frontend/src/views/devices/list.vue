@@ -1,37 +1,22 @@
 <script setup lang="ts">
-import { h } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDevices } from '@/api/devices'
-import { ElButton } from 'element-plus'
-import { FixedDir } from 'element-plus/es/components/table-v2/src/constants'
 import ImportDevice from './dialogs/ImportDevice.vue'
 import PageLayout from '@/layout/PageLayout.vue'
+import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
 import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { useTableHeight } from '@/composables/useTableHeight'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 
 const router = useRouter()
-const { tableRef, tableHeight, tableWidth } = useTableHeight()
+
 const { data: devices, loading, search, page, pageSize, total, fetchData, refetch, pageParams } = useCrudApi()
 
 const importDialogVisible = ref(false)
 
 const goToConfig = (row: any) => router.push(`/devices/${row.id}/config`)
 const goToHistory = (row: any) => router.push(`/devices/${row.id}/history`)
-
-const columns = [
-  { key: 'hostname', title: '主机名', dataKey: 'hostname', width: 260 },
-  { key: 'device_model_name', title: '设备型号', dataKey: 'device_model_name', width: 260 },
-  { key: 'device_type_display', title: '类型', dataKey: 'device_type_display', width: 100 },
-  { key: 'security_zone_name', title: '区域', dataKey: 'security_zone_name', width: 140 },
-  { key: 'ip_address', title: '管理IP', dataKey: 'ip_address', width: 140 },
-  { key: 'idc_name', title: '数据中心', dataKey: 'idc_name', width: 140 },
-  { key: 'cabinet_name', title: '机柜位置', dataKey: 'cabinet_name', width: 260 },
-  { key: 'u_position', title: 'U位', dataKey: 'u_position', width: 60 },
-  { key: 'height', title: '高度', dataKey: 'height', width: 60 },
-  { key: 'remark', title: '备注', dataKey: 'remark', width: 200 },
-  { key: 'operation', title: '操作', width: 200, fixed: FixedDir.RIGHT },
-]
 
 const fetchAll = () => fetchData(() => getDevices(pageParams()))
 
@@ -45,29 +30,31 @@ onMounted(fetchAll)
       <el-button @click="importDialogVisible = true">导入</el-button>
       <el-button type="primary" @click="router.push('/devices/create')">添加设备</el-button>
     </template>
-    <div ref="tableRef" class="table-wrapper">
-      <el-table-v2
-        v-loading="loading"
-        :columns="columns"
-        :data="devices"
-        :height="tableHeight"
-        :width="tableWidth"
-        :fixed="true"
-      >
-        <template #header-cell="{ column }">
-          <span style="font-weight: 600">{{ column.title }}</span>
-        </template>
-        <template #cell="{ column, rowData }">
-          <template v-if="column.key === 'operation'">
-            <el-button size="small" link type="primary" @click="goToConfig(rowData)">配置</el-button>
-            <el-button size="small" link type="info" @click="goToHistory(rowData)">历史</el-button>
-            <el-button size="small" link type="warning" @click="router.push(`/devices/${rowData.id}/edit`)">编辑</el-button>
+    <div class="table-wrapper">
+      <DataTable :table-key="TABLE_KEYS.deviceList" :data="devices" :loading="loading">
+        <DataColumn prop="hostname" label="主机名" :width="260" show-overflow-tooltip />
+        <DataColumn
+          prop="device_model_name"
+          label="设备型号"
+          :width="260"
+          show-overflow-tooltip
+        />
+        <DataColumn prop="device_type_display" label="类型" :width="100" />
+        <DataColumn prop="security_zone_name" label="区域" :width="140" />
+        <DataColumn prop="ip_address" label="管理IP" :width="140" />
+        <DataColumn prop="idc_name" label="数据中心" :width="140" />
+        <DataColumn prop="cabinet_name" label="机柜位置" :width="260" show-overflow-tooltip />
+        <DataColumn prop="u_position" label="U位" :width="60" align="center" />
+        <DataColumn prop="height" label="高度" :width="60" align="center" />
+        <DataColumn prop="remark" label="备注" :width="200" show-overflow-tooltip />
+        <DataColumn column-key="operation" label="操作" :width="200" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" link type="primary" @click="goToConfig(row)">配置</el-button>
+            <el-button size="small" link type="info" @click="goToHistory(row)">历史</el-button>
+            <el-button size="small" link type="warning" @click="router.push(`/devices/${row.id}/edit`)">编辑</el-button>
           </template>
-          <template v-else>
-            {{ rowData[column.dataKey!] ?? '-' }}
-          </template>
-        </template>
-      </el-table-v2>
+        </DataColumn>
+      </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
     <ImportDevice v-model:visible="importDialogVisible" @success="fetchAll" />
@@ -75,5 +62,5 @@ onMounted(fetchAll)
 </template>
 
 <style scoped>
-.table-wrapper { flex: 1; min-height: 0; }
+.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
 </style>

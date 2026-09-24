@@ -13,8 +13,8 @@
 
 from django.core.management.base import BaseCommand, CommandError
 
+from analysis.policy_expand import rebuild_device
 from assets.models import Device
-from ingest.policy_expand import rebuild_device
 
 
 class Command(BaseCommand):
@@ -47,8 +47,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"完成（sync）：{len(devices)} 台，+{total_created} ~{total_updated}"))
             return
 
-        # 延迟 import：让测试可以 monkeypatch ingest.access_stream.request_rebuild
-        from ingest.access_stream import request_rebuild
+        # 延迟 import：让测试可以 monkeypatch ingest.access_flow_trigger.request_rebuild
+        # （触发器住 ingest——它是 PolicySaver 侧的投递触点，依赖方向只许 analysis → ingest）
+        from ingest.access_flow_trigger import request_rebuild
 
         for device in devices:
             request_rebuild(device.pk)

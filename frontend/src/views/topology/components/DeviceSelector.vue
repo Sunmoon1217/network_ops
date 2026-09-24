@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { getDevices } from '@/api/devices'
+import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
 
 defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -41,20 +43,20 @@ const handleSelect = (device: any) => {
       clearable
       @input="fetchDevices"
     />
-    <el-table
+    <DataTable
       :data="devices"
-      v-loading="loading"
-      style="width: 100%; margin-top: 12px"
+      :loading="loading"
+      style="margin-top: 12px"
       @row-dblclick="handleSelect"
     >
-      <el-table-column prop="hostname" label="主机名" />
-      <el-table-column prop="device_type_display" label="类型" width="120" />
-      <el-table-column prop="idc_name" label="数据中心" width="120" />
-      <el-table-column label="操作" width="80" align="center">
+      <DataColumn prop="hostname" label="主机名" />
+      <DataColumn prop="device_type_display" label="类型" width="120" />
+      <DataColumn prop="idc_name" label="数据中心" width="120" />
+      <DataColumn label="操作" width="80" align="center">
         <template #default="{ row }">
           <el-button type="primary" link @click="handleSelect(row)">选择</el-button>
         </template>
-      </el-table-column>
-    </el-table>
+      </DataColumn>
+    </DataTable>
   </el-dialog>
 </template>

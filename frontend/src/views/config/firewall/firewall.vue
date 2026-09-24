@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
@@ -23,21 +25,21 @@ onMounted(fetchAll)
       <FilterBar v-model:device="filterDevice" v-model:search="search" search-placeholder="搜索规则名称" />
     </template>
     <div class="table-wrapper">
-      <DataTable :data="natRules" :loading="loading">
-        <el-table-column prop="device_hostname" label="设备" width="140" />
-        <el-table-column prop="order" label="顺序" width="70" />
-        <el-table-column prop="name" label="规则名称" width="160" />
-        <el-table-column prop="nat_type" label="类型" width="100">
+      <DataTable :table-key="TABLE_KEYS.firewall" :data="natRules" :loading="loading">
+        <DataColumn prop="device_hostname" label="设备" width="140" />
+        <DataColumn prop="order" label="顺序" width="70" />
+        <DataColumn prop="name" label="规则名称" width="160" />
+        <DataColumn prop="nat_type" label="类型" width="100">
           <template #default="{ row }">
             <el-tag :type="row.nat_type === 'snat' ? 'primary' : row.nat_type === 'dnat' ? 'warning' : 'danger'" size="small">{{ row.nat_type }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="enabled" label="启用" width="70" align="center">
+        </DataColumn>
+        <DataColumn prop="enabled" label="启用" width="70" align="center">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '是' : '否' }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="150" show-overflow-tooltip />
+        </DataColumn>
+        <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
       </DataTable>
     </div>
     <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />

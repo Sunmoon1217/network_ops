@@ -3,7 +3,7 @@
 **只能跑一个实例**（消费者组会把消息摊给多个成员，多起一个就变成多写者，
 「先查后合并」的前提就没了）——docker-compose 里的 access-flow-consumer 就是这一个。
 
-处理语义（见 ``ingest/access_stream.py``）：
+处理语义（见 ``analysis/access_stream.py``）：
 
 - 每条消息 = 一台设备的完整重建，事务内「摘旧上下文 + 写新展开」；
 - **入库成功才 XACK**——崩溃时消息留在 PEL，重启后由 XAUTOCLAIM 接管重投，
@@ -36,7 +36,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from ingest.access_stream import GROUP, STREAM, beat, consumer_name, ensure_group, get_redis
+        from analysis.access_stream import GROUP, STREAM, beat, consumer_name, ensure_group, get_redis
 
         count, block, once = options["count"], options["block"], options["once"]
         client = get_redis()
@@ -99,7 +99,7 @@ class Command(BaseCommand):
         self.stdout.write("访问流消费已退出")
 
     def _process(self, client, message_id, fields) -> None:
-        from ingest.access_stream import GROUP, STREAM, handle_message
+        from analysis.access_stream import GROUP, STREAM, handle_message
 
         try:
             created, updated = handle_message(fields)

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { getParsers, getParserTemplates, getParserTemplate, updateParserTemplate } from '@/api/parsers'
+import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 
 import type { ParserItem, TemplateItem, TemplateRow } from '@/types'
 
@@ -126,18 +129,18 @@ onMounted(() => {
           <el-checkbox v-model="onlyUnlinked" size="small">仅看未关联</el-checkbox>
         </div>
         <div class="table-wrap">
-          <el-table
+          <DataTable
+            :table-key="TABLE_KEYS.deviceParsers"
             ref="tableRef"
             :data="visibleRows"
             size="small"
-            height="100%"
             highlight-current-row
             :span-method="groupSpan"
             @row-click="handleRowClick"
           >
-            <el-table-column prop="group" label="分组" width="86" />
-            <el-table-column prop="name" label="文件名" show-overflow-tooltip />
-            <el-table-column label="关联解析器" width="190">
+            <DataColumn prop="group" label="分组" width="86" />
+            <DataColumn prop="name" label="文件名" show-overflow-tooltip />
+            <DataColumn label="关联解析器" width="190">
               <template #default="{ row }">
                 <el-tooltip
                   v-for="p in row.parsers"
@@ -149,8 +152,8 @@ onMounted(() => {
                 </el-tooltip>
                 <span v-if="!row.parsers.length" class="muted">未关联解析器</span>
               </template>
-            </el-table-column>
-          </el-table>
+            </DataColumn>
+          </DataTable>
         </div>
       </div>
 

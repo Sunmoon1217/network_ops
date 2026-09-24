@@ -1,110 +1,276 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
+import { Download, Switch } from '@element-plus/icons-vue'
 import DataTable from '@/components/DataTable.vue'
+import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { useSearchSync } from '@/composables/useSearchSync'
-import { getLtmVirtualServers, getLtmPools } from '@/api/config'
+import { exportLtmChain, getLtmChain } from '@/api/config'
+import type { LbTreeRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
 
-const activeTab = ref('vs')
 const filterDevice = ref<number | ''>('')
 
-// Virtual Server 与 Pool 各自持有独立的分页、搜索与加载状态
+// 关联链聚合（/api/lb-chain/slb/）：每行一条 VS → 池 → 成员，前端再转成树形分级展示
 const {
-  data: virtualServers, loading: vsLoading, page: vsPage, pageSize: vsPageSize,
-  total: vsTotal, fetchData: fetchVsData, refetch: refetchVs, pageParams: vsPageParams,
-  resetAndFetch: resetVs, search: vsSearch,
-} = useCrudApi()
-const {
-  data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
-  total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool, search: poolSearch,
-} = useCrudApi()
+  data: rows,
+  loading,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  search,
+} = useCrudApi<LtmChainRow>()
 
-// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
-const keyword = useSearchSync(vsSearch, poolSearch)
+const loadRows = () =>
+  fetchData(() => getLtmChain(pageParams({ device: filterDevice.value || undefined })))
 
-// fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
-const loadVirtualServers = () =>
-  fetchVsData(() => getLtmVirtualServers(vsPageParams({ device: filterDevice.value || undefined })))
+/** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
+const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
 
-const loadPools = () =>
-  fetchPoolData(() => getLtmPools(poolPageParams({ device: filterDevice.value || undefined })))
+const KIND_TAG = { vs: 'primary', pool: 'success', member: 'info', wideip: 'primary' } as const
+const KIND_LABEL = { vs: '虚拟服务器', pool: '池', member: '成员', wideip: '' } as const
+// 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
+const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
+const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
 
-// 设备筛选变化时两个表格都回到第 1 页并重新拉取
-const handleDeviceChange = () => {
-  resetVs()
-  resetPool()
+/** 池及其成员 → 池行（成员是池的 children） */
+const buildPoolTree = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbTreeRow => ({
+  id: `pool-${device}-${pool.name}`,
+  kind: 'pool',
+  label: pool.name,
+  tipLines: [
+    `负载模式：${pool.mode || '-'}`,
+    pool.monitors?.length ? `监控：${pool.monitors.join('、')}` : '',
+  ].filter(Boolean),
+  children: members.map((m, idx) => ({
+    // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
+    id: `member-${device}-${pool.name}-${idx}`,
+    kind: 'member' as const,
+    label: m.address ? addrPort(m.address, m.port) : m.name,
+    tipLines: [m.name],
+  })),
+})
+
+/** 关联链行 → 树行：VS 为根，池是它的 child，成员是池的 child */
+const buildTree = (r: LtmChainRow): LbTreeRow => ({
+  id: `vs-${r.device}-${r.name}`,
+  kind: 'vs',
+  // 透明 VS 没有地址时回退显示名字
+  label: r.vs_address ? addrPort(r.vs_address, r.vs_port) : r.name,
+  // name 已升为独立列，hover 只补没上列的信息（SNAT 等次要字段）
+  tipLines: [r.snat_type ? `SNAT：${r.snat_type}` : ''].filter(Boolean),
+  device: r.device_hostname,
+  vsName: r.name,
+  protocol: r.protocol || '-',
+  poolName: r.pool?.name || '-',
+  profiles: r.profiles || [],
+  persist: r.persist || '-',
+  rules: r.rules || [],
+  children: r.pool ? [buildPoolTree(r.device, r.pool, r.members)] : undefined,
+})
+
+const treeRows = computed(() => rows.value.map(buildTree))
+
+/** 导出扁平宽表为 xlsx（后端 openpyxl 生成、前端只下载 Blob；全量、带当前过滤/搜索） */
+const exportLoading = ref(false)
+const handleExport = async () => {
+  exportLoading.value = true
+  try {
+    const res = await exportLtmChain({
+      device: filterDevice.value || undefined,
+      search: search.value || undefined,
+    })
+    const url = URL.createObjectURL(res.data as Blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `lb-chains-${new Date().toISOString().slice(0, 10)}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
 }
 
-watch(filterDevice, handleDeviceChange)
-onMounted(() => {
-  loadVirtualServers()
-  loadPools()
+/** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
+const viewMode = ref<'tree' | 'flat'>('tree')
+const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
+
+/**
+ * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
+ * 有成员则每成员一行（VS + 池字段整条下填），池无成员则以池为行，
+ * 无池则以 VS 为行；配合专属宽表列（SNAT/池模式/池监控…）融合成一张大表。
+ */
+const flatRows = computed(() => {
+  const out: LtmFlatRow[] = []
+  for (const r of rows.value) {
+    const vsLabel = r.vs_address ? addrPort(r.vs_address, r.vs_port) : r.name
+    const base = {
+      device: r.device_hostname,
+      vsLabel,
+      vsName: r.name,
+      protocol: r.protocol || '-',
+      snat: r.snat_type || '-',
+      persist: r.persist || '-',
+      profiles: r.profiles || [],
+      rules: r.rules || [],
+      poolName: r.pool?.name || '-',
+      poolMode: r.pool?.mode || '-',
+      poolMonitors: r.pool?.monitors?.length ? r.pool.monitors.join('、') : '-',
+    }
+    const prefix = `flat-vs-${r.device}-${r.name}`
+    if (r.pool && r.members.length) {
+      r.members.forEach((m: LtmChainRow['members'][number], idx: number) =>
+        out.push({
+          ...base,
+          id: `${prefix}-m${idx}`,
+          kind: 'member',
+          label: m.address ? addrPort(m.address, m.port) : m.name,
+          tipLines: [m.name, `链路：${vsLabel} → ${r.pool!.name}`],
+        }),
+      )
+    } else if (r.pool) {
+      out.push({
+        ...base,
+        id: `${prefix}-p`,
+        kind: 'pool',
+        label: r.pool.name,
+        tipLines: [`链路：${vsLabel}（池无成员，以池为行）`],
+      })
+    } else {
+      out.push({
+        ...base,
+        id: `${prefix}-v`,
+        kind: 'vs',
+        label: vsLabel,
+        tipLines: [r.snat_type ? `SNAT：${r.snat_type}` : ''].filter(Boolean),
+      })
+    }
+  }
+  return out
 })
+
+watch(filterDevice, resetAndFetch)
+onMounted(loadRows)
 </script>
 
 <template>
   <PageLayout title="负载均衡管理">
     <template #actions>
+      <el-button
+        v-if="viewMode === 'flat'"
+        type="success"
+        plain
+        :loading="exportLoading"
+        @click="handleExport"
+      >
+        <el-icon v-if="!exportLoading"><Download /></el-icon>
+        导出
+      </el-button>
+      <el-button type="primary" plain @click="toggleView">
+        <el-icon><Switch /></el-icon>
+        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+      </el-button>
       <FilterBar
         v-model:device="filterDevice"
-        v-model:search="keyword"
+        v-model:search="search"
         device-type="slb"
-        search-placeholder="搜索名称/地址/池/设备"
+        search-placeholder="搜索 名称/地址/地址:端口/池/成员IP:端口"
         search-width="220px"
       />
     </template>
-    <el-tabs v-model="activeTab" class="page-tabs">
-      <el-tab-pane label="Virtual Server" name="vs">
-        <div class="table-wrapper">
-          <DataTable :data="virtualServers" :loading="vsLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="名称" width="180" sortable />
-            <el-table-column prop="vs_address" label="虚拟地址" width="140" />
-            <el-table-column prop="vs_port" label="端口" width="80" />
-            <el-table-column prop="protocol" label="协议" width="80" />
-            <el-table-column prop="pool" label="关联池" width="140" />
-            <el-table-column prop="snat_type" label="SNAT" width="100" />
-            <el-table-column prop="persist" label="会话保持" width="100" />
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="vsPage"
-          v-model:page-size="vsPageSize"
-          :total="vsTotal"
-          @change="refetchVs"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="Pool" name="pool">
-        <div class="table-wrapper">
-          <DataTable :data="pools" :loading="poolLoading" size="small">
-            <el-table-column prop="device_hostname" label="设备" width="140" sortable />
-            <el-table-column prop="name" label="名称" width="180" sortable />
-            <el-table-column prop="mode" label="负载模式" width="120" />
-            <el-table-column prop="monitors" label="监控" min-width="200">
-              <template #default="{ row }">
-                <el-tag v-for="m in (row.monitors || [])" :key="m" size="small" style="margin-right: 4px">{{ m }}</el-tag>
-                <span v-if="!row.monitors?.length" style="color: #c0c4cc">-</span>
-              </template>
-            </el-table-column>
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="poolPage"
-          v-model:page-size="poolPageSize"
-          :total="poolTotal"
-          @change="refetchPools"
-        />
-      </el-tab-pane>
-    </el-tabs>
+    <div class="table-wrapper">
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
+           扁平行没有 children（join 展开行），el-table 视其为叶子即自然平铺 -->
+      <DataTable
+        :table-key="TABLE_KEYS.slbVirtualServers"
+        :data="viewMode === 'tree' ? treeRows : flatRows"
+        :loading="loading"
+        row-key="id"
+        :tree-props="{ children: 'children' }"
+        default-expand-all
+        size="small"
+      >
+        <!-- 树形列组：分级展示，VS/池/成员的 name 收进 hover -->
+        <template v-if="viewMode === 'tree'">
+          <DataColumn prop="label" label="名称" min-width="240">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="device" label="设备" min-width="130" />
+          <DataColumn label="类型" column-key="kind" min-width="90">
+            <template #default="{ row }">
+              <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+            </template>
+          </DataColumn>
+          <!-- 以下六列：VS 行填自身配置；池/成员行留空，层级聚焦在 VS 自身的配置上 -->
+          <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="protocol" label="协议" min-width="70" />
+          <DataColumn prop="poolName" label="关联池" min-width="140" />
+          <DataColumn label="Profile" column-key="profiles" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="persist" label="会话保持" min-width="100" />
+          <DataColumn label="iRule" column-key="rules" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
+            </template>
+          </DataColumn>
+        </template>
+        <!-- 扁平宽表列组：按链层级排序——VS 段 → 池段 → 成员段；SNAT/池负载模式/池监控一并上列 -->
+        <template v-else>
+          <DataColumn prop="device" label="设备" min-width="120" />
+          <DataColumn prop="vsLabel" label="VS地址#端口" min-width="150" show-overflow-tooltip />
+          <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
+          <DataColumn prop="protocol" label="协议" min-width="70" />
+          <DataColumn prop="snat" label="SNAT" min-width="90" />
+          <DataColumn prop="persist" label="会话保持" min-width="95" />
+          <DataColumn label="Profile" column-key="profiles" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.profiles?.length">{{ row.profiles.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn label="iRule" column-key="rules" min-width="150">
+            <template #default="{ row }">
+              <span v-if="row.rules?.length">{{ row.rules.join('、') }}</span>
+            </template>
+          </DataColumn>
+          <DataColumn prop="poolName" label="关联池" min-width="130" />
+          <DataColumn prop="poolMode" label="池负载模式" min-width="110" />
+          <DataColumn prop="poolMonitors" label="池监控" min-width="140" />
+          <DataColumn label="名称" column-key="label" min-width="220">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.tipLines?.length" placement="top">
+                <template #content>
+                  <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+                </template>
+                <span>{{ row.label }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.label }}</span>
+            </template>
+          </DataColumn>
+        </template>
+      </DataTable>
+    </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 
 <style scoped>
-.page-tabs { flex: 1; min-height: 0; }
-.page-tabs :deep(.el-tabs__content) { display: flex; flex-direction: column; }
-.page-tabs :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
 </style>

@@ -4,10 +4,10 @@ import pytest
 from rest_framework.authtoken.models import Token as DRFToken
 from rest_framework.test import APIClient
 
+from analysis.models import AccessFlow
+from analysis.policy_expand import upsert_flows
 from assets.models import Device
 from core.models import User
-from ingest.models import AccessFlow
-from ingest.policy_expand import upsert_flows
 
 URL = "/api/access-flows/"
 
