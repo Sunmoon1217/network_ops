@@ -19,7 +19,7 @@ const props = defineProps<{
   columns: ColumnMeta[]
 }>()
 
-const { columnOrder, hiddenKeys, moveColumn, toggleColumn, resetColumnLayout } = useTablePrefs(props.tableKey)
+const { columnOrder, hiddenKeys, saveOrder, toggleColumn, resetColumnLayout } = useTablePrefs(props.tableKey)
 
 const visible = ref(false)
 
@@ -35,6 +35,16 @@ const ordered = computed(() => {
     .sort((a, b) => rank(a.col.key) - rank(b.col.key) || a.idx - b.idx)
     .map((x) => x.col)
 })
+
+/** 上/下移一列：在**全量列序**上交换相邻两项后保存（列全集只有弹窗掌握） */
+const handleMove = (key: string, delta: -1 | 1) => {
+  const keys = ordered.value.map((c) => c.key)
+  const from = keys.indexOf(key)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= keys.length) return
+  ;[keys[from], keys[to]] = [keys[to], keys[from]]
+  saveOrder(keys)
+}
 
 const handleReset = () => {
   resetColumnLayout()
@@ -54,8 +64,8 @@ const handleReset = () => {
           {{ col.label }}
         </el-checkbox>
         <span class="col-move">
-          <el-button text :icon="Top" :disabled="idx === 0" @click="moveColumn(col.key, -1)" />
-          <el-button text :icon="Bottom" :disabled="idx === ordered.length - 1" @click="moveColumn(col.key, 1)" />
+          <el-button text :icon="Top" :disabled="idx === 0" @click="handleMove(col.key, -1)" />
+          <el-button text :icon="Bottom" :disabled="idx === ordered.length - 1" @click="handleMove(col.key, 1)" />
         </span>
       </div>
     </div>

@@ -109,15 +109,11 @@ export const useTablePrefs = (tableKey: TableKey) => {
     saveTimers[layoutPrefKey] = window.setTimeout(() => flushPreference(layoutPrefKey), 500)
   }
 
-  /** 上/下移一列（order 里没有的 key 先按当前有效序展开再移动） */
-  const moveColumn = (key: string, delta: -1 | 1) => {
-    const effective = [...new Set([...columnOrder.value, key])]
-    const from = effective.indexOf(key)
-    const to = from + delta
-    if (from < 0 || to < 0 || to >= effective.length) return
-    ;[effective[from], effective[to]] = [effective[to], effective[from]]
-    saveLayout({ order: effective })
-  }
+  /**
+   * 保存完整列序（低层接口：调用方负责给出全量 key 序列——
+   * 上移/下移、拖拽换序都由调用方算好新序后存这里，composable 不掌握列全集）。
+   */
+  const saveOrder = (order: string[]) => saveLayout({ order })
 
   /** 切换列显隐 */
   const toggleColumn = (key: string) => {
@@ -143,7 +139,7 @@ export const useTablePrefs = (tableKey: TableKey) => {
     ensureLoaded,
     columnOrder,
     hiddenKeys,
-    moveColumn,
+    saveOrder,
     toggleColumn,
     resetColumnLayout,
   }
