@@ -86,7 +86,7 @@ onMounted(loadRows)
         v-model:device="filterDevice"
         v-model:search="search"
         device-type="slb"
-        search-placeholder="搜索名称/地址/池/设备"
+        search-placeholder="搜索 名称/地址/地址:端口/池/成员IP:端口"
         search-width="220px"
       />
     </template>

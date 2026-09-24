@@ -74,11 +74,38 @@ def _page(request, qs):
 # ---------------------------------------------------------------------------
 
 
-def _ltm_search(qs, search: str):
-    """VS 名 / 虚拟地址 / 池名 / 设备名 直接匹配；成员地址走反查拼进 OR。
+def _split_addr_port(term: str):
+    """把 ``地址:端口`` / ``地址#端口`` 拆成 (地址, 端口)；拆不出合法组合返回 None。
 
-    成员表存的是 address，VS 行上没有这个字段，只能先查出命中成员的
-    (device, pool_name)，再折算回「该设备上引用这些池的 VS」。
+    支持的检索形态与坑：
+
+    - ``#`` 是项目展示层的地址端口分隔符（与互联网资产分析同约定），天然无歧义；
+    - ``:`` 必须防 IPv6 误拆——``2001:db8::1`` 的最后一段也是纯数字，直接按最后
+      一个冒号切会把地址切残。规则：**最后一段是 1~5 位纯数字、且地址部分不以
+      冒号结尾**才拆（``10.0.0.1:443``、``2001:db8::1:80`` 能拆，``2001:db8::1``
+      不拆、退化成整串模糊匹配地址）；
+    - 端口用**精确匹配**（搜 ``:80`` 不能命中 ``8080``）。
+    """
+    if "#" in term:
+        addr, sep, port = term.rpartition("#")
+    elif ":" in term:
+        addr, sep, port = term.rpartition(":")
+    else:
+        return None
+    if not (addr and sep and port.isdigit() and len(port) <= 5) or addr.endswith(":"):
+        return None
+    return addr.strip(), port
+
+
+def _ltm_search(qs, search: str):
+    """SLB 页搜索：VS 名 / 虚拟地址 / 池名 / 设备名 直接匹配；成员走反查拼进 OR。
+
+    词里带端口（``vsaddress:port`` / ``poolmemberaddress:port``）时拆成
+    地址与端口两个条件**同时**命中——跨字段组合是整串 icontains 做不到的：
+
+    - VS 侧：``vs_address`` 命中地址 且 ``vs_port`` 精确等于端口；
+    - 成员侧：成员表按 address + port 查出 (device, pool_name)，再折算回
+      「该设备上引用这些池的 VS」（VS 行上没有成员字段，只能这样反查）。
     """
     q = (
         Q(name__icontains=search)
@@ -86,9 +113,15 @@ def _ltm_search(qs, search: str):
         | Q(pool__icontains=search)
         | Q(device__hostname__icontains=search)
     )
-    hits = set(
-        LtmPoolMember.objects.filter(address__icontains=search).values_list("device_id", "pool_name")[:MAX_SEARCH_PAIRS]
-    )
+    pair = _split_addr_port(search)
+    addr, port = pair if pair else (search, None)
+    if pair:
+        # 地址:端口 组合——VS 自身命中，或成员按 地址+端口 命中后反查
+        q |= Q(vs_address__icontains=addr, vs_port=port)
+    member_q = Q(address__icontains=addr)
+    if port:
+        member_q &= Q(port=port)
+    hits = set(LtmPoolMember.objects.filter(member_q).values_list("device_id", "pool_name")[:MAX_SEARCH_PAIRS])
     if hits:
         # (device_id, pool_name) → 该设备上 pool 名命中的 VS
         q |= _pairs_q(hits, value_field="pool")
