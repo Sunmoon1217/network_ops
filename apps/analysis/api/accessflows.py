@@ -15,7 +15,7 @@
 from rest_framework import serializers, viewsets
 from rest_framework.exceptions import ValidationError
 
-from ingest.models import AccessFlow
+from analysis.models import AccessFlow
 
 
 class AccessFlowSerializer(serializers.ModelSerializer):

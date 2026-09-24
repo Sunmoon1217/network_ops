@@ -1,18 +1,15 @@
-"""访问流的 Stream 通道（ingest.access_stream）：编解码、单写者入库、投递开关、ACK 语义。
+"""访问流的 Stream 通道（analysis.access_stream）：编解码、单写者入库、ACK 语义。
 
 不碰真实 Redis：消息体用生产者的真实路径（collect → encode）构造，处理侧直接调
 ``handle_message``；消费者命令的 ACK 行为用假 client 验证（成功才 ack、失败留 PEL）。
 """
 
-from types import SimpleNamespace
-
 import pytest
 
+from analysis.access_stream import decode_message, encode_message, handle_message
+from analysis.management.commands.access_flow_consumer import Command as ConsumerCommand
+from analysis.policy_expand import collect_device_flows
 from assets.models import AddressBook, Device, Policy, Service
-from ingest import access_stream
-from ingest.access_stream import decode_message, encode_message, handle_message
-from ingest.management.commands.access_flow_consumer import Command as ConsumerCommand
-from ingest.policy_expand import collect_device_flows
 
 
 def _device(hostname: str) -> Device:
@@ -103,7 +100,7 @@ def test_handle_message_is_idempotent():
     first = handle_message(fields)
     second = handle_message(fields)
 
-    from ingest.models import AccessFlow
+    from analysis.models import AccessFlow
 
     assert AccessFlow.objects.count() == 1, "重放不该多出行"
     assert first[0] == 1 and second == (0, 0)
@@ -112,7 +109,7 @@ def test_handle_message_is_idempotent():
 @pytest.mark.django_db
 def test_handle_message_replaces_only_its_own_device():
     """消息 A = 设备 A 的完整状态：替换成它不会动设备 B 的上下文，也不删 B 的行"""
-    from ingest.models import AccessFlow
+    from analysis.models import AccessFlow
 
     device_a, device_b = _device("_t_as_a"), _device("_t_as_b")
     _seed_policy(device_a, "1")
@@ -137,7 +134,7 @@ def test_handle_message_replaces_only_its_own_device():
 
 @pytest.mark.django_db
 def test_handle_message_clears_device_when_no_policies_left():
-    from ingest.models import AccessFlow
+    from analysis.models import AccessFlow
 
     device = _device("_t_as_clear")
     _seed_policy(device)
@@ -148,57 +145,6 @@ def test_handle_message_clears_device_when_no_policies_left():
     handle_message(_message(device))
 
     assert AccessFlow.objects.count() == 0, "空消息 = 清掉该设备的全部残留上下文"
-
-
-# ---------------------------------------------------------------------------
-# 投递开关
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_request_rebuild_respects_settings_switch(settings, monkeypatch):
-    calls: list[int] = []
-    monkeypatch.setattr("ingest.tasks.rebuild_access_flows", SimpleNamespace(delay=calls.append))
-
-    settings.ACCESS_FLOW_DISPATCH = False
-    access_stream.request_rebuild(7)
-    assert calls == []
-
-    settings.ACCESS_FLOW_DISPATCH = True
-    access_stream.request_rebuild(7)
-    assert calls == [7]
-
-
-@pytest.mark.django_db
-def test_policy_saver_triggers_rebuild(settings, monkeypatch):
-    """PolicySaver 保存成功后要投递重建——触发点本身（开关关掉时为静默空操作）"""
-    from ingest.savers.firewall import PolicySaver
-
-    calls: list[int] = []
-    monkeypatch.setattr("ingest.tasks.rebuild_access_flows", SimpleNamespace(delay=calls.append))
-    settings.ACCESS_FLOW_DISPATCH = True
-
-    device = _device("_t_as_trigger")
-    PolicySaver().save(
-        device,
-        {"rules": [{"rule_id": "1", "action": "permit", "src-ip": ["192.168.1.1"], "dst-host": ["10.0.0.1"]}]},
-    )
-
-    assert calls == [device.pk]
-
-
-@pytest.mark.django_db
-def test_policy_saver_dispatch_is_off_by_default_in_tests(monkeypatch):
-    """conftest 的 autouse 开关必须拦掉真实投递（否则测试会把消息发进本机 Redis）"""
-    from ingest.savers.firewall import PolicySaver
-
-    calls: list[int] = []
-    monkeypatch.setattr("ingest.tasks.rebuild_access_flows", SimpleNamespace(delay=calls.append))
-
-    device = _device("_t_as_off")
-    PolicySaver().save(device, {"rules": [{"rule_id": "1", "action": "permit", "dst-host": ["10.0.0.1"]}]})
-
-    assert calls == [], "默认开关是关的，PolicySaver 不该发出投递"
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +161,7 @@ class _FakeClient:
 
 
 def test_consumer_acks_after_successful_handle(monkeypatch):
-    monkeypatch.setattr("ingest.access_stream.handle_message", lambda fields: (1, 2))
+    monkeypatch.setattr("analysis.access_stream.handle_message", lambda fields: (1, 2))
     client = _FakeClient()
 
     ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})
@@ -229,7 +175,7 @@ def test_consumer_keeps_message_on_failure(monkeypatch):
     def _boom(fields):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr("ingest.access_stream.handle_message", _boom)
+    monkeypatch.setattr("analysis.access_stream.handle_message", _boom)
     client = _FakeClient()
 
     ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})

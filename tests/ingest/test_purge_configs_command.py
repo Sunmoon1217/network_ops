@@ -10,7 +10,7 @@ from io import StringIO
 import pytest
 from django.core.management import CommandError, call_command
 
-from analysis.models import InternetAnalysis
+from analysis.models import AccessFlow, InternetAnalysis
 from assets.models import (
     ConfigBase,
     Device,
@@ -22,7 +22,6 @@ from assets.models import (
     Vrf,
 )
 from core.models import Stage, Task
-from ingest.models import AccessFlow
 
 
 def _device(hostname: str) -> Device:

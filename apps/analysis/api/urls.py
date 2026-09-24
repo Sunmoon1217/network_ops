@@ -1,12 +1,18 @@
-"""分析域的 API：路径追踪 / 路由采集 / DNS 查询 / 互联网资产分析 / 关联链聚合。
+"""分析域的 API：路径追踪 / 路由采集 / DNS 查询 / 互联网资产分析 / 关联链聚合 / 访问流。
 
-URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analysis/...``），
-前端 ``api/`` 与 ``views/tools/`` 无需任何改动——路由跟着 view 走，不跟 app 走。
+URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analysis/...``、
+``/api/access-flows/...``），前端 ``api/`` 与 ``views/tools/`` 无需任何改动——
+路由跟着 view 走，不跟 app 走。
 """
 
 from django.urls import path
+from rest_framework.routers import SimpleRouter
 
-from . import analysis, lb_chain, trace
+from . import accessflows, analysis, lb_chain, trace
+
+router = SimpleRouter()
+# 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
+router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-flow")
 
 urlpatterns = [
     path("trace/", trace.path_trace, name="path-trace"),
@@ -23,3 +29,5 @@ urlpatterns = [
     path("lb-chain/gslb/", lb_chain.gtm_chains, name="lb-chain-gslb"),
     path("lb-chain/gslb/facets/", lb_chain.gtm_facets, name="lb-chain-gslb-facets"),
 ]
+
+urlpatterns += router.urls

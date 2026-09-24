@@ -1,5 +1,7 @@
 """策略展开：把 Policy 的 src/dst/service 三个 M2M 展开成访问流（AccessFlow）并合并入库。
 
+（2026-09 由 ingest 迁入 analysis：AccessFlow 是策略展开的派生/分析产物。）
+
 一条策略的三个维度是笛卡尔积（7×7×7 ≈ 343 行/策略），但**同一条访问流可能出现在
 多台设备、多条策略上**——所以唯一键是归一化后的**十元组**（地址每侧 ip/prefix/range_end
 三段 + protocol/port/port2 三段 + **action** 一位，见 ``AccessFlow``），
@@ -15,7 +17,7 @@ contexts 的键语义（别改坏）：
 - 摘除按设备前缀（``f"{device_id}:"``）整体剥离，见 ``remove_device_context``。
 
 写库方式是**先查后合并 + bulk_create/bulk_update**（不是 update_or_create——逐行
-往返在万级策略下不可用）。这条路径是给**单写者**用的（见 ``ingest/access_stream.py``：
+往返在万级策略下不可用）。这条路径是给**单写者**用的（见 ``analysis/access_stream.py``：
 只有 access_flow_consumer 一个进程写 AccessFlow），所以不需要 ON CONFLICT / 行锁。
 """
 
@@ -30,7 +32,7 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 
-from ingest.models import AccessFlow
+from analysis.models import AccessFlow
 
 logger = getLogger(__name__)
 
