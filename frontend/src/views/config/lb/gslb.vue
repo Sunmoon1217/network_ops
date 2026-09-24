@@ -118,14 +118,30 @@ const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 
 
 /**
  * 扁平行 = 深度优先拉平（WideIP / 池 / 成员各占一行，去掉缩进层级）。
+ *
+ * **必须剥掉 children**：el-table 的 treeProps 默认值是 {children:'children'}——
+ * 曾用「tree-props 传 undefined 关层级」的写法，Vue 会跳过 undefined 属性、
+ * el-table 回落到默认值，扁平父行带着 children 就又被渲染成树
+ * （箭头残留 + 子行重复展开）。数据里没有 children 才是真正的平铺。
+ *
  * 拉平后行会失去树的缩进上下文，所以补两样：子行继承所属设备、
  * hover 首行加「链路」指明它属于哪个域名 → 哪个池。
  */
+const stripChildren = (row: LbTreeRow): LbTreeRow => {
+  const copy = { ...row }
+  delete copy.children
+  return copy
+}
+
 const flattenRows = computed(() =>
   treeRows.value.flatMap((w: LbTreeRow) => {
-    const out: LbTreeRow[] = [{ ...w }]
+    const out: LbTreeRow[] = [stripChildren(w)]
     for (const p of w.children ?? []) {
-      out.push({ ...p, device: w.device, tipLines: [`链路：${w.label}`, ...p.tipLines] })
+      out.push({
+        ...stripChildren(p),
+        device: w.device,
+        tipLines: [`链路：${w.label}`, ...p.tipLines],
+      })
       for (const m of p.children ?? []) {
         out.push({ ...m, device: w.device, tipLines: [`链路：${w.label} → ${p.label}`, ...m.tipLines] })
       }
@@ -166,14 +182,14 @@ onMounted(() => {
     </template>
     <div class="table-wrapper">
       <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
-           扁平模式 tree-props 传 undefined 即关闭层级，行数据与列完全不变 -->
+           扁平模式的行已剥掉 children（见 flattenRows），el-table 视其为叶子即自然平铺 -->
       <DataTable
         :table-key="TABLE_KEYS.gslbWideips"
         :data="viewMode === 'tree' ? treeRows : flattenRows"
         :loading="loading"
         row-key="id"
-        :tree-props="viewMode === 'tree' ? { children: 'children' } : undefined"
-        :default-expand-all="viewMode === 'tree'"
+        :tree-props="{ children: 'children' }"
+        default-expand-all
         size="small"
       >
         <!-- 名称列 = 树首列：主显示域名/池名/成员地址，name 字段收进 hover -->
