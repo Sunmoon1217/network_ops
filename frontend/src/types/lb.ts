@@ -51,6 +51,8 @@ export interface GtmChainPool {
   lb_mode: string
   fallback_ip: string
   ttl: number | null
+  /** 健康检查类型列表（池级 monitor，hover 弹出里展示） */
+  monitor: string[]
   members: GtmChainMember[]
 }
 
@@ -62,6 +64,12 @@ export interface GtmChainRow {
   rtype: string
   lb_mode: string
   pools: GtmChainPool[]
+}
+
+/** GSLB 过滤下拉选项（GET /api/lb-chain/gslb/facets/） */
+export interface GtmChainFacets {
+  rtypes: string[]
+  monitors: string[]
 }
 
 /**

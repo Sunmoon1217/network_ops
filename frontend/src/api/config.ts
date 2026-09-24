@@ -21,6 +21,9 @@ export const getLtmChain = (params?: Record<string, any>) =>
 export const getGtmChain = (params?: Record<string, any>) =>
   api.get('/api/lb-chain/gslb/', { params })
 
+// GSLB 过滤下拉选项：记录类型 + 健康检查类型（三处 monitor 合集）
+export const getGtmChainFacets = () => api.get('/api/lb-chain/gslb/facets/')
+
 // Firewall
 export const getPolicies = (params?: Record<string, any>) =>
   api.get('/api/assets/policies/', { params })

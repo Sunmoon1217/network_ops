@@ -18,6 +18,7 @@ URL 前缀 ``/api/lb-chain/`` 沿用 analysis「路由跟 view 走」的惯例�
 from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
 from analysis.api.analysis import _parse_member_entry
 from assets.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
@@ -199,16 +200,75 @@ def ltm_chains(request):
 # ---------------------------------------------------------------------------
 
 
+def _wideip_pairs_q(pairs) -> Q:
+    """(device_id, 池名) → wideip.pools JSON 包含该池名（逐对 OR，JSON 语义没法拆成 __in）。"""
+    q = Q()
+    for device_id, pool_name in pairs:
+        q |= Q(device_id=device_id, pools__contains=[pool_name])
+    return q
+
+
+def _wideip_pairs(pool_q) -> set[tuple[int, str]]:
+    """按「对 GtmPool 的过滤条件」反查出 (device_id, 池名) 集合。"""
+    if not pool_q:
+        return set()
+    return set(GtmPool.objects.filter(pool_q).values_list("device_id", "name")[:MAX_SEARCH_PAIRS])
+
+
+def _pool_q_via_servers(name_icontains: str = "", monitor_icontains: str = "") -> Q:
+    """GtmServer 名 / 健康检查 命中 → 池条件（池成员以 server 名引用它）。
+
+    ``members__contains`` 必须传**数组形式** ``[{...}]``：本项目实测这台 PG 的
+    jsonb 数组 ``@> 对象`` 不生效（返回 0），``@> [对象]`` 才命中。
+    """
+    cond = Q()
+    if name_icontains:
+        cond |= Q(name__icontains=name_icontains)
+    if monitor_icontains:
+        cond |= Q(monitor__icontains=monitor_icontains)
+    q = Q()
+    if cond:
+        servers = GtmServer.objects.filter(cond).values_list("device_id", "name")[:MAX_SEARCH_PAIRS]
+        for device_id, server_name in servers:
+            q |= Q(device_id=device_id, members__contains=[{"server": server_name}])
+    return q
+
+
+def _pool_q_via_vservers(vs_cond: Q) -> Q:
+    """GtmVServer 命中（名字/地址/端口/健康检查）→ 池条件（成员以 server+vs 引用它）。"""
+    q = Q()
+    triples = GtmVServer.objects.filter(vs_cond).values_list("device_id", "server__name", "name")[
+        :MAX_SEARCH_PAIRS
+    ]
+    for device_id, server_name, vs_name in triples:
+        q |= Q(device_id=device_id, members__contains=[{"server": server_name, "vserver": vs_name}])
+    return q
+
+
 def _gtm_search(qs, search: str):
-    """域名 / 设备名直接匹配；池名走反查（wideip.pools 是 JSON 名字列表）。"""
+    """域名解析页搜索，覆盖形态：
+
+    wideipname / poolname / servername / vservername / vserveraddress /
+    vserveraddress:port / 健康检查名（池、服务器、虚拟服务器三处的 monitor）。
+
+    除域名与设备名直接匹配外，其余都是**沿链反查**：命中对象 → 它所在/被引用的
+    池 → 引用这些池的 wideip（``_wideip_pairs_q`` 的 JSON 包含）。
+    """
+    pair = _split_addr_port(search)
     q = Q(name__icontains=search) | Q(device__hostname__icontains=search)
-    hits = set(GtmPool.objects.filter(name__icontains=search).values_list("device_id", "name")[:MAX_SEARCH_PAIRS])
+
+    # 对 GtmPool 的反查条件：池名 + 池健康检查 + server 名/健康检查 + vserver 名/地址/健康检查
+    pool_q = Q(name__icontains=search) | Q(monitor__icontains=search)
+    pool_q |= _pool_q_via_servers(name_icontains=search, monitor_icontains=search)
+    vs_cond = Q(name__icontains=search) | Q(ip_address__icontains=search) | Q(monitor__icontains=search)
+    if pair:
+        # vserveraddress:port —— 地址模糊 + 端口精确，跨字段组合
+        vs_cond |= Q(ip_address__icontains=pair[0], port=pair[1])
+    pool_q |= _pool_q_via_vservers(vs_cond)
+
+    hits = _wideip_pairs(pool_q)
     if hits:
-        # JSON 包含语义（pools 列表含该池名）不是普通等值，逐对展开
-        pairs_q = Q()
-        for device_id, pool_name in hits:
-            pairs_q |= Q(device_id=device_id, pools__contains=[pool_name])
-        q |= pairs_q
+        q |= _wideip_pairs_q(hits)
     return qs.filter(q)
 
 
@@ -263,6 +323,7 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
                     "lb_mode": pool.lb_mode if pool else "",
                     "fallback_ip": (pool.fallback_ip if pool else None) or "",
                     "ttl": pool.ttl if pool else None,
+                    "monitor": (pool.monitor if pool else []) or [],
                     "members": member_out,
                 }
             )
@@ -279,11 +340,32 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
     return rows
 
 
+def _gtm_filter_monitor(qs, monitor: str):
+    """健康检查类型过滤：池 / 服务器 / 虚拟服务器三处 monitor 任一命中即可。"""
+    pool_q = Q(monitor__icontains=monitor)
+    pool_q |= _pool_q_via_servers(monitor_icontains=monitor)
+    pool_q |= _pool_q_via_vservers(Q(monitor__icontains=monitor))
+    hits = _wideip_pairs(pool_q)
+    # 反查不到任何池 → 该健康检查类型下没有 wideip，给空集而不是不过滤
+    return qs.filter(_wideip_pairs_q(hits)) if hits else qs.none()
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def gtm_chains(request):
-    """域名解析关联链：GET /api/lb-chain/gslb/?device=&search=&ordering=&page="""
+    """域名解析关联链：
+    GET /api/lb-chain/gslb/?device=&rtype=&monitor=&search=&ordering=&page=
+
+    - ``rtype``：WideIP 记录类型精确过滤（下拉）；
+    - ``monitor``：健康检查类型过滤，池/服务器/虚拟服务器三处 monitor 命中其一即可。
+    """
     qs = _device_filter(request, GtmWideip.objects.select_related("device").all())
+    rtype = (request.query_params.get("rtype") or "").strip()
+    if rtype:
+        qs = qs.filter(rtype__iexact=rtype)
+    monitor = (request.query_params.get("monitor") or "").strip()
+    if monitor:
+        qs = _gtm_filter_monitor(qs, monitor)
     search = (request.query_params.get("search") or "").strip()
     if search:
         qs = _gtm_search(qs, search)
@@ -293,3 +375,20 @@ def gtm_chains(request):
     if page is None:
         page = []
     return paginator.get_paginated_response(_gtm_rows(page))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gtm_facets(request):
+    """过滤下拉选项：GET /api/lb-chain/gslb/facets/
+
+    ``rtypes`` 来自 wideip 记录类型去重；``monitors`` 是健康检查类型合集——
+    池（JSON 列表，Python 侧展开）+ 服务器 / 虚拟服务器（CharField）三处 distinct。
+    """
+    rtypes = sorted({v for v in GtmWideip.objects.values_list("rtype", flat=True) if v})
+    monitors: set[str] = set()
+    for lst in GtmPool.objects.values_list("monitor", flat=True).iterator():
+        monitors.update(m for m in (lst or []) if isinstance(m, str) and m)
+    monitors.update(v for v in GtmServer.objects.values_list("monitor", flat=True) if v)
+    monitors.update(v for v in GtmVServer.objects.values_list("monitor", flat=True) if v)
+    return Response({"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)})

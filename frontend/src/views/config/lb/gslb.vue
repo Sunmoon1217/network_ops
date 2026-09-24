@@ -6,10 +6,15 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { getGtmChain } from '@/api/config'
+import { getGtmChain, getGtmChainFacets } from '@/api/config'
 import type { GtmChainPool, GtmChainRow, LbTreeRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
+// 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
+const filterRtype = ref('')
+const filterMonitor = ref('')
+const rtypeOptions = ref<string[]>([])
+const monitorOptions = ref<string[]>([])
 
 // 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，前端再转成树形分级展示
 const {
@@ -26,7 +31,27 @@ const {
 } = useCrudApi<GtmChainRow>()
 
 const loadRows = () =>
-  fetchData(() => getGtmChain(pageParams({ device: filterDevice.value || undefined })))
+  fetchData(() =>
+    getGtmChain(
+      pageParams({
+        device: filterDevice.value || undefined,
+        rtype: filterRtype.value || undefined,
+        monitor: filterMonitor.value || undefined,
+      }),
+    ),
+  )
+
+/** 下拉选项走 facets；拿不到不阻塞列表（下拉退化为空、可手动清空） */
+const loadFacets = async () => {
+  try {
+    const res = await getGtmChainFacets()
+    rtypeOptions.value = res.data?.rtypes ?? []
+    monitorOptions.value = res.data?.monitors ?? []
+  } catch {
+    rtypeOptions.value = []
+    monitorOptions.value = []
+  }
+}
 
 /** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
 const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
@@ -46,6 +71,7 @@ const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
     `负载模式：${pool.lb_mode || '-'}`,
     `回退IP：${pool.fallback_ip || '-'}`,
     `TTL：${pool.ttl ?? '-'}`,
+    `健康检查：${pool.monitor?.length ? pool.monitor.join('、') : '-'}`,
   ],
   mode: pool.lb_mode || '-',
   children: pool.members.map((m, idx) => ({
@@ -73,7 +99,12 @@ const buildTree = (r: GtmChainRow): LbTreeRow => ({
 const treeRows = computed(() => rows.value.map(buildTree))
 
 watch(filterDevice, resetAndFetch)
-onMounted(loadRows)
+watch(filterRtype, resetAndFetch)
+watch(filterMonitor, resetAndFetch)
+onMounted(() => {
+  loadRows()
+  loadFacets()
+})
 </script>
 
 <template>
@@ -83,9 +114,16 @@ onMounted(loadRows)
         v-model:device="filterDevice"
         v-model:search="search"
         device-type="gslb"
-        search-placeholder="搜索域名/池/设备"
-        search-width="220px"
-      />
+        search-placeholder="搜索 域名/池/服务器/虚拟服务器/IP:端口/健康检查"
+        search-width="260px"
+      >
+        <el-select v-model="filterRtype" placeholder="记录类型" clearable style="width: 110px">
+          <el-option v-for="t in rtypeOptions" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-select v-model="filterMonitor" placeholder="健康检查" clearable style="width: 150px">
+          <el-option v-for="m in monitorOptions" :key="m" :label="m" :value="m" />
+        </el-select>
+      </FilterBar>
     </template>
     <div class="table-wrapper">
       <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->

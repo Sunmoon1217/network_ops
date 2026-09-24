@@ -201,3 +201,75 @@ def test_chain_endpoints_paginated(api):
         data = api.get(url).data
         assert set(data) == {"count", "next", "previous", "results"}
         assert isinstance(data["results"], list)
+
+
+# ---------------------------------------------------------------------------
+# GTM 搜索六形态 / 过滤 / facets
+# ---------------------------------------------------------------------------
+
+
+def _seed_gtm_search(device: Device):
+    """搜索与过滤测试的共用底座：www(A) → pool_dns → srvA/vsA；api(AAAA) → pool_b → srvB/vsB。"""
+    _seed_gtm(device, [{"server": "srvA", "vserver": "vsA"}])
+    GtmWideip.objects.create(
+        device=device, name="api.example.com", rtype="AAAA", lb_mode="round-robin", pools=["pool_b"]
+    )
+    GtmPool.objects.create(
+        device=device, name="pool_b", members=[{"server": "srvB", "vserver": "vsB"}], monitor=["gtm_tcp"]
+    )
+    GtmPool.objects.filter(name="pool_dns").update(monitor=["gtm_https", "icmp"])
+    srv_a = GtmServer.objects.create(device=device, name="srvA", monitor="icmp")
+    GtmVServer.objects.create(device=device, server=srv_a, name="vsA", ip_address="10.9.9.1", port="53", monitor="dns")
+    srv_b = GtmServer.objects.create(device=device, name="srvB")
+    GtmVServer.objects.create(device=device, server=srv_b, name="vsB", ip_address="10.9.9.2", port="443")
+
+
+@pytest.mark.django_db
+def test_gtm_search_forms(api):
+    """六种搜索形态：wideipname / poolname / servername / vservername /
+    vserveraddress / vserveraddress:port，外加健康检查名搜索。"""
+    _seed_gtm_search(_gslb_device())
+
+    def count(term: str) -> int:
+        return api.get("/api/lb-chain/gslb/", {"search": term}).data["count"]
+
+    assert count("www.example.com") == 1  # wideipname
+    assert count("pool_dns") == 1  # poolname（沿链反查）
+    assert count("srvA") == 1  # servername（池成员引用反查）
+    assert count("vsA") == 1  # vservername
+    assert count("10.9.9.1") == 1  # vserveraddress
+    assert count("10.9.9.1:53") == 1  # 组合命中
+    assert count("10.9.9.1:443") == 0  # 端口不匹配（地址与端口都不能混）
+    assert count("icmp") == 1  # 池 monitor + 服务器 monitor 都命中 www（同一条 wideip）
+    assert count("gtm_tcp") == 1  # 池 monitor → api.example.com
+    assert count("dns") == 1  # 虚拟服务器 monitor → 池成员反查 → www
+
+
+@pytest.mark.django_db
+def test_gtm_rtype_and_monitor_filters(api):
+    """?rtype= 记录类型精确过滤；?monitor= 健康检查类型过滤（三处 monitor 命中其一）。"""
+    device = _gslb_device()
+    _seed_gtm_search(device)
+
+    aaa = api.get("/api/lb-chain/gslb/", {"rtype": "AAAA"}).data
+    assert [r["name"] for r in aaa["results"]] == ["api.example.com"]
+    a = api.get("/api/lb-chain/gslb/", {"rtype": "A"}).data
+    assert [r["name"] for r in a["results"]] == ["www.example.com"]
+
+    hit = api.get("/api/lb-chain/gslb/", {"monitor": "icmp"}).data
+    assert [r["name"] for r in hit["results"]] == ["www.example.com"]
+    assert api.get("/api/lb-chain/gslb/", {"monitor": "no-such-monitor"}).data["count"] == 0
+    # 过滤与搜索可叠加
+    both = api.get("/api/lb-chain/gslb/", {"rtype": "A", "monitor": "gtm_https"}).data
+    assert [r["name"] for r in both["results"]] == ["www.example.com"]
+    assert api.get("/api/lb-chain/gslb/", {"rtype": "AAAA", "monitor": "gtm_https"}).data["count"] == 0
+
+
+@pytest.mark.django_db
+def test_gtm_facets(api):
+    """facets 返回过滤下拉选项：rtype 去重 + 三处 monitor 合集（池 JSON 列表展开）。"""
+    _seed_gtm_search(_gslb_device())
+
+    data = api.get("/api/lb-chain/gslb/facets/").data
+    assert data["rtypes"] == ["A", "AAAA"]
+    assert data["monitors"] == ["dns", "gtm_https", "gtm_tcp", "icmp"]
