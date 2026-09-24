@@ -7,12 +7,11 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getGtmChain } from '@/api/config'
-import type { GtmChainRow } from '@/types'
+import type { GtmChainPool, GtmChainRow, LbTreeRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 
-// 单表聚合：每行一条 域名 → 池 → 虚拟服务器 关联链（/api/lb-chain/gslb/），
-// 原来 Wide IP / Pool 两个 tab 拼不出关联，现在压进一行
+// 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，前端再转成树形分级展示
 const {
   data: rows,
   loading,
@@ -32,9 +31,46 @@ const loadRows = () =>
 /** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
 const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
 
-/** 成员的 hover 文案：找到就是 server/vserver 名，没找到说明链在这里断了 */
-const memberTip = (m: { server: string; vserver: string; found: boolean }) =>
-  m.found ? `${m.server} / ${m.vserver}` : `${m.server} / ${m.vserver}（未找到虚拟服务器）`
+const KIND_TAG = { wideip: 'primary', pool: 'success', member: 'info', vs: 'primary' } as const
+const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } as const
+// 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
+const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
+const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
+
+/** 池及其成员 → 池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
+const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
+  id: `pool-${device}-${pool.name}`,
+  kind: 'pool',
+  label: pool.name,
+  tipLines: [
+    `负载模式：${pool.lb_mode || '-'}`,
+    `回退IP：${pool.fallback_ip || '-'}`,
+    `TTL：${pool.ttl ?? '-'}`,
+  ],
+  mode: pool.lb_mode || '-',
+  children: pool.members.map((m, idx) => ({
+    id: `member-${device}-${pool.name}-${idx}`,
+    kind: 'member' as const,
+    // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
+    label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
+    tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
+    state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+  })),
+})
+
+/** 关联链行 → 树行：WideIP 为根，池是它的 child，成员是池的 child */
+const buildTree = (r: GtmChainRow): LbTreeRow => ({
+  id: `wideip-${r.device}-${r.name}`,
+  kind: 'wideip',
+  label: r.name,
+  tipLines: [],
+  device: r.device_hostname,
+  rtype: r.rtype || '-',
+  mode: r.lb_mode || '-',
+  children: r.pools.map((p) => buildPoolTree(r.device, p)),
+})
+
+const treeRows = computed(() => rows.value.map(buildTree))
 
 watch(filterDevice, resetAndFetch)
 onMounted(loadRows)
@@ -52,43 +88,42 @@ onMounted(loadRows)
       />
     </template>
     <div class="table-wrapper">
-      <DataTable :table-key="TABLE_KEYS.gslbWideips" :data="rows" :loading="loading" size="small">
-        <DataColumn prop="device_hostname" label="设备" width="130" sortable />
-        <!-- 主显示是域名本身 -->
-        <DataColumn prop="name" label="域名" min-width="210" sortable show-overflow-tooltip />
-        <DataColumn prop="rtype" label="记录类型" min-width="90" />
-        <DataColumn prop="lb_mode" label="负载模式" min-width="110" />
-        <!-- 解析链：池名（hover 出池参数）→ 成员 IP#端口（hover 出 server/vserver 名） -->
-        <DataColumn label="解析链" column-key="chain" min-width="380">
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->
+      <DataTable
+        :table-key="TABLE_KEYS.gslbWideips"
+        :data="treeRows"
+        :loading="loading"
+        row-key="id"
+        :tree-props="{ children: 'children' }"
+        default-expand-all
+        size="small"
+      >
+        <!-- 名称列 = 树首列：主显示域名/池名/成员地址，name 字段收进 hover -->
+        <DataColumn prop="label" label="域名 / 名称" min-width="240">
           <template #default="{ row }">
-            <div v-if="row.pools?.length" class="chain">
-              <div v-for="p in row.pools" :key="p.name" class="chain-seg">
-                <el-tooltip placement="top">
-                  <template #content>
-                    <div>{{ p.name }}</div>
-                    <div>负载模式：{{ p.lb_mode || '-' }}</div>
-                    <div>回退IP：{{ p.fallback_ip || '-' }}</div>
-                    <div>TTL：{{ p.ttl ?? '-' }}</div>
-                  </template>
-                  <span class="name-hot">{{ p.name }}</span>
-                </el-tooltip>
-                <span class="arrow">→</span>
-                <template v-if="p.members?.length">
-                  <el-tooltip
-                    v-for="(m, idx) in p.members"
-                    :key="idx"
-                    :content="memberTip(m)"
-                    placement="top"
-                  >
-                    <el-tag size="small" :type="m.found ? 'success' : 'warning'">
-                      {{ m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}` }}
-                    </el-tag>
-                  </el-tooltip>
-                </template>
-                <span v-else class="muted">无成员</span>
-              </div>
-            </div>
-            <span v-else class="muted">未关联池</span>
+            <el-tooltip v-if="row.tipLines?.length" placement="top">
+              <template #content>
+                <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
+              </template>
+              <span>{{ row.label }}</span>
+            </el-tooltip>
+            <span v-else>{{ row.label }}</span>
+          </template>
+        </DataColumn>
+        <DataColumn prop="device" label="设备" min-width="130" />
+        <DataColumn label="类型" column-key="kind" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+          </template>
+        </DataColumn>
+        <DataColumn prop="rtype" label="记录类型" min-width="90" />
+        <DataColumn prop="mode" label="负载模式" min-width="130" />
+        <DataColumn label="状态" column-key="state" min-width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
+            <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
+            <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
+            <span v-else class="muted">-</span>
           </template>
         </DataColumn>
       </DataTable>
@@ -99,9 +134,5 @@ onMounted(loadRows)
 
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
-.chain { display: flex; flex-direction: column; gap: 4px; }
-.chain-seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.arrow { color: #c0c4cc; }
-.name-hot { font-weight: 500; }
 .muted { color: #c0c4cc; }
 </style>

@@ -7,12 +7,11 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getLtmChain } from '@/api/config'
-import type { LtmChainRow } from '@/types'
+import type { LbTreeRow, LtmChainPool, LtmChainRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 
-// 单表聚合：每行一条 VS → 池 → 成员 关联链（/api/lb-chain/slb/ 按页拼好整链），
-// 原来 VS / Pool 两个 tab 各看各的、拼不出关联，现在压进一行
+// 关联链聚合（/api/lb-chain/slb/）：每行一条 VS → 池 → 成员，前端再转成树形分级展示
 const {
   data: rows,
   loading,
@@ -32,6 +31,50 @@ const loadRows = () =>
 /** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
 const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
 
+const KIND_TAG = { vs: 'primary', pool: 'success', member: 'info', wideip: 'primary' } as const
+const KIND_LABEL = { vs: '虚拟服务器', pool: '池', member: '成员', wideip: '' } as const
+// 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
+const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
+const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
+
+/** 池及其成员 → 池行（成员是池的 children） */
+const buildPoolTree = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbTreeRow => ({
+  id: `pool-${device}-${pool.name}`,
+  kind: 'pool',
+  label: pool.name,
+  tipLines: [
+    `负载模式：${pool.mode || '-'}`,
+    pool.monitors?.length ? `监控：${pool.monitors.join('、')}` : '',
+  ].filter(Boolean),
+  detail: [pool.mode, pool.monitors?.length ? `监控 ${pool.monitors.join('、')}` : '']
+    .filter(Boolean)
+    .join(' · '),
+  children: members.map((m, idx) => ({
+    // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
+    id: `member-${device}-${pool.name}-${idx}`,
+    kind: 'member' as const,
+    label: m.address ? addrPort(m.address, m.port) : m.name,
+    tipLines: [m.name],
+    detail: '',
+  })),
+})
+
+/** 关联链行 → 树行：VS 为根，池是它的 child，成员是池的 child */
+const buildTree = (r: LtmChainRow): LbTreeRow => ({
+  id: `vs-${r.device}-${r.name}`,
+  kind: 'vs',
+  // 透明 VS 没有地址时回退显示名字
+  label: r.vs_address ? addrPort(r.vs_address, r.vs_port) : r.name,
+  tipLines: r.vs_address ? [r.name] : [],
+  detail: [r.protocol && `协议 ${r.protocol}`, r.snat_type && `SNAT ${r.snat_type}`, r.persist && `会话保持 ${r.persist}`]
+    .filter(Boolean)
+    .join(' · '),
+  device: r.device_hostname,
+  children: r.pool ? [buildPoolTree(r.device, r.pool, r.members)] : undefined,
+})
+
+const treeRows = computed(() => rows.value.map(buildTree))
+
 watch(filterDevice, resetAndFetch)
 onMounted(loadRows)
 </script>
@@ -48,58 +91,37 @@ onMounted(loadRows)
       />
     </template>
     <div class="table-wrapper">
-      <DataTable :table-key="TABLE_KEYS.slbVirtualServers" :data="rows" :loading="loading" size="small">
-        <DataColumn prop="device_hostname" label="设备" width="130" sortable />
-        <!-- 主显示是 IP:端口，VS 的 name 收进 hover -->
-        <DataColumn prop="vs_address" label="虚拟地址" min-width="170">
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->
+      <DataTable
+        :table-key="TABLE_KEYS.slbVirtualServers"
+        :data="treeRows"
+        :loading="loading"
+        row-key="id"
+        :tree-props="{ children: 'children' }"
+        default-expand-all
+        size="small"
+      >
+        <!-- 名称列 = 树首列：主显示地址#端口，VS/池/成员的 name 收进 hover -->
+        <DataColumn prop="label" label="名称" min-width="240">
           <template #default="{ row }">
-            <el-tooltip :content="row.name" placement="top">
-              <span>{{ addrPort(row.vs_address, row.vs_port) }}</span>
-            </el-tooltip>
-          </template>
-        </DataColumn>
-        <DataColumn prop="protocol" label="协议" min-width="80" />
-        <!-- 关联池：池只有名字可显示，负载模式 / 监控放 hover -->
-        <DataColumn label="关联池" column-key="pool" min-width="170">
-          <template #default="{ row }">
-            <el-tooltip v-if="row.pool" placement="top">
+            <el-tooltip v-if="row.tipLines?.length" placement="top">
               <template #content>
-                <div>{{ row.pool.name }}</div>
-                <div>负载模式：{{ row.pool.mode || '-' }}</div>
-                <div>监控：{{ row.pool.monitors?.length ? row.pool.monitors.join('、') : '-' }}</div>
+                <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
               </template>
-              <span class="name-hot">{{ row.pool.name }}</span>
+              <span>{{ row.label }}</span>
             </el-tooltip>
-            <span v-else class="muted">未关联池</span>
+            <span v-else>{{ row.label }}</span>
           </template>
         </DataColumn>
-        <!-- 成员显示 地址#端口，成员 name 收进 hover -->
-        <DataColumn label="池成员" column-key="members" min-width="300">
+        <DataColumn prop="device" label="设备" min-width="130" />
+        <DataColumn label="类型" column-key="kind" min-width="110">
           <template #default="{ row }">
-            <div v-if="row.members?.length" class="chips">
-              <el-tooltip
-                v-for="m in row.members"
-                :key="`${m.name}:${m.port}`"
-                :content="m.name"
-                placement="top"
-              >
-                <el-tag size="small" type="info">
-                  {{ m.address ? addrPort(m.address, m.port) : m.name }}
-                </el-tag>
-              </el-tooltip>
-            </div>
-            <span v-else class="muted">-</span>
+            <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
           </template>
         </DataColumn>
-        <DataColumn prop="snat_type" label="SNAT" min-width="110">
+        <DataColumn prop="detail" label="详情" min-width="320">
           <template #default="{ row }">
-            <span v-if="row.snat_type">{{ row.snat_type }}</span>
-            <span v-else class="muted">-</span>
-          </template>
-        </DataColumn>
-        <DataColumn prop="persist" label="会话保持" min-width="110">
-          <template #default="{ row }">
-            <span v-if="row.persist">{{ row.persist }}</span>
+            <span v-if="row.detail">{{ row.detail }}</span>
             <span v-else class="muted">-</span>
           </template>
         </DataColumn>
@@ -111,7 +133,5 @@ onMounted(loadRows)
 
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
-.chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.name-hot { font-weight: 500; }
 .muted { color: #c0c4cc; }
 </style>
