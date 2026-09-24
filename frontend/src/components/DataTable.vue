@@ -98,33 +98,37 @@ export default defineComponent({
       // 补稳定 key：排序/过滤后的数组按 index diff 会串列
       const rendered = ordered.map((v, i) => cloneVNode(v, { key: keyOf(v) || `col-${i}` }))
 
-      const table = h(
-        ElTable,
-        {
-          ref: tableRef,
-          data: props.data,
-          height: props.height || '100%',
-          stripe: props.stripe,
-          border: props.border,
-          size: props.size,
-          rowKey: props.rowKey,
-          highlightCurrentRow: props.highlightCurrentRow,
-          ...attrs,
-          onRowClick: (row: any) => emit('row-click', row),
-          onRowDblclick: (row: any, column: any, event: MouseEvent) =>
-            emit('row-dblclick', row, column, event),
-          onHeaderDragend: (newWidth: number, oldWidth: number, column: any, event: MouseEvent) => {
-            prefs?.onHeaderDragend(newWidth, oldWidth, column)
-            emit('header-dragend', newWidth, oldWidth, column, event)
+      // v-loading 指令必须**常挂**、只变值：条件挂载会在 false 时走 unmounted 清理路径，
+      // 实测非全屏遮罩清理不掉（遮罩一直转）；与模板 v-loading 同款的 updated 路径才可靠
+      const table = withDirectives(
+        h(
+          ElTable,
+          {
+            ref: tableRef,
+            data: props.data,
+            height: props.height || '100%',
+            stripe: props.stripe,
+            border: props.border,
+            size: props.size,
+            rowKey: props.rowKey,
+            highlightCurrentRow: props.highlightCurrentRow,
+            ...attrs,
+            onRowClick: (row: any) => emit('row-click', row),
+            onRowDblclick: (row: any, column: any, event: MouseEvent) =>
+              emit('row-dblclick', row, column, event),
+            onHeaderDragend: (newWidth: number, oldWidth: number, column: any, event: MouseEvent) => {
+              prefs?.onHeaderDragend(newWidth, oldWidth, column)
+              emit('header-dragend', newWidth, oldWidth, column, event)
+            },
           },
-        },
-        { default: () => rendered },
+          { default: () => rendered },
+        ),
+        [[ElLoadingDirective, props.loading]],
       )
-      const withLoading = props.loading ? withDirectives(table, [[ElLoadingDirective, props.loading]]) : table
 
-      if (!props.tableKey) return withLoading
+      if (!props.tableKey) return table
       return h('div', { class: 'dt-root' }, [
-        withLoading,
+        table,
         h(ColumnSettings, {
           tableKey: props.tableKey,
           columns: columns.filter((v) => keyOf(v)).map((v) => ({ key: keyOf(v), label: labelOf(v) })),
