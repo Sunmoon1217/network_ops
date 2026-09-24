@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageLayout from '@/layout/PageLayout.vue'
+import { Download, Switch } from '@element-plus/icons-vue'
 import DataTable from '@/components/DataTable.vue'
 import DataColumn from '@/components/DataColumn.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'
@@ -162,10 +163,19 @@ onMounted(loadRows)
 <template>
   <PageLayout title="负载均衡管理">
     <template #actions>
-      <el-button v-if="viewMode === 'flat'" size="small" :loading="exportLoading" @click="handleExport">
+      <el-button
+        v-if="viewMode === 'flat'"
+        type="success"
+        plain
+        size="small"
+        :loading="exportLoading"
+        @click="handleExport"
+      >
+        <el-icon v-if="!exportLoading"><Download /></el-icon>
         导出
       </el-button>
-      <el-button size="small" @click="toggleView">
+      <el-button type="primary" plain size="small" @click="toggleView">
+        <el-icon><Switch /></el-icon>
         切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
       </el-button>
       <FilterBar
