@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { getGitConfigContent, getGitDiff, getConfigHistory } from '@/api/devices'
+import CodeDiffView from '@/components/CodeDiffView.vue'
+import { getGitDiff, getConfigHistory } from '@/api/devices'
 
 const props = defineProps<{
   visible: boolean
@@ -11,8 +12,6 @@ const emit = defineEmits<{ 'update:visible': [v: boolean] }>()
 const history = ref<any[]>([])
 const oldHash = ref('')
 const newHash = ref('')
-const oldText = ref('')
-const newText = ref('')
 const diffText = ref('')
 const loading = ref(false)
 
@@ -29,13 +28,6 @@ const fetchDiff = async () => {
   if (!oldHash.value || !newHash.value || !props.hostname) return
   loading.value = true
   try {
-    const [oldRes, newRes] = await Promise.all([
-      getGitConfigContent(props.hostname, oldHash.value),
-      getGitConfigContent(props.hostname, newHash.value),
-    ])
-    oldText.value = oldRes.data.config_text || ''
-    newText.value = newRes.data.config_text || ''
-
     const diffRes = await getGitDiff(props.hostname, oldHash.value, newHash.value)
     diffText.value = diffRes.data.diff || ''
   } catch {
@@ -48,8 +40,6 @@ const fetchDiff = async () => {
 const handleClose = () => {
   oldHash.value = ''
   newHash.value = ''
-  oldText.value = ''
-  newText.value = ''
   diffText.value = ''
   emit('update:visible', false)
 }
@@ -75,8 +65,8 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
     </div>
 
     <div class="compare-body" v-loading="loading">
-      <div v-if="diffText" class="diff-view">
-        <pre>{{ diffText }}</pre>
+      <div v-if="oldHash && newHash && diffText" class="diff-view">
+        <CodeDiffView :diff="diffText" />
       </div>
       <div v-else-if="oldHash && newHash && !loading" class="diff-empty">两个版本相同，无变更</div>
       <div v-else class="diff-empty">请选择两个版本进行对比</div>
@@ -107,15 +97,6 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
 .diff-view {
   height: 100%;
   overflow: auto;
-}
-.diff-view pre {
-  margin: 0;
-  padding: 16px;
-  font-size: 13px;
-  font-family: 'Courier New', monospace;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  background: #fafafa;
 }
 .diff-empty {
   display: flex;

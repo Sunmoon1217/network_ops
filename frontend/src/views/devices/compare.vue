@@ -1,20 +1,19 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { getDevice, getGitConfigContent, getGitDiff } from '@/api/devices'
+import CodeDiffView from '@/components/CodeDiffView.vue'
+import { getDevice, getGitDiff } from '@/api/devices'
 
 const route = useRoute()
 const router = useRouter()
 const deviceId = Number(route.params.id)
 
 const device = ref<any>(null)
-const oldText = ref('')
-const newText = ref('')
 const diffText = ref('')
 const oldHash = ref('')
 const newHash = ref('')
 const loading = ref(true)
 
-const fetchConfigs = async () => {
+const fetchDiff = async () => {
   loading.value = true
   oldHash.value = (route.query.old as string) || ''
   newHash.value = (route.query.new as string) || ''
@@ -27,16 +26,8 @@ const fetchConfigs = async () => {
   try {
     const deviceRes = await getDevice(deviceId)
     device.value = deviceRes.data
-    const hostname = device.value.hostname
 
-    const [oldRes, newRes] = await Promise.all([
-      getGitConfigContent(hostname, oldHash.value),
-      getGitConfigContent(hostname, newHash.value),
-    ])
-    oldText.value = oldRes.data.config_text || ''
-    newText.value = newRes.data.config_text || ''
-
-    const diffRes = await getGitDiff(hostname, oldHash.value, newHash.value)
+    const diffRes = await getGitDiff(device.value.hostname, oldHash.value, newHash.value)
     diffText.value = diffRes.data.diff || ''
   } catch {
     ElMessage.error('加载失败')
@@ -45,7 +36,7 @@ const fetchConfigs = async () => {
   }
 }
 
-onMounted(fetchConfigs)
+onMounted(fetchDiff)
 </script>
 
 <template>
@@ -62,8 +53,8 @@ onMounted(fetchConfigs)
     </div>
 
     <div v-if="loading" v-loading="true" class="compare-body" />
-    <div v-else-if="diffText" class="compare-body">
-      <pre class="diff-text">{{ diffText }}</pre>
+    <div v-else-if="oldHash && newHash && diffText" class="compare-body">
+      <CodeDiffView :diff="diffText" />
     </div>
     <el-empty v-else description="缺少对比参数或无变更" class="compare-body" />
   </div>
@@ -112,16 +103,5 @@ onMounted(fetchConfigs)
   background: #fff;
   border-radius: 8px;
   overflow: hidden;
-}
-.diff-text {
-  margin: 0;
-  padding: 16px;
-  height: 100%;
-  overflow: auto;
-  font-size: 13px;
-  font-family: 'Courier New', monospace;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  background: #fafafa;
 }
 </style>
