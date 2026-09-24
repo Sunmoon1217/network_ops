@@ -6,44 +6,118 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { useSearchSync } from '@/composables/useSearchSync'
-import { getGtmWideips, getGtmPools } from '@/api/config'
+import { getGtmChain, getGtmChainFacets } from '@/api/config'
+import type { GtmChainPool, GtmChainRow, LbTreeRow } from '@/types'
 
-const activeTab = ref('wideip')
 const filterDevice = ref<number | ''>('')
+// 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
+const filterRtype = ref('')
+const filterMonitor = ref('')
+const rtypeOptions = ref<string[]>([])
+const monitorOptions = ref<string[]>([])
 
-// Wide IP 与 Pool 各自持有独立的分页、搜索与加载状态
+// 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，前端再转成树形分级展示
 const {
-  data: wideips, loading: wideipLoading, page: wideipPage, pageSize: wideipPageSize,
-  total: wideipTotal, fetchData: fetchWideipData, refetch: refetchWideips, pageParams: wideipPageParams,
-  resetAndFetch: resetWideips, search: wideipSearch,
-} = useCrudApi()
-const {
-  data: pools, loading: poolLoading, page: poolPage, pageSize: poolPageSize,
-  total: poolTotal, fetchData: fetchPoolData, refetch: refetchPools, pageParams: poolPageParams,
-  resetAndFetch: resetPool, search: poolSearch,
-} = useCrudApi()
+  data: rows,
+  loading,
+  page,
+  pageSize,
+  total,
+  fetchData,
+  refetch,
+  pageParams,
+  resetAndFetch,
+  search,
+} = useCrudApi<GtmChainRow>()
 
-// 页面级共享搜索词：同步写入两个 tab 的 search，变化由 useCrudApi 内部防抖重新请求
-const keyword = useSearchSync(wideipSearch, poolSearch)
+const loadRows = () =>
+  fetchData(() =>
+    getGtmChain(
+      pageParams({
+        device: filterDevice.value || undefined,
+        rtype: filterRtype.value || undefined,
+        monitor: filterMonitor.value || undefined,
+      }),
+    ),
+  )
 
-// fetcher 内用各自的 pageParams 拼装分页参数，设备筛选走服务端 device 查询参数
-const loadWideips = () =>
-  fetchWideipData(() => getGtmWideips(wideipPageParams({ device: filterDevice.value || undefined })))
-
-const loadPools = () =>
-  fetchPoolData(() => getGtmPools(poolPageParams({ device: filterDevice.value || undefined })))
-
-// 设备筛选变化时两个表格都回到第 1 页并重新拉取
-const handleDeviceChange = () => {
-  resetWideips()
-  resetPool()
+/** 下拉选项走 facets；拿不到不阻塞列表（下拉退化为空、可手动清空） */
+const loadFacets = async () => {
+  try {
+    const res = await getGtmChainFacets()
+    rtypeOptions.value = res.data?.rtypes ?? []
+    monitorOptions.value = res.data?.monitors ?? []
+  } catch {
+    rtypeOptions.value = []
+    monitorOptions.value = []
+  }
 }
 
-watch(filterDevice, handleDeviceChange)
+/** 地址与端口用 # 连接：IPv6 自带冒号，':' 分不开两段（与互联网资产分析同约定） */
+const addrPort = (address: string, port: string) => (port ? `${address}#${port}` : address)
+
+const KIND_TAG = { wideip: 'primary', pool: 'success', member: 'info', vs: 'primary' } as const
+const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } as const
+// 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
+const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
+const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
+
+/** 去重后顿号连接：二级池行的 order/ratio 显示池内成员的取值集合（逐成员值看三级行） */
+const uniqJoin = (vals: (number | null | undefined)[]) =>
+  [...new Set(vals.filter((v) => v !== null && v !== undefined))].join('、')
+
+/** 池及其成员 → 池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
+const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
+  id: `pool-${device}-${pool.name}`,
+  kind: 'pool',
+  label: pool.name,
+  tipLines: [
+    `负载算法：${pool.lb_mode || '-'} / 备选：${pool.alternate_mode || '-'}`,
+    `回退IP：${pool.fallback_ip || '-'}`,
+    `TTL：${pool.ttl ?? '-'}`,
+    `健康检查：${pool.monitor?.length ? pool.monitor.join('、') : '-'}`,
+  ],
+  // 负载算法 = lb_mode / alternate_mode；fallback = 模式 + 回退IP
+  mode: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
+  fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
+  monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
+  order: uniqJoin(pool.members.map((m) => m.order)),
+  ratio: uniqJoin(pool.members.map((m) => m.ratio)),
+  children: pool.members.map((m, idx) => ({
+    id: `member-${device}-${pool.name}-${idx}`,
+    kind: 'member' as const,
+    // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
+    label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
+    tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
+    // 三级行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
+    order: m.order != null ? String(m.order) : '',
+    ratio: m.ratio != null ? String(m.ratio) : '',
+    monitor: m.monitor || '',
+    datacenter: m.datacenter || '',
+    state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+  })),
+})
+
+/** 关联链行 → 树行：WideIP 为根，池是它的 child，成员是池的 child */
+const buildTree = (r: GtmChainRow): LbTreeRow => ({
+  id: `wideip-${r.device}-${r.name}`,
+  kind: 'wideip',
+  label: r.name,
+  tipLines: [],
+  device: r.device_hostname,
+  rtype: r.rtype || '-',
+  mode: r.lb_mode || '-',
+  children: r.pools.map((p) => buildPoolTree(r.device, p)),
+})
+
+const treeRows = computed(() => rows.value.map(buildTree))
+
+watch(filterDevice, resetAndFetch)
+watch(filterRtype, resetAndFetch)
+watch(filterMonitor, resetAndFetch)
 onMounted(() => {
-  loadWideips()
-  loadPools()
+  loadRows()
+  loadFacets()
 })
 </script>
 
@@ -52,61 +126,71 @@ onMounted(() => {
     <template #actions>
       <FilterBar
         v-model:device="filterDevice"
-        v-model:search="keyword"
+        v-model:search="search"
         device-type="gslb"
-        search-placeholder="搜索域名/池/设备"
-        search-width="220px"
-      />
+        search-placeholder="搜索 域名/池/服务器/虚拟服务器/IP:端口/健康检查"
+        search-width="260px"
+      >
+        <el-select v-model="filterRtype" placeholder="记录类型" clearable style="width: 110px">
+          <el-option v-for="t in rtypeOptions" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-select v-model="filterMonitor" placeholder="健康检查" clearable style="width: 150px">
+          <el-option v-for="m in monitorOptions" :key="m" :label="m" :value="m" />
+        </el-select>
+      </FilterBar>
     </template>
-    <el-tabs v-model="activeTab" class="page-tabs">
-      <el-tab-pane label="Wide IP" name="wideip">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.gslbWideips" :data="wideips" :loading="wideipLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="域名" width="220" sortable />
-            <DataColumn prop="rtype" label="记录类型" width="100" />
-            <DataColumn prop="lb_mode" label="负载模式" width="120" />
-            <DataColumn prop="pools" label="关联池" min-width="200">
-              <template #default="{ row }">
-                <el-tag v-for="p in (row.pools || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
-                <span v-if="!row.pools?.length" style="color: #c0c4cc">-</span>
+    <div class="table-wrapper">
+      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列 -->
+      <DataTable
+        :table-key="TABLE_KEYS.gslbWideips"
+        :data="treeRows"
+        :loading="loading"
+        row-key="id"
+        :tree-props="{ children: 'children' }"
+        default-expand-all
+        size="small"
+      >
+        <!-- 名称列 = 树首列：主显示域名/池名/成员地址，name 字段收进 hover -->
+        <DataColumn prop="label" label="域名 / 名称" min-width="240">
+          <template #default="{ row }">
+            <el-tooltip v-if="row.tipLines?.length" placement="top">
+              <template #content>
+                <div v-for="line in row.tipLines" :key="line">{{ line }}</div>
               </template>
-            </DataColumn>
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="wideipPage"
-          v-model:page-size="wideipPageSize"
-          :total="wideipTotal"
-          @change="refetchWideips"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="Pool" name="pool">
-        <div class="table-wrapper">
-          <DataTable :table-key="TABLE_KEYS.gslbPools" :data="pools" :loading="poolLoading" size="small">
-            <DataColumn prop="device_hostname" label="设备" width="140" sortable />
-            <DataColumn prop="name" label="名称" width="180" sortable />
-            <DataColumn prop="lb_mode" label="负载模式" width="120" />
-            <DataColumn prop="alternate_mode" label="备选模式" width="120" />
-            <DataColumn prop="fallback_mode" label="回退模式" width="120" />
-            <DataColumn prop="fallback_ip" label="回退IP" width="140" />
-            <DataColumn prop="ttl" label="TTL" width="70" />
-          </DataTable>
-        </div>
-        <DataPagination
-          v-model:page="poolPage"
-          v-model:page-size="poolPageSize"
-          :total="poolTotal"
-          @change="refetchPools"
-        />
-      </el-tab-pane>
-    </el-tabs>
+              <span>{{ row.label }}</span>
+            </el-tooltip>
+            <span v-else>{{ row.label }}</span>
+          </template>
+        </DataColumn>
+        <DataColumn prop="device" label="设备" min-width="130" />
+        <DataColumn label="类型" column-key="kind" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
+          </template>
+        </DataColumn>
+        <DataColumn prop="rtype" label="记录类型" min-width="90" />
+        <!-- 一级显示自身 lb_mode，二级显示 池 lb_mode / alternate_mode -->
+        <DataColumn prop="mode" label="负载算法" min-width="150" />
+        <DataColumn prop="fallback" label="fallback" min-width="160" />
+        <DataColumn prop="monitor" label="监控" min-width="130" />
+        <DataColumn prop="order" label="Order" min-width="90" />
+        <DataColumn prop="ratio" label="Ratio" min-width="90" />
+        <DataColumn prop="datacenter" label="数据中心" min-width="110" />
+        <DataColumn label="状态" column-key="state" min-width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
+            <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
+            <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
+            <span v-else class="muted">-</span>
+          </template>
+        </DataColumn>
+      </DataTable>
+    </div>
+    <DataPagination v-model:page="page" v-model:page-size="pageSize" :total="total" @change="refetch" />
   </PageLayout>
 </template>
 
 <style scoped>
-.page-tabs { flex: 1; min-height: 0; }
-.page-tabs :deep(.el-tabs__content) { display: flex; flex-direction: column; }
-.page-tabs :deep(.el-tab-pane) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.muted { color: #c0c4cc; }
 </style>
