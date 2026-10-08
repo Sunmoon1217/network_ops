@@ -21,6 +21,10 @@ export const importDevices = (file: File) => {
   })
 }
 
+// 导入模板（后端按 IMPORT_SHEETS 生成 xlsx，列头与导入实现同源；前端只把响应当 Blob 下载）
+export const downloadImportTemplate = () =>
+  api.get('/api/assets/import-template/', { responseType: 'blob', timeout: 30000 })
+
 // Git 配置
 export const getGitConfigContent = (hostname: string, commitHash: string) =>
   api.get('/api/configs/git-content/', { params: { hostname, commit_hash: commitHash } })

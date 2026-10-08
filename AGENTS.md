@@ -387,7 +387,8 @@ tags, subnets, ip-addresses
 | 路径 | 说明 |
 |------|------|
 | `/api/assets/overview/` | 总览聚合统计 |
-| `/api/assets/import-devices/` | Excel 导入设备 |
+| `/api/assets/import-devices/` | Excel 导入设备（Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源是 `assets/api/views.py` 的 `IMPORT_SHEETS`，含「设备组」Sheet：组名 \| 组类型 \| 描述 \| 主机名 \| 角色，一行 = 一个成员） |
+| `/api/assets/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
 
 **ingest**（`ingest/api/urls.py`）
 
