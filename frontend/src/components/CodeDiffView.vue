@@ -141,14 +141,16 @@ const hasContent = computed(() => !!props.diff)
 </style>
 
 <style>
-/* 全局样式 - 单一滚动容器（toolbar 由宿主外置到选择器排，这里 hide-header 后只剩 diff 表）
-   .code-diff-view 是唯一的 overflow:auto 滚动容器；.diff-table 是 display:table，
-   overflow/flex 对它都不生效，故不参与滚动，只随内容撑高 */
+/* 全局样式 - 单一滚动容器（toolbar 由宿主外置到选择器排，这里 hide-header 后只剩 diff 表）。
+   覆盖 v-code-diff 自带的 .code-diff-view 规则（它有 margin:16px + border，会在 flex 列容器里
+   撑出上下留白）：margin 置 0 = 取消上下间隙（merge-top / merge-bottom）。 */
 .code-diff-container .code-diff-view {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
   overflow: auto;
 }
 </style>

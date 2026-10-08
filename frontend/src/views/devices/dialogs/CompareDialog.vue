@@ -118,7 +118,7 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   border-radius: 8px;
   flex-shrink: 0;
 }

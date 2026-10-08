@@ -192,6 +192,6 @@ onMounted(fetchHistory)
   font-family: 'Courier New', monospace;
   line-height: 1.6;
   white-space: pre-wrap;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 </style>
