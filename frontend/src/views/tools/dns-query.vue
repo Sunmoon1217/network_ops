@@ -235,7 +235,7 @@ const isSameResult = (a: any[], b: any[]): boolean => {
 .batch-bar { margin-bottom: 12px; flex-shrink: 0; }
 .result-area { flex: 1; min-height: 0; overflow: auto; }
 .compare-grid { display: grid; gap: 16px; margin-bottom: 16px; }
-.compare-col { background: #fff; border-radius: 8px; border: 1px solid var(--el-border-color-lighter); overflow: hidden; }
+.compare-col { background: var(--el-bg-color); border-radius: 8px; border: 1px solid var(--el-border-color-lighter); overflow: hidden; }
 .compare-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--el-fill-color-light); border-bottom: 1px solid var(--el-border-color-lighter); }
 .server-name { font-size: 13px; font-weight: 600; color: var(--el-color-primary); }
 .header-right { display: flex; align-items: center; gap: 8px; }

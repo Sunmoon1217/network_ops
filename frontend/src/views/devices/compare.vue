@@ -127,14 +127,14 @@ onMounted(fetchDiff)
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   flex-shrink: 0;
 }
 .compare-info code {
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   padding: 2px 8px;
   border-radius: 4px;
   font-family: monospace;
@@ -165,7 +165,7 @@ onMounted(fetchDiff)
 .compare-body {
   flex: 1;
   min-height: 0;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   overflow: hidden;
 }
