@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -16,6 +16,8 @@ from assets.models import (
     DeviceAccount,
     DeviceConfig,
     DeviceConnection,
+    DeviceGroup,
+    DeviceGroupMember,
     DeviceModel,
     GtmDatacenter,
     GtmPool,
@@ -460,20 +462,14 @@ def import_excel(request):
         return Response({"error": f"文件格式错误: {e}"}, status=400)
 
     results = {}
-    sheet_importers = {
-        "数据中心": _import_datacenters,
-        "机房": _import_rooms,
-        "机柜": _import_cabinets,
-        "安全区": _import_security_zones,
-        "设备": _import_devices,
-        "配置文件": _import_configs,
-    }
+    # Sheet 清单 / 列头 / 导入函数的唯一来源是模块级 IMPORT_SHEETS（定义在各 _import_* 之后，
+    # 运行期才查名字，此处直接引用即可）——模板下载接口读同一份表，两者不可能漂移。
 
-    for sheet_name, importer in sheet_importers.items():
+    for sheet_name, spec in IMPORT_SHEETS.items():
         if sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             try:
-                results[sheet_name] = importer(ws)
+                results[sheet_name] = spec["importer"](ws)
             except Exception as e:
                 logger.error("导入 %s 失败: %s", sheet_name, e)
                 results[sheet_name] = {"created": 0, "updated": 0, "errors": [str(e)]}
@@ -654,6 +650,73 @@ def _import_devices(ws):
     return {"created": created, "updated": updated, "errors": errors}
 
 
+def _choice_key(raw, choices, default=None):
+    """把表格里写的组类型 / 角色归一成模型的 key。
+
+    key（``stack``）与显示名（``堆叠``）都接受，空值取 ``default``，识别不了返回 ``None`` 交给调用方报错。
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return default
+    for key, label in choices:
+        if text in (key, label):
+            return key
+    return None
+
+
+def _import_device_groups(ws):
+    """设备组 Sheet：组名 | 组类型 | 描述 | 主机名 | 角色。
+
+    一行 = 一个成员：同组名的多行就是同一组的多个成员，组的类型 / 描述按该组**最后一行**覆盖。
+    设备必须先于设备组导入（IMPORT_SHEETS 里设备排在前面），否则整行报错不建半截数据。
+    """
+    created, updated, errors = 0, 0, []
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not row[0]:
+            continue
+        name = str(row[0]).strip()
+
+        group_type = _choice_key(row[1], DeviceGroup.GROUP_TYPE_CHOICES, default="single")
+        if group_type is None:
+            keys = "/".join(k for k, _ in DeviceGroup.GROUP_TYPE_CHOICES)
+            errors.append(f"行 {row_idx}: 未知组类型 '{row[1]}'，可选 {keys}")
+            continue
+
+        hostname = str(row[3] or "").strip()
+        if not hostname:
+            errors.append(f"行 {row_idx}: 缺少主机名")
+            continue
+        try:
+            device = Device.objects.get(hostname=hostname)
+        except Device.DoesNotExist:
+            errors.append(f"行 {row_idx}: 设备 '{hostname}' 不存在，请先导入设备")
+            continue
+
+        role = _choice_key(row[4], DeviceGroupMember.ROLE_CHOICES, default="member")
+        if role is None:
+            keys = "/".join(k for k, _ in DeviceGroupMember.ROLE_CHOICES)
+            errors.append(f"行 {row_idx}: 未知角色 '{row[4]}'，可选 {keys}")
+            continue
+
+        try:
+            group, _ = DeviceGroup.objects.update_or_create(
+                name=name,
+                defaults={"group_type": group_type, "description": str(row[2] or "").strip()},
+            )
+            _, member_created = DeviceGroupMember.objects.update_or_create(
+                group=group, device=device, defaults={"device_role": role}
+            )
+        except Exception as e:
+            errors.append(f"行 {row_idx}: {e}")
+            continue
+
+        # 计数口径与其它 Sheet 一致：一行 = 一行结果。新组必然带来新成员，所以按成员是否新建计数。
+        created += 1 if member_created else 0
+        updated += 0 if member_created else 1
+
+    return {"created": created, "updated": updated, "errors": errors}
+
+
 def _import_configs(ws):
     from ingest.workflow import submit_config_job
 
@@ -721,6 +784,93 @@ def _import_configs(ws):
         created += 1
 
     return {"created": created, "skipped": skipped, "errors": errors}
+
+
+# 导入支持的 Sheet：**清单 / 顺序 / 列头 / 导入函数的唯一来源**。
+# `import_excel` 按它逐个分发，模板下载接口按它生成表头——两边读同一份表，加删 Sheet 只改这里。
+# 列头必须与各 `_import_*` 里按下标取的列严格对齐（改列头 = 改导入函数，反之亦然）。
+IMPORT_SHEETS = {
+    "数据中心": {
+        "headers": ["名称", "地址", "联系人", "电话", "备注"],
+        "importer": _import_datacenters,
+    },
+    "机房": {
+        "headers": ["数据中心", "机房名称", "联系人", "备注"],
+        "importer": _import_rooms,
+    },
+    "机柜": {
+        "headers": ["数据中心", "机房", "机柜编号", "排", "U数", "功率", "状态", "备注"],
+        "importer": _import_cabinets,
+    },
+    "安全区": {
+        "headers": ["名称", "颜色", "描述"],
+        "importer": _import_security_zones,
+    },
+    "设备": {
+        "headers": [
+            "主机名",
+            "IP",
+            "类型",
+            "厂商",
+            "型号",
+            "数据中心",
+            "机房",
+            "机柜",
+            "安全区",
+            "U位",
+            "高度",
+            "备注",
+            "账号类型",
+            "用户名",
+            "密码",
+            "Enable密码",
+            "端口",
+            "超时",
+        ],
+        "importer": _import_devices,
+    },
+    # 排在「设备」之后：成员行依赖设备已存在
+    "设备组": {
+        "headers": ["组名", "组类型", "描述", "主机名", "角色"],
+        "importer": _import_device_groups,
+    },
+    "配置文件": {
+        "headers": ["主机名", "文件名(可选)", "配置目录(可选)"],
+        "importer": _import_configs,
+    },
+}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def import_template(request):
+    """下载导入模板（xlsx）：每个 Sheet 一行列头，列头取自 IMPORT_SHEETS。
+
+    只写表头、**不放示例行**——示例行留在模板里，用户忘了删就会被当成数据导进来。
+    """
+    from io import BytesIO
+    from urllib.parse import quote
+
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    for sheet_name, spec in IMPORT_SHEETS.items():
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(spec["headers"])
+        # 中文按两个字符宽估，够看清表头即可
+        for idx, header in enumerate(spec["headers"], start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = len(header) * 2 + 4
+
+    buf = BytesIO()
+    wb.save(buf)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote('设备导入模板.xlsx')}"
+    return response
 
 
 # ---------------------------------------------------------------------------

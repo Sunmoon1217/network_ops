@@ -68,4 +68,5 @@ urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),
     path("assets/import-devices/", views.import_excel, name="import-devices"),
+    path("assets/import-template/", views.import_template, name="import-template"),
 ]
