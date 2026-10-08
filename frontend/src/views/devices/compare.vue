@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import CodeDiffView from '@/components/CodeDiffView.vue'
-import { getDevice, getGitDiff } from '@/api/devices'
+import { getDevice, getGitConfigContent, getGitDiff } from '@/api/devices'
 
 const route = useRoute()
 const router = useRouter()
@@ -9,6 +9,8 @@ const deviceId = Number(route.params.id)
 
 const device = ref<any>(null)
 const diffText = ref('')
+const oldText = ref('')
+const newText = ref('')
 const oldHash = ref('')
 const newHash = ref('')
 const loading = ref(true)
@@ -26,8 +28,16 @@ const fetchDiff = async () => {
   try {
     const deviceRes = await getDevice(deviceId)
     device.value = deviceRes.data
+    const hostname = device.value.hostname
 
-    const diffRes = await getGitDiff(device.value.hostname, oldHash.value, newHash.value)
+    // 全文喂组件显示完整配置；后端 diff 只用来判空态（unified diff 只带变更±3行）
+    const [oldRes, newRes, diffRes] = await Promise.all([
+      getGitConfigContent(hostname, oldHash.value),
+      getGitConfigContent(hostname, newHash.value),
+      getGitDiff(hostname, oldHash.value, newHash.value),
+    ])
+    oldText.value = oldRes.data.config_text || ''
+    newText.value = newRes.data.config_text || ''
     diffText.value = diffRes.data.diff || ''
   } catch {
     ElMessage.error('加载失败')
@@ -54,7 +64,7 @@ onMounted(fetchDiff)
 
     <div v-if="loading" v-loading="true" class="compare-body" />
     <div v-else-if="oldHash && newHash && diffText" class="compare-body">
-      <CodeDiffView :diff="diffText" />
+      <CodeDiffView :diff="diffText" :old-text="oldText" :new-text="newText" />
     </div>
     <el-empty v-else description="缺少对比参数或无变更" class="compare-body" />
   </div>

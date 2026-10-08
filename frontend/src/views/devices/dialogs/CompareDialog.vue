@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CodeDiffView from '@/components/CodeDiffView.vue'
-import { getGitDiff, getConfigHistory } from '@/api/devices'
+import { getGitConfigContent, getGitDiff, getConfigHistory } from '@/api/devices'
 
 const props = defineProps<{
   visible: boolean
@@ -13,6 +13,8 @@ const history = ref<any[]>([])
 const oldHash = ref('')
 const newHash = ref('')
 const diffText = ref('')
+const oldText = ref('')
+const newText = ref('')
 const loading = ref(false)
 
 const fetchHistory = async () => {
@@ -28,7 +30,14 @@ const fetchDiff = async () => {
   if (!oldHash.value || !newHash.value || !props.hostname) return
   loading.value = true
   try {
-    const diffRes = await getGitDiff(props.hostname, oldHash.value, newHash.value)
+    // 全文喂组件显示完整配置；后端 diff 只用来判空态（unified diff 只带变更±3行）
+    const [oldRes, newRes, diffRes] = await Promise.all([
+      getGitConfigContent(props.hostname, oldHash.value),
+      getGitConfigContent(props.hostname, newHash.value),
+      getGitDiff(props.hostname, oldHash.value, newHash.value),
+    ])
+    oldText.value = oldRes.data.config_text || ''
+    newText.value = newRes.data.config_text || ''
     diffText.value = diffRes.data.diff || ''
   } catch {
     ElMessage.error('获取配置失败')
@@ -41,6 +50,8 @@ const handleClose = () => {
   oldHash.value = ''
   newHash.value = ''
   diffText.value = ''
+  oldText.value = ''
+  newText.value = ''
   emit('update:visible', false)
 }
 
@@ -66,7 +77,7 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
 
     <div class="compare-body" v-loading="loading">
       <div v-if="oldHash && newHash && diffText" class="diff-view">
-        <CodeDiffView :diff="diffText" />
+        <CodeDiffView :diff="diffText" :old-text="oldText" :new-text="newText" />
       </div>
       <div v-else-if="oldHash && newHash && !loading" class="diff-empty">两个版本相同，无变更</div>
       <div v-else class="diff-empty">请选择两个版本进行对比</div>
