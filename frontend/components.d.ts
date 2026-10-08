@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']
+    CodeDiffView: typeof import('./src/components/CodeDiffView.vue')['default']
     ColumnSettings: typeof import('./src/components/ColumnSettings.vue')['default']
     DataColumn: typeof import('./src/components/DataColumn.vue')['default']
     DataPagination: typeof import('./src/components/DataPagination.vue')['default']
@@ -42,6 +43,8 @@ declare module 'vue' {
     ElPagination: typeof import('element-plus/es')['ElPagination']
     ElPopover: typeof import('element-plus/es')['ElPopover']
     ElProgress: typeof import('element-plus/es')['ElProgress']
+    ElRadioButton: typeof import('element-plus/es')['ElRadioButton']
+    ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElScrollbar: typeof import('element-plus/es')['ElScrollbar']
     ElSegmented: typeof import('element-plus/es')['ElSegmented']
     ElSelect: typeof import('element-plus/es')['ElSelect']

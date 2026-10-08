@@ -25,5 +25,5 @@ const emit = defineEmits<{ (e: 'save'): void; (e: 'cancel'): void }>()
 </template>
 
 <style scoped>
-.form-body { background: #fff; border-radius: 8px; padding: 24px; }
+.form-body { background: var(--el-bg-color); border-radius: 8px; padding: 24px; }
 </style>

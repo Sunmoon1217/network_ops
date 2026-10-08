@@ -47,5 +47,5 @@ onMounted(fetchAll)
 </template>
 
 <style scoped>
-.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 </style>

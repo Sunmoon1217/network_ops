@@ -357,11 +357,11 @@ defineExpose({ getData, setData, addNode, removeNode, removeEdge, removeSelected
 }
 .g6-contextmenu {
   min-width: 140px;
-  background: #fff !important;
+  background: var(--el-bg-color-overlay) !important;
   border-radius: 6px !important;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 3px 6px rgba(0, 0, 0, 0.08) !important;
   font-size: 13px;
-  color: #333;
+  color: var(--el-text-color-regular);
   padding: 4px 0;
 }
 .g6-contextmenu-ul {
@@ -375,12 +375,12 @@ defineExpose({ getData, setData, addNode, removeNode, removeEdge, removeSelected
   white-space: nowrap;
 }
 .g6-contextmenu-li:hover {
-  background: #f0f5ff !important;
+  background: var(--el-color-primary-light-9) !important;
 }
 .g6-contextmenu-li[value^="delete"] {
-  color: #f5222d;
+  color: var(--el-color-danger);
 }
 .g6-contextmenu-li[value^="delete"]:hover {
-  background: #fff1f0 !important;
+  background: var(--el-color-danger-light-9) !important;
 }
 </style>

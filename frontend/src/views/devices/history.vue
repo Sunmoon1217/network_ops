@@ -126,7 +126,7 @@ onMounted(fetchHistory)
 .history-sidebar {
   width: 260px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -136,37 +136,37 @@ onMounted(fetchHistory)
   padding: 12px 16px;
   font-size: 14px;
   font-weight: 600;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 .history-item {
   padding: 10px 16px;
   cursor: pointer;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--el-fill-color-light);
   transition: background 0.2s;
 }
 .history-item:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
 }
 .history-item.active {
-  background: #ecf5ff;
-  border-left: 3px solid #409eff;
+  background: var(--el-color-primary-light-9);
+  border-left: 3px solid var(--el-color-primary);
 }
 .item-time {
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 2px;
 }
 .item-hash {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-family: monospace;
 }
 .history-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   overflow: hidden;
   min-width: 0;
@@ -176,8 +176,8 @@ onMounted(fetchHistory)
   gap: 16px;
   padding: 12px 16px;
   font-size: 13px;
-  color: #909399;
-  border-bottom: 1px solid #ebeef5;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 .content-body {
@@ -192,6 +192,6 @@ onMounted(fetchHistory)
   font-family: 'Courier New', monospace;
   line-height: 1.6;
   white-space: pre-wrap;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 </style>

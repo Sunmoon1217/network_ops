@@ -345,6 +345,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
-.muted { color: #c0c4cc; }
+.table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
+.muted { color: var(--el-text-color-placeholder); }
 </style>

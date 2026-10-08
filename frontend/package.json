@@ -17,6 +17,7 @@
     "element-plus": "^2.14.5",
     "pinia": "^4.0.3",
     "sortablejs": "^1.15.7",
+    "v-code-diff": "^1.16.0",
     "vue": "^3.5.42",
     "vue-echarts": "^8.3.0",
     "vue-router": "^5.3.0"
