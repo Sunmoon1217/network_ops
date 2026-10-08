@@ -318,10 +318,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 .detail { min-height: 120px; }
 .section-title { margin: 16px 0 8px; font-size: 0.95rem; font-weight: 600; }
-.stage-wrapper { height: 320px; background: #fff; border-radius: 8px; overflow: hidden; }
+.stage-wrapper { height: 320px; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 .result-block {
   margin: 0; padding: 10px; max-height: 220px; overflow: auto;
   background: var(--el-fill-color-light); border-radius: 6px;

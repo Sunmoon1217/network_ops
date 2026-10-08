@@ -126,7 +126,7 @@ onMounted(fetchAll)
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   overflow: hidden;
 }

@@ -124,7 +124,7 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
 }
 .arrow {
   font-size: 16px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 /* 工具栏右半：导航 + 统计 + 切换，靠右对齐 */
 .toolbar-right {
@@ -151,7 +151,7 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
 }
 .compare-body {
   height: 65vh;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -160,6 +160,6 @@ watch([oldHash, newHash], () => { if (oldHash.value && newHash.value) fetchDiff(
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

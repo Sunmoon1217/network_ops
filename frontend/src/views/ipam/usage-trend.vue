@@ -66,5 +66,5 @@ onMounted(fetchSubnets)
 </template>
 
 <style scoped>
-.trend-body { flex: 1; min-height: 0; background: #fff; border-radius: 8px; padding: 16px; }
+.trend-body { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; padding: 16px; }
 </style>

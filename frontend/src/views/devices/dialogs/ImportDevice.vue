@@ -72,7 +72,7 @@ const handleClose = () => {
         </el-button>
       </el-upload>
 
-      <div style="color: #909399; font-size: 12px; line-height: 1.8">
+      <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.8">
         支持导入以下 Sheet（按顺序）：
         <strong>数据中心</strong>：名称 | 地址 | 联系人 | 电话 | 备注<br />
         <strong>机房</strong>：数据中心 | 机房名称 | 联系人 | 备注<br />
@@ -92,13 +92,13 @@ const handleClose = () => {
       </el-button>
 
       <div v-if="importResult" style="margin-top: 8px">
-        <div v-if="importResult.success" style="color: #67c23a; font-weight: 600">导入完成</div>
-        <div v-else style="color: #f56c6c">导入失败: {{ importResult.error }}</div>
+        <div v-if="importResult.success" style="color: var(--el-color-success); font-weight: 600">导入完成</div>
+        <div v-else style="color: var(--el-color-danger)">导入失败: {{ importResult.error }}</div>
         <div v-if="importResult.results" style="margin-top: 8px; font-size: 13px">
           <div v-for="(result, sheet) in importResult.results" :key="sheet" style="margin-bottom: 4px">
             <strong>{{ sheet }}</strong>：
-            <span v-if="result.skipped" style="color: #909399">跳过（Sheet 不存在）</span>
-            <span v-else-if="result.errors?.length" style="color: #f56c6c">
+            <span v-if="result.skipped" style="color: var(--el-text-color-secondary)">跳过（Sheet 不存在）</span>
+            <span v-else-if="result.errors?.length" style="color: var(--el-color-danger)">
               {{ result.errors.length }} 条错误
             </span>
             <span v-else>新增 {{ result.created }}，更新 {{ result.updated }}</span>

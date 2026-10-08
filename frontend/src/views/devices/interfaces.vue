@@ -53,7 +53,7 @@ onMounted(fetchAll)
         <DataColumn prop="mode" label="模式" :width="100">
           <template #default="{ row }">
             <el-tag v-if="row.mode" size="small" :type="modeTagType(row.mode)">{{ row.mode }}</el-tag>
-            <span v-else style="color: #c0c4cc">-</span>
+            <span v-else style="color: var(--el-text-color-placeholder)">-</span>
           </template>
         </DataColumn>
         <DataColumn prop="ip_address" label="IP 地址" :width="150" />
@@ -61,7 +61,7 @@ onMounted(fetchAll)
         <DataColumn prop="vrf_name" label="VRF" :width="120">
           <template #default="{ row }">
             <span v-if="row.vrf_name">{{ row.vrf_name }}</span>
-            <span v-else style="color: #c0c4cc">-</span>
+            <span v-else style="color: var(--el-text-color-placeholder)">-</span>
           </template>
         </DataColumn>
         <DataColumn prop="enabled" label="状态" :width="80" align="center">
@@ -82,5 +82,5 @@ onMounted(fetchAll)
 </template>
 
 <style scoped>
-.table-wrapper { flex: 1; min-height: 0; background: #fff; border-radius: 8px; overflow: hidden; }
+.table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 </style>

@@ -237,7 +237,7 @@ onMounted(() => {
 .sidebar-title {
   font-size: 14px;
   font-weight: 600;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .table-wrap {
   flex: 1;
@@ -269,7 +269,7 @@ onMounted(() => {
 .template-name {
   font-size: 14px;
   font-weight: 600;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .template-actions {
   display: flex;
@@ -278,8 +278,8 @@ onMounted(() => {
 }
 .template-content {
   flex: 1;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 16px;
   overflow: auto;

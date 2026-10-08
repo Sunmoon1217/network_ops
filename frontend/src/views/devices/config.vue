@@ -96,7 +96,7 @@ onMounted(fetchLatestConfig)
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -105,8 +105,8 @@ onMounted(fetchLatestConfig)
   gap: 16px;
   padding: 12px 16px;
   font-size: 13px;
-  color: #909399;
-  border-bottom: 1px solid #ebeef5;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 .config-text {
