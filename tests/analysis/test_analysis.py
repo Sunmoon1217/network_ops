@@ -192,6 +192,25 @@ def test_members_written_by_saver_are_resolvable():
     assert member["vserver"]["name"] == "vs1"
 
 
+@pytest.mark.django_db
+def test_member_order_read_from_saver_shape():
+    """成员 order 的入库形态是 Saver 归一后的 `order`，分析侧必须读得到。
+
+    原实现只读模板原始键 `member_order`，而 GtmPoolSaver 存的是 `order`
+    → 分析结果里 order 恒为 None（`lb_chain` 侧一直是双轨读，只有这里漏了）。
+    """
+    gslb = _device("ia-member-order")
+    _wideip(gslb, "www.example.com", ["pool_web"])
+    GtmPool.objects.create(
+        device=gslb,
+        name="pool_web",
+        members=[{"server": "s1", "vserver": "vs1", "order": 7, "ratio": 2}],
+    )
+
+    member = analyze_device(gslb)["wideips"][0]["pools"][0]["members"][0]
+    assert member["order"] == 7
+
+
 # ---------- IPv6 链路 ----------
 
 
