@@ -288,18 +288,6 @@ onMounted(() => {
                         <div v-if="!p.panel?.length" class="panel-empty">无成员</div>
                         <!-- member 表：同样无表头，字段名前缀与 pool 表一致 -->
                         <el-table v-else :data="p.panel" row-key="id" :show-header="false" size="small">
-                          <DataColumn prop="name" column-key="mName" label="名称" min-width="200">
-                            <template #default="{ row: m }">
-                              <span class="cell-k">名称：</span><strong>{{ m.name }}</strong>
-                            </template>
-                          </DataColumn>
-                          <DataColumn prop="address" column-key="mAddr" label="地址" min-width="150">
-                            <template #default="{ row: m }">
-                              <template v-if="m.address">
-                                <span class="cell-k">地址：</span>{{ m.address }}
-                              </template>
-                            </template>
-                          </DataColumn>
                           <DataColumn prop="order" column-key="mOrder" label="Order" min-width="85">
                             <template #default="{ row: m }">
                               <template v-if="m.order">
@@ -311,6 +299,18 @@ onMounted(() => {
                             <template #default="{ row: m }">
                               <template v-if="m.ratio">
                                 <span class="cell-k">Ratio：</span>{{ m.ratio }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="name" column-key="mName" label="名称" min-width="200">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">名称：</span><strong>{{ m.name }}</strong>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="address" column-key="mAddr" label="地址" min-width="150">
+                            <template #default="{ row: m }">
+                              <template v-if="m.address">
+                                <span class="cell-k">地址：</span>{{ m.address }}
                               </template>
                             </template>
                           </DataColumn>
@@ -338,6 +338,20 @@ onMounted(() => {
                           </DataColumn>
                         </el-table>
                       </div>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="order" column-key="poolOrder" label="Order" min-width="100">
+                    <template #default="{ row: p }">
+                      <template v-if="p.order">
+                        <span class="cell-k">Order：</span>{{ p.order }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="ratio" column-key="poolRatio" label="Ratio" min-width="100">
+                    <template #default="{ row: p }">
+                      <template v-if="p.ratio">
+                        <span class="cell-k">Ratio：</span>{{ p.ratio }}
+                      </template>
                     </template>
                   </DataColumn>
                   <DataColumn prop="label" column-key="poolLabel" label="池" min-width="200">
@@ -370,20 +384,6 @@ onMounted(() => {
                     <template #default="{ row: p }">
                       <template v-if="p.monitor">
                         <span class="cell-k">监控：</span>{{ p.monitor }}
-                      </template>
-                    </template>
-                  </DataColumn>
-                  <DataColumn prop="order" column-key="poolOrder" label="Order" min-width="100">
-                    <template #default="{ row: p }">
-                      <template v-if="p.order">
-                        <span class="cell-k">Order：</span>{{ p.order }}
-                      </template>
-                    </template>
-                  </DataColumn>
-                  <DataColumn prop="ratio" column-key="poolRatio" label="Ratio" min-width="100">
-                    <template #default="{ row: p }">
-                      <template v-if="p.ratio">
-                        <span class="cell-k">Ratio：</span>{{ p.ratio }}
                       </template>
                     </template>
                   </DataColumn>
