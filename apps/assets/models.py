@@ -264,6 +264,7 @@ class DeviceGroup(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
     if TYPE_CHECKING:
+        members: QuerySet["DeviceGroupMember"]
 
         def get_group_type_display(self) -> str: ...
 

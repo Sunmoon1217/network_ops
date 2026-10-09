@@ -895,7 +895,9 @@ def import_template(request):
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
-    wb.remove(wb.active)
+    ws = wb.active
+    if ws:
+        wb.remove(ws)
     for sheet_name, spec in IMPORT_SHEETS.items():
         ws = wb.create_sheet(title=sheet_name)
         ws.append(spec["headers"])
