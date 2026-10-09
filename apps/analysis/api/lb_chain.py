@@ -211,10 +211,15 @@ def ltm_chains(request):
 
 
 def _wideip_pairs_q(pairs) -> Q:
-    """(device_id, 池名) → wideip.pools JSON 包含该池名（逐对 OR，JSON 语义没法拆成 __in）。"""
+    """(device_id, 池名) → wideip.pools JSON 包含该池名（逐对 OR，JSON 语义没法拆成 __in）。
+
+    ``pools`` 有两种历史形态：老数据是纯池名列表 ``["pool_web"]``，
+    新数据是 ``[{"name": "pool_web", "order": 5, "ratio": 3}]``——
+    两种都得 OR 上，否则改形态后老数据搜不到、按池反查也漏。
+    """
     q = Q()
     for device_id, pool_name in pairs:
-        q |= Q(device_id=device_id, pools__contains=[pool_name])
+        q |= Q(device_id=device_id) & (Q(pools__contains=[pool_name]) | Q(pools__contains=[{"name": pool_name}]))
     return q
 
 
@@ -287,7 +292,7 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
     需要 (device, server 名, vs 名) 三元组才能定位——按页建索引一次查齐。
     """
     device_ids = {w.device_id for w in page}
-    wideip_pool_names = {name for w in page for name in (w.pools or [])}
+    wideip_pool_names = {name for w in page for name in w.pool_names}
 
     pools: dict[tuple[int, str], GtmPool] = {}
     if wideip_pool_names:
@@ -314,8 +319,11 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
 
     rows = []
     for w in page:
+        # 池条目自带 wideip 级权重（f5_gtm wideip 组的 order / ratio）；老数据只有池名 → None
+        pool_entries = w.pool_entries()
         pool_out = []
-        for pool_name in w.pools or []:
+        for entry in pool_entries:
+            pool_name = entry["name"]
             pool = pools.get((w.device_id, pool_name))
             member_out = []
             if pool:
@@ -343,6 +351,10 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
             pool_out.append(
                 {
                     "name": pool_name,
+                    # wideip 级权重（wideip 组里每个池自己的 order / ratio）；
+                    # 与成员的 order/ratio 分开——同一个池被别的 wideip 引用时权重可以不同
+                    "order": entry.get("order"),
+                    "ratio": entry.get("ratio"),
                     # wideip 引用了但池记录不存在：给空骨架，前端才能显示「池缺失」而不是吞掉
                     "lb_mode": pool.lb_mode if pool else "",
                     "alternate_mode": pool.alternate_mode if pool else "",

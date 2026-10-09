@@ -206,11 +206,12 @@ def analyze_device(device: Device) -> dict:
             "name": wideip.name,
             "rtype": wideip.rtype,
             "lb_mode": wideip.lb_mode,
-            "pool_count": len(wideip.pools or []),
+            # pool_names 归一了 pools 的两种历史形态（纯池名 / {name,order,ratio}）
+            "pool_count": len(wideip.pool_names),
             "pools": [],
         }
 
-        for pool_name in wideip.pools or []:
+        for pool_name in wideip.pool_names:
             pool_node: dict = {"name": str(pool_name), "found": False, "lb_mode": "", "members": []}
             pool = pools_by_name.get(str(pool_name))
             if pool:
@@ -223,7 +224,9 @@ def analyze_device(device: Device) -> dict:
                         "vs_name": vs_name,
                         "member_ref": f"{server_name}:{vs_name}" if (server_name or vs_name) else "",
                         "state": raw.get("member_status", "") if isinstance(raw, dict) else "",
-                        "order": raw.get("member_order") if isinstance(raw, dict) else None,
+                        # 双轨：入库形态是 Saver 归一后的 order，手工 payload / 旧模板给
+                        # member_order——与 lb_chain 同款，只读 member_order 会恒为空
+                        "order": raw.get("order", raw.get("member_order")) if isinstance(raw, dict) else None,
                         "status": "",
                         "message": "",
                         "vserver": None,
