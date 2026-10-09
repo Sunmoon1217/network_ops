@@ -34,12 +34,12 @@ def test_import_dispatches_async_and_skips_sync(device, tmp_path, monkeypatch):
 
     sync_calls = []
     monkeypatch.setattr("ingest.pipeline.run_config_pipeline", lambda dev, config: sync_calls.append(config.pk))
-    monkeypatch.setattr("assets.api.views.save_config", lambda hostname, text, message="": "a" * 40)
+    monkeypatch.setattr("assets.device_import.save_config", lambda hostname, text, message="": "a" * 40)
 
     submitted = []
     monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
 
-    from assets.api.views import _import_configs
+    from assets.device_import import _import_configs
 
     result = _import_configs(_sheet([["_t_imp_dev", cfg.name, str(tmp_path)]]))
 
@@ -58,11 +58,11 @@ def test_import_skips_existing_commit_and_does_not_dispatch_again(device, tmp_pa
     cfg = tmp_path / "_t_imp_dev.txt"
     cfg.write_text("sysname IMP\nvlan 10\n", encoding="utf-8")
 
-    monkeypatch.setattr("assets.api.views.save_config", lambda hostname, text, message="": "b" * 40)
+    monkeypatch.setattr("assets.device_import.save_config", lambda hostname, text, message="": "b" * 40)
     submitted = []
     monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
 
-    from assets.api.views import _import_configs
+    from assets.device_import import _import_configs
 
     first = _import_configs(_sheet([["_t_imp_dev", cfg.name, str(tmp_path)]]))
     second = _import_configs(_sheet([["_t_imp_dev", cfg.name, str(tmp_path)]]))
@@ -79,16 +79,17 @@ def test_import_reports_dispatch_failure_per_row(device, tmp_path, monkeypatch):
     cfg = tmp_path / "_t_imp_dev.txt"
     cfg.write_text("sysname IMP\n", encoding="utf-8")
 
-    monkeypatch.setattr("assets.api.views.save_config", lambda hostname, text, message="": "c" * 40)
+    monkeypatch.setattr("assets.device_import.save_config", lambda hostname, text, message="": "c" * 40)
 
     def _boom(pk):
         raise RuntimeError("broker down")
 
     monkeypatch.setattr("ingest.workflow.submit_config_job", _boom)
 
-    from assets.api.views import _import_configs
+    from assets.device_import import _import_configs
 
     result = _import_configs(_sheet([["_t_imp_dev", cfg.name, str(tmp_path)]]))
 
     assert result["created"] == 1
     assert any("投递解析任务失败" in err and "broker down" in err for err in result["errors"]), result
+

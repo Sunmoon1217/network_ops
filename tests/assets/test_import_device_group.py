@@ -19,7 +19,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
 from rest_framework.test import APIClient
 
-from assets.api.views import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
+from assets.device_import import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
 from assets.models import Device, DeviceGroup
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
