@@ -169,38 +169,52 @@ export interface LbRootRow {
   rtype?: string
   /** 负载算法（GTM WideIP 行的 lb_mode） */
   mode?: string
-  /** 展开面板：池 → 成员的明细（记录式列表、不设表头，字段与主表列无关） */
-  panel?: LbPanelRow[]
+  /** 展开面板 = **pool 表**（无表头、格子自带字段名；池行再展开一层才是 member 表） */
+  panel?: LbPoolRow[]
 }
 
 /**
- * 展开面板行（记录式明细，**不设表头**：一行一条记录，字段「标签：值」平铺，
- * `children` 是该池下的成员记录）：字段与主表列**完全无关**——
- * 主表列增删/隐藏互不影响面板，反之亦然。
- * 两页共用一个结构、靠 `kind` 区分层级，没用到的字段留空。
+ * pool 表行（根行的展开面板里，`el-table` + `show-header=false`）：
+ * 字段与主表列**完全无关**——每格自带「字段名：」前缀，所以表头可以整个砍掉。
+ * `panel` 是该池的 **member 表**：严格依赖关系，成员只挂在自己的池行下。
+ * 两页共用一个结构（SLB 只用 label/algo/monitor，GTM 用全量），没用到的留空。
  */
-export interface LbPanelRow {
-  /** 面板内唯一（链根 + 层级 + 名字/序号） */
+export interface LbPoolRow {
+  /** pool 表内唯一（链根 + 池名） */
   id: string
-  kind: 'pool' | 'member'
-  /** 主显示：池名 / 成员地址#端口（成员无地址时回退名字） */
+  /** 池名（pool 表首列） */
   label: string
-  /** 记录的补充文案：`[0]` 作为「名称」字段的值（成员真名 / server·vserver），其余由「状态」字段承担 */
-  tipLines: string[]
   /** 负载算法/模式（SLB = pool.mode；GTM = 池 lb_mode / alternate_mode） */
   algo?: string
-  /** fallback 策略（仅 GTM 池行，已拼好 mode(ip)） */
+  /** fallback 策略（仅 GTM，已拼好 mode(ip)） */
   fallback?: string
-  /** TTL（仅 GTM 池行） */
+  /** TTL（仅 GTM） */
   ttl?: string
-  /** 健康检查（池行 = 列表 join / 成员行 = 单值） */
+  /** 健康检查（池级列表 join） */
   monitor?: string
-  /** 调度权重（池行 = 池内成员取值集合去重 / 成员行 = 自身值） */
+  /** 池级调度权重 = 池内成员取值集合去重（仅 GTM） */
   order?: string
   ratio?: string
-  /** 数据中心（仅 GTM 成员行，来自其所属 server） */
+  /** 展开面板 = member 表（空数组时面板显示占位文案） */
+  panel?: LbMemberRow[]
+}
+
+/**
+ * member 表行（pool 行的展开面板里，同样无表头、格子自带字段名）：
+ * SLB 只用 name/address，GTM 用全量。
+ */
+export interface LbMemberRow {
+  /** member 表内唯一（链根 + 池名 + 序号） */
+  id: string
+  /** 名称：节点名（SLB）/ `server/vserver`（GTM）；没有名称时回退成地址 */
+  name: string
+  /** 地址#端口；与名称重复时该格不渲染 */
+  address?: string
+  order?: string
+  ratio?: string
+  monitor?: string
+  /** 所属 server 的数据中心（仅 GTM） */
   datacenter?: string
-  /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器 */
+  /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器（仅 GTM） */
   state?: 'ok' | 'disabled' | 'lost'
-  children?: LbPanelRow[]
 }

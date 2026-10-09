@@ -8,7 +8,7 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportGtmChain, getGtmChain, getGtmChainFacets } from '@/api/config'
-import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbPanelRow, LbRootRow } from '@/types'
+import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
@@ -73,12 +73,10 @@ const stateLabelOf = (state: string) => STATE_LABEL[state as keyof typeof STATE_
 const uniqJoin = (vals: (number | null | undefined)[]) =>
   [...new Set(vals.filter((v) => v !== null && v !== undefined))].join('、')
 
-/** 池及其成员 → 面板池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
-const buildPoolPanel = (device: number, pool: GtmChainPool): LbPanelRow => ({
+/** 池及其成员 → pool 表行：`panel` 是该池的 member 表（严格依赖，展开池行才可见） */
+const buildPoolPanel = (device: number, pool: GtmChainPool): LbPoolRow => ({
   id: `pool-${device}-${pool.name}`,
-  kind: 'pool',
   label: pool.name,
-  tipLines: [],
   // 负载算法 = lb_mode / alternate_mode；fallback = 模式 + 回退IP
   algo: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
   fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
@@ -86,19 +84,17 @@ const buildPoolPanel = (device: number, pool: GtmChainPool): LbPanelRow => ({
   monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
   order: uniqJoin(pool.members.map((m) => m.order)),
   ratio: uniqJoin(pool.members.map((m) => m.ratio)),
-  children: pool.members.map((m, idx) => ({
+  panel: pool.members.map((m, idx) => ({
     id: `member-${device}-${pool.name}-${idx}`,
-    kind: 'member' as const,
-    // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
-    label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
-    tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
-    // 成员行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
+    // 名称 = server/vserver 对象；地址只在真解析出 IP 时才占一格
+    name: `${m.server}/${m.vserver}`,
+    address: m.found && m.address ? addrPort(m.address, m.port) : '',
     order: m.order != null ? String(m.order) : '',
     ratio: m.ratio != null ? String(m.ratio) : '',
     monitor: m.monitor || '',
     datacenter: m.datacenter || '',
     state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
-  })),
+  })) as LbMemberRow[],
 })
 
 /** 关联链行 → 根行：WideIP 上主表，池/成员收进 panel 由展开列渲染 */
@@ -277,35 +273,114 @@ onMounted(() => {
                    子表首列对齐主表第一列（名称），而不是箭头列 -->
               <div class="panel">
                 <div v-if="!row.panel?.length" class="panel-empty">无关联池</div>
-                <!-- 记录式明细（不要表头）：一行一条记录，字段「标签：值」平铺；
-                     上下双线（===）、记录之间单线（---） -->
-                <div v-else class="panel-records">
-                  <template v-for="p in row.panel" :key="p.id">
-                    <div class="record">
-                      <span class="field"><span class="k">池：</span>{{ p.label }}</span>
-                      <span v-if="p.algo" class="field"><span class="k">负载算法：</span>{{ p.algo }}</span>
-                      <span v-if="p.fallback" class="field"><span class="k">fallback：</span>{{ p.fallback }}</span>
-                      <span v-if="p.ttl" class="field"><span class="k">TTL：</span>{{ p.ttl }}</span>
-                      <span v-if="p.monitor" class="field"><span class="k">监控：</span>{{ p.monitor }}</span>
-                      <span v-if="p.order" class="field"><span class="k">Order：</span>{{ p.order }}</span>
-                      <span v-if="p.ratio" class="field"><span class="k">Ratio：</span>{{ p.ratio }}</span>
-                    </div>
-                    <div v-for="m in p.children" :key="m.id" class="record">
-                      <span class="field"><span class="k">名称：</span>{{ m.tipLines[0] || m.label }}</span>
-                      <span v-if="m.tipLines[0] && m.label !== m.tipLines[0]" class="field">
-                        <span class="k">地址：</span>{{ m.label }}
-                      </span>
-                      <span v-if="m.order" class="field"><span class="k">Order：</span>{{ m.order }}</span>
-                      <span v-if="m.ratio" class="field"><span class="k">Ratio：</span>{{ m.ratio }}</span>
-                      <span v-if="m.monitor" class="field"><span class="k">监控：</span>{{ m.monitor }}</span>
-                      <span v-if="m.datacenter" class="field"><span class="k">数据中心：</span>{{ m.datacenter }}</span>
-                      <span v-if="m.state" class="field">
-                        <span class="k">状态：</span>
-                        <el-tag :type="stateTagOf(m.state)" size="small">{{ stateLabelOf(m.state) }}</el-tag>
-                      </span>
-                    </div>
-                  </template>
-                </div>
+                <!-- pool 表：无表头，格子自带「字段名：」前缀；池行再展开一层才是 member 表 -->
+                <el-table v-else :data="row.panel" row-key="id" :show-header="false" size="small">
+                  <DataColumn type="expand" label="">
+                    <template #default="{ row: p }">
+                      <div class="panel">
+                        <div v-if="!p.panel?.length" class="panel-empty">无成员</div>
+                        <!-- member 表：同样无表头，字段名前缀与 pool 表一致 -->
+                        <el-table v-else :data="p.panel" row-key="id" :show-header="false" size="small">
+                          <DataColumn prop="name" column-key="mName" label="名称" min-width="200">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">名称：</span><strong>{{ m.name }}</strong>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="address" column-key="mAddr" label="地址" min-width="150">
+                            <template #default="{ row: m }">
+                              <template v-if="m.address">
+                                <span class="cell-k">地址：</span>{{ m.address }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="order" column-key="mOrder" label="Order" min-width="85">
+                            <template #default="{ row: m }">
+                              <template v-if="m.order">
+                                <span class="cell-k">Order：</span>{{ m.order }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="ratio" column-key="mRatio" label="Ratio" min-width="85">
+                            <template #default="{ row: m }">
+                              <template v-if="m.ratio">
+                                <span class="cell-k">Ratio：</span>{{ m.ratio }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="monitor" column-key="mMonitor" label="监控" min-width="120">
+                            <template #default="{ row: m }">
+                              <template v-if="m.monitor">
+                                <span class="cell-k">监控：</span>{{ m.monitor }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="datacenter" column-key="mDatacenter" label="数据中心" min-width="110">
+                            <template #default="{ row: m }">
+                              <template v-if="m.datacenter">
+                                <span class="cell-k">数据中心：</span>{{ m.datacenter }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn label="状态" column-key="mState" min-width="95">
+                            <template #default="{ row: m }">
+                              <template v-if="m.state">
+                                <span class="cell-k">状态：</span>
+                                <el-tag :type="stateTagOf(m.state)" size="small">{{ stateLabelOf(m.state) }}</el-tag>
+                              </template>
+                            </template>
+                          </DataColumn>
+                        </el-table>
+                      </div>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="label" column-key="poolLabel" label="池" min-width="200">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">池：</span><strong>{{ p.label }}</strong>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="algo" column-key="poolAlgo" label="负载算法" min-width="160">
+                    <template #default="{ row: p }">
+                      <template v-if="p.algo">
+                        <span class="cell-k">负载算法：</span>{{ p.algo }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="fallback" column-key="poolFallback" label="fallback" min-width="150">
+                    <template #default="{ row: p }">
+                      <template v-if="p.fallback">
+                        <span class="cell-k">fallback：</span>{{ p.fallback }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="ttl" column-key="poolTtl" label="TTL" min-width="85">
+                    <template #default="{ row: p }">
+                      <template v-if="p.ttl">
+                        <span class="cell-k">TTL：</span>{{ p.ttl }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="monitor" column-key="poolMonitor" label="监控" min-width="140">
+                    <template #default="{ row: p }">
+                      <template v-if="p.monitor">
+                        <span class="cell-k">监控：</span>{{ p.monitor }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="order" column-key="poolOrder" label="Order" min-width="100">
+                    <template #default="{ row: p }">
+                      <template v-if="p.order">
+                        <span class="cell-k">Order：</span>{{ p.order }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="ratio" column-key="poolRatio" label="Ratio" min-width="100">
+                    <template #default="{ row: p }">
+                      <template v-if="p.ratio">
+                        <span class="cell-k">Ratio：</span>{{ p.ratio }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                </el-table>
               </div>
             </template>
           </DataColumn>
@@ -378,24 +453,8 @@ onMounted(() => {
 .muted { color: var(--el-text-color-placeholder); }
 /* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
 .panel { padding-left: 48px; }
-/* 记录式明细：上下双线（===）、记录间单线（---），字段平铺、放不下自动换行 */
-.panel-records {
-  border-top: 3px double var(--el-border-color);
-  border-bottom: 3px double var(--el-border-color);
-  padding: 2px 0;
-}
-.record {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 24px;
-  padding: 6px 2px;
-}
-.record + .record { border-top: 1px solid var(--el-border-color-lighter); }
-/* 首字段（池名 / 成员名）加重，作为这条记录的锚点 */
-.record > .field:first-child { font-weight: 600; color: var(--el-text-color-primary); }
-.field { font-size: 13px; color: var(--el-text-color-regular); white-space: nowrap; }
-.field .k { color: var(--el-text-color-secondary); font-weight: 400; }
+/* 子表（pool / member 表）无表头：字段名前缀放进格子里，用次要色与值区分 */
+.cell-k { color: var(--el-text-color-secondary); }
 /* 展开面板里的占位文案（WideIP 无关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>
