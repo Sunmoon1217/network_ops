@@ -246,16 +246,6 @@ class GTMWideipSaver(BaseSaver):
             name = self._leaf(w.get("wideip_name") or w.get("name"))
             if not name:
                 continue
-            pools_raw = w.get("pools", [])
-            if isinstance(pools_raw, list):
-                pools = [
-                    self._leaf(p.get("pool_name") or p.get("name")) if isinstance(p, dict) else self._leaf(p)
-                    for p in pools_raw
-                ]
-            elif isinstance(pools_raw, str):
-                pools = [pools_raw]
-            else:
-                pools = []
             _, is_created = GtmWideip.objects.update_or_create(
                 device=device,
                 name=name,
@@ -264,12 +254,46 @@ class GTMWideipSaver(BaseSaver):
                     # 原先直接取 rtype / lb_mode，这两个字段永远是空
                     "rtype": w.get("wideip_type", w.get("rtype", "")),
                     "lb_mode": w.get("wideip_lbmode", w.get("lb_mode", "")),
-                    "pools": pools,
+                    "pools": self._normalize_pools(w.get("pools", [])),
                 },
             )
             created += 1 if is_created else 0
             updated += 0 if is_created else 1
         return (created, updated)
+
+    def _normalize_pools(self, pools_raw: object) -> list[dict]:
+        """wideip 的关联池 → `[{"name", "order", "ratio"}, ...]`。
+
+        `f5_gtm.ttp` 的 wideip 组里，每个池带自己的 `pool_order` / `pool_ratio`
+        （同一个池被不同 wideip 引用时权重各不相同，所以必须跟着 wideip 走）。
+        原实现只留池名，这两个值直接丢了。缺省按 F5 语义兜底：order=0、ratio=1。
+        """
+        if isinstance(pools_raw, str):
+            items: list = [pools_raw]
+        elif isinstance(pools_raw, list):
+            items = pools_raw
+        else:
+            items = []
+
+        pools = []
+        for item in items:
+            if isinstance(item, dict):
+                pool_name = self._leaf(item.get("pool_name") or item.get("name"))
+                order = self._safe_int(item.get("pool_order"))
+                ratio = self._safe_int(item.get("pool_ratio"))
+            else:
+                pool_name, order, ratio = self._leaf(item), None, None
+            if not pool_name:
+                continue
+            # 显式 0 必须留住（order=0 是合法值），只有 None 才兜底
+            pools.append(
+                {
+                    "name": pool_name,
+                    "order": 0 if order is None else order,
+                    "ratio": 1 if ratio is None else ratio,
+                }
+            )
+        return pools
 
 
 class GtmDatacenterSaver(BaseSaver):
@@ -404,14 +428,18 @@ class GtmPoolSaver(BaseSaver):
             server = self._leaf(member.get("server_name"))
             if not server:
                 continue
+            # 显式 0 要原样留住（ratio=0 = 不参与调度），只有缺值才兜底——
+            # 原先写成 `or 1` 会把 ratio=0 静默改成 1
+            order = self._safe_int(member.get("member_order"))
+            ratio = self._safe_int(member.get("member_ratio"))
             members.append(
                 {
                     "server": server,
                     "vserver": self._leaf(member.get("vs_name")),
                     # 双轨：新模板 enabled 0/1；手工 payload 给 status / 旧模板给 member_status
                     "status": "enabled" if status_enabled(member, "member_status", "status") else "disabled",
-                    "order": self._safe_int(member.get("member_order")) or 0,
-                    "ratio": self._safe_int(member.get("member_ratio")) or 1,
+                    "order": 0 if order is None else order,
+                    "ratio": 1 if ratio is None else ratio,
                     "monitor": self._leaf(member.get("member_monitor")),
                 }
             )

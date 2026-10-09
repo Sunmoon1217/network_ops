@@ -673,6 +673,31 @@ class GtmWideip(ConfigBase):
     lb_mode = models.CharField(max_length=255, verbose_name="负载模式")
     pools = models.JSONField(default=list, null=True, verbose_name="关联池列表")
 
+    def pool_entries(self) -> list[dict]:
+        """`pools` 的两种历史形态统一成 `[{"name", "order", "ratio"}, ...]`。
+
+        旧数据是纯池名列表 ``["pool_web"]``（Saver 曾把权重丢掉）；2026-09 起
+        `f5_gtm.ttp` wideip 组里每个池的 ``pool_order`` / ``pool_ratio`` 会一起存进来：
+        ``[{"name": "pool_web", "order": 5, "ratio": 3}]``。
+
+        读侧一律走这里——老数据不丢，新数据带权重，别再直接遍历 `pools`。
+        """
+        entries = []
+        for item in self.pools or []:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("pool_name") or ""
+                order, ratio = item.get("order"), item.get("ratio")
+            else:
+                name, order, ratio = str(item or ""), None, None
+            if name:
+                entries.append({"name": name, "order": order, "ratio": ratio})
+        return entries
+
+    @property
+    def pool_names(self) -> list[str]:
+        """只要池名：查询反查、计数、逐池循环都用它。"""
+        return [entry["name"] for entry in self.pool_entries()]
+
     class Meta:
         verbose_name = "GTM Wide IP"
         verbose_name_plural = verbose_name
