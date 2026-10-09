@@ -203,36 +203,40 @@ onMounted(loadRows)
           <!-- 展开列：单元格只画箭头，面板内容跨整行渲染，不参与列宽/顺序/显隐偏好 -->
           <DataColumn type="expand" label="">
             <template #default="{ row }">
-              <div v-if="!row.panel?.length" class="panel-empty">未关联池</div>
-              <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
-              <el-table
-                v-else
-                :data="row.panel"
-                row-key="id"
-                :tree-props="{ children: 'children' }"
-                default-expand-all
-                border
-                size="small"
-              >
-                <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
-                  <template #default="{ row: p }">
-                    <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
-                  </template>
-                </DataColumn>
-                <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="220">
-                  <template #default="{ row: p }">
-                    <el-tooltip v-if="p.tipLines?.length" placement="top">
-                      <template #content>
-                        <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
-                      </template>
-                      <span>{{ p.label }}</span>
-                    </el-tooltip>
-                    <span v-else>{{ p.label }}</span>
-                  </template>
-                </DataColumn>
-                <DataColumn prop="algo" column-key="pAlgo" label="负载模式" min-width="140" />
-                <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="170" />
-              </el-table>
+              <!-- 面板整体右移一个展开列宽（48px，与 DataColumn type=expand 的列宽同源）：
+                   子表首列对齐主表第一列（名称），而不是箭头列 -->
+              <div class="panel">
+                <div v-if="!row.panel?.length" class="panel-empty">未关联池</div>
+                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
+                <el-table
+                  v-else
+                  :data="row.panel"
+                  row-key="id"
+                  :tree-props="{ children: 'children' }"
+                  default-expand-all
+                  border
+                  size="small"
+                >
+                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
+                    <template #default="{ row: p }">
+                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="220">
+                    <template #default="{ row: p }">
+                      <el-tooltip v-if="p.tipLines?.length" placement="top">
+                        <template #content>
+                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
+                        </template>
+                        <span>{{ p.label }}</span>
+                      </el-tooltip>
+                      <span v-else>{{ p.label }}</span>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="algo" column-key="pAlgo" label="负载模式" min-width="140" />
+                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="170" />
+                </el-table>
+              </div>
             </template>
           </DataColumn>
           <DataColumn prop="label" label="名称" min-width="240">
@@ -309,6 +313,8 @@ onMounted(loadRows)
 
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
+/* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
+.panel { padding-left: 48px; }
 /* 展开面板里的占位文案（VS 未关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>

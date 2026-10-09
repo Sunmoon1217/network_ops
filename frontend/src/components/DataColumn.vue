@@ -49,7 +49,8 @@ const isAnchor = computed(() => isTypeCol.value || (props.anchor ?? !!props.fixe
 
 /** 该档位的基准值：偏好存过就用偏好，否则回退页面默认 */
 const base = computed(() => {
-  // 类型列没有 column-key，直接给 48px（与 el-table 各类型列的内置默认一致）
+  // 类型列没有 column-key，直接给 48px（与 el-table 各类型列的内置默认一致）——
+  // 这个宽度是页面侧展开面板缩进（.panel { padding-left: 48px }）的对齐基准，改这里要同步改那边
   if (isTypeCol.value) return props.width ?? props.minWidth ?? 48
   const fallback = props.minWidth ?? props.width
   if (fallback === undefined) return undefined
