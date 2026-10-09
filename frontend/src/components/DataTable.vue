@@ -13,7 +13,9 @@ import type { TableKey } from '@/types'
  *
  * ① 列宽偏好：读（DataColumn 经 context 取）与写（header-dragend 拖拽持久化）都在这里；
  * ② 列设置（方案 C）：默认插槽的列 vnode 按「列布局偏好」重排 + 隐藏过滤后渲染，
- *    挂 table-key 的表格右上角悬浮「列设置」按钮（顺序/显隐弹窗）。
+ *    挂 table-key 的表格右上角悬浮「列设置」按钮（顺序/显隐弹窗）；
+ * ③ 展开列（`type="expand"`）：固定排最左、不进偏好与「列设置」，
+ *    其默认插槽渲染的展开面板天然与数据列解耦。
  *
  * **为什么是 render 函数而不是模板**：列的顺序只能在 slot vnode 层面重排，
  * 模板的 <slot /> 无法调整 vnode 顺序；v-if/v-else 的列组是 Fragment，需逐层摊平。
@@ -76,10 +78,17 @@ export default defineComponent({
       return String(p.label ?? key)
     }
 
+    /** 展开列（`type="expand"`）：箭头列不是数据列，不参与列序/显隐/宽度偏好 */
+    const isExpandCol = (vnode: VNode) => String((vnode.props ?? {})['type'] ?? '') === 'expand'
+
     return () => {
       // 每次渲染现算（不 computed）：slot 执行时读到的响应式（v-if 条件等）只在渲染期建立依赖，
       // computed 缓存有过不更新的坑；列数量小，重算零成本
-      const columns = flatten(slots.default?.() ?? []).filter((v) => v && typeof v.type === 'object')
+      const all = flatten(slots.default?.() ?? []).filter((v) => v && typeof v.type === 'object')
+      // 展开列**固定排最左**（箭头就画在该列自己的单元格里），且不进「列设置」清单：
+      // 它没有 prop / column-key，走数据列那套会被 rank('') 排到最尾部，还可能被整列隐藏
+      const expandCols = all.filter(isExpandCol)
+      const columns = all.filter((v) => !isExpandCol(v))
 
       let ordered = columns
       if (prefs) {
@@ -96,7 +105,9 @@ export default defineComponent({
           .map(({ v }) => v)
       }
       // 补稳定 key：排序/过滤后的数组按 index diff 会串列
-      const rendered = ordered.map((v, i) => cloneVNode(v, { key: keyOf(v) || `col-${i}` }))
+      const rendered = [...expandCols, ...ordered].map((v, i) =>
+        cloneVNode(v, { key: keyOf(v) || `col-${i}` }),
+      )
 
       // v-loading 指令必须**常挂**、只变值：条件挂载会在 false 时走 unmounted 清理路径，
       // 实测非全屏遮罩清理不掉（遮罩一直转）；与模板 v-loading 同款的 updated 路径才可靠

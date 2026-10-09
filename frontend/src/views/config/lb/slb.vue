@@ -8,11 +8,12 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportLtmChain, getLtmChain } from '@/api/config'
-import type { LbTreeRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
+import type { LbPanelRow, LbRootRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 
-// 关联链聚合（/api/lb-chain/slb/）：每行一条 VS → 池 → 成员，前端再转成树形分级展示
+// 关联链聚合（/api/lb-chain/slb/）：每行一条 VS → 池 → 成员，
+// 前端转成「根行（VS 自身字段）+ 展开面板（池 → 成员）」——两者各用各的列
 const {
   data: rows,
   loading,
@@ -38,15 +39,14 @@ const KIND_LABEL = { vs: '虚拟服务器', pool: '池', member: '成员', widei
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
 
-/** 池及其成员 → 池行（成员是池的 children） */
-const buildPoolTree = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbTreeRow => ({
+/** 池及其成员 → 面板池行（成员是池的 children）：明细走面板自有列，不借主表列 */
+const buildPoolPanel = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbPanelRow => ({
   id: `pool-${device}-${pool.name}`,
   kind: 'pool',
   label: pool.name,
-  tipLines: [
-    `负载模式：${pool.mode || '-'}`,
-    pool.monitors?.length ? `监控：${pool.monitors.join('、')}` : '',
-  ].filter(Boolean),
+  tipLines: [],
+  algo: pool.mode || '',
+  monitor: pool.monitors?.length ? pool.monitors.join('、') : '',
   children: members.map((m, idx) => ({
     // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
     id: `member-${device}-${pool.name}-${idx}`,
@@ -56,8 +56,8 @@ const buildPoolTree = (device: number, pool: LtmChainPool, members: LtmChainRow[
   })),
 })
 
-/** 关联链行 → 树行：VS 为根，池是它的 child，成员是池的 child */
-const buildTree = (r: LtmChainRow): LbTreeRow => ({
+/** 关联链行 → 根行：VS 上主表，池/成员收进 panel 由展开列渲染 */
+const buildRoot = (r: LtmChainRow): LbRootRow => ({
   id: `vs-${r.device}-${r.name}`,
   kind: 'vs',
   // 透明 VS 没有地址时回退显示名字
@@ -71,10 +71,10 @@ const buildTree = (r: LtmChainRow): LbTreeRow => ({
   profiles: r.profiles || [],
   persist: r.persist || '-',
   rules: r.rules || [],
-  children: r.pool ? [buildPoolTree(r.device, r.pool, r.members)] : undefined,
+  panel: r.pool ? [buildPoolPanel(r.device, r.pool, r.members)] : [],
 })
 
-const treeRows = computed(() => rows.value.map(buildTree))
+const rootRows = computed(() => rows.value.map(buildRoot))
 
 /** 导出扁平宽表为 xlsx（后端 openpyxl 生成、前端只下载 Blob；全量、带当前过滤/搜索） */
 const exportLoading = ref(false)
@@ -98,9 +98,12 @@ const handleExport = async () => {
   }
 }
 
-/** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
-const viewMode = ref<'tree' | 'flat'>('tree')
-const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
+/**
+ * 视图模式：明细（根行 + 展开面板，池/成员收在面板里）⇄ 扁平（join 宽表，以叶子为行、
+ * 字段下填），两模式各配各的列。
+ */
+const viewMode = ref<'detail' | 'flat'>('detail')
+const toggleView = () => (viewMode.value = viewMode.value === 'detail' ? 'flat' : 'detail')
 
 /**
  * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
@@ -175,7 +178,7 @@ onMounted(loadRows)
       </el-button>
       <el-button type="primary" plain @click="toggleView">
         <el-icon><Switch /></el-icon>
-        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+        切换{{ viewMode === 'detail' ? '扁平' : '明细' }}视图
       </el-button>
       <FilterBar
         v-model:device="filterDevice"
@@ -186,19 +189,56 @@ onMounted(loadRows)
       />
     </template>
     <div class="table-wrapper">
-      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
-           扁平行没有 children（join 展开行），el-table 视其为叶子即自然平铺 -->
+      <!-- 展开列经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填；
+           扁平视图没有展开列，主表只有一层叶子行 -->
       <DataTable
         :table-key="TABLE_KEYS.slbVirtualServers"
-        :data="viewMode === 'tree' ? treeRows : flatRows"
+        :data="viewMode === 'detail' ? rootRows : flatRows"
         :loading="loading"
         row-key="id"
-        :tree-props="{ children: 'children' }"
-        default-expand-all
         size="small"
       >
-        <!-- 树形列组：分级展示，VS/池/成员的 name 收进 hover -->
-        <template v-if="viewMode === 'tree'">
+        <!-- 主表列组：只放 VS 自身的字段；池 / 成员明细在展开面板里，与这些列完全无关 -->
+        <template v-if="viewMode === 'detail'">
+          <!-- 展开列：单元格只画箭头，面板内容跨整行渲染，不参与列宽/顺序/显隐偏好 -->
+          <DataColumn type="expand" label="">
+            <template #default="{ row }">
+              <!-- 面板整体右移一个展开列宽（48px，与 DataColumn type=expand 的列宽同源）：
+                   子表首列对齐主表第一列（名称），而不是箭头列 -->
+              <div class="panel">
+                <div v-if="!row.panel?.length" class="panel-empty">未关联池</div>
+                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
+                <el-table
+                  v-else
+                  :data="row.panel"
+                  row-key="id"
+                  :tree-props="{ children: 'children' }"
+                  default-expand-all
+                  border
+                  size="small"
+                >
+                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
+                    <template #default="{ row: p }">
+                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="220">
+                    <template #default="{ row: p }">
+                      <el-tooltip v-if="p.tipLines?.length" placement="top">
+                        <template #content>
+                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
+                        </template>
+                        <span>{{ p.label }}</span>
+                      </el-tooltip>
+                      <span v-else>{{ p.label }}</span>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="algo" column-key="pAlgo" label="负载模式" min-width="140" />
+                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="170" />
+                </el-table>
+              </div>
+            </template>
+          </DataColumn>
           <DataColumn prop="label" label="名称" min-width="240">
             <template #default="{ row }">
               <el-tooltip v-if="row.tipLines?.length" placement="top">
@@ -216,7 +256,7 @@ onMounted(loadRows)
               <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
             </template>
           </DataColumn>
-          <!-- 以下六列：VS 行填自身配置；池/成员行留空，层级聚焦在 VS 自身的配置上 -->
+          <!-- 以下六列全是 VS 自身的配置，根行独占；池 / 成员的字段一律不上主表 -->
           <DataColumn prop="vsName" label="VS名称" min-width="170" show-overflow-tooltip />
           <DataColumn prop="protocol" label="协议" min-width="70" />
           <DataColumn prop="poolName" label="关联池" min-width="140" />
@@ -273,4 +313,8 @@ onMounted(loadRows)
 
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
+/* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
+.panel { padding-left: 48px; }
+/* 展开面板里的占位文案（VS 未关联池时） */
+.panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>

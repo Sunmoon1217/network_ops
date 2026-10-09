@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { importDevices } from '@/api/devices'
+import { downloadImportTemplate, importDevices } from '@/api/devices'
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -8,8 +8,30 @@ const emit = defineEmits<{
 }>()
 
 const importLoading = ref(false)
+const templateLoading = ref(false)
 const selectedFile = ref<File | null>(null)
 const importResult = ref<any>(null)
+
+/**
+ * 下载导入模板：文件由后端按 `IMPORT_SHEETS` 用 openpyxl 生成（列头与导入实现同源，
+ * 改列不会漏改模板），这里只把响应体当 Blob 下载。
+ */
+const downloadTemplate = async () => {
+  templateLoading.value = true
+  try {
+    const res = await downloadImportTemplate()
+    const url = URL.createObjectURL(res.data as Blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '设备导入模板.xlsx'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('模板下载失败，请稍后重试')
+  } finally {
+    templateLoading.value = false
+  }
+}
 
 const handleImportChange = (uploadFile: any) => {
   if (!uploadFile.raw) return
@@ -60,6 +82,15 @@ const handleClose = () => {
     @close="handleClose"
   >
     <div style="display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="color: var(--el-text-color-secondary); font-size: 12px">
+          建议先下载模板，按列头填写
+        </span>
+        <el-button link type="primary" :loading="templateLoading" @click="downloadTemplate">
+          下载导入模板
+        </el-button>
+      </div>
+
       <el-upload
         :limit="1"
         accept=".xlsx,.xls"
@@ -79,6 +110,7 @@ const handleClose = () => {
         <strong>机柜</strong>：数据中心 | 机房 | 机柜编号 | 排 | U数 | 功率 | 状态 | 备注<br />
         <strong>安全区</strong>：名称 | 颜色 | 描述<br />
          <strong>设备</strong>：主机名 | IP | 类型 | 厂商 | 型号 | 数据中心 | 机房 | 机柜 | 安全区 | U位 | 高度 | 备注 | 账号类型 | 用户名 | 密码 | Enable密码 | 端口 | 超时<br />
+        <strong>设备组</strong>：组类型 | 设备名(多个用逗号分隔) | 描述（一行 = 一个设备组；组名与角色自动推——非集群第一台=主、第二台=备，组名=主设备名；集群全部=成员，组名=设备名公共前缀）<br />
         <strong>配置文件</strong>：主机名 | 文件名(可选) | 配置目录(可选)
       </div>
 

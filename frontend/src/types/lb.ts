@@ -71,7 +71,7 @@ export interface GtmChainPool {
 /**
  * SLB 扁平宽表行：**以链最深层为行粒度**（有成员每成员一行，池无成员则池行，
  * 无池则 VS 行），VS 与池的字段整条下填、融合成一张大表。
- * 与树形模式是两套列——扁平不是「去缩进」，而是 join 展开。
+ * 与明细模式（根行 + 展开面板）是两套列——扁平不是「去缩进」，而是 join 展开。
  */
 export interface LtmFlatRow {
   /** 行唯一：链根 + 层级标记 + 序号 */
@@ -114,7 +114,7 @@ export interface GtmFlatRow {
   fallback: string
   ttl: string
   poolMonitor: string
-  /** 池级调度权重 = 池内成员取值集合去重（与树形二级池行同义），与成员自身值分列 */
+  /** 池级调度权重 = 池内成员取值集合去重（与展开面板的池行同义），与成员自身值分列 */
   poolOrder: string
   poolRatio: string
   /** 成员段（回退行为空串/ '-'） */
@@ -142,43 +142,64 @@ export interface GtmChainFacets {
 }
 
 /**
- * 树形分级展示的行（el-table `tree-props` 的 `children` 结构），
- * 由上面的关联链行在页面里转换而来：顶级 = VS/WideIP，子级 = 池，孙级 = 成员。
+ * 主表根行（一级 = VS / WideIP）：**只放根自身的配置字段**——
+ * 池 / 成员明细全部收进 `panel`，由 `type="expand"` 列渲染成展开面板，
+ * 不再借主表列展示（两页主表列增删/隐藏都不影响展开内容，反之亦然）。
  *
- * 两页共用一个结构、靠 `kind` 区分层级；各页用到的列字段不同
- * （LTM 用 `detail`，GTM 用 `rtype` / `mode` / `state`），没用到的留空即可。
+ * 两页共用一个结构、靠 `kind` 区分根类型；各页用到的字段不同
+ * （SLB 用 vsName/protocol/…，GTM 用 rtype/mode），没用到的留空即可。
  */
-export interface LbTreeRow {
-  /** row-key：链内唯一（设备 + 层级 + 名字/序号） */
+export interface LbRootRow {
+  /** row-key：链根唯一（设备 + 层级 + 名字） */
   id: string
-  kind: 'vs' | 'wideip' | 'pool' | 'member'
-  /** 首列主显示：域名 / 地址#端口 / 池名（成员优先地址，回退名字） */
+  kind: 'vs' | 'wideip'
+  /** 首列主显示：VS 地址#端口（透明 VS 回退名字）/ 域名 */
   label: string
-  /** hover 弹出的多行说明——真正的 name 字段与次要信息收在这里；空数组不包 tooltip */
+  /** hover 弹出的多行说明——次要信息收在这里；空数组不包 tooltip */
   tipLines: string[]
-  /** 仅顶级行有值 */
-  device?: string
-  /** 以下五个 + vsName/poolName 仅 SLB 一级 VS 行填充（GTM 行用 rtype/mode/state） */
+  device: string
+  /** SLB 一级 VS 行字段 */
   vsName?: string
   protocol?: string
   poolName?: string
   profiles?: string[]
   persist?: string
   rules?: string[]
-  /** 记录类型（仅 GTM WideIP 行） */
+  /** 记录类型（GTM WideIP 行） */
   rtype?: string
-  /** 负载算法（GTM：一级 lb_mode；二级 池 lb_mode / alternate_mode） */
+  /** 负载算法（GTM WideIP 行的 lb_mode） */
   mode?: string
-  /** fallback 策略（仅 GTM 二级池行，已拼好 mode(ip)） */
+  /** 展开面板：池 → 成员的明细（面板内是嵌套小表格的自有列，与主表列无关） */
+  panel?: LbPanelRow[]
+}
+
+/**
+ * 展开面板行（面板内嵌套小表格，`tree-props` 的 `children` 结构：池 → 成员）：
+ * 字段与主表列**完全无关**——面板列增删/隐藏互不影响主表，反之亦然。
+ * 两页共用一个结构、靠 `kind` 区分层级，没用到的字段留空。
+ */
+export interface LbPanelRow {
+  /** 面板内唯一（链根 + 层级 + 名字/序号） */
+  id: string
+  kind: 'pool' | 'member'
+  /** 主显示：池名 / 成员地址#端口（成员无地址时回退名字） */
+  label: string
+  /** hover 弹出的多行说明（成员真名、断链原因等）；空数组不包 tooltip */
+  tipLines: string[]
+  /** 负载算法/模式（SLB = pool.mode；GTM = 池 lb_mode / alternate_mode） */
+  algo?: string
+  /** fallback 策略（仅 GTM 池行，已拼好 mode(ip)） */
   fallback?: string
-  /** 健康检查（GTM 二级池级列表 join / 三级成员单值） */
+  /** TTL（仅 GTM 池行） */
+  ttl?: string
+  /** 健康检查（池行 = 列表 join / 成员行 = 单值） */
   monitor?: string
-  /** 调度权重（GTM 二级 = 池内成员取值集合去重 / 三级 = 成员自身值） */
+  /** 调度权重（池行 = 池内成员取值集合去重 / 成员行 = 自身值） */
   order?: string
   ratio?: string
-  /** 数据中心（仅 GTM 三级成员行，来自其所属 server） */
+  /** 数据中心（仅 GTM 成员行，来自其所属 server） */
   datacenter?: string
   /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器 */
   state?: 'ok' | 'disabled' | 'lost'
-  children?: LbTreeRow[]
+  children?: LbPanelRow[]
 }

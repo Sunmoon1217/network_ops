@@ -8,7 +8,7 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportGtmChain, getGtmChain, getGtmChainFacets } from '@/api/config'
-import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbTreeRow } from '@/types'
+import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbPanelRow, LbRootRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
@@ -17,7 +17,8 @@ const filterMonitor = ref('')
 const rtypeOptions = ref<string[]>([])
 const monitorOptions = ref<string[]>([])
 
-// 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，前端再转成树形分级展示
+// 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，
+// 前端转成「根行（WideIP 自身字段）+ 展开面板（池 → 成员）」——两者各用各的列
 const {
   data: rows,
   loading,
@@ -63,24 +64,20 @@ const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } 
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
 
-/** 去重后顿号连接：二级池行的 order/ratio 显示池内成员的取值集合（逐成员值看三级行） */
+/** 去重后顿号连接：面板池行的 order/ratio 显示池内成员的取值集合（逐成员值看成员行） */
 const uniqJoin = (vals: (number | null | undefined)[]) =>
   [...new Set(vals.filter((v) => v !== null && v !== undefined))].join('、')
 
-/** 池及其成员 → 池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
-const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
+/** 池及其成员 → 面板池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
+const buildPoolPanel = (device: number, pool: GtmChainPool): LbPanelRow => ({
   id: `pool-${device}-${pool.name}`,
   kind: 'pool',
   label: pool.name,
-  tipLines: [
-    `负载算法：${pool.lb_mode || '-'} / 备选：${pool.alternate_mode || '-'}`,
-    `回退IP：${pool.fallback_ip || '-'}`,
-    `TTL：${pool.ttl ?? '-'}`,
-    `健康检查：${pool.monitor?.length ? pool.monitor.join('、') : '-'}`,
-  ],
+  tipLines: [],
   // 负载算法 = lb_mode / alternate_mode；fallback = 模式 + 回退IP
-  mode: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
+  algo: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
   fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
+  ttl: pool.ttl != null ? String(pool.ttl) : '',
   monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
   order: uniqJoin(pool.members.map((m) => m.order)),
   ratio: uniqJoin(pool.members.map((m) => m.ratio)),
@@ -90,7 +87,7 @@ const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
     // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
     label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
     tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
-    // 三级行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
+    // 成员行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
     order: m.order != null ? String(m.order) : '',
     ratio: m.ratio != null ? String(m.ratio) : '',
     monitor: m.monitor || '',
@@ -99,8 +96,8 @@ const buildPoolTree = (device: number, pool: GtmChainPool): LbTreeRow => ({
   })),
 })
 
-/** 关联链行 → 树行：WideIP 为根，池是它的 child，成员是池的 child */
-const buildTree = (r: GtmChainRow): LbTreeRow => ({
+/** 关联链行 → 根行：WideIP 上主表，池/成员收进 panel 由展开列渲染 */
+const buildRoot = (r: GtmChainRow): LbRootRow => ({
   id: `wideip-${r.device}-${r.name}`,
   kind: 'wideip',
   label: r.name,
@@ -108,10 +105,10 @@ const buildTree = (r: GtmChainRow): LbTreeRow => ({
   device: r.device_hostname,
   rtype: r.rtype || '-',
   mode: r.lb_mode || '-',
-  children: r.pools.map((p) => buildPoolTree(r.device, p)),
+  panel: r.pools.map((p) => buildPoolPanel(r.device, p)),
 })
 
-const treeRows = computed(() => rows.value.map(buildTree))
+const rootRows = computed(() => rows.value.map(buildRoot))
 
 /** 导出扁平宽表为 xlsx（后端 openpyxl 生成、前端只下载 Blob；全量、带当前过滤/搜索） */
 const exportLoading = ref(false)
@@ -137,9 +134,12 @@ const handleExport = async () => {
   }
 }
 
-/** 视图模式：树形（分级展开）⇄ 扁平（join 宽表，以叶子为行、字段下填），两模式各配各的列 */
-const viewMode = ref<'tree' | 'flat'>('tree')
-const toggleView = () => (viewMode.value = viewMode.value === 'tree' ? 'flat' : 'tree')
+/**
+ * 视图模式：明细（根行 + 展开面板，池/成员收在面板里）⇄ 扁平（join 宽表，以叶子为行、
+ * 字段下填），两模式各配各的列。
+ */
+const viewMode = ref<'detail' | 'flat'>('detail')
+const toggleView = () => (viewMode.value = viewMode.value === 'detail' ? 'flat' : 'detail')
 
 /**
  * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
@@ -172,7 +172,7 @@ const flatRows = computed(() => {
         fallback: [p.fallback_mode, p.fallback_ip ? `（${p.fallback_ip}）` : ''].filter(Boolean).join('') || '-',
         ttl: p.ttl != null ? String(p.ttl) : '-',
         poolMonitor: p.monitor?.length ? p.monitor.join('、') : '-',
-        // 池级权重 = 池内成员取值集合去重（与树形二级池行同义），成员行也带上下文
+        // 池级权重 = 池内成员取值集合去重（与展开面板的池行同义），成员行也带上下文
         poolOrder: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.order)) || '-',
         poolRatio: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.ratio)) || '-',
       }
@@ -236,7 +236,7 @@ onMounted(() => {
       </el-button>
       <el-button type="primary" plain @click="toggleView">
         <el-icon><Switch /></el-icon>
-        切换{{ viewMode === 'tree' ? '扁平' : '树形' }}视图
+        切换{{ viewMode === 'detail' ? '扁平' : '明细' }}视图
       </el-button>
       <FilterBar
         v-model:device="filterDevice"
@@ -254,19 +254,70 @@ onMounted(() => {
       </FilterBar>
     </template>
     <div class="table-wrapper">
-      <!-- 树形参数经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填，箭头/缩进自动加在第一列；
-           扁平行没有 children（join 展开行），el-table 视其为叶子即自然平铺 -->
+      <!-- 展开列经 attrs 透传落到内层 el-table（组件注释里的既定机制）：row-key 必填；
+           扁平视图没有展开列，主表只有一层叶子行 -->
       <DataTable
         :table-key="TABLE_KEYS.gslbWideips"
-        :data="viewMode === 'tree' ? treeRows : flatRows"
+        :data="viewMode === 'detail' ? rootRows : flatRows"
         :loading="loading"
         row-key="id"
-        :tree-props="{ children: 'children' }"
-        default-expand-all
         size="small"
       >
-        <!-- 树形列组：分级展示，主显示域名/池名/成员地址，name 字段收进 hover -->
-        <template v-if="viewMode === 'tree'">
+        <!-- 明细列组：主表只放 WideIP 自身的字段；池 / 成员的字段全在展开面板里，与这些列完全无关 -->
+        <template v-if="viewMode === 'detail'">
+          <!-- 展开列：单元格只画箭头，面板内容跨整行渲染，不参与列宽/顺序/显隐偏好 -->
+          <DataColumn type="expand" label="">
+            <template #default="{ row }">
+              <!-- 面板整体右移一个展开列宽（48px，与 DataColumn type=expand 的列宽同源）：
+                   子表首列对齐主表第一列（名称），而不是箭头列 -->
+              <div class="panel">
+                <div v-if="!row.panel?.length" class="panel-empty">无关联池</div>
+                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
+                <el-table
+                  v-else
+                  :data="row.panel"
+                  row-key="id"
+                  :tree-props="{ children: 'children' }"
+                  default-expand-all
+                  border
+                  size="small"
+                >
+                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
+                    <template #default="{ row: p }">
+                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="200">
+                    <template #default="{ row: p }">
+                      <el-tooltip v-if="p.tipLines?.length" placement="top">
+                        <template #content>
+                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
+                        </template>
+                        <span>{{ p.label }}</span>
+                      </el-tooltip>
+                      <span v-else>{{ p.label }}</span>
+                    </template>
+                  </DataColumn>
+                  <!-- 池行填自身配置，成员行留空；成员自己的权重/检查/数据中心在右侧成员段列 -->
+                  <DataColumn prop="algo" column-key="pAlgo" label="负载算法" min-width="150" />
+                  <DataColumn prop="fallback" column-key="pFallback" label="fallback" min-width="150" />
+                  <DataColumn prop="ttl" column-key="pTtl" label="TTL" min-width="70" />
+                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="130" />
+                  <DataColumn prop="order" column-key="pOrder" label="Order" min-width="85" />
+                  <DataColumn prop="ratio" column-key="pRatio" label="Ratio" min-width="85" />
+                  <DataColumn prop="datacenter" column-key="pDatacenter" label="数据中心" min-width="100" />
+                  <DataColumn label="状态" column-key="pState" min-width="85">
+                    <template #default="{ row: p }">
+                      <el-tag v-if="p.state === 'ok'" type="success" size="small">正常</el-tag>
+                      <el-tag v-else-if="p.state === 'disabled'" type="info" size="small">停用</el-tag>
+                      <el-tag v-else-if="p.state === 'lost'" type="warning" size="small">未找到</el-tag>
+                      <span v-else class="muted">-</span>
+                    </template>
+                  </DataColumn>
+                </el-table>
+              </div>
+            </template>
+          </DataColumn>
           <DataColumn prop="label" label="域名 / 名称" min-width="240">
             <template #default="{ row }">
               <el-tooltip v-if="row.tipLines?.length" placement="top">
@@ -285,21 +336,8 @@ onMounted(() => {
             </template>
           </DataColumn>
           <DataColumn prop="rtype" label="记录类型" min-width="90" />
-          <!-- 一级显示自身 lb_mode，二级显示 池 lb_mode / alternate_mode -->
+          <!-- 只有 WideIP 自身的 lb_mode 上主表；池的算法/fallback/TTL/权重等一律进面板 -->
           <DataColumn prop="mode" label="负载算法" min-width="150" />
-          <DataColumn prop="fallback" label="fallback" min-width="160" />
-          <DataColumn prop="monitor" label="监控" min-width="130" />
-          <DataColumn prop="order" label="Order" min-width="90" />
-          <DataColumn prop="ratio" label="Ratio" min-width="90" />
-          <DataColumn prop="datacenter" label="数据中心" min-width="110" />
-          <DataColumn label="状态" column-key="state" min-width="90">
-            <template #default="{ row }">
-              <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
-              <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
-              <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
-              <span v-else class="muted">-</span>
-            </template>
-          </DataColumn>
         </template>
         <!-- 扁平宽表列组：按链层级排序——wideip 段 → 池段（权重/名/监控）→ 成员段 -->
         <template v-else>
@@ -347,4 +385,8 @@ onMounted(() => {
 <style scoped>
 .table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 .muted { color: var(--el-text-color-placeholder); }
+/* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
+.panel { padding-left: 48px; }
+/* 展开面板里的占位文案（WideIP 无关联池时） */
+.panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>
