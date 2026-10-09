@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 
 from django.http import HttpResponse, JsonResponse
@@ -651,7 +652,7 @@ def _import_devices(ws):
 
 
 def _choice_key(raw, choices, default=None):
-    """把表格里写的组类型 / 角色归一成模型的 key。
+    """把表格里写的枚举值（如组类型）归一成模型的 key。
 
     key（``stack``）与显示名（``堆叠``）都接受，空值取 ``default``，识别不了返回 ``None`` 交给调用方报错。
     """
@@ -664,55 +665,94 @@ def _choice_key(raw, choices, default=None):
     return None
 
 
-def _import_device_groups(ws):
-    """设备组 Sheet：组名 | 组类型 | 描述 | 主机名 | 角色。
+def _cell(row, idx):
+    """按位置取单元格文本并 strip；行尾缺列 / 空单元格一律给空串（设备组 Sheet 里空值是常态）。"""
+    if idx >= len(row) or row[idx] is None:
+        return ""
+    return str(row[idx]).strip()
 
-    一行 = 一个成员：同组名的多行就是同一组的多个成员，组的类型 / 描述按该组**最后一行**覆盖。
-    设备必须先于设备组导入（IMPORT_SHEETS 里设备排在前面），否则整行报错不建半截数据。
+
+def _split_device_names(text):
+    """设备名单元格按中英文逗号 / 顿号 / 空白切开——一行填多台设备用。"""
+    return [name for name in re.split(r"[,，、\s]+", text) if name]
+
+
+def _group_name(group_type, names):
+    """组名**不由表格填**：非集群 = 主设备（第一台）hostname；集群 = 所有设备名的最长公共前缀。
+
+    例：``cs-1`` / ``cs-2`` 的交集是 ``cs-``（逐字符取，不按分隔符截）。只有一台设备、
+    或者毫无公共前缀时回退第一台 hostname，保证组名永远非空。
+    """
+    if group_type != "cluster":
+        return names[0]
+    prefix = names[0]
+    for hostname in names[1:]:
+        while prefix and not hostname.startswith(prefix):
+            prefix = prefix[:-1]
+    return prefix or names[0]
+
+
+def _device_roles(group_type, count):
+    """角色按位置推，不填表：非集群第一台 = 主、第二台 = 备，其余 = 成员；集群内全部 = 成员。"""
+    if group_type == "cluster":
+        return ["member"] * count
+    roles = ["member"] * count
+    roles[0] = "master"
+    if count > 1:
+        roles[1] = "backup"
+    return roles
+
+
+def _import_device_groups(ws):
+    """设备组 Sheet：组类型 | 设备名(多个用逗号分隔) | 描述，**一行 = 一个设备组**。
+
+    组名与角色都不用填，由导入推出来（见 ``_group_name`` / ``_device_roles``）——设备组除集群
+    外都是 1–2 台成组，逐格填组名 / 角色纯属重复劳动。三条硬规矩：
+
+    - 行里的设备必须都已存在，缺任一台**整行报错、不建半截组**（设备 Sheet 排在前面）；
+    - 行是该组的**完整快照**：不在这一行里的既有成员会被摘掉，改了组成以本次为准；
+    - 计数一行 = 一个设备组（created = 新建组，updated = 已有组被再次导入）。
     """
     created, updated, errors = 0, 0, []
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if not row[0]:
-            continue
-        name = str(row[0]).strip()
+        cells = [_cell(row, i) for i in range(3)]
+        if not any(cells):
+            continue  # 整行空白
 
-        group_type = _choice_key(row[1], DeviceGroup.GROUP_TYPE_CHOICES, default="single")
+        group_type = _choice_key(cells[0], DeviceGroup.GROUP_TYPE_CHOICES, default="single")
         if group_type is None:
             keys = "/".join(k for k, _ in DeviceGroup.GROUP_TYPE_CHOICES)
-            errors.append(f"行 {row_idx}: 未知组类型 '{row[1]}'，可选 {keys}")
+            errors.append(f"行 {row_idx}: 未知组类型 '{cells[0]}'，可选 {keys}")
             continue
 
-        hostname = str(row[3] or "").strip()
-        if not hostname:
-            errors.append(f"行 {row_idx}: 缺少主机名")
+        names = _split_device_names(cells[1])
+        if not names:
+            errors.append(f"行 {row_idx}: 缺少设备名")
             continue
+
+        found = {device.hostname: device for device in Device.objects.filter(hostname__in=names)}
+        missing = [hostname for hostname in names if hostname not in found]
+        if missing:
+            errors.append(f"行 {row_idx}: 设备 '{', '.join(missing)}' 不存在，请先导入设备")
+            continue
+        devices = [found[hostname] for hostname in names]
+
+        name = _group_name(group_type, names)
+        roles = _device_roles(group_type, len(devices))
         try:
-            device = Device.objects.get(hostname=hostname)
-        except Device.DoesNotExist:
-            errors.append(f"行 {row_idx}: 设备 '{hostname}' 不存在，请先导入设备")
-            continue
-
-        role = _choice_key(row[4], DeviceGroupMember.ROLE_CHOICES, default="member")
-        if role is None:
-            keys = "/".join(k for k, _ in DeviceGroupMember.ROLE_CHOICES)
-            errors.append(f"行 {row_idx}: 未知角色 '{row[4]}'，可选 {keys}")
-            continue
-
-        try:
-            group, _ = DeviceGroup.objects.update_or_create(
+            group, group_created = DeviceGroup.objects.update_or_create(
                 name=name,
-                defaults={"group_type": group_type, "description": str(row[2] or "").strip()},
+                defaults={"group_type": group_type, "description": cells[2]},
             )
-            _, member_created = DeviceGroupMember.objects.update_or_create(
-                group=group, device=device, defaults={"device_role": role}
-            )
+            for device, role in zip(devices, roles):
+                DeviceGroupMember.objects.update_or_create(group=group, device=device, defaults={"device_role": role})
+            group.members.exclude(device__in=devices).delete()
         except Exception as e:
             errors.append(f"行 {row_idx}: {e}")
             continue
 
-        # 计数口径与其它 Sheet 一致：一行 = 一行结果。新组必然带来新成员，所以按成员是否新建计数。
-        created += 1 if member_created else 0
-        updated += 0 if member_created else 1
+        created += 1 if group_created else 0
+        updated += 0 if group_created else 1
 
     return {"created": created, "updated": updated, "errors": errors}
 
@@ -829,9 +869,9 @@ IMPORT_SHEETS = {
         ],
         "importer": _import_devices,
     },
-    # 排在「设备」之后：成员行依赖设备已存在
+    # 排在「设备」之后：行里的设备必须已存在。组名 / 角色不填表，由导入推（见 _import_device_groups）
     "设备组": {
-        "headers": ["组名", "组类型", "描述", "主机名", "角色"],
+        "headers": ["组类型", "设备名(多个用逗号分隔)", "描述"],
         "importer": _import_device_groups,
     },
     "配置文件": {
