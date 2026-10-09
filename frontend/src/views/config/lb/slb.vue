@@ -207,35 +207,23 @@ onMounted(loadRows)
                    子表首列对齐主表第一列（名称），而不是箭头列 -->
               <div class="panel">
                 <div v-if="!row.panel?.length" class="panel-empty">未关联池</div>
-                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
-                <el-table
-                  v-else
-                  :data="row.panel"
-                  row-key="id"
-                  :tree-props="{ children: 'children' }"
-                  default-expand-all
-                  border
-                  size="small"
-                >
-                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
-                    <template #default="{ row: p }">
-                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
-                    </template>
-                  </DataColumn>
-                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="220">
-                    <template #default="{ row: p }">
-                      <el-tooltip v-if="p.tipLines?.length" placement="top">
-                        <template #content>
-                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
-                        </template>
-                        <span>{{ p.label }}</span>
-                      </el-tooltip>
-                      <span v-else>{{ p.label }}</span>
-                    </template>
-                  </DataColumn>
-                  <DataColumn prop="algo" column-key="pAlgo" label="负载模式" min-width="140" />
-                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="170" />
-                </el-table>
+                <!-- 记录式明细（不要表头）：一行一条记录，字段「标签：值」平铺；
+                     上下双线（===）、记录之间单线（---） -->
+                <div v-else class="panel-records">
+                  <template v-for="p in row.panel" :key="p.id">
+                    <div class="record">
+                      <span class="field"><span class="k">池：</span>{{ p.label }}</span>
+                      <span v-if="p.algo" class="field"><span class="k">负载模式：</span>{{ p.algo }}</span>
+                      <span v-if="p.monitor" class="field"><span class="k">监控：</span>{{ p.monitor }}</span>
+                    </div>
+                    <div v-for="m in p.children" :key="m.id" class="record">
+                      <span class="field"><span class="k">名称：</span>{{ m.tipLines[0] || m.label }}</span>
+                      <span v-if="m.tipLines[0] && m.label !== m.tipLines[0]" class="field">
+                        <span class="k">地址：</span>{{ m.label }}
+                      </span>
+                    </div>
+                  </template>
+                </div>
               </div>
             </template>
           </DataColumn>
@@ -315,6 +303,24 @@ onMounted(loadRows)
 .table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 /* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
 .panel { padding-left: 48px; }
+/* 记录式明细：上下双线（===）、记录间单线（---），字段平铺、放不下自动换行 */
+.panel-records {
+  border-top: 3px double var(--el-border-color);
+  border-bottom: 3px double var(--el-border-color);
+  padding: 2px 0;
+}
+.record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 24px;
+  padding: 6px 2px;
+}
+.record + .record { border-top: 1px solid var(--el-border-color-lighter); }
+/* 首字段（池名 / 成员名）加重，作为这条记录的锚点 */
+.record > .field:first-child { font-weight: 600; color: var(--el-text-color-primary); }
+.field { font-size: 13px; color: var(--el-text-color-regular); white-space: nowrap; }
+.field .k { color: var(--el-text-color-secondary); font-weight: 400; }
 /* 展开面板里的占位文案（VS 未关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>

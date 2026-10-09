@@ -63,6 +63,11 @@ const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } 
 // 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
+// 成员链路状态 → 标签色与文案（记录式明细里的「状态」字段用）
+const STATE_TAG = { ok: 'success', disabled: 'info', lost: 'warning' } as const
+const STATE_LABEL = { ok: '正常', disabled: '停用', lost: '未找到' } as const
+const stateTagOf = (state: string) => STATE_TAG[state as keyof typeof STATE_TAG] ?? 'info'
+const stateLabelOf = (state: string) => STATE_LABEL[state as keyof typeof STATE_LABEL] ?? state
 
 /** 去重后顿号连接：面板池行的 order/ratio 显示池内成员的取值集合（逐成员值看成员行） */
 const uniqJoin = (vals: (number | null | undefined)[]) =>
@@ -272,49 +277,35 @@ onMounted(() => {
                    子表首列对齐主表第一列（名称），而不是箭头列 -->
               <div class="panel">
                 <div v-if="!row.panel?.length" class="panel-empty">无关联池</div>
-                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
-                <el-table
-                  v-else
-                  :data="row.panel"
-                  row-key="id"
-                  :tree-props="{ children: 'children' }"
-                  default-expand-all
-                  border
-                  size="small"
-                >
-                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
-                    <template #default="{ row: p }">
-                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
-                    </template>
-                  </DataColumn>
-                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="200">
-                    <template #default="{ row: p }">
-                      <el-tooltip v-if="p.tipLines?.length" placement="top">
-                        <template #content>
-                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
-                        </template>
-                        <span>{{ p.label }}</span>
-                      </el-tooltip>
-                      <span v-else>{{ p.label }}</span>
-                    </template>
-                  </DataColumn>
-                  <!-- 池行填自身配置，成员行留空；成员自己的权重/检查/数据中心在右侧成员段列 -->
-                  <DataColumn prop="algo" column-key="pAlgo" label="负载算法" min-width="150" />
-                  <DataColumn prop="fallback" column-key="pFallback" label="fallback" min-width="150" />
-                  <DataColumn prop="ttl" column-key="pTtl" label="TTL" min-width="70" />
-                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="130" />
-                  <DataColumn prop="order" column-key="pOrder" label="Order" min-width="85" />
-                  <DataColumn prop="ratio" column-key="pRatio" label="Ratio" min-width="85" />
-                  <DataColumn prop="datacenter" column-key="pDatacenter" label="数据中心" min-width="100" />
-                  <DataColumn label="状态" column-key="pState" min-width="85">
-                    <template #default="{ row: p }">
-                      <el-tag v-if="p.state === 'ok'" type="success" size="small">正常</el-tag>
-                      <el-tag v-else-if="p.state === 'disabled'" type="info" size="small">停用</el-tag>
-                      <el-tag v-else-if="p.state === 'lost'" type="warning" size="small">未找到</el-tag>
-                      <span v-else class="muted">-</span>
-                    </template>
-                  </DataColumn>
-                </el-table>
+                <!-- 记录式明细（不要表头）：一行一条记录，字段「标签：值」平铺；
+                     上下双线（===）、记录之间单线（---） -->
+                <div v-else class="panel-records">
+                  <template v-for="p in row.panel" :key="p.id">
+                    <div class="record">
+                      <span class="field"><span class="k">池：</span>{{ p.label }}</span>
+                      <span v-if="p.algo" class="field"><span class="k">负载算法：</span>{{ p.algo }}</span>
+                      <span v-if="p.fallback" class="field"><span class="k">fallback：</span>{{ p.fallback }}</span>
+                      <span v-if="p.ttl" class="field"><span class="k">TTL：</span>{{ p.ttl }}</span>
+                      <span v-if="p.monitor" class="field"><span class="k">监控：</span>{{ p.monitor }}</span>
+                      <span v-if="p.order" class="field"><span class="k">Order：</span>{{ p.order }}</span>
+                      <span v-if="p.ratio" class="field"><span class="k">Ratio：</span>{{ p.ratio }}</span>
+                    </div>
+                    <div v-for="m in p.children" :key="m.id" class="record">
+                      <span class="field"><span class="k">名称：</span>{{ m.tipLines[0] || m.label }}</span>
+                      <span v-if="m.tipLines[0] && m.label !== m.tipLines[0]" class="field">
+                        <span class="k">地址：</span>{{ m.label }}
+                      </span>
+                      <span v-if="m.order" class="field"><span class="k">Order：</span>{{ m.order }}</span>
+                      <span v-if="m.ratio" class="field"><span class="k">Ratio：</span>{{ m.ratio }}</span>
+                      <span v-if="m.monitor" class="field"><span class="k">监控：</span>{{ m.monitor }}</span>
+                      <span v-if="m.datacenter" class="field"><span class="k">数据中心：</span>{{ m.datacenter }}</span>
+                      <span v-if="m.state" class="field">
+                        <span class="k">状态：</span>
+                        <el-tag :type="stateTagOf(m.state)" size="small">{{ stateLabelOf(m.state) }}</el-tag>
+                      </span>
+                    </div>
+                  </template>
+                </div>
               </div>
             </template>
           </DataColumn>
@@ -387,6 +378,24 @@ onMounted(() => {
 .muted { color: var(--el-text-color-placeholder); }
 /* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
 .panel { padding-left: 48px; }
+/* 记录式明细：上下双线（===）、记录间单线（---），字段平铺、放不下自动换行 */
+.panel-records {
+  border-top: 3px double var(--el-border-color);
+  border-bottom: 3px double var(--el-border-color);
+  padding: 2px 0;
+}
+.record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 24px;
+  padding: 6px 2px;
+}
+.record + .record { border-top: 1px solid var(--el-border-color-lighter); }
+/* 首字段（池名 / 成员名）加重，作为这条记录的锚点 */
+.record > .field:first-child { font-weight: 600; color: var(--el-text-color-primary); }
+.field { font-size: 13px; color: var(--el-text-color-regular); white-space: nowrap; }
+.field .k { color: var(--el-text-color-secondary); font-weight: 400; }
 /* 展开面板里的占位文案（WideIP 无关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>

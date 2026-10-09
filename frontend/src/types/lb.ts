@@ -169,13 +169,14 @@ export interface LbRootRow {
   rtype?: string
   /** 负载算法（GTM WideIP 行的 lb_mode） */
   mode?: string
-  /** 展开面板：池 → 成员的明细（面板内是嵌套小表格的自有列，与主表列无关） */
+  /** 展开面板：池 → 成员的明细（记录式列表、不设表头，字段与主表列无关） */
   panel?: LbPanelRow[]
 }
 
 /**
- * 展开面板行（面板内嵌套小表格，`tree-props` 的 `children` 结构：池 → 成员）：
- * 字段与主表列**完全无关**——面板列增删/隐藏互不影响主表，反之亦然。
+ * 展开面板行（记录式明细，**不设表头**：一行一条记录，字段「标签：值」平铺，
+ * `children` 是该池下的成员记录）：字段与主表列**完全无关**——
+ * 主表列增删/隐藏互不影响面板，反之亦然。
  * 两页共用一个结构、靠 `kind` 区分层级，没用到的字段留空。
  */
 export interface LbPanelRow {
@@ -184,7 +185,7 @@ export interface LbPanelRow {
   kind: 'pool' | 'member'
   /** 主显示：池名 / 成员地址#端口（成员无地址时回退名字） */
   label: string
-  /** hover 弹出的多行说明（成员真名、断链原因等）；空数组不包 tooltip */
+  /** 记录的补充文案：`[0]` 作为「名称」字段的值（成员真名 / server·vserver），其余由「状态」字段承担 */
   tipLines: string[]
   /** 负载算法/模式（SLB = pool.mode；GTM = 池 lb_mode / alternate_mode） */
   algo?: string
