@@ -120,7 +120,9 @@ export interface GtmFlatRow {
   /** 池级调度权重 = 池内成员取值集合去重（与展开面板的池行同义），与成员自身值分列 */
   poolOrder: string
   poolRatio: string
-  /** 成员段（回退行为空串/ '-'） */
+  /** 成员段（回退行为空串/ '-'）；server / vs 与明细面板一致拆成两列 */
+  server: string
+  vs: string
   order: string
   ratio: string
   memberMonitor: string
@@ -204,13 +206,17 @@ export interface LbPoolRow {
 
 /**
  * member 表行（pool 行的展开面板里，同样无表头、格子自带字段名）：
- * SLB 只用 name/address，GTM 用全量。
+ * SLB 只用 name/address，GTM 用全量（名称已拆成 server / vs 两列）。
  */
 export interface LbMemberRow {
   /** member 表内唯一（链根 + 池名 + 序号） */
   id: string
-  /** 名称：节点名（SLB）/ `server/vserver`（GTM）；没有名称时回退成地址 */
-  name: string
+  /** 名称：节点名（仅 SLB）；没有名称时回退成地址 */
+  name?: string
+  /** 服务器名（仅 GTM，原「名称」列的 server 半段） */
+  server?: string
+  /** 虚拟服务器名（仅 GTM，原「名称」列的 vs 半段） */
+  vs?: string
   /** 地址#端口；与名称重复时该格不渲染 */
   address?: string
   order?: string
