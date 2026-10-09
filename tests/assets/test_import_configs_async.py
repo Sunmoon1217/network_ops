@@ -93,3 +93,50 @@ def test_import_reports_dispatch_failure_per_row(device, tmp_path, monkeypatch):
     assert result["created"] == 1
     assert any("投递解析任务失败" in err and "broker down" in err for err in result["errors"]), result
 
+
+@pytest.mark.django_db
+def test_import_unchanged_config_skipped_across_devices(tmp_path, monkeypatch):
+    """回归（走真实 save_config 的端到端）：两台设备**交替**导入时，内容未变的设备不该新增记录。
+
+    共享线性链时代的故障形态：dev-a 内容没变，但 HEAD 已经被 dev-b 的提交顶掉，
+    ``save_config`` 早退返回的是 dev-b 的 commit → configs 表按 (device, hash) 去重失效，
+    dev-a 每轮都多一条重复记录并重跑一次解析。
+    """
+    monkeypatch.setattr("ingest.config_repo.CONFIG_REPO_PATH", tmp_path / "repo")
+    for key, value in (
+        ("GIT_AUTHOR_NAME", "test"),
+        ("GIT_AUTHOR_EMAIL", "test@example.com"),
+        ("GIT_COMMITTER_NAME", "test"),
+        ("GIT_COMMITTER_EMAIL", "test@example.com"),
+    ):
+        monkeypatch.setenv(key, value)
+
+    submitted = []
+    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
+
+    vendor = Vendor.objects.create(name="V-2dev")
+    model = DeviceModel.objects.create(name="M-2dev", vendor=vendor)
+    Device.objects.create(hostname="_t_imp_a", device_type="switch", device_model=model)
+    Device.objects.create(hostname="_t_imp_b", device_type="switch", device_model=model)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "_t_imp_a.txt").write_text("sysname A\nvlan 10\n", encoding="utf-8")
+    (src / "_t_imp_b.txt").write_text("sysname B\n", encoding="utf-8")
+
+    from assets.device_import import _import_configs
+
+    def _pair():
+        ws = Workbook().active
+        ws.append(["主机名", "文件名", "配置目录"])
+        ws.append(["_t_imp_a", "_t_imp_a.txt", str(src)])
+        ws.append(["_t_imp_b", "_t_imp_b.txt", str(src)])
+        return ws
+
+    first = _import_configs(_pair())
+    second = _import_configs(_pair())
+
+    assert first["created"] == 2 and not first["errors"], first
+    assert second["created"] == 0 and second["skipped"] == 2, second
+    assert DeviceConfig.objects.count() == 2, "内容未变的两台设备都不该新增记录"
+    assert len(submitted) == 2, "不该重复投递解析任务"
