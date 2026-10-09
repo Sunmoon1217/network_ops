@@ -65,6 +65,9 @@ export interface GtmChainPool {
   ttl: number | null
   /** 池级健康检查类型列表（hover 弹出与监控列共用） */
   monitor: string[]
+  /** wideip 级权重：f5_gtm wideip 组里每个池自己的 order/ratio（老数据没有 → null） */
+  order?: number | null
+  ratio?: number | null
   members: GtmChainMember[]
 }
 
@@ -192,7 +195,7 @@ export interface LbPoolRow {
   ttl?: string
   /** 健康检查（池级列表 join） */
   monitor?: string
-  /** 池级调度权重 = 池内成员取值集合去重（仅 GTM） */
+  /** wideip 级权重（pool_order / pool_ratio；老数据没有 → order 空、ratio 兜底 1） */
   order?: string
   ratio?: string
   /** 展开面板 = member 表（空数组时面板显示占位文案） */

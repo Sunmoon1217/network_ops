@@ -82,19 +82,23 @@ const buildPoolPanel = (device: number, pool: GtmChainPool): LbPoolRow => ({
   fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
   ttl: pool.ttl != null ? String(pool.ttl) : '',
   monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
-  order: uniqJoin(pool.members.map((m) => m.order)),
-  ratio: uniqJoin(pool.members.map((m) => m.ratio)),
-  panel: pool.members.map((m, idx) => ({
-    id: `member-${device}-${pool.name}-${idx}`,
-    // 名称 = server/vserver 对象；地址只在真解析出 IP 时才占一格
-    name: `${m.server}/${m.vserver}`,
-    address: m.found && m.address ? addrPort(m.address, m.port) : '',
-    order: m.order != null ? String(m.order) : '',
-    ratio: m.ratio != null ? String(m.ratio) : '',
-    monitor: m.monitor || '',
-    datacenter: m.datacenter || '',
-    state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
-  })) as LbMemberRow[],
+  // wideip 级权重（pool_order / pool_ratio）：老数据没有 order → 空、ratio 兜底 1
+  order: pool.order != null ? String(pool.order) : '',
+  ratio: pool.ratio != null ? String(pool.ratio) : '1',
+  // 成员按 member_order 升序；缺省（老数据无 order）排最后
+  panel: [...pool.members]
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
+    .map((m, idx) => ({
+      id: `member-${device}-${pool.name}-${idx}`,
+      // 名称 = server/vserver 对象；地址只在真解析出 IP 时才占一格
+      name: `${m.server}/${m.vserver}`,
+      address: m.found && m.address ? addrPort(m.address, m.port) : '',
+      order: m.order != null ? String(m.order) : '',
+      ratio: m.ratio != null ? String(m.ratio) : '1',
+      monitor: m.monitor || '',
+      datacenter: m.datacenter || '',
+      state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+    })) as LbMemberRow[],
 })
 
 /** 关联链行 → 根行：WideIP 上主表，池/成员收进 panel 由展开列渲染 */
@@ -106,7 +110,10 @@ const buildRoot = (r: GtmChainRow): LbRootRow => ({
   device: r.device_hostname,
   rtype: r.rtype || '-',
   mode: r.lb_mode || '-',
-  panel: r.pools.map((p) => buildPoolPanel(r.device, p)),
+  // 池按 pool_order 升序；缺省（老数据无 order）排最后
+  panel: [...r.pools]
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
+    .map((p) => buildPoolPanel(r.device, p)),
 })
 
 const rootRows = computed(() => rows.value.map(buildRoot))
