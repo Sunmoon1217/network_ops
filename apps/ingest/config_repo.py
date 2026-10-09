@@ -134,7 +134,7 @@ def _adopt_legacy_history(device_repo: git.Repo, hostname: str) -> None:
         config_file.write_bytes(data)
         device_repo.index.add([REPO_FILE])
         new = device_repo.index.commit(
-            c.message,
+            message=c.message if isinstance(c.message, str) else c.message.decode("utf-8", errors="replace"),
             author=c.author,
             committer=c.committer,
             author_date=c.authored_datetime,
