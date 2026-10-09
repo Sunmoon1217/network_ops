@@ -90,8 +90,9 @@ const buildPoolPanel = (device: number, pool: GtmChainPool): LbPoolRow => ({
     .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
     .map((m, idx) => ({
       id: `member-${device}-${pool.name}-${idx}`,
-      // 名称 = server/vserver 对象；地址只在真解析出 IP 时才占一格
-      name: `${m.server}/${m.vserver}`,
+      // 名称拆成 server / vs 两列展示；地址只在真解析出 IP 时才占一格
+      server: m.server || '',
+      vs: m.vserver || '',
       address: m.found && m.address ? addrPort(m.address, m.port) : '',
       order: m.order != null ? String(m.order) : '',
       ratio: m.ratio != null ? String(m.ratio) : '1',
@@ -167,7 +168,7 @@ const flatRows = computed(() => {
       poolOrder: '-',
       poolRatio: '-',
     }
-    const emptyMember = { order: '', ratio: '', memberMonitor: '', datacenter: '' }
+    const emptyMember = { server: '', vs: '', order: '', ratio: '', memberMonitor: '', datacenter: '' }
     const prefix = `flat-w-${w.device}-${w.name}`
     if (!w.pools.length) {
       out.push({ ...wide, ...emptyPool, ...emptyMember, id: prefix, kind: 'wideip', label: w.name, tipLines: [] })
@@ -208,6 +209,8 @@ const flatRows = computed(() => {
           tipLines: [`${m.server} / ${m.vserver}`, `链路：${w.name} → ${p.name}`, m.found ? '' : '未找到虚拟服务器'].filter(
             Boolean,
           ),
+          server: m.server || '',
+          vs: m.vserver || '',
           order: m.order != null ? String(m.order) : '',
           ratio: m.ratio != null ? String(m.ratio) : '',
           memberMonitor: m.monitor || '',
@@ -302,9 +305,18 @@ onMounted(() => {
                               </template>
                             </template>
                           </DataColumn>
-                          <DataColumn prop="name" column-key="mName" label="名称" min-width="200">
+                          <DataColumn prop="server" column-key="mServer" label="server" min-width="120">
                             <template #default="{ row: m }">
-                              <span class="cell-k">名称：</span><strong>{{ m.name }}</strong>
+                              <template v-if="m.server">
+                                <span class="cell-k">server：</span><strong>{{ m.server }}</strong>
+                              </template>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="vs" column-key="mVs" label="vs" min-width="160">
+                            <template #default="{ row: m }">
+                              <template v-if="m.vs">
+                                <span class="cell-k">vs：</span><strong>{{ m.vs }}</strong>
+                              </template>
                             </template>
                           </DataColumn>
                           <DataColumn prop="address" column-key="mAddr" label="地址" min-width="150">
@@ -436,6 +448,8 @@ onMounted(() => {
               <span v-else>{{ row.label }}</span>
             </template>
           </DataColumn>
+          <DataColumn prop="server" label="server" min-width="110" show-overflow-tooltip />
+          <DataColumn prop="vs" label="vs" min-width="150" show-overflow-tooltip />
           <DataColumn prop="order" label="成员Order" min-width="95" />
           <DataColumn prop="ratio" label="成员Ratio" min-width="95" />
           <DataColumn prop="memberMonitor" label="成员监控" min-width="110" />
