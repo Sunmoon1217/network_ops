@@ -7,11 +7,28 @@ x-secrets: &db-secrets
   - postgres_user
   - postgres_password
 
+# app / worker 需要数据库凭据 + 阿里云 API 凭据（aliyun SDK 调用）
+x-app-secrets: &app-secrets
+  - postgres_user
+  - postgres_password
+  - aliyun_prod_access_key_id
+  - aliyun_prod_access_key_secret
+  - aliyun_test_access_key_id
+  - aliyun_test_access_key_secret
+
 secrets:
   postgres_user:
     file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}
   postgres_password:
     file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}
+  aliyun_prod_access_key_id:
+    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_id}
+  aliyun_prod_access_key_secret:
+    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_secret}
+  aliyun_test_access_key_id:
+    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_test_access_key_id}
+  aliyun_test_access_key_secret:
+    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_test_access_key_secret}
 
 x-app-build: &app-build
   context: .
@@ -64,7 +81,7 @@ services:
     env_file:
       - env/app.env
       - env/gunicorn.env
-    secrets: *db-secrets
+    secrets: *app-secrets
     volumes:
       - config_repo_data:/app/data/config_repo
       - type: bind
@@ -103,7 +120,7 @@ services:
     # --concurrency=2 写死：默认池按 CPU 核数起（16 核 = 16 子进程 × 81M，空载即爆炸），
     # 且同设备并发入库会写坏数据（见 AGENTS.md），2 保留跨设备并行、压缩同设备撞车窗口。
     command: ["exec celery -A netops worker -Q celery,access_flow --concurrency=2 --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
-    secrets: *db-secrets
+    secrets: *app-secrets
     volumes:
       - config_repo_data:/app/data/config_repo
     depends_on:

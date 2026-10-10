@@ -55,13 +55,15 @@ db:
 ## 这些文件入库吗？
 
 `env/*.env` **不入库**（已被 `.gitignore` 排除）——这些是部署本地的运行配置，不同环境/部署的值不同。
-入库的是 `env/*.env.example` 模板，它们列出了**全部所需变量**及注释说明。
+入库的是 `env/example/*.env` 模板，它们列出了**全部所需变量**及注释说明。
 
 首次部署/克隆后，从模板复制：
 
 ```bash
-for f in env/*.env.example; do cp "$f" "${f%.example}"; done
+cp env/example/*.env env/
 ```
+
+然后按实际环境修改 `env/*.env` 里的值。
 
 然后按实际环境修改 `env/*.env` 里的值。compose 的 `env_file` 指向的是 `.env` 文件（无 `.example` 后缀）。
 
