@@ -5,6 +5,11 @@ description = "网络运维管理平台：Django REST 后端 + Vue 3 前端"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aliyun-python-sdk-core>=2.16.1",
+    "aliyun-python-sdk-ecs>=4.24.83",
+    "aliyun-python-sdk-slb>=3.3.22",
+    "aliyun-python-sdk-sls>=1.1.2",
+    "aliyun-python-sdk-vpc>=3.0.48",
     "celery>=5.6.3",
     "django>=6.1",
     "django-filter>=26.1",
@@ -34,7 +39,7 @@ select = ["E", "F", "I", "N", "W"]
 ignore = ["F405", "F403", "E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["analysis", "assets", "core", "ingest"]
+known-first-party = ["aliyun", "analysis", "assets", "core", "ingest"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
