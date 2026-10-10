@@ -5,11 +5,13 @@
 凭据链路 *_FILE > 环境变量，与项目既有风格一致。
 """
 
+from typing import Literal
+
 from aliyunsdkcore.client import AcsClient
 from django.conf import settings
 
 
-def get_client(account: str = "prod", product: str = "") -> AcsClient:
+def get_client(account: Literal["prod", "test"] = "prod", product: str = "") -> AcsClient:
     """按账户名 + 产品代码获取预配置的 AcsClient。
 
     Args:
