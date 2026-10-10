@@ -7,6 +7,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aliyun-python-sdk-asapi"
+version = "2.4.7.2"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+dependencies = [
+    { name = "aliyun-python-sdk-core-v3" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/ff/49/0949a692b840299411b8c58a94eed48e3900a85735c021069bc29a4290b7/aliyun-python-sdk-asapi-2.4.7.2.tar.gz", hash = "sha256:e8accc112d149a8aadc0f4567a1658892afaa0cfe3a43939a5a0d3a2e14d21bf" }
+
+[[package]]
 name = "aliyun-python-sdk-core"
 version = "2.16.1"
 source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
@@ -17,6 +26,16 @@ dependencies = [
 wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/ea/38/eb3be49159d6442e68189f21a2205a199b51ca46cf42a3f874e695ff0ba9/aliyun_python_sdk_core-2.16.1-py3-none-any.whl", hash = "sha256:0f25a6e8ec1ea29c76610278cff81cbff85149a6e692bf2398a6f9b77e5e7424" },
 ]
+
+[[package]]
+name = "aliyun-python-sdk-core-v3"
+version = "2.13.33"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "jmespath" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/50/31/bdf3eba750e9d7213248efea30ad29a62f2d449607e03f538d4d9455d952/aliyun-python-sdk-core-v3-2.13.33.tar.gz", hash = "sha256:d7df820fa31193be3f0a3a991c4126051900b3d2f09c0fc5ff7af43cf36ac245" }
 
 [[package]]
 name = "aliyun-python-sdk-ecs"
@@ -1064,6 +1083,7 @@ name = "network-ops"
 version = "2.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aliyun-python-sdk-asapi" },
     { name = "aliyun-python-sdk-core" },
     { name = "aliyun-python-sdk-ecs" },
     { name = "aliyun-python-sdk-slb" },
@@ -1098,6 +1118,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aliyun-python-sdk-asapi", specifier = ">=2.4.7.2" },
     { name = "aliyun-python-sdk-core", specifier = ">=2.16.1" },
     { name = "aliyun-python-sdk-ecs", specifier = ">=4.24.83" },
     { name = "aliyun-python-sdk-slb", specifier = ">=3.3.22" },

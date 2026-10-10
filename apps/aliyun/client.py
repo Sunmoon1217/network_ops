@@ -5,8 +5,12 @@
 凭据链路 *_FILE > 环境变量，与项目既有风格一致。
 """
 
-from typing import Literal
+import json
+from typing import cast
 
+from aliyunsdkasapi.AsapiRequest import AsapiRequest
+from aliyunsdkasapi.ASClient import ASClient
+from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 from aliyunsdkcore.client import AcsClient
 from django.conf import settings
 
@@ -30,3 +34,26 @@ def get_client(account: str = "prod", product: str = "") -> AcsClient:
         if ep:
             client.add_endpoint(cfg["region"], product, ep)
     return client
+
+
+class AliyunASAPI:
+    def __init__(self, account: str = "prod"):
+        self.account = account
+        self.client = ASClient(
+            accessKeyId=settings.ALIYUN_CONFIG["accounts"][account]["access_key_id"],
+            accessKeySecret=settings.ALIYUN_CONFIG["accounts"][account]["access_key_secret"],
+            regionId=settings.ALIYUN_CONFIG["region"],
+        )
+        self.client.setSdkSource("network_ops")
+        self.endpoint = settings.ALIYUN_CONFIG["endpoints"].get("Asapi")
+
+    def call(self, product: str, version: str, action: str, params: dict, method: str = "GET") -> dict:
+        request = AsapiRequest(product=product, version=version, action_name=action, asapi_gateway=self.endpoint)
+        request.set_method(method)
+        for key, value in params.items():
+            request.add_query_param(key, value)
+        try:
+            response = self.client.do_action_with_exception(request)
+            return json.loads(cast(str, response))
+        except (ClientException, ServerException) as e:
+            raise RuntimeError(f"阿里云 ASAPI 调用失败：{action}，错误信息：{e}") from e
