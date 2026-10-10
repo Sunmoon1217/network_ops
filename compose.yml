@@ -75,7 +75,7 @@ services:
 
   app:
     build: *app-build
-    image: network-ops:latest
+    image: ${APP_IMAGE:-network-ops:latest}
     container_name: netops-app
     restart: unless-stopped
     env_file:
@@ -107,7 +107,7 @@ services:
 
   worker:
     build: *app-build
-    image: network-ops:latest
+    image: ${APP_IMAGE:-network-ops:latest}
     container_name: netops-worker
     restart: unless-stopped
     env_file:
@@ -140,10 +140,10 @@ services:
   # 访问流（AccessFlow）的单写者消费者：**只能跑一个实例**（消费者组会把消息摊给多个成员，多一个
   # 就是多写者，「先查后合并」的前提就没了；不要靠 scale 起多份）。
   # 心跳键 access_flow:heartbeat 由消费循环每轮盖章（TTL 300s），healthcheck 据此判活。
-  access-flow-consumer:
+  consumer:
     build: *app-build
-    image: network-ops:latest
-    container_name: netops-access-flow-consumer
+    image: ${APP_IMAGE:-network-ops:latest}
+    container_name: netops-consumer
     restart: unless-stopped
     env_file:
       - env/app.env
