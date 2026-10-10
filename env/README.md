@@ -54,11 +54,16 @@ db:
 
 ## 这些文件入库吗？
 
-入库。它们**不含密钥**（用户名和密码在 `env/secrets/`，那里只有密钥文件被 `.gitignore` 排除），所以直接改这里
-就能调整运行参数；要让某台机器单独覆盖，改这些文件或另加一个 `env_file` 即可。
+`env/*.env` **不入库**（已被 `.gitignore` 排除）——这些是部署本地的运行配置，不同环境/部署的值不同。
+入库的是 `env/*.env.example` 模板，它们列出了**全部所需变量**及注释说明。
 
-改完 `docker compose up -d app worker db` 生效（改的是注入的环境变量，不需要重建镜像；
-`entrypoint.sh` / `Dockerfile` 本身有改动才要 `--build`）。
+首次部署/克隆后，从模板复制：
+
+```bash
+for f in env/*.env.example; do cp "$f" "${f%.example}"; done
+```
+
+然后按实际环境修改 `env/*.env` 里的值。compose 的 `env_file` 指向的是 `.env` 文件（无 `.example` 后缀）。
 
 ## 语法提醒
 
