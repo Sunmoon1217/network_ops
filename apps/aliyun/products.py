@@ -37,6 +37,8 @@ def _call(account: str, product: str, request_cls: type, **params) -> dict[str, 
             setter(value)
 
     response = client.do_action_with_exception(request)
+    if not response:
+        raise RuntimeError(f"阿里云 {product} API 调用失败：{request_cls.__name__}，返回空响应")
     return json.loads(response)
 
 
