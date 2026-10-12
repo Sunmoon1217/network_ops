@@ -43,6 +43,8 @@ class AliyunASAPI:
             accessKeyId=settings.ALIYUN_CONFIG["accounts"][account]["access_key_id"],
             accessKeySecret=settings.ALIYUN_CONFIG["accounts"][account]["access_key_secret"],
             regionId=settings.ALIYUN_CONFIG["region"],
+            timeout=30,
+            verify=False,
         )
         self.client.setSdkSource("network_ops")
         self.endpoint = settings.ALIYUN_CONFIG["endpoints"].get("Asapi")
