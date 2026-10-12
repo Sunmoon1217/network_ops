@@ -130,6 +130,7 @@ ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 #   ALIYUN_VPC_ENDPOINT          VPC（含 VSwitch）endpoint
 #   ALIYUN_SLB_ENDPOINT          SLB endpoint
 #   ALIYUN_SLS_ENDPOINT          SLS endpoint
+#   ALIYUN_ASAPI_ENDPOINT        ASAPI endpoint
 #   ALIYUN_PROD_ACCESS_KEY_ID    生产账号 AK
 #   ALIYUN_PROD_ACCESS_KEY_SECRET
 #   ALIYUN_TEST_ACCESS_KEY_ID    测试账号 AK
@@ -141,6 +142,7 @@ ALIYUN_CONFIG = {
         "Vpc": os.environ.get("ALIYUN_VPC_ENDPOINT", ""),
         "Slb": os.environ.get("ALIYUN_SLB_ENDPOINT", ""),
         "Sls": os.environ.get("ALIYUN_SLS_ENDPOINT", ""),
+        "Asapi": os.environ.get("ALIYUN_ASAPI_ENDPOINT", ""),
     },
     "accounts": {
         "prod": {
