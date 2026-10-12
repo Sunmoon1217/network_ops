@@ -27,6 +27,8 @@ dependencies = [
     "uvicorn-worker>=0.4.0",
 ]
 
+[tool.uv]
+exclude-dependencies = ["aliyun-python-sdk-core-v3"]
 
 [tool.django-stubs]
 django_settings_module = "netops.settings"
