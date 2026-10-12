@@ -10,6 +10,18 @@
 | `postgres_user` | `/run/secrets/postgres_user` | db（postgres 官方镜像的 `POSTGRES_USER_FILE`）、app / worker（`settings/base.py` 的 `_env_or_file()`） |
 | `postgres_password` | `/run/secrets/postgres_password` | 同上（`POSTGRES_PASSWORD_FILE`） |
 
+阿里云 API 凭据（生产/测试两套）：
+
+| 文件 | 容器内路径 | 谁读 |
+|------|-----------|------|
+| `aliyun_prod_access_key_id` | `/run/secrets/aliyun_prod_access_key_id` | app / worker（`settings/base.py` 的 `_env_or_file()`） |
+| `aliyun_prod_access_key_secret` | `/run/secrets/aliyun_prod_access_key_secret` | 同上 |
+| `aliyun_test_access_key_id` | `/run/secrets/aliyun_test_access_key_id` | 同上 |
+| `aliyun_test_access_key_secret` | `/run/secrets/aliyun_test_access_key_secret` | 同上 |
+
+> 阿里云 AK/Secret **不是随机生成的**——从阿里云控制台获取后手工写入这四个文件。
+> 宿主机直跑 Django 时不走 secrets：在 `.env` 里直接设置同名环境变量（`ALIYUN_PROD_ACCESS_KEY_ID` 等）即可，见 `.env.example`。
+
 这两个文件**不入库**（`.gitignore` 排除）、不进构建上下文（`.dockerignore` 排除）。
 
 ## 生成

@@ -32,9 +32,9 @@ env/secrets/*
 !env/secrets/README.md
 !env/secrets/generate.sh
 
-# env/*.env 是部署本地配置，不入库；.example 模板显示全部所需变量
+# env/*.env 是部署本地配置，不入库；env/example/ 里的模板入库
 env/*.env
-!env/*.env.example
+!env/example/
 
 # Django
 *.log

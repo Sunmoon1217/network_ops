@@ -121,6 +121,41 @@ ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "50000"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
+# 阿里云配置：一朵云、两个资源集（生产/测试），两套账号，共用 region；
+# 各产品 endpoint 不同，分别由环境变量传递。
+# 凭据链路 *_FILE > 同名环境变量 > 默认值（空），与项目其他凭据一致。
+# 环境变量清单：
+#   ALIYUN_REGION                区域，例 cn-hangzhou（两个账号共用）
+#   ALIYUN_ECS_ENDPOINT          ECS endpoint
+#   ALIYUN_VPC_ENDPOINT          VPC（含 VSwitch）endpoint
+#   ALIYUN_SLB_ENDPOINT          SLB endpoint
+#   ALIYUN_SLS_ENDPOINT          SLS endpoint
+#   ALIYUN_ASAPI_ENDPOINT        ASAPI endpoint
+#   ALIYUN_PROD_ACCESS_KEY_ID    生产账号 AK
+#   ALIYUN_PROD_ACCESS_KEY_SECRET
+#   ALIYUN_TEST_ACCESS_KEY_ID    测试账号 AK
+#   ALIYUN_TEST_ACCESS_KEY_SECRET
+ALIYUN_CONFIG = {
+    "region": os.environ.get("ALIYUN_REGION", ""),
+    "endpoints": {
+        "Ecs": os.environ.get("ALIYUN_ECS_ENDPOINT", ""),
+        "Vpc": os.environ.get("ALIYUN_VPC_ENDPOINT", ""),
+        "Slb": os.environ.get("ALIYUN_SLB_ENDPOINT", ""),
+        "Sls": os.environ.get("ALIYUN_SLS_ENDPOINT", ""),
+        "Asapi": os.environ.get("ALIYUN_ASAPI_ENDPOINT", ""),
+    },
+    "accounts": {
+        "prod": {
+            "access_key_id": _env_or_file("ALIYUN_PROD_ACCESS_KEY_ID"),
+            "access_key_secret": _env_or_file("ALIYUN_PROD_ACCESS_KEY_SECRET"),
+        },
+        "test": {
+            "access_key_id": _env_or_file("ALIYUN_TEST_ACCESS_KEY_ID"),
+            "access_key_secret": _env_or_file("ALIYUN_TEST_ACCESS_KEY_SECRET"),
+        },
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # 以下为环境无关的静态配置
@@ -153,6 +188,7 @@ INSTALLED_APPS = [
     "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
     "analysis.apps.AnalysisConfig",
+    "aliyun.apps.AliyunConfig",
 ]
 
 MIDDLEWARE = [
