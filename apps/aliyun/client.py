@@ -6,6 +6,7 @@
 """
 
 import json
+from types import SimpleNamespace as ns
 from typing import cast
 
 from aliyunsdkasapi.AsapiRequest import AsapiRequest
@@ -59,3 +60,26 @@ class AliyunASAPI:
             return json.loads(cast(str, response))
         except (ClientException, ServerException) as e:
             raise RuntimeError(f"阿里云 ASAPI 调用失败：{action}，错误信息：{e}") from e
+
+
+aliyunapi_ecs = ns(
+    list=ns(product="Ecs", version="2014-05-26", action="DescribeInstances"),
+    info=ns(product="Ecs", version="2014-05-26", action="DescribeInstanceAttribute"),
+)
+
+aliyunapi_vpc = ns(
+    list=ns(product="Vpc", version="2016-04-28", action="DescribeVpcs"),
+    info=ns(product="Vpc", version="2016-04-28", action="DescribeVpcAttribute"),
+)
+
+aliyunapi_slb = ns(
+    list=ns(product="Slb", version="2014-05-15", action="DescribeLoadBalancers"),
+    info=ns(product="Slb", version="2014-05-15", action="DescribeLoadBalancerAttribute"),
+)
+
+
+aliyunapi = ns(
+    ecs=aliyunapi_ecs,
+    vpc=aliyunapi_vpc,
+    slb=aliyunapi_slb,
+)
