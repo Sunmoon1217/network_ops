@@ -33,7 +33,7 @@ const router = createRouter({
       // component: () => import('@/views/devices/index.vue'),
       meta: { requiresAuth: true },
       children: [
-        { path: '', name: 'device-list', component: () => import('@/views/devices/list.vue') },
+        { path: '', name: 'device-list', component: () => import('@/views/devices/list.vue'), meta: { keepAlive: true } },
         { path: 'create', name: 'device-create', component: () => import('@/views/devices/forms/DeviceForm.vue') },
         { path: ':id/edit', name: 'device-edit', component: () => import('@/views/devices/forms/DeviceForm.vue') },
         { path: ':id/config', name: 'device-config', component: () => import('@/views/devices/config.vue') },

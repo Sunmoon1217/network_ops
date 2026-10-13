@@ -2,9 +2,11 @@
 import FormPage from '@/components/FormPage.vue'
 import { getDevice } from '@/api/devices'
 import api from '@/api/index'
+import { useDeviceListStore } from '@/stores/deviceList'
 
 const route = useRoute()
 const router = useRouter()
+const listStore = useDeviceListStore()
 const form = ref<any>({ hostname: '', device_type: 'switch', ip_address: '', remark: '' })
 const loading = ref(false)
 const isNew = computed(() => !route.params.id)
@@ -24,6 +26,7 @@ const save = async () => {
     if (isNew.value) await api.post('/api/assets/devices/', form.value)
     else await api.put(`/api/assets/devices/${form.value.id}/`, form.value)
     ElMessage.success('保存成功')
+    listStore.touch()
     router.push('/devices')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.hostname?.[0] || '保存失败')
