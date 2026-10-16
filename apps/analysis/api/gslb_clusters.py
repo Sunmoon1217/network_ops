@@ -101,7 +101,7 @@ def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = No
       会同时出现在两个集群里、行数与 device 拼接都不稳定）；
     - 未入集群组的 GSLB 设备各自成为单机集群。
     """
-    gslb_devices = {device.id: device for device in Device.objects.filter(device_type="gslb")}
+    gslb_devices = {device.pk: device for device in Device.objects.filter(device_type="gslb")}
     clusters: dict[str, Cluster] = {}
     assigned: set[int] = set()
 
@@ -114,15 +114,15 @@ def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = No
         if not members:
             continue
         for device in members:
-            assigned.add(device.id)
-        clusters[f"group-{group.id}"] = Cluster(
-            key=f"group-{group.id}", name=group.name, group_id=group.id, devices=members
+            assigned.add(device.pk)
+        clusters[f"group-{group.pk}"] = Cluster(
+            key=f"group-{group.pk}", name=group.name, group_id=group.pk, devices=members
         )
 
     for device in sorted(gslb_devices.values(), key=lambda item: item.hostname):
-        if device.id not in assigned:
-            clusters[f"device-{device.id}"] = Cluster(
-                key=f"device-{device.id}", name=device.hostname, group_id=None, devices=[device]
+        if device.pk not in assigned:
+            clusters[f"device-{device.pk}"] = Cluster(
+                key=f"device-{device.pk}", name=device.hostname, group_id=None, devices=[device]
             )
 
     resolved = sorted(clusters.values(), key=lambda cluster: (cluster.name, cluster.key))
@@ -130,7 +130,7 @@ def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = No
         # 同时认集群键（group-3 / device-7）与组名——前端下拉用键，人工调接口更顺手写组名
         return [cluster for cluster in resolved if cluster.key == cluster_key or cluster.name == cluster_key]
     if device_id is not None:
-        return [cluster for cluster in resolved if any(device.id == device_id for device in cluster.devices)]
+        return [cluster for cluster in resolved if any(device.pk == device_id for device in cluster.devices)]
     return resolved
 
 
@@ -331,9 +331,9 @@ def _merge_pools(items, pools, vservers, server_info, hostname, order) -> list[d
 def _merge_cluster(cluster: Cluster) -> list[dict]:
     """一个集群的全部 WideIP 合并行（每行 = 一个 (域名, rtype) 的整条链）。"""
     devices = cluster.devices
-    device_ids = [device.id for device in devices]
-    hostname = {device.id: device.hostname for device in devices}
-    order = {device.id: index for index, device in enumerate(devices)}
+    device_ids = [device.pk for device in devices]
+    hostname = {device.pk: device.hostname for device in devices}
+    order = {device.pk: index for index, device in enumerate(devices)}
 
     wideips: dict[tuple[str, str], list[GtmWideip]] = {}
     for wideip in GtmWideip.objects.filter(device_id__in=device_ids):
@@ -367,7 +367,7 @@ def _merge_cluster(cluster: Cluster) -> list[dict]:
             {
                 "cluster": cluster.key,
                 "cluster_name": cluster.name,
-                "cluster_devices": [{"id": device.id, "hostname": device.hostname} for device in devices],
+                "cluster_devices": [{"id": device.pk, "hostname": device.hostname} for device in devices],
                 "device": DEVICE_SEPARATOR.join(hostname[device_id] for device_id in row_device_ids),
                 "device_ids": row_device_ids,
                 "name": name,
