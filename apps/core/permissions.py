@@ -11,7 +11,11 @@
 （普通用户管理自己的数据，不需要操作员身份）。
 """
 
+from typing import cast
+
 from rest_framework.permissions import SAFE_METHODS, BasePermission
+
+from .models import User
 
 
 class IsOperatorOrReadOnly(BasePermission):
@@ -20,12 +24,9 @@ class IsOperatorOrReadOnly(BasePermission):
     message = "需要操作员权限才能执行该写操作"
 
     def has_permission(self, request, view):
+        user = cast(User, request.user)
         # 读方法：已认证即可
         if request.method in SAFE_METHODS:
-            return bool(request.user and request.user.is_authenticated)
+            return bool(user and user.is_authenticated)
         # 写方法：操作员或超管
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and (request.user.is_superuser or request.user.role == "operator")
-        )
+        return bool(user and user.is_authenticated and (user.is_superuser or user.role == "operator"))
