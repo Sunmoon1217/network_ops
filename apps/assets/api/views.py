@@ -1,9 +1,8 @@
 import logging
 
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from assets.device_import import IMPORT_SHEETS
@@ -65,6 +64,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+@api_view(["GET"])
 def overview(request):
     """资产管理概览统计"""
     from django.db.models import Count
@@ -105,7 +105,7 @@ def overview(request):
     vs_by_protocol = list(LtmVirtualServer.objects.values("protocol").annotate(count=Count("id")))
     pools_by_lb = list(LtmPool.objects.values("device__hostname").annotate(count=Count("id")).order_by("-count")[:10])
 
-    return JsonResponse(
+    return Response(
         {
             # 基础设施
             "dc_count": DataCenter.objects.count(),
@@ -164,7 +164,6 @@ def overview(request):
 # Import
 # ---------------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([AllowAny])
 def import_excel(request):
     """导入 Excel 文件，支持多个 Sheet"""
     from openpyxl import load_workbook
@@ -198,7 +197,6 @@ def import_excel(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
 def import_template(request):
     """下载导入模板（xlsx）：每个 Sheet 一行列头，列头取自 IMPORT_SHEETS。
 
@@ -239,7 +237,6 @@ def import_template(request):
 class SecurityZoneViewSet(viewsets.ModelViewSet):
     queryset = SecurityZone.objects.all()
     serializer_class = SecurityZoneSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name",)
     ordering_fields = ("name", "created_at")
 
@@ -247,7 +244,6 @@ class SecurityZoneViewSet(viewsets.ModelViewSet):
 class DataCenterViewSet(viewsets.ModelViewSet):
     queryset = DataCenter.objects.all()
     serializer_class = DataCenterSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "address")
     ordering_fields = ("name", "created_at")
 
@@ -255,7 +251,6 @@ class DataCenterViewSet(viewsets.ModelViewSet):
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.select_related("datacenter").all()
     serializer_class = RoomSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "datacenter__name")
     ordering_fields = ("name", "created_at")
 
@@ -270,7 +265,6 @@ class RoomViewSet(viewsets.ModelViewSet):
 class CabinetViewSet(viewsets.ModelViewSet):
     queryset = Cabinet.objects.select_related("room", "room__datacenter").all()
     serializer_class = CabinetSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "room__name", "room__datacenter__name")
     ordering_fields = ("name", "status", "created_at")
 
@@ -291,7 +285,6 @@ class CabinetViewSet(viewsets.ModelViewSet):
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name",)
     ordering_fields = ("name",)
 
@@ -299,7 +292,6 @@ class VendorViewSet(viewsets.ModelViewSet):
 class DeviceModelViewSet(viewsets.ModelViewSet):
     queryset = DeviceModel.objects.select_related("vendor").all()
     serializer_class = DeviceModelSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "vendor__name")
     ordering_fields = ("name",)
 
@@ -311,7 +303,6 @@ class DeviceGroupViewSet(viewsets.ModelViewSet):
 
     queryset = DeviceGroup.objects.prefetch_related("members").all()
     serializer_class = DeviceGroupSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "description")
     ordering_fields = ("name", "created_at")
 
@@ -323,7 +314,6 @@ class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
 
     queryset = DeviceGroupMember.objects.select_related("group", "device").all()
     serializer_class = DeviceGroupMemberSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("device__hostname", "group__name")
     ordering_fields = ("created_at",)
 
@@ -341,7 +331,6 @@ class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related("idc", "cabinet", "security_zone", "device_model").all()
     serializer_class = DeviceSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("hostname", "ip_address")
     ordering_fields = ("hostname", "created_at")
 
@@ -359,7 +348,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
 class DeviceConfigViewSet(viewsets.ModelViewSet):
     queryset = DeviceConfig.objects.select_related("device").all()
     serializer_class = DeviceConfigSerializer
-    permission_classes = (AllowAny,)
     ordering_fields = ("collected_at",)
 
     def get_queryset(self):
@@ -380,7 +368,6 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
 class DeviceConnectionViewSet(viewsets.ModelViewSet):
     queryset = DeviceConnection.objects.select_related("device").all()
     serializer_class = DeviceConnectionSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("username", "device__hostname")
     ordering_fields = ("created_at",)
 
@@ -400,7 +387,6 @@ class DeviceConnectionViewSet(viewsets.ModelViewSet):
 class VlanViewSet(viewsets.ModelViewSet):
     queryset = Vlan.objects.select_related("device").all()
     serializer_class = VlanSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "vid", "description", "device__hostname")
     ordering_fields = ("vid", "name")
 
@@ -415,7 +401,6 @@ class VlanViewSet(viewsets.ModelViewSet):
 class VrfViewSet(viewsets.ModelViewSet):
     queryset = Vrf.objects.select_related("device").all()
     serializer_class = VrfSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
     ordering_fields = ("name", "created_at")
 
@@ -430,7 +415,6 @@ class VrfViewSet(viewsets.ModelViewSet):
 class InterfaceViewSet(viewsets.ModelViewSet):
     queryset = Interface.objects.select_related("device", "vrf").all()
     serializer_class = InterfaceSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("interface", "device__hostname", "ip_address")
     ordering_fields = ("interface", "created_at")
 
@@ -448,7 +432,6 @@ class InterfaceViewSet(viewsets.ModelViewSet):
 class DeviceAccountViewSet(viewsets.ModelViewSet):
     queryset = DeviceAccount.objects.select_related("device").all()
     serializer_class = DeviceAccountSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("username", "description", "device__hostname")
     ordering_fields = ("username", "created_at")
 
@@ -468,21 +451,18 @@ class DeviceAccountViewSet(viewsets.ModelViewSet):
 class SnmpConfigViewSet(viewsets.ModelViewSet):
     queryset = SnmpConfig.objects.select_related("device").all()
     serializer_class = SnmpConfigSerializer
-    permission_classes = (AllowAny,)
     ordering_fields = ("created_at",)
 
 
 class NtpConfigViewSet(viewsets.ModelViewSet):
     queryset = NtpConfig.objects.select_related("device").all()
     serializer_class = NtpConfigSerializer
-    permission_classes = (AllowAny,)
     ordering_fields = ("created_at",)
 
 
 class SyslogConfigViewSet(viewsets.ModelViewSet):
     queryset = SyslogConfig.objects.select_related("device").all()
     serializer_class = SyslogConfigSerializer
-    permission_classes = (AllowAny,)
     ordering_fields = ("created_at",)
 
 
@@ -498,7 +478,6 @@ class LtmVirtualServerViewSet(viewsets.ModelViewSet):
 
     queryset = LtmVirtualServer.objects.select_related("device").all()
     serializer_class = LtmVirtualServerSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "vs_address", "vs_port", "pool", "device__hostname")
     ordering_fields = ("name", "device__hostname", "created_at")
 
@@ -517,7 +496,6 @@ class LtmPoolViewSet(viewsets.ModelViewSet):
 
     queryset = LtmPool.objects.select_related("device").all()
     serializer_class = LtmPoolSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "mode", "device__hostname")
     ordering_fields = ("name", "device__hostname", "created_at")
 
@@ -536,7 +514,6 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
 
     queryset = LtmPoolMember.objects.select_related("device").all()
     serializer_class = LtmPoolMemberSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "address", "pool_name", "device__hostname")
     ordering_fields = ("name", "pool_name", "created_at")
 
@@ -555,7 +532,6 @@ class LtmProfileViewSet(viewsets.ModelViewSet):
 
     queryset = LtmProfile.objects.select_related("device").all()
     serializer_class = LtmProfileSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -573,7 +549,6 @@ class LtmIRuleViewSet(viewsets.ModelViewSet):
 
     queryset = LtmIRule.objects.select_related("device").all()
     serializer_class = LtmIRuleSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -591,7 +566,6 @@ class LtmSNATViewSet(viewsets.ModelViewSet):
 
     queryset = LtmSNAT.objects.select_related("device").all()
     serializer_class = LtmSNATSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -609,7 +583,6 @@ class LtmPersistViewSet(viewsets.ModelViewSet):
 
     queryset = LtmPersist.objects.select_related("device").all()
     serializer_class = LtmPersistSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -632,7 +605,6 @@ class GtmDatacenterViewSet(viewsets.ModelViewSet):
 
     queryset = GtmDatacenter.objects.select_related("device").all()
     serializer_class = GtmDatacenterSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -650,7 +622,6 @@ class GtmWideipViewSet(viewsets.ModelViewSet):
 
     queryset = GtmWideip.objects.select_related("device").all()
     serializer_class = GtmWideipSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "rtype", "lb_mode", "device__hostname")
     ordering_fields = ("name", "device__hostname", "created_at")
 
@@ -669,7 +640,6 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
 
     queryset = GtmPool.objects.select_related("device").all()
     serializer_class = GtmPoolSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "lb_mode", "fallback_ip", "device__hostname")
     ordering_fields = ("name", "device__hostname", "created_at")
 
@@ -688,7 +658,6 @@ class GtmServerViewSet(viewsets.ModelViewSet):
 
     queryset = GtmServer.objects.select_related("device").all()
     serializer_class = GtmServerSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "datacenter", "device__hostname")
     ordering_fields = ("name", "created_at")
 
@@ -707,7 +676,6 @@ class GtmVServerViewSet(viewsets.ModelViewSet):
 
     queryset = GtmVServer.objects.select_related("device", "server").all()
     serializer_class = GtmVServerSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "ip_address", "server__name", "device__hostname")
     ordering_fields = ("name", "port", "created_at")
 
@@ -734,7 +702,6 @@ class AddressBookViewSet(viewsets.ModelViewSet):
 
     queryset = AddressBook.objects.select_related("device", "parent").all()
     serializer_class = AddressBookSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "device__hostname")
 
     def get_queryset(self):
@@ -752,7 +719,6 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
     queryset = Service.objects.select_related("device").all()
     serializer_class = ServiceSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "protocol")
 
     def get_queryset(self):
@@ -776,7 +742,6 @@ class PolicyViewSet(viewsets.ModelViewSet):
         .all()
     )
     serializer_class = PolicySerializer
-    permission_classes = (AllowAny,)
     search_fields = (
         "name",
         "policy_id",
@@ -802,7 +767,6 @@ class NatRuleViewSet(viewsets.ModelViewSet):
 
     queryset = NatRule.objects.select_related("device").all()
     serializer_class = NatRuleSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "source_addresses__name", "destination_addresses__name", "device__hostname")
     ordering_fields = ("order", "created_at")
 
@@ -826,7 +790,6 @@ class TagViewSet(viewsets.ModelViewSet):
 
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name",)
     ordering_fields = ("name", "created_at")
 
@@ -838,7 +801,6 @@ class SubnetViewSet(viewsets.ModelViewSet):
 
     queryset = Subnet.objects.prefetch_related("tags").all()
     serializer_class = SubnetSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("network", "description")
     ordering_fields = ("network", "created_at")
 
@@ -860,7 +822,6 @@ class IPAddressViewSet(viewsets.ModelViewSet):
 
     queryset = IPAddress.objects.select_related("subnet", "device", "security_zone").all()
     serializer_class = IPAddressSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("ip_address", "description", "device__hostname")
     ordering_fields = ("ip_address", "created_at")
 
@@ -885,7 +846,6 @@ class RouteViewSet(viewsets.ModelViewSet):
 
     queryset = Route.objects.select_related("vrf", "vrf__device").all()
     serializer_class = RouteSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("destination", "nexthop", "vrf__name", "vrf__device__hostname")
     ordering_fields = ("destination", "protocol", "metric")
 
@@ -907,7 +867,6 @@ class TopologyViewSet(viewsets.ModelViewSet):
 
     queryset = Topology.objects.all()
     serializer_class = TopologySerializer
-    permission_classes = (AllowAny,)
     search_fields = ("name", "description")
     ordering_fields = ("name", "updated_at")
 
@@ -919,7 +878,6 @@ class ArpMacViewSet(viewsets.ModelViewSet):
 
     queryset = ArpMac.objects.select_related("device").all()
     serializer_class = ArpMacSerializer
-    permission_classes = (AllowAny,)
     search_fields = ("ip_address", "mac_address", "device__hostname", "interface", "vendor")
     ordering_fields = ("ip_address", "mac_address", "vlan", "learned_at", "updated_at")
 
@@ -944,7 +902,6 @@ class SubnetUsageLogViewSet(viewsets.ModelViewSet):
 
     queryset = SubnetUsageLog.objects.select_related("subnet").all()
     serializer_class = SubnetUsageLogSerializer
-    permission_classes = (AllowAny,)
     ordering_fields = ("recorded_at", "utilization")
 
     def get_queryset(self):

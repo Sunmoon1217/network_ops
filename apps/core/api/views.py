@@ -10,7 +10,6 @@ import logging
 from rest_framework import mixins, viewsets
 from rest_framework import status as http_status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.models import Stage, Task
@@ -30,7 +29,6 @@ class TaskViewSet(
 
     queryset = Task.objects.select_related("device").prefetch_related("stages").all()
     serializer_class = TaskSerializer
-    permission_classes = (IsAuthenticated,)
     search_fields = ("device__hostname",)
     ordering_fields = ("created_at", "started_at", "completed_at", "status")
 
@@ -83,7 +81,6 @@ class StageViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
 
     queryset = Stage.objects.select_related("task", "task__device").all()
     serializer_class = StageSerializer
-    permission_classes = (IsAuthenticated,)
     search_fields = ("task__device__hostname", "error_message")
     ordering_fields = ("created_at", "started_at", "completed_at", "status")
 

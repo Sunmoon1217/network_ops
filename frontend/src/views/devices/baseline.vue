@@ -11,8 +11,10 @@ import {
   updateSnmpConfig, updateNtpConfig, updateSyslogConfig,
 } from '@/api/baseline'
 import { useCrudApi } from '@/composables/useCrudApi'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const activeTab = ref('snmp')
 
 // 三个 tab 各自持有独立的分页与加载状态
@@ -57,7 +59,7 @@ onMounted(() => { loadTab(activeTab.value) })
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="SNMP" name="snmp">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" @click="router.push('/devices/baseline/snmp/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/snmp/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineSnmp" :data="snmpList" :loading="snmpLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -72,10 +74,11 @@ onMounted(() => { loadTab(activeTab.value) })
           </DataColumn>
           <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
-              <el-switch v-model="row.enabled" size="small" @change="updateSnmpConfig(row.id, { enabled: row.enabled })" />
+              <el-switch v-if="authStore.canWrite" v-model="row.enabled" size="small" @change="updateSnmpConfig(row.id, { enabled: row.enabled })" />
+              <el-tag v-else :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '开' : '关' }}</el-tag>
             </template>
           </DataColumn>
-          <DataColumn label="操作" width="120" fixed="right" align="center">
+          <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/snmp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSnmpRow('SNMP配置', () => deleteSnmpConfig(row.id), refetchSnmp)">删除</el-button>
@@ -87,7 +90,7 @@ onMounted(() => { loadTab(activeTab.value) })
 
       <el-tab-pane label="NTP" name="ntp">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" @click="router.push('/devices/baseline/ntp/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/ntp/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineNtp" :data="ntpList" :loading="ntpLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -98,10 +101,11 @@ onMounted(() => { loadTab(activeTab.value) })
           <DataColumn prop="sync_interval" label="同步间隔" width="90" />
           <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
-              <el-switch v-model="row.enabled" size="small" @change="updateNtpConfig(row.id, { enabled: row.enabled })" />
+              <el-switch v-if="authStore.canWrite" v-model="row.enabled" size="small" @change="updateNtpConfig(row.id, { enabled: row.enabled })" />
+              <el-tag v-else :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '开' : '关' }}</el-tag>
             </template>
           </DataColumn>
-          <DataColumn label="操作" width="120" fixed="right" align="center">
+          <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/ntp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteNtpRow('NTP配置', () => deleteNtpConfig(row.id), refetchNtp)">删除</el-button>
@@ -113,7 +117,7 @@ onMounted(() => { loadTab(activeTab.value) })
 
       <el-tab-pane label="Syslog" name="syslog">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" @click="router.push('/devices/baseline/syslog/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/syslog/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineSyslog" :data="syslogList" :loading="syslogLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -124,10 +128,11 @@ onMounted(() => { loadTab(activeTab.value) })
           <DataColumn prop="level" label="日志级别" width="120" />
           <DataColumn prop="enabled" label="启用" width="70" align="center">
             <template #default="{ row }">
-              <el-switch v-model="row.enabled" size="small" @change="updateSyslogConfig(row.id, { enabled: row.enabled })" />
+              <el-switch v-if="authStore.canWrite" v-model="row.enabled" size="small" @change="updateSyslogConfig(row.id, { enabled: row.enabled })" />
+              <el-tag v-else :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '开' : '关' }}</el-tag>
             </template>
           </DataColumn>
-          <DataColumn label="操作" width="120" fixed="right" align="center">
+          <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/syslog/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSyslogRow('Syslog配置', () => deleteSyslogConfig(row.id), refetchSyslog)">删除</el-button>

@@ -10,14 +10,14 @@
 """
 
 import pytest
-from rest_framework.test import APIClient
 
 from assets.models import Device, GtmPool, GtmWideip, LtmPool, LtmVirtualServer
 
 
 @pytest.fixture
-def client():
-    return APIClient()
+def client(api_client):
+    """只读接口：普通用户客户端（顺带验证「普通用户能查询」）。"""
+    return api_client
 
 
 def _device(hostname: str, device_type: str) -> Device:

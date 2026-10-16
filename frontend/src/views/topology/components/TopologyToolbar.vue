@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Edit, Check, Delete, Plus } from '@element-plus/icons-vue'
 
-defineProps<{ editing: boolean }>()
+defineProps<{ editing: boolean; canWrite: boolean }>()
 const emit = defineEmits<{
   'add-device': []
   'add-custom': []
@@ -14,7 +14,7 @@ const emit = defineEmits<{
 <template>
   <div class="topology-toolbar">
     <template v-if="!editing">
-      <el-button type="primary" @click="emit('toggle-edit')">
+      <el-button v-if="canWrite" type="primary" @click="emit('toggle-edit')">
         <el-icon><Edit /></el-icon>编辑
       </el-button>
     </template>

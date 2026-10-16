@@ -28,8 +28,8 @@ S    10.3.0.0/16 [1/0] via 10.1.1.254
 
 @pytest.fixture
 def client(db):
-    """这两个端点要求登录（IsAuthenticated）。"""
-    user = User.objects.create_user(username="_t_route_api", password="x")
+    """路由采集是写操作（整表替换路由），用操作员身份。"""
+    user = User.objects.create_user(username="_t_route_api", password="x", role="operator")
     api = APIClient()
     api.force_authenticate(user=user)
     return api

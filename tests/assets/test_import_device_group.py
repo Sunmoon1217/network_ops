@@ -17,7 +17,6 @@ from io import BytesIO
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
-from rest_framework.test import APIClient
 
 from assets.device_import import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
 from assets.models import Device, DeviceGroup
@@ -168,9 +167,10 @@ def test_reimport_counts_as_update_and_row_is_full_snapshot():
 # ---------------------------------------------------------------------------
 
 
-def test_template_lists_every_import_sheet():
+@pytest.mark.django_db
+def test_template_lists_every_import_sheet(api_client):
     """模板的 Sheet 与列头 == IMPORT_SHEETS（同一份表），设备组 Sheet 必须在"""
-    resp = APIClient().get("/api/assets/import-template/")
+    resp = api_client.get("/api/assets/import-template/")
 
     assert resp.status_code == 200
     assert "spreadsheetml" in resp["Content-Type"]
@@ -187,15 +187,15 @@ def test_template_lists_every_import_sheet():
 
 
 @pytest.mark.django_db
-def test_import_excel_dispatches_device_group_sheet():
-    """走完整 HTTP 导入链：设备组 Sheet 被 IMPORT_SHEETS 认出并分发"""
+def test_import_excel_dispatches_device_group_sheet(operator_client):
+    """走完整 HTTP 导入链：设备组 Sheet 被 IMPORT_SHEETS 认出并分发（导入是写操作，操作员才可）"""
     _device("imp-http-dev")
 
     buf = BytesIO()
     _sheet([["集群", "imp-http-dev", "集群组"]]).parent.save(buf)
     upload = SimpleUploadedFile("import.xlsx", buf.getvalue(), XLSX_CONTENT_TYPE)
 
-    payload = APIClient().post("/api/assets/import-devices/", {"file": upload}).json()
+    payload = operator_client.post("/api/assets/import-devices/", {"file": upload}).json()
 
     assert payload["success"] is True
     assert payload["results"]["设备组"]["created"] == 1, payload
