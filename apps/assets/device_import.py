@@ -235,19 +235,39 @@ def _split_device_names(text):
     return [name for name in re.split(r"[,，、\s]+", text) if name]
 
 
-def _group_name(group_type, names):
-    """组名**不由表格填**：非集群 = 主设备（第一台）hostname；集群 = 所有设备名的最长公共前缀。
+def _parse_device_name(hostname):
+    """按 ``NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`` 拆设备名，返回 ``(安全区, 设备类型)``。
 
-    例：``cs-1`` / ``cs-2`` 的交集是 ``cs-``（逐字符取，不按分隔符截）。只有一台设备、
-    或者毫无公共前缀时回退第一台 hostname，保证组名永远非空。
+    - 首段必须是 ``NET``（大小写不敏感）、段数至少 4，否则返回 ``None``；
+    - ``<数据中心+机柜位置>`` 自带 ``-`` 也认（``NET-SH01-R05-SEC-FW01``），所以安全区与设备类型
+      按**最后两段**取——前提是这两段自己不再带 ``-``（安全区写成 ``DMZ-A`` 这种会拆错）；
+    - 设备类型去掉尾部编号（``FW01`` → ``FW``），同组两台才能拼出同一个组名。
+    """
+    parts = hostname.split("-")
+    if len(parts) < 4 or parts[0].upper() != "NET":
+        return None
+    zone, type_with_serial = parts[-2], parts[-1]
+    device_type = re.sub(r"\d+$", "", type_with_serial)
+    if not zone or not device_type:
+        return None
+    return zone, device_type
+
+
+def _group_name(group_type, names):
+    """组名**不由表格填**：
+
+    - 非集群 = 主设备（第一台）hostname；
+    - 集群 = 设备名结构里的「安全区 + 设备类型」：``NET-SH01-R05-SEC-FW01`` 与
+      ``NET-SH01-R06-SEC-FW02`` → ``SEC-FW``（单台集群组同理）；
+    - 任一台设备名不符合结构、或同行几台拆出的 ``(安全区, 类型)`` 不一致 → 回退第一台 hostname。
     """
     if group_type != "cluster":
         return names[0]
-    prefix = names[0]
-    for hostname in names[1:]:
-        while prefix and not hostname.startswith(prefix):
-            prefix = prefix[:-1]
-    return prefix or names[0]
+    parsed = [_parse_device_name(hostname) for hostname in names]
+    if all(item is not None for item in parsed) and len(set(parsed)) == 1:
+        zone, device_type = parsed[0]
+        return f"{zone}-{device_type}"
+    return names[0]
 
 
 def _device_roles(group_type, count):
