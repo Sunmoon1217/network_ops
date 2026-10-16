@@ -316,3 +316,22 @@ export interface GslbClusterRow {
   inconsistent: boolean
   conflict_fields: string[]
 }
+
+/** GSLB 集群过滤下拉项（GET /api/analysis/gslb-clusters/facets/ 的 clusters） */
+export interface GslbClusterOption {
+  /** 集群键（group-<id> / device-<id>），下拉的选中值 */
+  key: string
+  /** 集群组名 / 单机设备名，下拉的显示文本 */
+  name: string
+  /** 单机集群为 null，可据此区分「集群组」与「单机」 */
+  group_id: number | null
+  /** 该集群的全部设备 hostname */
+  devices: string[]
+}
+
+/** GSLB 集群接口的过滤下拉选项：rtypes/monitors 与旧接口同口径，clusters 为集群专有 */
+export interface GslbClusterFacets {
+  rtypes: string[]
+  monitors: string[]
+  clusters: GslbClusterOption[]
+}

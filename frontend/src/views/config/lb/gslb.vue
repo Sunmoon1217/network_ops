@@ -8,12 +8,14 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportGslbClusters, getGslbClusterFacets, getGslbClusters } from '@/api/config'
-import type { GslbClusterPool, GslbClusterRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
+import type { GslbClusterOption, GslbClusterPool, GslbClusterRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
 
-const filterDevice = ref<number | ''>('')
+// 过滤器按「GSLB 集群」而不是逐台设备：集群组名 / 单机设备名（下拉值为集群键）
+const filterCluster = ref('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
 const filterRtype = ref('')
 const filterMonitor = ref('')
+const clusterOptions = ref<GslbClusterOption[]>([])
 const rtypeOptions = ref<string[]>([])
 const monitorOptions = ref<string[]>([])
 
@@ -36,20 +38,22 @@ const loadRows = () =>
   fetchData(() =>
     getGslbClusters(
       pageParams({
-        device: filterDevice.value || undefined,
+        cluster: filterCluster.value || undefined,
         rtype: filterRtype.value || undefined,
         monitor: filterMonitor.value || undefined,
       }),
     ),
   )
 
-/** 下拉选项走 facets；拿不到不阻塞列表（下拉退化为空、可手动清空） */
+/** 下拉选项走 facets（集群列表 + 记录类型 + 健康检查）；拿不到不阻塞列表（下拉退化为空、可手动清空） */
 const loadFacets = async () => {
   try {
     const res = await getGslbClusterFacets()
+    clusterOptions.value = res.data?.clusters ?? []
     rtypeOptions.value = res.data?.rtypes ?? []
     monitorOptions.value = res.data?.monitors ?? []
   } catch {
+    clusterOptions.value = []
     rtypeOptions.value = []
     monitorOptions.value = []
   }
@@ -139,7 +143,7 @@ const handleExport = async () => {
   exportLoading.value = true
   try {
     const res = await exportGslbClusters({
-      device: filterDevice.value || undefined,
+      cluster: filterCluster.value || undefined,
       rtype: filterRtype.value || undefined,
       monitor: filterMonitor.value || undefined,
       search: search.value || undefined,
@@ -250,7 +254,7 @@ const flatRows = computed(() => {
   return out
 })
 
-watch(filterDevice, resetAndFetch)
+watch(filterCluster, resetAndFetch)
 watch(filterRtype, resetAndFetch)
 watch(filterMonitor, resetAndFetch)
 onMounted(() => {
@@ -277,12 +281,18 @@ onMounted(() => {
         切换{{ viewMode === 'detail' ? '扁平' : '明细' }}视图
       </el-button>
       <FilterBar
-        v-model:device="filterDevice"
         v-model:search="search"
-        device-type="gslb"
+        :show-device="false"
         search-placeholder="搜索 域名/集群/池/服务器/虚拟服务器/IP:端口/健康检查"
         search-width="280px"
       >
+        <!-- 过滤器按 GSLB 集群（集群组名 / 单机设备名）而不是逐台设备；值为集群键 -->
+        <el-select v-model="filterCluster" placeholder="集群 / 单机" clearable filterable style="width: 200px">
+          <el-option v-for="c in clusterOptions" :key="c.key" :label="c.name" :value="c.key">
+            <span>{{ c.name }}</span>
+            <span class="opt-hint">{{ c.group_id === null ? '单机' : `集群 ${c.devices.length} 台` }}</span>
+          </el-option>
+        </el-select>
         <el-select v-model="filterRtype" placeholder="记录类型" clearable style="width: 110px">
           <el-option v-for="t in rtypeOptions" :key="t" :label="t" :value="t" />
         </el-select>
@@ -524,4 +534,6 @@ onMounted(() => {
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 /* 配置不一致标记：跟在对象名后面，与值留一点间距 */
 .flag { margin-left: 6px; }
+/* 集群下拉项右侧的类型提示（单机 / 集群 N 台） */
+.opt-hint { float: right; margin-left: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

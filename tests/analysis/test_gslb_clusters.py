@@ -241,8 +241,28 @@ def test_ordering_and_pagination(api):
 
 
 @pytest.mark.django_db
+def test_cluster_filter_accepts_key_and_group_name(api):
+    """?cluster= 既认集群键，也认组名（前端下拉用键，人工调接口更顺手写组名）。"""
+    a, b, solo = _device("gtm-a"), _device("gtm-b"), _device("gtm-solo")
+    group = _cluster_group("cs-gtm", [a, b])
+    for device in (a, b, solo):
+        _wideip(device)
+        _pool(device)
+
+    by_key = api.get(BASE, {"cluster": f"group-{group.id}"}).data
+    assert [row["device"] for row in by_key["results"]] == ["gtm-a,gtm-b"]
+
+    by_name = api.get(BASE, {"cluster": "cs-gtm"}).data
+    assert [row["device"] for row in by_name["results"]] == ["gtm-a,gtm-b"]
+
+    single = api.get(BASE, {"cluster": "gtm-solo"}).data
+    assert [row["device"] for row in single["results"]] == ["gtm-solo"]
+    assert api.get(BASE, {"cluster": "nope"}).data["count"] == 0
+
+
+@pytest.mark.django_db
 def test_facets_match_legacy_gtm_endpoint(api):
-    """集群接口的 facets 与旧 GSLB 接口同口径（共用 gtm_facet_values）。"""
+    """集群接口的 facets：rtypes/monitors 与旧接口同口径，clusters 是独有的过滤器选项。"""
     device = _device("gtm-a")
     _wideip(device, name="www.example.com", rtype="A", pools=["pool_web"])
     _pool(device, "pool_web", [{"server": "srv1", "vserver": "vs1"}], monitor=["http"])
@@ -250,9 +270,13 @@ def test_facets_match_legacy_gtm_endpoint(api):
 
     cluster_facets = api.get(f"{BASE}facets/").data
     legacy_facets = api.get("/api/lb-chain/gslb/facets/").data
-    assert cluster_facets == legacy_facets
+    assert {key: cluster_facets[key] for key in ("rtypes", "monitors")} == legacy_facets
     assert cluster_facets["rtypes"] == ["A"]
     assert "http" in cluster_facets["monitors"]
+    # 单机集群：group_id 为 null，name 即设备名
+    assert cluster_facets["clusters"] == [
+        {"key": f"device-{device.id}", "name": "gtm-a", "group_id": None, "devices": ["gtm-a"]}
+    ]
 
 
 @pytest.mark.django_db

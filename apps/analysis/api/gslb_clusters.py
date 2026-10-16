@@ -127,10 +127,27 @@ def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = No
 
     resolved = sorted(clusters.values(), key=lambda cluster: (cluster.name, cluster.key))
     if cluster_key:
-        return [cluster for cluster in resolved if cluster.key == cluster_key]
+        # 同时认集群键（group-3 / device-7）与组名——前端下拉用键，人工调接口更顺手写组名
+        return [cluster for cluster in resolved if cluster.key == cluster_key or cluster.name == cluster_key]
     if device_id is not None:
         return [cluster for cluster in resolved if any(device.id == device_id for device in cluster.devices)]
     return resolved
+
+
+def cluster_options() -> list[dict]:
+    """过滤下拉用的集群选项：集群组名 / 单机设备名（按名字排序，与列表默认序一致）。
+
+    单机集群的 ``group_id`` 为 null，前端可据此区分「集群组」与「单机」。
+    """
+    return [
+        {
+            "key": cluster.key,
+            "name": cluster.name,
+            "group_id": cluster.group_id,
+            "devices": [device.hostname for device in cluster.devices],
+        }
+        for cluster in _resolve_clusters()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +477,9 @@ def _build_rows(request) -> list[dict]:
 def gslb_clusters(request):
     """GSLB 集群合并列表：
     GET /api/analysis/gslb-clusters/?device=&cluster=&rtype=&monitor=&search=&ordering=&page=
+
+    ``cluster`` 同时接受集群键（``group-3`` / ``device-7``）与组名；``device`` 用在
+    「按设备反查其所属集群」的场景（前端页面已改用 ``cluster`` 组名过滤）。
     """
     rows = _build_rows(request)
     paginator = StandardPagination()
@@ -470,8 +490,12 @@ def gslb_clusters(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def gslb_cluster_facets(request):
-    """过滤下拉选项：GET /api/analysis/gslb-clusters/facets/（与旧 GSLB 接口同口径）。"""
-    return Response(gtm_facet_values())
+    """过滤下拉选项：GET /api/analysis/gslb-clusters/facets/
+
+    ``rtypes`` / ``monitors`` 与旧 GSLB 接口同口径（共用 ``gtm_facet_values``）；
+    额外给 ``clusters``——GSLB 页面用「集群组名 / 单机设备名」做过滤器，而不是逐台设备。
+    """
+    return Response({**gtm_facet_values(), "clusters": cluster_options()})
 
 
 def _cluster_flat_rows(rows: list[dict]) -> list[list]:
