@@ -73,7 +73,9 @@ def register(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def logout(request):
+    """登出：任何已登录用户都可，不需要操作员身份（全局默认权限会限写，这里显式放开）。"""
     DRFToken.objects.filter(user=request.user).delete()
     return Response({"message": "已登出"})
 
@@ -87,6 +89,7 @@ def me(request):
             "username": u.username,
             "email": u.email,
             "is_staff": u.is_staff,
+            "role": u.role,
             "phone": u.phone,
             "avatar": u.avatar,
         }

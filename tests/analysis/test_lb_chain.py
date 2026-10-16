@@ -5,7 +5,6 @@
 """
 
 import pytest
-from rest_framework.test import APIClient
 
 from assets.models import (
     Device,
@@ -20,8 +19,9 @@ from assets.models import (
 
 
 @pytest.fixture
-def api():
-    return APIClient()
+def api(api_client):
+    """只读接口：普通用户客户端（顺带验证「普通用户能查询」）。"""
+    return api_client
 
 
 def _slb_device(hostname: str = "_t_lb_slb") -> Device:

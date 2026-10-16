@@ -6,7 +6,6 @@
 """
 
 import pytest
-from rest_framework.test import APIClient
 
 from assets.models import AddressBook, Device, Policy, Service
 
@@ -33,12 +32,12 @@ def _policy_with_refs(device: Device) -> Policy:
 
 
 @pytest.mark.django_db
-def test_list_returns_display_strings_for_cross_table_fields():
+def test_list_returns_display_strings_for_cross_table_fields(api_client):
     """源/目的地址与端口以格式化字符串返回，前端不必再解析地址簿结构"""
     device = _device("api-pol-a")
     _policy_with_refs(device)
 
-    row = APIClient().get(URL).json()["results"][0]
+    row = api_client.get(URL).json()["results"][0]
 
     assert row["device_hostname"] == "api-pol-a"
     assert row["policy_id"] == "1"
@@ -54,12 +53,12 @@ def test_list_returns_display_strings_for_cross_table_fields():
 
 
 @pytest.mark.django_db
-def test_empty_match_conditions_display_as_any():
+def test_empty_match_conditions_display_as_any(api_client):
     """没有关联地址/服务时 display 为空数组（前端约定显示 any）"""
     device = _device("api-pol-empty")
     Policy.objects.create(device=device, policy_id="9", order=1, name="any-any", action="deny")
 
-    row = APIClient().get(URL).json()["results"][0]
+    row = api_client.get(URL).json()["results"][0]
 
     assert row["source_addresses_display"] == []
     assert row["destination_addresses_display"] == []
@@ -67,7 +66,7 @@ def test_empty_match_conditions_display_as_any():
 
 
 @pytest.mark.django_db
-def test_list_does_not_query_per_row(django_assert_num_queries):
+def test_list_does_not_query_per_row(django_assert_num_queries, api_client):
     """5 条策略 × 各 3 个 M2M，查询数应与 1 条时相同（prefetch 而非 N+1）"""
     device = _device("api-pol-n1")
     for index in range(5):
@@ -80,12 +79,12 @@ def test_list_does_not_query_per_row(django_assert_num_queries):
         policy.source_addresses.set([source])
 
     with django_assert_num_queries(5):
-        rows = APIClient().get(URL).json()["results"]
+        rows = api_client.get(URL).json()["results"]
     assert len(rows) == 5
 
 
 @pytest.mark.django_db
-def test_range_and_subnet_entries_are_formatted_by_type():
+def test_range_and_subnet_entries_are_formatted_by_type(api_client):
     """range 起止、subnet 前缀、addressbook 引用各自的展示格式"""
     device = _device("api-pol-fmt")
     address = AddressBook.objects.create(
@@ -97,7 +96,7 @@ def test_range_and_subnet_entries_are_formatted_by_type():
     policy.source_addresses.set([address, book])
     policy.services.set([port_range])
 
-    row = APIClient().get(URL).json()["results"][0]
+    row = api_client.get(URL).json()["results"][0]
 
     # M2M 按 AddressBook Meta 的 name 字母序返回：office 在 pool 之前
     assert row["source_addresses_display"] == ["office", "pool(10.1.1.10-10.1.1.20)"]

@@ -276,8 +276,10 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
+    # 默认权限：读方法任何已认证用户可用，写方法限操作员（role=operator）或超管，
+    # 见 core.permissions.IsOperatorOrReadOnly
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "core.permissions.IsOperatorOrReadOnly",
     ],
     # 列表接口统一启用搜索与排序，各 ViewSet 通过 search_fields / ordering_fields 声明可用字段
     "DEFAULT_FILTER_BACKENDS": [
