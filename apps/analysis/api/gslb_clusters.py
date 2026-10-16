@@ -476,19 +476,20 @@ def gslb_cluster_facets(request):
 
 def _cluster_flat_rows(rows: list[dict]) -> list[list]:
     """扁平宽表：粒度规则与旧 GSLB 导出一致（以链最深层为行、字段下填），
-    设备列是合并后的逗号拼接串，末列标出该行是否命中配置不一致。"""
+    设备列是合并后的逗号拼接串；末列「配置不一致」取该行路径上任一层的不一致
+    （wideip / 池 / 成员），否则池内成员漂移会被 wideip 层的不一致掩盖。"""
     flat: list[list] = []
     for row in rows:
         wide = [row["device"], row["name"], row["rtype"] or "-", row["lb_mode"] or "-"]
         empty_pool = ["-"] * 7  # 池Order/池Ratio/池名/池监控/池算法/fallback/TTL
         empty_member = ["", "", "", "", "-"]  # 成员Order/成员Ratio/成员监控/数据中心/状态
-        flag = "是" if row["inconsistent"] else ""
         if not row["pools"]:
-            flat.append(wide + empty_pool + [row["name"]] + empty_member + [flag])
+            flat.append(wide + empty_pool + [row["name"]] + empty_member + ["是" if row["inconsistent"] else ""])
             continue
         for pool in row["pools"]:
             algo = " / ".join(item for item in (pool["lb_mode"], pool["alternate_mode"]) if item) or "-"
             fallback = (pool["fallback_mode"] or "") + (f"（{pool['fallback_ip']}）" if pool["fallback_ip"] else "")
+            pool_flag = row["inconsistent"] or pool["inconsistent"]
             pool_seg = [
                 _uniq_join(member["order"] for member in pool["members"]),
                 _uniq_join(member["ratio"] for member in pool["members"]),
@@ -499,7 +500,7 @@ def _cluster_flat_rows(rows: list[dict]) -> list[list]:
                 str(pool["ttl"]) if pool["ttl"] is not None else "-",
             ]
             if not pool["members"]:
-                flat.append(wide + pool_seg + [pool["name"]] + empty_member + [flag])
+                flat.append(wide + pool_seg + [pool["name"]] + empty_member + ["是" if pool_flag else ""])
                 continue
             for member in pool["members"]:
                 label = (
@@ -515,6 +516,7 @@ def _cluster_flat_rows(rows: list[dict]) -> list[list]:
                     member["datacenter"],
                     _STATE_LABELS.get(state_key, "-"),
                 ]
+                flag = "是" if (pool_flag or member["inconsistent"]) else ""
                 flat.append(wide + pool_seg + [label] + member_seg + [flag])
     return flat
 
