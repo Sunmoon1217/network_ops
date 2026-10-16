@@ -387,7 +387,7 @@ tags, subnets, ip-addresses
 | 路径 | 说明 |
 |------|------|
 | `/api/assets/overview/` | 总览聚合统计 |
-| `/api/assets/import-devices/` | Excel 导入设备（Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源是 `assets/api/views.py` 的 `IMPORT_SHEETS`，含「设备组」Sheet：组类型 \| 设备名(多个用逗号分隔) \| 描述，**一行 = 一个设备组**；组名与角色不填表、由导入推：非集群第一台=主、第二台=备且组名=主设备 hostname，集群全部=成员且组名=所有设备名的最长公共前缀（`cs-1`/`cs-2` → `cs-`，取不到回退第一台 hostname）；行是该组的完整快照，不在行里的既有成员会被摘掉） |
+| `/api/assets/import-devices/` | Excel 导入设备（Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源是 `assets/device_import.py` 的 `IMPORT_SHEETS`，含「设备组」Sheet：组类型 \| 设备名(多个用逗号分隔) \| 描述，**一行 = 一个设备组**；组名与角色不填表、由导入推：非集群第一台=主、第二台=备且组名=主设备 hostname，集群全部=成员且组名=设备名结构里的「安全区+设备类型」——设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`（首段 NET 大小写不敏感、段数≥4，安全区与类型取最后两段、类型段去尾部编号，`NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname；行是该组的完整快照，不在行里的既有成员会被摘掉） |
 | `/api/assets/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
 
 **ingest**（`ingest/api/urls.py`）
