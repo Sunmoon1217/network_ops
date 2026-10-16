@@ -355,11 +355,11 @@ onMounted(() => {
                             </template>
                           </DataColumn>
                           <!-- 合并维度：出现该成员的设备（集群里可能只有部分设备配了这条） -->
-                          <DataColumn prop="device" column-key="mDevice" label="设备" min-width="140">
+                          <!-- <DataColumn prop="device" column-key="mDevice" label="设备" min-width="140">
                             <template #default="{ row: m }">
                               <span class="cell-k">设备：</span>{{ m.device }}
                             </template>
-                          </DataColumn>
+                          </DataColumn> -->
                           <DataColumn prop="monitor" column-key="mMonitor" label="监控" min-width="120">
                             <template #default="{ row: m }">
                               <span class="cell-k">监控：</span>{{ m.monitor }}
@@ -396,11 +396,11 @@ onMounted(() => {
                       <el-tag v-if="p.inconsistent" type="warning" size="small" class="flag">不一致</el-tag>
                     </template>
                   </DataColumn>
-                  <DataColumn prop="device" column-key="poolDevice" label="设备" min-width="140">
+                  <!-- <DataColumn prop="device" column-key="poolDevice" label="设备" min-width="140">
                     <template #default="{ row: p }">
                       <span class="cell-k">设备：</span>{{ p.device }}
                     </template>
-                  </DataColumn>
+                  </DataColumn> -->
                   <DataColumn prop="algo" column-key="poolAlgo" label="负载算法" min-width="160">
                     <template #default="{ row: p }">
                       <span class="cell-k">负载算法：</span>{{ p.algo }}
@@ -438,7 +438,7 @@ onMounted(() => {
           </DataColumn>
           <DataColumn prop="cluster" label="集群" min-width="120" show-overflow-tooltip />
           <!-- 合并后的设备字段：逗号拼接出现该域名的设备；hover 列出集群全部设备 -->
-          <DataColumn prop="device" label="设备" min-width="160">
+          <!-- <DataColumn prop="device" label="设备" min-width="160">
             <template #default="{ row }">
               <el-tooltip v-if="row.clusterDevices?.length" placement="top">
                 <template #content>
@@ -449,7 +449,7 @@ onMounted(() => {
               </el-tooltip>
               <span v-else>{{ row.device }}</span>
             </template>
-          </DataColumn>
+          </DataColumn> -->
           <DataColumn label="类型" column-key="kind" min-width="100">
             <template #default="{ row }">
               <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
