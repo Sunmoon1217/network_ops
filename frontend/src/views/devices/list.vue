@@ -9,10 +9,12 @@ import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { TABLE_KEYS } from '@/constants/tableKeys'
 import { useDeviceListStore } from '@/stores/deviceList'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const listStore = useDeviceListStore()
+const authStore = useAuthStore()
 
 // 从 URL query 回填搜索 / 分页条件（刷新、书签场景）——直接作为 ref 初值传入，
 // 而不是在 useCrudApi 注册 watch(search) 后再赋值，避免被误判成用户输入。
@@ -55,8 +57,8 @@ onActivated(() => {
   <PageLayout title="设备列表">
     <template #actions>
       <el-input v-model="search" placeholder="搜索主机名 / IP" clearable style="width: 220px" />
-      <el-button @click="importDialogVisible = true">导入</el-button>
-      <el-button type="primary" @click="router.push('/devices/create')">添加设备</el-button>
+      <el-button v-if="authStore.canWrite" @click="importDialogVisible = true">导入</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/devices/create')">添加设备</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.deviceList" :data="devices" :loading="loading">
@@ -79,7 +81,7 @@ onActivated(() => {
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="goToConfig(row)">配置</el-button>
             <el-button size="small" link type="info" @click="goToHistory(row)">历史</el-button>
-            <el-button size="small" link type="warning" @click="router.push(`/devices/${row.id}/edit`)">编辑</el-button>
+            <el-button v-if="authStore.canWrite" size="small" link type="warning" @click="router.push(`/devices/${row.id}/edit`)">编辑</el-button>
           </template>
         </DataColumn>
       </DataTable>

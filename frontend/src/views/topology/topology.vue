@@ -10,8 +10,10 @@ import { getTopology, createTopology, updateTopology, deleteTopology } from '@/a
 import { fetchAllPages } from '@/utils/fetchAllPages'
 import { buildIconDataUri } from '@/assets/device-icons'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const authStore = useAuthStore()
 
 // === 拓扑列表 ===
 const topologyList = ref<any[]>([])
@@ -297,11 +299,11 @@ onMounted(async () => {
             :value="t.id"
           />
         </el-select>
-        <el-button type="primary" plain @click="handleCreateTopology">
+        <el-button v-if="authStore.canWrite" type="primary" plain @click="handleCreateTopology">
           <el-icon><Plus /></el-icon>新建
         </el-button>
         <el-button
-          v-if="topologyId"
+          v-if="topologyId && authStore.canWrite"
           type="danger"
           plain
           @click="handleDeleteTopology"
@@ -311,6 +313,7 @@ onMounted(async () => {
       </div>
       <TopologyToolbar
         :editing="editing"
+        :can-write="authStore.canWrite"
         @toggle-edit="editing = !editing"
         @add-device="showDeviceSelector = true"
         @add-custom="handleAddCustom"

@@ -5,7 +5,9 @@ import DataColumn from '@/components/DataColumn.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'
 
 import type { ParserItem, TemplateItem, TemplateRow } from '@/types'
+import { useAuthStore } from '@/stores/auth'
 
+const authStore = useAuthStore()
 const parsers = ref<ParserItem[]>([])
 const templates = ref<TemplateItem[]>([])
 const selectedTemplate = ref<TemplateRow | null>(null)
@@ -175,7 +177,7 @@ onMounted(() => {
             </template>
           </div>
           <div v-if="selectedTemplate" class="template-actions">
-            <el-button v-if="!isEditing" size="small" @click="isEditing = true">编辑</el-button>
+            <el-button v-if="!isEditing && authStore.canWrite" size="small" @click="isEditing = true">编辑</el-button>
             <el-button v-if="isEditing" size="small" type="primary" @click="saveTemplate">保存</el-button>
             <el-button v-if="isEditing" size="small" @click="cancelEdit">取消</el-button>
           </div>
