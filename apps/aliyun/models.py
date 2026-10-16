@@ -76,11 +76,8 @@ class AliyunLoadBalancer(models.Model):
     resource_group_id = models.CharField(max_length=64, blank=True, null=True)
     createtime = models.DateTimeField(blank=True, null=True)
     backend_servers = models.JSONField(blank=True, null=True)
-    bindwidth = models.IntegerField(blank=True, null=True)
     listener_ports = models.JSONField(blank=True, null=True)
     listener_ports_and_protocol = models.JSONField(blank=True, null=True)
-    listener_ports_and_protocal = models.JSONField(blank=True, null=True)
-    resource_group_id = models.CharField(max_length=64, blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

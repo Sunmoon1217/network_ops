@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # 生成数据库凭据的 docker secrets 文件：
 #   env/secrets/postgres_user       → 容器内 /run/secrets/postgres_user

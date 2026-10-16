@@ -3,7 +3,7 @@ name = "network-ops"
 version = "2.0.0"
 description = "网络运维管理平台：Django REST 后端 + Vue 3 前端"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "aliyun-log-python-sdk>=0.9.52",
     "aliyun-python-sdk-asapi>=2.4.7.2",
@@ -35,7 +35,7 @@ exclude-dependencies = ["aliyun-python-sdk-core-v3"]
 django_settings_module = "netops.settings"
 
 [tool.ruff]
-line-length = 120
+line-length = 180
 target-version = "py312"
 
 [tool.ruff.lint]
