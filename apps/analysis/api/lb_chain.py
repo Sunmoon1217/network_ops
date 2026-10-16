@@ -415,13 +415,12 @@ def gtm_chains(request):
     return paginator.get_paginated_response(_gtm_rows(page))
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def gtm_facets(request):
-    """过滤下拉选项：GET /api/lb-chain/gslb/facets/
+def gtm_facet_values() -> dict:
+    """GTM 过滤下拉的取值（记录类型 + 健康检查类型合集）。
 
     ``rtypes`` 来自 wideip 记录类型去重；``monitors`` 是健康检查类型合集——
     池（JSON 列表，Python 侧展开）+ 服务器 / 虚拟服务器（CharField）三处 distinct。
+    旧接口与 GSLB 集群接口共用这一份，避免两处口径漂移。
     """
     rtypes = sorted({v for v in GtmWideip.objects.values_list("rtype", flat=True) if v})
     monitors: set[str] = set()
@@ -429,7 +428,14 @@ def gtm_facets(request):
         monitors.update(m for m in (lst or []) if isinstance(m, str) and m)
     monitors.update(v for v in GtmServer.objects.values_list("monitor", flat=True) if v)
     monitors.update(v for v in GtmVServer.objects.values_list("monitor", flat=True) if v)
-    return Response({"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)})
+    return {"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gtm_facets(request):
+    """过滤下拉选项：GET /api/lb-chain/gslb/facets/（取值口径见 ``gtm_facet_values``）。"""
+    return Response(gtm_facet_values())
 
 
 # ---------------------------------------------------------------------------
