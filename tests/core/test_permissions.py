@@ -120,12 +120,26 @@ def test_register_creates_normal_role_user():
 
 
 @pytest.mark.django_db
-def test_me_endpoint_returns_role(normal_user):
-    """前端靠 /api/me/ 的 role 字段决定是否展示写入口"""
-    resp = _auth_client(normal_user).get("/api/me/")
+def test_me_endpoint_returns_role_and_can_write(normal_user, operator_user):
+    """前端靠 /api/me/ 的 role / can_write 决定是否展示写入口"""
+    reader = _auth_client(normal_user).get("/api/me/").json()
+    assert reader["role"] == "normal"
+    assert reader["can_write"] is False
 
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "normal"
+    writer = _auth_client(operator_user).get("/api/me/").json()
+    assert writer["role"] == "operator"
+    assert writer["can_write"] is True
+
+
+@pytest.mark.django_db
+def test_superuser_can_write_even_with_normal_role():
+    """超管 role 仍是 normal（默认），但 can_write 必须为 True"""
+    admin = User.objects.create_superuser(username="_t_perm_admin2", password="x")
+    assert admin.role == "normal"
+
+    payload = _auth_client(admin).get("/api/me/").json()
+
+    assert payload["can_write"] is True
 
 
 @pytest.mark.django_db

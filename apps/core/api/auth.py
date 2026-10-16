@@ -90,6 +90,9 @@ def me(request):
             "email": u.email,
             "is_staff": u.is_staff,
             "role": u.role,
+            # 派生的写权限（is_superuser 或 role==operator）：前端据此隐藏写入口，
+            # 不必在客户端复刻一遍 IsOperatorOrReadOnly 的规则
+            "can_write": u.is_operator,
             "phone": u.phone,
             "avatar": u.avatar,
         }
