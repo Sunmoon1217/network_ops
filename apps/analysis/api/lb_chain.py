@@ -23,7 +23,8 @@ from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.analysis import _join_ip_port, _parse_member_entry
@@ -189,6 +190,7 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def ltm_chains(request):
     """负载均衡关联链：GET /api/lb-chain/slb/?device=&search=&ordering=&page="""
     qs = _device_filter(request, LtmVirtualServer.objects.select_related("device").all())
@@ -387,6 +389,7 @@ def _gtm_filter_monitor(qs, monitor: str):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def gtm_chains(request):
     """域名解析关联链：
     GET /api/lb-chain/gslb/?device=&rtype=&monitor=&search=&ordering=&page=
@@ -412,12 +415,12 @@ def gtm_chains(request):
     return paginator.get_paginated_response(_gtm_rows(page))
 
 
-@api_view(["GET"])
-def gtm_facets(request):
-    """过滤下拉选项：GET /api/lb-chain/gslb/facets/
+def gtm_facet_values() -> dict:
+    """GTM 过滤下拉的取值（记录类型 + 健康检查类型合集）。
 
     ``rtypes`` 来自 wideip 记录类型去重；``monitors`` 是健康检查类型合集——
     池（JSON 列表，Python 侧展开）+ 服务器 / 虚拟服务器（CharField）三处 distinct。
+    旧接口与 GSLB 集群接口共用这一份，避免两处口径漂移。
     """
     rtypes = sorted({v for v in GtmWideip.objects.values_list("rtype", flat=True) if v})
     monitors: set[str] = set()
@@ -425,7 +428,14 @@ def gtm_facets(request):
         monitors.update(m for m in (lst or []) if isinstance(m, str) and m)
     monitors.update(v for v in GtmServer.objects.values_list("monitor", flat=True) if v)
     monitors.update(v for v in GtmVServer.objects.values_list("monitor", flat=True) if v)
-    return Response({"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)})
+    return {"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gtm_facets(request):
+    """过滤下拉选项：GET /api/lb-chain/gslb/facets/（取值口径见 ``gtm_facet_values``）。"""
+    return Response(gtm_facet_values())
 
 
 # ---------------------------------------------------------------------------
@@ -576,6 +586,7 @@ def _xlsx_response(headers: list[str], widths: tuple, rows: list[list], title: s
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def ltm_export(request):
     """导出 SLB 扁平宽表：GET /api/lb-chain/slb/export/?device=&search=
 
@@ -596,6 +607,7 @@ def ltm_export(request):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def gtm_export(request):
     """导出 GSLB 扁平宽表：GET /api/lb-chain/gslb/export/?device=&rtype=&monitor=&search="""
     qs = _device_filter(request, GtmWideip.objects.select_related("device").all())

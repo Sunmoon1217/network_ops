@@ -61,6 +61,10 @@ class ParserFactory:
         "a10": "A10",
         "F5": "F5",
         "f5": "F5",
+        "天融信": "TopSec",
+        "topsec": "TopSec",
+        "TopSec": "TopSec",
+        "TS": "TopSec",
     }
 
     @classmethod
@@ -244,6 +248,32 @@ class H3CRouterParser(BaseParser):
         return _extract_ttp_result(self._run_ttp(raw_text))
 
 
+@ParserFactory.register("H3C", "wirelessac")
+class H3CWireLessACParser(BaseParser):
+    """H3C Comware 无线AC控制器配置解析器。"""
+
+    template_name = "h3c_wirelessasc.ttp"
+    provides_keys = [
+        "hostname",
+        "version",
+        "vpn_instances",
+        "interfaces",
+        "static_routes",
+        "ospf",
+        "bgp",
+        "snmp",
+        "ssh",
+    ]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析 H3C 无线AC控制器配置文本。
+
+        Returns:
+            包含 interfaces, vpn_instances, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))
+
+
 @ParserFactory.register("Hillstone", "firewall")
 class HillstoneFWParser(BaseParser):
     """山石防火墙配置解析器。"""
@@ -301,6 +331,22 @@ class RuijieSwitchParser(BaseParser):
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析锐捷交换机配置文本。
+
+        Returns:
+            包含 interfaces, vlans, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))
+
+
+@ParserFactory.register("TopSec", "Firewall")
+class TopSecFWParser(BaseParser):
+    """天融信防火墙配置解析器。"""
+
+    template_name = "topsec_fw.ttp"
+    provides_keys = ["hostname", "version", "vlans", "interfaces", "static_routes", "snmp", "ssh"]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析天融信防火墙配置文本。
 
         Returns:
             包含 interfaces, vlans, static_routes 等键的字典

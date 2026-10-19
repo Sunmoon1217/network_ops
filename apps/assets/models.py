@@ -276,6 +276,9 @@ class DeviceGroup(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_group_type_display()})"
 
+    if TYPE_CHECKING:
+        device_id: int
+
 
 class DeviceGroupMember(models.Model):
     """设备组成员。
@@ -303,6 +306,9 @@ class DeviceGroupMember(models.Model):
 
     def __str__(self):
         return f"{self.group.name} / {self.device.hostname} ({self.device_role})"
+
+    if TYPE_CHECKING:
+        device_id: int
 
 
 class DeviceConfig(models.Model):
