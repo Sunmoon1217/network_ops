@@ -26,8 +26,6 @@ cluster 维度，刻意不混进 ``/api/lb-chain/gslb/``（旧接口 / 旧页面
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
 from datetime import date
 
 from rest_framework.decorators import api_view, permission_classes
@@ -35,15 +33,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.analysis import _join_ip_port, _parse_member_entry
+from analysis.api.group_merge import GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 from analysis.api.lb_chain import _xlsx_response, gtm_facet_values
-from assets.models import Device, DeviceGroup, GtmPool, GtmServer, GtmVServer, GtmWideip
+from assets.models import GtmPool, GtmServer, GtmVServer, GtmWideip
 from netops.pagination import StandardPagination
 
-# 合并条目 device 字段的分隔符：多台设备用半角逗号拼接（如 gtm-a,gtm-b）
-DEVICE_SEPARATOR = ","
-
-# 集群口径：只认 group_type=cluster 的设备组
-CLUSTER_GROUP_TYPE = "cluster"
+# 集群口径：只认 group_type=cluster 的设备组（单机/堆叠/主备不参与 GTM 集群合并）
+CLUSTER_GROUP_TYPES = frozenset({"cluster"})
 
 # 成员标量字段的两种历史写法：Saver 归一后是 order/ratio/status/monitor，
 # 手工 payload / 旧模板给的是 member_ 前缀（与旧接口同口径）
@@ -79,59 +75,13 @@ CLUSTER_EXPORT_COLUMN_WIDTHS = (28, 24, 10, 14, 10, 10, 16, 22, 24, 20, 8, 24, 1
 
 
 # ---------------------------------------------------------------------------
-# 集群划分
+# 集群划分（口径复用 group_merge 的公共层）
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class Cluster:
-    """一个 GSLB 集群：一台（单机）或多台设备。"""
-
-    key: str  # "group-<id>" / "device-<id>"
-    name: str  # 集群组名 / 单机设备 hostname
-    group_id: int | None
-    devices: list[Device]  # 已按 hostname 排序
-
-
-def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = None) -> list[Cluster]:
-    """把 GSLB 设备划分成集群；``device_id`` / ``cluster_key`` 用于收窄范围。
-
-    - 设备只在 ``group_type=cluster`` 的组里成团；同组多台设备即一个集群；
-    - 一台设备出现在多个集群组时，取（组名, id）排序第一个，其余组忽略（否则一台设备
-      会同时出现在两个集群里、行数与 device 拼接都不稳定）；
-    - 未入集群组的 GSLB 设备各自成为单机集群。
-    """
-    gslb_devices = {device.pk: device for device in Device.objects.filter(device_type="gslb")}
-    clusters: dict[str, Cluster] = {}
-    assigned: set[int] = set()
-
-    groups = DeviceGroup.objects.filter(group_type=CLUSTER_GROUP_TYPE).prefetch_related("members__device")
-    for group in groups.order_by("name", "id"):
-        members = sorted(
-            (m.device for m in group.members.all() if m.device_id in gslb_devices and m.device_id not in assigned),
-            key=lambda device: device.hostname,
-        )
-        if not members:
-            continue
-        for device in members:
-            assigned.add(device.pk)
-        clusters[f"group-{group.pk}"] = Cluster(
-            key=f"group-{group.pk}", name=group.name, group_id=group.pk, devices=members
-        )
-
-    for device in sorted(gslb_devices.values(), key=lambda item: item.hostname):
-        if device.pk not in assigned:
-            clusters[f"device-{device.pk}"] = Cluster(
-                key=f"device-{device.pk}", name=device.hostname, group_id=None, devices=[device]
-            )
-
-    resolved = sorted(clusters.values(), key=lambda cluster: (cluster.name, cluster.key))
-    if cluster_key:
-        # 同时认集群键（group-3 / device-7）与组名——前端下拉用键，人工调接口更顺手写组名
-        return [cluster for cluster in resolved if cluster.key == cluster_key or cluster.name == cluster_key]
-    if device_id is not None:
-        return [cluster for cluster in resolved if any(device.pk == device_id for device in cluster.devices)]
-    return resolved
+def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = None) -> list[GroupKey]:
+    """把 GSLB 设备划分成集群；``device_id`` / ``cluster_key`` 用于收窄范围。"""
+    return resolve_groups("gslb", CLUSTER_GROUP_TYPES, device_id=device_id, group_key=cluster_key)
 
 
 def cluster_options() -> list[dict]:
@@ -151,24 +101,9 @@ def cluster_options() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 合并工具
+# 合并工具（口径复用 group_merge 的公共层）
 # ---------------------------------------------------------------------------
 
-
-def _differs(values) -> bool:
-    """一组取值是否不一致：None / 空串 / 数字 / 列表都能比较（JSON 归一后去重）。"""
-    seen = {json.dumps(value, sort_keys=True, default=str) for value in values}
-    return len(seen) > 1
-
-
-def _union_lists(values) -> list:
-    """多个列表按序并集去重（monitor 这类列表字段用）。"""
-    union: list = []
-    for items in values:
-        for item in items or []:
-            if item not in union:
-                union.append(item)
-    return union
 
 
 def _uniq_join(values) -> str:
@@ -244,7 +179,7 @@ def _merge_members(pool_records, vservers, server_info, hostname, order) -> tupl
             {
                 "server": server_name,
                 "vserver": vs_name,
-                "device": DEVICE_SEPARATOR.join(hostname[device_id] for device_id in device_ids),
+                "device": _join_devices(device_ids, hostname),
                 "device_ids": device_ids,
                 "status": scalars["status"],
                 "order": scalars["order"],
@@ -308,7 +243,7 @@ def _merge_pools(items, pools, vservers, server_info, hostname, order) -> list[d
         merged.append(
             {
                 "name": pool_name,
-                "device": DEVICE_SEPARATOR.join(hostname[device_id] for device_id in ref_ids),
+                "device": _join_devices(ref_ids, hostname),
                 "device_ids": ref_ids,
                 "order": entries[ref_ids[0]].get("order") if ref_ids else None,
                 "ratio": entries[ref_ids[0]].get("ratio") if ref_ids else None,
@@ -328,7 +263,7 @@ def _merge_pools(items, pools, vservers, server_info, hostname, order) -> list[d
     return merged
 
 
-def _merge_cluster(cluster: Cluster) -> list[dict]:
+def _merge_cluster(cluster: GroupKey) -> list[dict]:
     """一个集群的全部 WideIP 合并行（每行 = 一个 (域名, rtype) 的整条链）。"""
     devices = cluster.devices
     device_ids = [device.pk for device in devices]
@@ -368,7 +303,7 @@ def _merge_cluster(cluster: Cluster) -> list[dict]:
                 "cluster": cluster.key,
                 "cluster_name": cluster.name,
                 "cluster_devices": [{"id": device.pk, "hostname": device.hostname} for device in devices],
-                "device": DEVICE_SEPARATOR.join(hostname[device_id] for device_id in row_device_ids),
+                "device": _join_devices(row_device_ids, hostname),
                 "device_ids": row_device_ids,
                 "name": name,
                 "rtype": rtype or "",
