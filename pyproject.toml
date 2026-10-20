@@ -56,6 +56,26 @@ exclude = ["**/migrations/*"]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 testpaths = ["tests"]
 
+# Pyrefly：比 mypy/pyright 快的类型检查器（Meta 开源，Rust 实现）。
+# 关键是 search-path：项目把 core/ingest/assets/analysis/aliyun 放在 apps/ 下，
+# 运行时由 netops/settings/__init__.py 把 apps/ 插进 sys.path，
+# Pyrefly 不知道这层，不配 search-path 会把所有顶层 import 标成 missing-import。
+[tool.pyrefly]
+search-path = ["apps", "."]
+project-includes = ["**/*.py*"]
+project-excludes = [
+    "**/migrations/*",
+    "**/tests/*",
+    ".venv/**",
+    "frontend/**",
+    "data/**",
+    "tmp/**",
+    "**/node_modules/**",
+]
+
+[tool.pyright]
+include = ["apps"]
+exclude = ["**/.*"]
 
 [dependency-groups]
 dev = [
