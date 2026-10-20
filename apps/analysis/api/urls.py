@@ -1,16 +1,16 @@
 """分析域的 API：路径追踪 / 路由采集 / DNS 查询 / 互联网资产分析 / 关联链聚合 /
-GSLB 集群分析 / 访问流。
+设备组配置合并（GSLB 集群、LTM 主备）/ 访问流。
 
 URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analysis/...``、
 ``/api/access-flows/...``），前端 ``api/`` 与 ``views/tools/`` 无需任何改动——
-路由跟着 view 走，不跟 app 走。GSLB 集群接口另开 ``/api/analysis/`` 前缀：
-它换了合并口径（按集群合并、device 拼接），不混进旧接口。
+路由跟着 view 走，不跟 app 走。设备组合并接口另开 ``/api/analysis/`` 前缀：
+它换了合并口径（按组合并、device 拼接），不混进旧接口。
 """
 
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, gslb_clusters, lb_chain, trace
+from . import accessflows, analysis, gslb_clusters, lb_chain, ltm_groups, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
@@ -36,6 +36,10 @@ urlpatterns = [
     path("analysis/gslb-clusters/", gslb_clusters.gslb_clusters, name="gslb-clusters"),
     path("analysis/gslb-clusters/facets/", gslb_clusters.gslb_cluster_facets, name="gslb-clusters-facets"),
     path("analysis/gslb-clusters/export/", gslb_clusters.gslb_cluster_export, name="gslb-clusters-export"),
+    # LTM 主备合并：同主备组多台 SLB 的 VS→池→成员逐层合并，device 字段逗号拼接
+    path("analysis/ltm-groups/", ltm_groups.ltm_groups, name="ltm-groups"),
+    path("analysis/ltm-groups/facets/", ltm_groups.ltm_group_facets, name="ltm-groups-facets"),
+    path("analysis/ltm-groups/export/", ltm_groups.ltm_group_export, name="ltm-groups-export"),
 ]
 
 urlpatterns += router.urls
