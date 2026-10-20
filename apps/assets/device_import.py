@@ -244,7 +244,7 @@ def _parse_device_name(hostname):
     - 设备类型去掉尾部编号（``FW01`` → ``FW``），同组两台才能拼出同一个组名。
     """
     parts = hostname.split("-")
-    if len(parts) < 4 or parts[0].upper() != "NET":
+    if len(parts) < 4:
         return None
     zone, type_with_serial = parts[-2], parts[-1]
     device_type = re.sub(r"\d+$", "", type_with_serial)
