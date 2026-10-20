@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class AliyunConfig(AppConfig):
+class CloudConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "aliyun"
+    name = "cloud"
     verbose_name = "阿里云（VSW / SLB / SLS / ECS）"

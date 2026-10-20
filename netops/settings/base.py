@@ -188,7 +188,7 @@ INSTALLED_APPS = [
     "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
     "analysis.apps.AnalysisConfig",
-    "aliyun.apps.AliyunConfig",
+    "cloud.apps.CloudConfig",
 ]
 
 MIDDLEWARE = [
