@@ -10,7 +10,7 @@ URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analys
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, gslb_clusters, lb_chain, ltm_groups, trace
+from . import accessflows, analysis, firewall_groups, gslb_clusters, lb_chain, ltm_groups, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
@@ -40,6 +40,10 @@ urlpatterns = [
     path("analysis/ltm-groups/", ltm_groups.ltm_groups, name="ltm-groups"),
     path("analysis/ltm-groups/facets/", ltm_groups.ltm_group_facets, name="ltm-groups-facets"),
     path("analysis/ltm-groups/export/", ltm_groups.ltm_group_export, name="ltm-groups-export"),
+    # 防火墙主备合并：同主备组多台防火墙的策略 / NAT 合并，policy_id 冲突取主机名第一台
+    path("analysis/firewall-groups/policies/", firewall_groups.firewall_policies, name="firewall-groups-policies"),
+    path("analysis/firewall-groups/nat-rules/", firewall_groups.firewall_nat_rules, name="firewall-groups-nat-rules"),
+    path("analysis/firewall-groups/facets/", firewall_groups.firewall_group_facets, name="firewall-groups-facets"),
 ]
 
 urlpatterns += router.urls
