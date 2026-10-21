@@ -14,7 +14,8 @@ COPY netops/ ./netops/
 COPY apps/ ./apps/
 COPY frontend/dist ./frontend/dist
 COPY www ./www
-COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
+COPY docker/entrypoint.sh /app/netops-entrypoint
+RUN chmod +x /app/netops-entrypoint
 
 # 校验静态成品（与 Dockerfile.app 同款检查）
 RUN set -eux; \

@@ -80,7 +80,7 @@ services:
     <<: *app-deploy
     container_name: netops-app
     restart: unless-stopped
-    entrypoint: ["/usr/local/bin/netops-entrypoint"]
+    entrypoint: ["/app/netops-entrypoint"]
     env_file:
       - env/app.env
       - env/gunicorn.env
