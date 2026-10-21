@@ -97,13 +97,8 @@ services:
     secrets: *app-secrets
     volumes:
       - code_data:/app:ro
-      - config_repo_data:/app/data/config_repo
-      - type: bind
-        source: ./data/configs
-        target: /app/data/configs
-        read_only: true
-        bind:
-          create_host_path: false
+      - configs:/configs
+      - data:/data
     depends_on:
       code-init:
         condition: service_completed_successfully
@@ -186,7 +181,17 @@ volumes:
     driver: local
   code_data:
     driver: local
-  config_repo_data:
+  # 配置仓库（git，每台设备一个独立仓库）：app 写入 / worker 读取，纯内部数据用命名卷
+  configs:
     driver: local
+  # 配置源目录：绑定宿主机 data 目录（运维放配置原文的地方，宿主可见）
+  # ⚠ device 必须绝对路径（${PWD} = 运行 compose 的目录）；宿主目录不存在时 up 直接失败
+  #   → 首次部署先 mkdir -p data；同名卷已存在时 driver_opts 被静默忽略（换绑定点要先 docker volume rm）
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
   static_data:
     driver: local

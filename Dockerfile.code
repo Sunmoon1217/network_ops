@@ -20,12 +20,6 @@ COPY www ./www
 COPY entrypoint/ ./entrypoint/
 RUN chmod +x ./entrypoint/*.sh
 
-# 嵌套挂载点必须预先存在：code_data:/app:ro 挂载后，/app/data/config_repo 与
-# /app/data/configs 这两个深层挂载点若不在卷内容里，Docker 无法在只读的 /app 下
-# 创建，容器启动会报 "read-only file system"。所以先铺好空目录（内容由
-# config_repo_data 卷 / data/configs bind 在运行时覆盖）。
-RUN mkdir -p /opt/netops/data/config_repo /opt/netops/data/configs
-
 # 校验静态成品（与项目镜像同款检查）
 RUN set -eux; \
     if [ ! -f /opt/netops/frontend/dist/index.html ]; then \
