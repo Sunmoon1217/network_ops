@@ -1,14 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# 代码镜像：busybox + 代码 + 静态成品（~6.8MB）。
-# 用于跨沙箱传输：内网开发机构建后 scp 到服务器，服务器 docker load 后由
-# code-init（entrypoint/init.sh）把代码铺进 code_data 卷、静态铺进 static_data 卷。
-# 构建命令：docker build -t network-ops-code:latest -f Dockerfile.code .
+# 代码镜像：busybox + 代码 + 静态成品（~6.8MB），跨沙箱传输用。
+# tag 规则、构建与部署命令：.env.example「镜像构建」一节
 #
 # 布局：镜像内代码根是 /opt/netops（源）；code-init 把它复制到 code_data 卷（挂 /app）
 # 与 static_data 卷（挂 /static）。镜像源码路径与运行时卷路径分开，不绕圈。
 
-FROM busybox:latest
+FROM busybox:1.38
 
 WORKDIR /opt/netops
 
