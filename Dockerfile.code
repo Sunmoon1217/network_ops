@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+#
+# 代码镜像：busybox + 代码 + 静态成品（~6.8MB）。
+# 用于跨沙箱传输：内网开发机构建后 scp 到服务器，服务器 docker cp 提取代码到宿主机目录，
+# 再用 venv 镜像启动（compose 的 volumes 挂载 /opt/netops/code:/app）。
+# 构建命令：docker build -t network-ops-code:latest -f Dockerfile.code .
+
+FROM busybox:latest
+
+WORKDIR /app
+
+COPY manage.py pyproject.toml uv.lock ./
+COPY netops/ ./netops/
+COPY apps/ ./apps/
+COPY frontend/dist ./frontend/dist
+COPY www ./www
+COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
+
+# 校验静态成品（与 Dockerfile.app 同款检查）
+RUN set -eux; \
+    if [ ! -f /app/frontend/dist/index.html ]; then \
+        echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
+        exit 1; \
+    fi; \
+    if [ -z "$(ls -A /app/www)" ]; then \
+        echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
+        exit 1; \
+    fi; \
+    echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
