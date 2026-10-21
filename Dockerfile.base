@@ -5,13 +5,13 @@
 
 FROM python:3.12-slim
 
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG APT_MIRROR=mirrors.cloud.tencent.com
 
 # 运行期只需要 git（配置仓库）与 libpq5（psycopg2 的系统库兜底）；**不装** build-essential /
 # libpq-dev / curl —— 依赖都有 cp312 manylinux 轮子，编译工具只会把 gcc 与头文件带进运行期镜像。
 # 同一层里清掉 apt 索引与基础镜像自带的系统 pip / site-packages，依赖只留 /opt/venv。
 RUN set -eux; \
-    sed -i "s#deb.debian.org#${APT_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; \
+    sed -i "s#://deb.debian.org#s://${APT_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git libpq5; \
     rm -rf /var/lib/apt/lists/*; \
