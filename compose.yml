@@ -43,6 +43,7 @@ services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
   code-init:
     image: ${CODE_IMAGE:-network-ops-code:latest}
+    init: true
     volumes:
       - code_data:/opt/netops/code
     command: ["sh", "-c", "cp -a /app/. /opt/netops/code/ && echo 'code initialized'"]
