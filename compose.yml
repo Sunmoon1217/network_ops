@@ -134,9 +134,8 @@ services:
     # 且同设备并发入库会写坏数据（见 AGENTS.md），2 保留跨设备并行、压缩同设备撞车窗口。
     command: ["exec celery -A netops worker -Q celery,access_flow --concurrency=2 --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
     secrets: *app-secrets
-    volumes:
-      - code_data:/app:ro
-      - config_repo_data:/app/data/config_repo
+    volumes_from:
+      - app:ro
     depends_on:
       app:
         condition: service_healthy
@@ -163,8 +162,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: ["exec python manage.py access_flow_consumer"]
     secrets: *db-secrets
-    volumes:
-      - code_data:/app:ro
+    volumes_from:
+      - app:ro
     depends_on:
       app:
         condition: service_healthy
