@@ -61,7 +61,8 @@ network_ops/
 │       ├── policy_expand.py     # 访问流：策略 M2M 笛卡尔积展开 + 合并入库（单写者路径）
 │       ├── access_stream.py     # 访问流：Redis Stream 编解码 / 背压 / 设备锁 / 心跳
 │       ├── tasks.py             # 访问流重建任务 analysis.rebuild_access_flows（独立队列）
-│       ├── management/commands/{access_flow_consumer, rebuild_access_flows}.py  # 单写者消费者 / 手工重建
+│       ├── queue_monitor.py     # 队列积压巡检（celery 队列 / Stream lag / PEL / 心跳，只读）
+│       ├── management/commands/{access_flow_consumer, rebuild_access_flows, queue_status}.py  # 单写者消费者 / 手工重建 / 积压巡检
 │       ├── models.py            # InternetAnalysis（分析结果缓存）+ AccessFlow（访问流，2026-09 由 ingest 迁入）
 │       └── migrations/{0001_initial,0002_accessflow}.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
 ├── data/                 # 运行期数据（不入库）：configs 是 bind 进 app 的输入，config_repo 只是宿主机直跑用的那份
@@ -168,6 +169,7 @@ cd frontend && pnpm install
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
+uv run python manage.py queue_status   # 队列积压巡检（--json 机器可读；超阈值退出码 1，可接 cron）
 ```
 
 **前端（`frontend/` 目录）：**
@@ -194,7 +196,7 @@ uv run ruff format
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`。
-- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。**积压监控**（2026-10，47 条静默积压 + consumer OOM 循环的事后补防）：`manage.py queue_status`（`--json` 机器可读，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）共用 `analysis.queue_monitor.py` 的采集——celery 队列 LLEN、unacked、Stream **lag**（XINFO GROUPS，不是 XLEN）、PEL 待确认、毒消息点名（重投次数）、心跳新鲜度；背压阈值 `ACCESS_FLOW_MAX_QUEUE` 默认已调低为 500，且 `backlog()` 同步改为 lag 口径（XLEN 含已消费未 trim 条目，低阈值下会误触发背压）。
 - **DeviceConfig 的解析入库默认仍是同步的**：走 `ingest.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ingest.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
 - **反向代理与容器化**：`nginx/` 作为统一入口（80/443）：`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django），`/assets/*`、`/static/*` 由 nginx 直出。静态资源的流向是**宿主机**（`pnpm build` + `collectstatic`）→ `Dockerfile.app` COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`）→ 启动时 `docker/entrypoint.sh` 复制**另一份**到命名卷 `static_data` → nginx 只读挂载。详见 `nginx/README.md`。
@@ -292,7 +294,8 @@ ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/acc
 | `policy_expand.py` | 访问流：Policy 三个 M2M 笛卡尔积展开 + 先查后合并入库（单写者路径） |
 | `access_stream.py` | 访问流：Redis Stream 编解码、背压、设备锁、心跳（生产者-消费者通道） |
 | `tasks.py` | `analysis.rebuild_access_flows`：展开一台设备投进 Stream（独立 `access_flow` 队列） |
-| `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建） |
+| `queue_monitor.py` | 队列积压巡检（celery 队列 LLEN / unacked / Stream lag / PEL 毒消息 / 心跳，只读报警不干预；命令与 API 共用） |
+| `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建）/ `queue_status`（积压巡检，超阈值退出码 1） |
 | `api/trace.py` | 路径追踪 / 路由采集 / DNS 查询接口（路由采集用 TTP 模板，路径经 `ingest.parsers.template_keys.TMPLS_DIR` 取） |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
 | `api/accessflows.py` | `/api/access-flows/` 只读列表（GIN 包含过滤，唯一写入口是 consumer） |
@@ -427,6 +430,7 @@ tags, subnets, ip-addresses
 | `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
 | `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤（2026-09 由 ingest 迁入，URL 不变） |
+| `/api/analysis/queue-status/` | 队列积压巡检（只读）：celery 队列 / 访问流 Stream lag / PEL / 消费者心跳 + 告警列表，Home 页卡片 30s 轮询 |
 
 ## 注意事项
 
