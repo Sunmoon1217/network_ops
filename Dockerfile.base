@@ -6,8 +6,6 @@
 FROM python:3.12-slim
 
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
-ARG UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple
-ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
 # 运行期只需要 git（配置仓库）与 libpq5（psycopg2 的系统库兜底）；**不装** build-essential /
 # libpq-dev / curl —— 依赖都有 cp312 manylinux 轮子，编译工具只会把 gcc 与头文件带进运行期镜像。
