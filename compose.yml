@@ -44,8 +44,8 @@ services:
   code-init:
     image: ${CODE_IMAGE:-network-ops-code:latest}
     volumes:
-      - code_data:/tmp/code
-    command: ["sh", "-c", "cp -a /app/. /tmp/code/ && echo 'code initialized'"]
+      - code_data:/opt/netops/code
+    command: ["sh", "-c", "cp -a /app/. /opt/netops/code/ && echo 'code initialized'"]
     restart: "no"
 
   db:
