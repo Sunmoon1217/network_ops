@@ -75,7 +75,7 @@ project-excludes = [
 ]
 
 [tool.pyright]
-typeCheckingMode = "basic"
+typeCheckingMode = "standard"
 include = ["apps"]
 exclude = ["**/.*"]
 reportIncompatibleVariableOverride = "none"

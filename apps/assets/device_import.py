@@ -200,9 +200,7 @@ def _import_devices(ws):
                 "timeout": int(row[17] or 30) if row[17] else 30,
             }
             try:
-                DeviceConnection.objects.update_or_create(
-                    device=device, account_type=account_type or "admin", defaults=conn_defaults
-                )
+                DeviceConnection.objects.update_or_create(device=device, account_type=account_type or "admin", defaults=conn_defaults)
             except Exception as e:
                 errors.append(f"行 {row_idx} 连接: {e}")
 
@@ -265,7 +263,7 @@ def _group_name(group_type, names):
         return names[0]
     parsed = [_parse_device_name(hostname) for hostname in names]
     if all(item is not None for item in parsed) and len(set(parsed)) == 1:
-        zone, device_type = parsed[0]
+        zone, device_type = parsed[0]  # type: ignore
         return f"{zone}-{device_type}"
     return names[0]
 

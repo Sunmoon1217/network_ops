@@ -41,9 +41,7 @@ class DataCenter(models.Model):
 
 class Room(models.Model):
     name = models.CharField(max_length=100, verbose_name="机房名称")
-    datacenter = models.ForeignKey(
-        DataCenter, on_delete=models.CASCADE, related_name="rooms", verbose_name="所属数据中心"
-    )
+    datacenter = models.ForeignKey(DataCenter, on_delete=models.CASCADE, related_name="rooms", verbose_name="所属数据中心")
     contact = models.CharField(max_length=100, blank=True, default="", verbose_name="联系人")
     remark = models.TextField(blank=True, default="", verbose_name="备注")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -71,9 +69,7 @@ class Cabinet(models.Model):
     row = models.CharField(max_length=20, blank=True, default="", verbose_name="排")
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="cabinets", verbose_name="所属机房")
     total_u = models.PositiveIntegerField(default=42, verbose_name="总U数")
-    power_capacity = models.DecimalField(
-        max_digits=8, decimal_places=2, null=True, blank=True, verbose_name="额定功率(kW)"
-    )
+    power_capacity = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, verbose_name="额定功率(kW)")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active", verbose_name="状态")
     remark = models.TextField(blank=True, default="", verbose_name="备注")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -199,14 +195,10 @@ class DeviceConnection(models.Model):
         Device,
         on_delete=models.CASCADE,
         related_name="connections",
-        null=True,
-        blank=True,
         verbose_name="关联设备",
     )
     address = models.GenericIPAddressField(blank=True, null=True, verbose_name="连接地址")
-    connection_type = models.CharField(
-        max_length=20, choices=CONNECTION_TYPE_CHOICES, default="napalm", verbose_name="连接类型"
-    )
+    connection_type = models.CharField(max_length=20, choices=CONNECTION_TYPE_CHOICES, default="napalm", verbose_name="连接类型")
     driver = models.CharField(max_length=50, blank=True, default="", verbose_name="驱动/平台")
     port = models.PositiveIntegerField(default=22, verbose_name="端口")
     account_type = models.CharField(
@@ -226,9 +218,7 @@ class DeviceConnection(models.Model):
     class Meta:
         verbose_name = "设备连接信息"
         verbose_name_plural = verbose_name
-        constraints = (
-            models.UniqueConstraint(fields=["device", "account_type"], name="uni_deviceconn_device_account"),
-        )
+        constraints = (models.UniqueConstraint(fields=["device", "account_type"], name="uni_deviceconn_device_account"),)
         ordering = ("-created_at", "-pk")
 
     def __str__(self):
@@ -395,9 +385,7 @@ class Interface(ConfigBase):
     enabled = models.BooleanField(default=False, verbose_name="启用")
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, null=True, blank=True, verbose_name="接口模式")
     vlans = models.JSONField(default=dict, blank=True, verbose_name="VLAN配置")
-    vrf = models.ForeignKey(
-        Vrf, on_delete=models.SET_NULL, null=True, blank=True, related_name="interfaces", verbose_name="VRF"
-    )
+    vrf = models.ForeignKey(Vrf, on_delete=models.SET_NULL, null=True, blank=True, related_name="interfaces", verbose_name="VRF")
     type = models.CharField(max_length=255, null=True, verbose_name="接口类型")
     combo_type = models.CharField(max_length=255, null=True, verbose_name="Combo类型")
     ip_address = models.CharField(max_length=255, null=True, verbose_name="IP地址")
@@ -443,9 +431,7 @@ class DeviceAccount(ConfigBase):
     class Meta:
         verbose_name = "设备账号"
         verbose_name_plural = verbose_name
-        constraints = (
-            models.UniqueConstraint(fields=["device", "username"], name="uni_deviceaccount_device_username"),
-        )
+        constraints = (models.UniqueConstraint(fields=["device", "username"], name="uni_deviceaccount_device_username"),)
         ordering = ("device", "username", "-pk")
 
     def __str__(self):
@@ -455,9 +441,7 @@ class DeviceAccount(ConfigBase):
 class SnmpConfig(ConfigBase):
     """SNMP配置基线"""
 
-    version = models.CharField(
-        max_length=10, choices=[("v1", "v1"), ("v2c", "v2c"), ("v3", "v3")], default="v2c", verbose_name="SNMP版本"
-    )
+    version = models.CharField(max_length=10, choices=[("v1", "v1"), ("v2c", "v2c"), ("v3", "v3")], default="v2c", verbose_name="SNMP版本")
     community_read = models.CharField(max_length=100, blank=True, default="", verbose_name="读社区字符串")
     community_write = models.CharField(max_length=100, blank=True, default="", verbose_name="写社区字符串")
     port = models.PositiveIntegerField(default=161, verbose_name="监听端口")
@@ -598,11 +582,7 @@ class LtmPoolMember(ConfigBase):
         ordering = ("device", "pool_name", "name", "-pk")
         # 唯一性必须带上 port：F5 同一节点可以在多个端口上做成员，剥掉
         # /Common/node_a:80 的端口后 name 都是 node_a，只约束 name 会误杀
-        constraints = (
-            models.UniqueConstraint(
-                fields=["device", "pool_name", "name", "port"], name="uni_pool_member_device_pool_node_port"
-            ),
-        )
+        constraints = (models.UniqueConstraint(fields=["device", "pool_name", "name", "port"], name="uni_pool_member_device_pool_node_port"),)
 
 
 class LtmProfile(ConfigBase):
@@ -747,9 +727,7 @@ class GtmServer(ConfigBase):
 class GtmVServer(ConfigBase):
     """GTM 虚拟服务器：gtm server 下的 virtual-servers，记录地址与端口"""
 
-    server = models.ForeignKey(
-        GtmServer, on_delete=models.CASCADE, related_name="virtual_servers", verbose_name="所属服务器"
-    )
+    server = models.ForeignKey(GtmServer, on_delete=models.CASCADE, related_name="virtual_servers", verbose_name="所属服务器")
     name = models.CharField(max_length=255, verbose_name="虚拟服务器名称")
     ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="地址")
     port = models.CharField(max_length=15, blank=True, default="", verbose_name="端口")
@@ -761,9 +739,7 @@ class GtmVServer(ConfigBase):
     class Meta:
         verbose_name = "GTM Virtual Server"
         verbose_name_plural = verbose_name
-        constraints = (
-            models.UniqueConstraint(fields=["device", "server", "name"], name="uni_gtmvserver_device_server_name"),
-        )
+        constraints = (models.UniqueConstraint(fields=["device", "server", "name"], name="uni_gtmvserver_device_server_name"),)
         ordering = ("device", "server", "name", "-pk")
 
 
@@ -787,9 +763,7 @@ class AddressBook(ConfigBase):
     ip_netmask = models.IntegerField(blank=True, null=True, verbose_name="子网掩码")
     ip_start = models.GenericIPAddressField(blank=True, null=True, verbose_name="起始地址")
     ip_end = models.GenericIPAddressField(blank=True, null=True, verbose_name="结束地址")
-    parent = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children", verbose_name="上级地址簿"
-    )
+    parent = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children", verbose_name="上级地址簿")
     description = models.TextField(blank=True, default="", verbose_name="描述")
 
     if TYPE_CHECKING:
@@ -844,9 +818,7 @@ class Policy(ConfigBase):
     action = models.CharField(max_length=20, choices=ACTION_CHOICES, default="allow", verbose_name="动作")
     enabled = models.BooleanField(default=True, verbose_name="启用")
     source_addresses = models.ManyToManyField(AddressBook, related_name="source_policies", verbose_name="源地址")
-    destination_addresses = models.ManyToManyField(
-        AddressBook, related_name="destination_policies", verbose_name="目的地址"
-    )
+    destination_addresses = models.ManyToManyField(AddressBook, related_name="destination_policies", verbose_name="目的地址")
     services = models.ManyToManyField(Service, related_name="policies", verbose_name="服务")
     log = models.BooleanField(default=False, verbose_name="记录日志")
     description = models.TextField(blank=True, default="", verbose_name="描述")
@@ -875,12 +847,8 @@ class NatRule(ConfigBase):
     enabled = models.BooleanField(default=True, verbose_name="启用")
     # 三个匹配维度都允许为空：不同厂商的 NAT 配置能提供的信息差别很大
     # （cisco 的 nat group 只有 host/public_ip，完全给不出 service）
-    source_addresses = models.ManyToManyField(
-        AddressBook, blank=True, related_name="source_nat_rules", verbose_name="匹配源地址"
-    )
-    destination_addresses = models.ManyToManyField(
-        AddressBook, blank=True, related_name="destination_nat_rules", verbose_name="匹配目的地址"
-    )
+    source_addresses = models.ManyToManyField(AddressBook, blank=True, related_name="source_nat_rules", verbose_name="匹配源地址")
+    destination_addresses = models.ManyToManyField(AddressBook, blank=True, related_name="destination_nat_rules", verbose_name="匹配目的地址")
     services = models.ManyToManyField(Service, blank=True, related_name="nat_rules", verbose_name="匹配服务")
     translated_source = models.ForeignKey(
         AddressBook,
@@ -942,17 +910,11 @@ class Subnet(models.Model):
     # IPv6 CIDR 全展开最长 43 字符（ffff:...:ffff/128），18 只够 IPv4，故取 45
     network = models.CharField(max_length=45, unique=True, verbose_name="网段 (CIDR)")
     tags = models.ManyToManyField(Tag, blank=True, related_name="subnets", verbose_name="标签")
-    parent = models.ForeignKey(
-        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children", verbose_name="父网段"
-    )
+    parent = models.ForeignKey("self", on_delete=models.CASCADE, null=True, blank=True, related_name="children", verbose_name="父网段")
     gateway = models.GenericIPAddressField(null=True, blank=True, verbose_name="默认网关")
     vlan = models.CharField(max_length=20, blank=True, default="", verbose_name="VLAN")
-    datacenter = models.ForeignKey(
-        DataCenter, on_delete=models.SET_NULL, null=True, blank=True, related_name="subnets", verbose_name="数据中心"
-    )
-    security_zone = models.ForeignKey(
-        SecurityZone, on_delete=models.SET_NULL, null=True, blank=True, related_name="subnets", verbose_name="安全区"
-    )
+    datacenter = models.ForeignKey(DataCenter, on_delete=models.SET_NULL, null=True, blank=True, related_name="subnets", verbose_name="数据中心")
+    security_zone = models.ForeignKey(SecurityZone, on_delete=models.SET_NULL, null=True, blank=True, related_name="subnets", verbose_name="安全区")
     vrf = models.CharField(max_length=50, blank=True, default="", verbose_name="所属VRF")
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -998,9 +960,7 @@ class IPAddress(models.Model):
     """IP地址"""
 
     ip_address = models.GenericIPAddressField(unique=True, verbose_name="IP地址")
-    subnet = models.ForeignKey(
-        Subnet, on_delete=models.SET_NULL, null=True, blank=True, related_name="ip_addresses", verbose_name="所属网段"
-    )
+    subnet = models.ForeignKey(Subnet, on_delete=models.SET_NULL, null=True, blank=True, related_name="ip_addresses", verbose_name="所属网段")
     security_zone = models.ForeignKey(
         SecurityZone,
         on_delete=models.SET_NULL,
@@ -1015,9 +975,7 @@ class IPAddress(models.Model):
         default="used",
         verbose_name="状态",
     )
-    device = models.ForeignKey(
-        Device, on_delete=models.SET_NULL, null=True, blank=True, related_name="ip_addresses", verbose_name="关联设备"
-    )
+    device = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True, related_name="ip_addresses", verbose_name="关联设备")
     interface = models.CharField(max_length=100, blank=True, default="", verbose_name="关联接口")
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -1126,9 +1084,7 @@ class ArpMac(models.Model):
         verbose_name = "ARP/MAC"
         verbose_name_plural = verbose_name
         ordering = ("-updated_at",)
-        constraints = (
-            models.UniqueConstraint(fields=["device", "ip_address", "mac_address"], name="uni_arpmac_device_ip_mac"),
-        )
+        constraints = (models.UniqueConstraint(fields=["device", "ip_address", "mac_address"], name="uni_arpmac_device_ip_mac"),)
 
     def __str__(self):
         return f"{self.ip_address} → {self.mac_address}"
@@ -1186,4 +1142,4 @@ class ServerOwner(models.Model):
         ordering = ("ip",)
 
     def __str__(self):
-        return f"{self.ip} - {self.owner}" if self.owner else str(self.ip)
+        return f"{self.ip} - {self.owner}" if self.owner else self.ip

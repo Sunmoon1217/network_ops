@@ -4,7 +4,7 @@
 # FROM ${BASE_IMAGE}（Dockerfile.base）继承 git / libpq5，再装 /opt/venv。
 # 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
 
-ARG BASE_IMAGE=network-ops-base:py312
+ARG BASE_IMAGE=localhost/network-ops-base:py312
 
 FROM ${BASE_IMAGE}
 
