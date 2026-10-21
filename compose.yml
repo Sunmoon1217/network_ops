@@ -33,11 +33,9 @@ secrets:
 # app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
 # 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
 # 服务器 docker load 后，compose 直接从 code 镜像挂载 /app 到 venv 容器（不 docker cp）。
-x-app-deploy: &app-deploy
+x-app-base: &app-base
   image: ${VENV_IMAGE:-network-ops-venv:latest}
-  volumes:
-    - code_data:/app:ro
-    - config_repo_data:/app/data/config_repo
+  init: true
 
 services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
@@ -88,10 +86,9 @@ services:
       retries: 5
 
   app:
-    <<: *app-deploy
+    <<: *app-base
     container_name: netops-app
     restart: unless-stopped
-    init: true
     entrypoint: ["/app/netops-entrypoint"]
     env_file:
       - env/app.env
@@ -118,10 +115,9 @@ services:
       - internal
 
   worker:
-    <<: *app-deploy
+    <<: *app-base
     container_name: netops-worker
     restart: unless-stopped
-    init: true
     env_file:
       - env/app.env
       - env/celery.env
@@ -147,10 +143,9 @@ services:
   # 就是多写者，「先查后合并」的前提就没了；不要靠 scale 起多份）。
   # 心跳键 access_flow:heartbeat 由消费循环每轮盖章（TTL 300s），healthcheck 据此判活。
   consumer:
-    <<: *app-deploy
+    <<: *app-base
     container_name: netops-consumer
     restart: unless-stopped
-    init: true
     env_file:
       - env/app.env
     entrypoint: ["/bin/sh", "-c"]
