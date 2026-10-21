@@ -1,36 +1,39 @@
 # syntax=docker/dockerfile:1
 #
 # 代码镜像：busybox + 代码 + 静态成品（~6.8MB）。
-# 用于跨沙箱传输：内网开发机构建后 scp 到服务器，服务器 docker cp 提取代码到宿主机目录，
-# 再用 venv 镜像启动（compose 的 volumes 挂载 /opt/netops/code:/app）。
+# 用于跨沙箱传输：内网开发机构建后 scp 到服务器，服务器 docker load 后由
+# code-init（entrypoint/init.sh）把代码铺进 code_data 卷、静态铺进 static_data 卷。
 # 构建命令：docker build -t network-ops-code:latest -f Dockerfile.code .
+#
+# 布局：镜像内代码根是 /opt/netops（源）；code-init 把它复制到 code_data 卷（挂 /app）
+# 与 static_data 卷（挂 /static）。镜像源码路径与运行时卷路径分开，不绕圈。
 
 FROM busybox:latest
 
-WORKDIR /app
+WORKDIR /opt/netops
 
 COPY manage.py pyproject.toml uv.lock ./
 COPY netops/ ./netops/
 COPY apps/ ./apps/
 COPY frontend/dist ./frontend/dist
 COPY www ./www
-COPY entrypoint/ /app/entrypoint/
-RUN chmod +x /app/entrypoint/*.sh
+COPY entrypoint/ ./entrypoint/
+RUN chmod +x ./entrypoint/*.sh
 
 # 嵌套挂载点必须预先存在：code_data:/app:ro 挂载后，/app/data/config_repo 与
-# /app/data/configs 这两个深层挂载点若不存在，Docker 无法在只读的 /app 下创建，
-# 容器启动会报 "read-only file system"。所以这里先把空目录铺好（内容由
+# /app/data/configs 这两个深层挂载点若不在卷内容里，Docker 无法在只读的 /app 下
+# 创建，容器启动会报 "read-only file system"。所以先铺好空目录（内容由
 # config_repo_data 卷 / data/configs bind 在运行时覆盖）。
-RUN mkdir -p /app/data/config_repo /app/data/configs
+RUN mkdir -p /opt/netops/data/config_repo /opt/netops/data/configs
 
-# 校验静态成品（与 Dockerfile.app 同款检查）
+# 校验静态成品（与项目镜像同款检查）
 RUN set -eux; \
-    if [ ! -f /app/frontend/dist/index.html ]; then \
+    if [ ! -f /opt/netops/frontend/dist/index.html ]; then \
         echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
         exit 1; \
     fi; \
-    if [ -z "$(ls -A /app/www)" ]; then \
+    if [ -z "$(ls -A /opt/netops/www)" ]; then \
         echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
         exit 1; \
     fi; \
-    echo "static files: www=$(find /app/www -type f | wc -l) dist=$(find /app/frontend/dist -type f | wc -l)"
+    echo "static files: www=$(find /opt/netops/www -type f | wc -l) dist=$(find /opt/netops/frontend/dist -type f | wc -l)"

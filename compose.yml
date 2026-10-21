@@ -42,9 +42,9 @@ services:
   code-init:
     image: ${CODE_IMAGE:-network-ops-code:latest}
     init: true
-    entrypoint: ["/app/entrypoint/init.sh"]
+    entrypoint: ["/opt/netops/entrypoint/init.sh"]
     volumes:
-      - code_data:/opt/netops/code
+      - code_data:/app
       - static_data:/static
     restart: "no"
 
