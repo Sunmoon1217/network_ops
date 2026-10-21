@@ -16,6 +16,11 @@ from assets.models import (
 )
 from ingest.config_repo import save_config
 
+# Excel「配置文件」sheet 的 config_dir 列为空时的默认目录：
+# 容器内是 data 卷（绑定宿主机 data 目录，挂载点 /data）下的 configs/；
+# 宿主机直跑时该路径通常不存在，表里显式填写 config_dir 即可。
+DEFAULT_CONFIG_DIR = "/data/configs"
+
 # ---------------------------------------------------------------------------
 # Connection config map
 # ---------------------------------------------------------------------------
@@ -344,7 +349,8 @@ def _import_configs(ws):
 
         hostname = str(row[0]).strip()
         filename = row[1] and str(row[1]).strip() or hostname + ".txt"
-        config_dir = str(row[2] or "").strip()
+        # config_dir 为空时取默认目录（容器内 /data/configs，见 DEFAULT_CONFIG_DIR）
+        config_dir = str(row[2] or "").strip() or DEFAULT_CONFIG_DIR
 
         try:
             device = Device.objects.get(hostname=hostname)
@@ -352,12 +358,7 @@ def _import_configs(ws):
             errors.append(f"行 {row_idx}: 设备 '{hostname}' 不存在，请先导入设备")
             continue
 
-        from ingest.config_repo import CONFIG_REPO_PATH
-
-        if config_dir:
-            config_path = Path(config_dir) / filename
-        else:
-            config_path = CONFIG_REPO_PATH / hostname / filename
+        config_path = Path(config_dir) / filename
 
         if not config_path.exists():
             errors.append(f"行 {row_idx}: 配置文件不存在: {config_path}")

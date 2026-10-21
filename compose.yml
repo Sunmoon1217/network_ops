@@ -30,17 +30,29 @@ secrets:
   aliyun_test_access_key_secret:
     file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_test_access_key_secret}
 
-x-app-build: &app-build
-  context: .
-  dockerfile: Dockerfile.app
-  args:
-    VENV_IMAGE: ${VENV_IMAGE:-network-ops-venv:latest}
+# app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
+# 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
+# 服务器 docker load 后，compose 直接从 code 镜像挂载 /app 到 venv 容器（不 docker cp）。
+x-app-base: &app-base
+  image: ${VENV_IMAGE:-network-ops-venv:latest}
+  init: true
 
 services:
+  # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
+  code-init:
+    image: ${CODE_IMAGE:-network-ops-code:latest}
+    init: true
+    entrypoint: ["/opt/netops/entrypoint/init.sh"]
+    volumes:
+      - code_data:/app
+      - static_data:/static
+    restart: "no"
+
   db:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
     restart: unless-stopped
+    init: true
     env_file:
       - env/db.env
     secrets: *db-secrets
@@ -60,6 +72,7 @@ services:
     image: redis:8.8.0
     container_name: netops-redis
     restart: unless-stopped
+    init: true
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -74,100 +87,69 @@ services:
       retries: 5
 
   app:
-    build: *app-build
-    image: ${APP_IMAGE:-network-ops:latest}
+    <<: *app-base
     container_name: netops-app
     restart: unless-stopped
+    entrypoint: ["/app/entrypoint/app.sh"]
     env_file:
       - env/app.env
       - env/gunicorn.env
     secrets: *app-secrets
     volumes:
-      - config_repo_data:/app/data/config_repo
-      - type: bind
-        source: ./data/configs
-        target: /app/data/configs
-        read_only: true
-        bind:
-          create_host_path: false
-      - static_data:/var/lib/netops-static
+      - code_data:/app:ro
+      - configs:/configs
+      - data:/data
     depends_on:
+      code-init:
+        condition: service_completed_successfully
       db:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
 
   worker:
-    build: *app-build
-    image: ${APP_IMAGE:-network-ops:latest}
+    <<: *app-base
     container_name: netops-worker
     restart: unless-stopped
+    entrypoint: ["/app/entrypoint/worker.sh"]
     env_file:
       - env/app.env
       - env/celery.env
-    entrypoint: ["/bin/sh", "-c"]
-    # 同时消费主队列与 access_flow 队列（settings 的 CELERY_TASK_ROUTES）。两条链都是
-    # 低频、毫秒~秒级，共享并发槽的最坏代价是秒级排队——比为每个可能堵的队列各开一个
-    # 677MB 的 prefork 池便宜得多；真出现主链被饿死的实测证据再拆出独立服务即可。
-    # --concurrency=2 写死：默认池按 CPU 核数起（16 核 = 16 子进程 × 81M，空载即爆炸），
-    # 且同设备并发入库会写坏数据（见 AGENTS.md），2 保留跨设备并行、压缩同设备撞车窗口。
-    command: ["exec celery -A netops worker -Q celery,access_flow --concurrency=2 --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
     secrets: *app-secrets
-    volumes:
-      - config_repo_data:/app/data/config_repo
+    volumes_from:
+      - app:ro
     depends_on:
       app:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A netops inspect ping -d \"celery@$$HOSTNAME\" --timeout 5 >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # 访问流（AccessFlow）的单写者消费者：**只能跑一个实例**（消费者组会把消息摊给多个成员，多一个
   # 就是多写者，「先查后合并」的前提就没了；不要靠 scale 起多份）。
   # 心跳键 access_flow:heartbeat 由消费循环每轮盖章（TTL 300s），healthcheck 据此判活。
   consumer:
-    build: *app-build
-    image: ${APP_IMAGE:-network-ops:latest}
+    <<: *app-base
     container_name: netops-consumer
     restart: unless-stopped
+    entrypoint: ["/app/entrypoint/consumer.sh"]
     env_file:
       - env/app.env
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["exec python manage.py access_flow_consumer"]
     secrets: *db-secrets
+    volumes_from:
+      - app:ro
     depends_on:
       app:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,time,sys,redis; r=redis.Redis(host=os.environ.get('REDIS_HOST','localhost'),port=int(os.environ.get('REDIS_PORT',6379)),password=os.environ.get('REDIS_PASSWORD') or None); sys.exit(time.time()-float(r.get('access_flow:heartbeat') or 0)>=120)\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   nginx:
     image: nginx:1.31-alpine
     container_name: netops-nginx
     restart: unless-stopped
+    init: true
     ports:
       - "${NGINX_PORT:-8000}:80"
       - "${NGINX_SSL_PORT:-8443}:443"
@@ -184,7 +166,7 @@ services:
       start_period: 10s
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
 
@@ -197,7 +179,19 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  config_repo_data:
+  code_data:
     driver: local
+  # 配置仓库（git，每台设备一个独立仓库）：app 写入 / worker 读取，纯内部数据用命名卷
+  configs:
+    driver: local
+  # 配置源目录：绑定宿主机 data 目录（运维放配置原文的地方，宿主可见）
+  # ⚠ device 必须绝对路径（${PWD} = 运行 compose 的目录）；宿主目录不存在时 up 直接失败
+  #   → 首次部署先 mkdir -p data；同名卷已存在时 driver_opts 被静默忽略（换绑定点要先 docker volume rm）
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
   static_data:
     driver: local
