@@ -107,17 +107,11 @@ services:
       code-init:
         condition: service_completed_successfully
       db:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
 
   worker:
     <<: *app-deploy
@@ -138,17 +132,11 @@ services:
       - app:ro
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A netops inspect ping -d \"celery@$$HOSTNAME\" --timeout 5 >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # 访问流（AccessFlow）的单写者消费者：**只能跑一个实例**（消费者组会把消息摊给多个成员，多一个
   # 就是多写者，「先查后合并」的前提就没了；不要靠 scale 起多份）。
@@ -166,17 +154,11 @@ services:
       - app:ro
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,time,sys,redis; r=redis.Redis(host=os.environ.get('REDIS_HOST','localhost'),port=int(os.environ.get('REDIS_PORT',6379)),password=os.environ.get('REDIS_PASSWORD') or None); sys.exit(time.time()-float(r.get('access_flow:heartbeat') or 0)>=120)\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   nginx:
     image: nginx:1.31-alpine
@@ -198,7 +180,7 @@ services:
       start_period: 10s
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
 
