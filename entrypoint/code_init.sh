@@ -22,15 +22,10 @@ STATIC_DIR=/static
 
 # 1) 代码 → code_data 卷（权威覆盖）
 rm -rf "${CODE_DIR:?}/"*
-cp -a "${SRC}/." "${CODE_DIR}/"
+cp -a "${SRC}/code/." "${CODE_DIR}/"
 
-# 2) Vite 产物 → 静态卷根；保留 static/ 给下一步
-mkdir -p "${STATIC_DIR}/static"
-find "${STATIC_DIR}" -mindepth 1 -maxdepth 1 ! -name static -exec rm -rf {} +
-cp -a "${SRC}/frontend/dist/." "${STATIC_DIR}/"
-
-# 3) collectstatic 产物 → 静态卷的 static/ 子目录
-find "${STATIC_DIR}/static" -mindepth 1 -delete
-cp -a "${SRC}/www/." "${STATIC_DIR}/static/"
+# 2) Vite 产物 和 静态文件
+rm -rf "${STATIC_DIR:?}/"*
+cp -a "${SRC}/http/." "${STATIC_DIR}/"
 
 echo "code initialized: code=$(find "${CODE_DIR}" -type f | wc -l) files, static=$(find "${STATIC_DIR}" -type f | wc -l) files"

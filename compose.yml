@@ -28,7 +28,7 @@ services:
   code-init:
     image: ${CODE_IMAGE:?请在 .env 设置 CODE_IMAGE，如 network-ops-code:<git-sha>}
     init: true
-    entrypoint: ["/opt/netops/entrypoint/init.sh"]
+    entrypoint: ["/opt/netops/code/entrypoint/code_init.sh"]
     volumes:
       - code:/app
       - static:/static
