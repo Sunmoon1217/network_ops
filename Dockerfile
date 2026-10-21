@@ -29,7 +29,7 @@ RUN set -eux; \
 
 RUN git config --system user.name "netops" && git config --system user.email "netops@localhost"
 
-COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
+COPY entrypoint/app.sh /usr/local/bin/netops-entrypoint
 RUN chmod +x /usr/local/bin/netops-entrypoint
 
 RUN set -eux; \

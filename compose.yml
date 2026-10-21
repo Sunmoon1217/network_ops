@@ -89,7 +89,7 @@ services:
     <<: *app-base
     container_name: netops-app
     restart: unless-stopped
-    entrypoint: ["/app/netops-entrypoint"]
+    entrypoint: ["/app/entrypoint/app.sh"]
     env_file:
       - env/app.env
       - env/gunicorn.env
@@ -118,7 +118,7 @@ services:
     <<: *app-base
     container_name: netops-worker
     restart: unless-stopped
-    entrypoint: ["/app/worker-entrypoint"]
+    entrypoint: ["/app/entrypoint/worker.sh"]
     env_file:
       - env/app.env
       - env/celery.env
@@ -140,7 +140,7 @@ services:
     <<: *app-base
     container_name: netops-consumer
     restart: unless-stopped
-    entrypoint: ["/app/consumer-entrypoint"]
+    entrypoint: ["/app/entrypoint/consumer.sh"]
     env_file:
       - env/app.env
     secrets: *db-secrets
