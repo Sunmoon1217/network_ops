@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+#
+# Python 虚拟环境（venv）镜像：只装 uv sync 产物，不含 OS 依赖、不含项目代码。
+# FROM ${BASE_IMAGE}（Dockerfile.base）继承 git / libpq5，再装 /opt/venv。
+# 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
+
+ARG BASE_IMAGE=network-ops-base:py312
+
+FROM ${BASE_IMAGE}
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH=${VIRTUAL_ENV}/bin:${PATH}
+ENV UV_PYTHON_DOWNLOADS=never
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=from=ghcr.io/astral-sh/uv:0.13,source=/uv,target=/usr/local/bin/uv \
+    uv venv --python python3 "${VIRTUAL_ENV}" \
+    && mkdir -p /opt/app \
+    && cp pyproject.toml uv.lock /opt/app/ \
+    && uv sync --frozen --no-dev --no-install-project --active --no-cache \
+    && rm -rf /opt/app /root/.cache/uv \
+    && find "${VIRTUAL_ENV}" -name '__pycache__' -type d -prune -exec rm -rf {} +
+
+RUN python -c "import importlib.metadata as m, zoneinfo; \
+zoneinfo.ZoneInfo('Asia/Shanghai'); \
+[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','redis','gunicorn','uvicorn_worker','aliyunsdkcore','aliyunsdkasapi','aliyunsdkecs','aliyunsdkslb','aliyunsdksls','aliyunsdkvpc','aliyun.log','lz4','google.protobuf')]; \
+print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','redis','gunicorn','uvicorn','uvicorn-worker','aliyun-log-python-sdk','aliyun-python-sdk-core')})"

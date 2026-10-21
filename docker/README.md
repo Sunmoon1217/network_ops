@@ -12,48 +12,77 @@
 
 | 文件 | 职责 | 变它意味着 |
 |------|------|-----------|
-| `Dockerfile.base` | 环境镜像：Python 运行时 + 依赖，**不含项目代码** | 重建一次、长期复用；`pyproject.toml` / `uv.lock` 变了必须重建 |
-| `Dockerfile.app` | 项目镜像：`FROM ${BASE_IMAGE}` + 源码 + **宿主机构建好的静态成品** | 每次改源码 / 入口脚本都要重建 |
+| `Dockerfile.base` | OS 运行时镜像：只装 `git` / `libpq5`、清系统 pip，**不含 Python 依赖** | 重建一次、长期复用；换 Python 版本 / OS / 镜像源时重建 |
+| `Dockerfile.venv` | Python venv 镜像：`FROM ${BASE_IMAGE}` + `/opt/venv` + 冒烟清单 | `pyproject.toml` / `uv.lock` 变了必须重建 |
+| `Dockerfile.app` | 项目镜像：`FROM ${VENV_IMAGE}` + 源码 + **宿主机构建好的静态成品** | 每次改源码 / 入口脚本都要重建 |
 | `docker-compose.yml` | db / redis / app / worker / nginx 的编排 | 只改 env 文件的话不必重建镜像 |
+
+**三层链式继承**：
+
+```
+python:3.12-slim
+  └── Dockerfile.base  →  network-ops-base:py312   （OS：git / libpq5）
+        └── Dockerfile.venv  →  network-ops-venv:latest   （Python：/opt/venv）
+              └── Dockerfile.app  →  network-ops:latest   （项目：源码 + 静态成品）
+```
+
+**为什么拆三层**（而不是 base 一个镜像装全部）：改 `pyproject.toml` 只重建 `Dockerfile.venv`，不碰 OS 层；改 OS 包（`git` / `libpq5`）只重建 `Dockerfile.base`，venv 层复用缓存。两层的失效条件完全不同，合并成一个镜像会让"改依赖 = 重装 OS 包"或"改 OS 包 = 重装依赖"白跑一遍。
 
 ## 2. 构建顺序与命令
 
 ```bash
-# ① 基础镜像（改了 pyproject.toml / uv.lock 就要重跑）
+# ① OS 运行时镜像（改了 Python 版本 / OS / APT_MIRROR 就要重跑）
 docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
 
-# ② 静态成品：必须在**宿主机**做，镜像里不跑 pnpm / collectstatic
+# ② venv 镜像（改了 pyproject.toml / uv.lock 就要重跑）
+docker build --network=host -f Dockerfile.venv -t network-ops-venv:latest \
+    --build-arg BASE_IMAGE=network-ops-base:py312 .
+
+# ③ 静态成品：必须在**宿主机**做，镜像里不跑 pnpm / collectstatic
 cd frontend && pnpm build && cd ..
 uv run python manage.py collectstatic --noinput
 
-# ③ 项目镜像
-docker build -f Dockerfile.app -t network-ops:latest .
-#    换基础镜像（app 与 worker 一起，用同一个 build arg）：
-BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker
+# ④ 项目镜像
+docker build -f Dockerfile.app -t network-ops:latest \
+    --build-arg VENV_IMAGE=network-ops-venv:latest .
+#    换 venv 镜像（app 与 worker 一起，用同一个 build arg）：
+VENV_IMAGE=registry.example.com/netops-venv:latest docker compose build app worker
 
-# ④ 换容器（构建与替换是两步，见 AGENTS.md / 技能 docker-compose-behavior 第 3 节）
+# ⑤ 换容器（构建与替换是两步，见 AGENTS.md / 技能 docker-compose-behavior 第 3 节）
 docker compose up -d app worker
 ```
 
-- `--network=host`：构建容器默认走 Docker 自己的网络栈（`daemon.json` 的 `proxies` 只作用于拉基础镜像）。受限网络下拉 APK / PyPI 慢就加它；**加了就别再传** `--build-arg http_proxy=...`——此时容器不再有 `172.17.0.1` 这个网关，代理地址要换成宿主真实地址。
+- `--network=host`：构建容器默认走 Docker 自己的网络栈（`daemon.json` 的 `proxies` 只作用于拉基础镜像）。受限网络下拉 APT / PyPI 慢就加它；**加了就别再传** `--build-arg http_proxy=...`——此时容器不再有 `172.17.0.1` 这个网关，代理地址要换成宿主真实地址。
 - 三条命令都不带 `--build`：`docker compose up -d --build` 只构建、**不换容器**（坑与正确做法：技能 `docker-compose-behavior` 第 3 节）。
 
-## 3. `Dockerfile.base`（环境镜像）
+## 3. `Dockerfile.base`（OS 运行时镜像）
 
 ### 3.1 分层与取舍
 
 | 写法 | 为什么 |
 |------|--------|
-| 只 `COPY pyproject.toml uv.lock` | 源码改动不破坏依赖层缓存（源码在 `Dockerfile.app` 才进来） |
-| uv 用 `--mount=from=ghcr.io/astral-sh/uv:0.12` 临时挂载 | uv 只在构建期存在、**不落进镜像**——镜像里没有任何包管理器（要装包就再临时挂一次） |
-| `ENV VIRTUAL_ENV=/opt/venv` | venv 独立于 `/app`，项目代码被覆盖时不影响它 |
-| `ENV UV_PYTHON_DOWNLOADS=never` | 只用镜像内的解释器，禁止 uv 联网下载 Python |
-| `rm -rf .../site-packages /usr/local/bin/pip*` | 删掉基础镜像自带的系统 pip（约 7MB），依赖都在 `/opt/venv`。⚠️ 换 Python 版本要同步改这个路径 |
-| 不装 `gcc` / `musl-dev` | `psycopg2-binary`、`cffi` 都有 `cp312 musllinux` 轮子。真开始编轮子了再加，别预先装 |
-| `libpq` 与 `git` 分成两个 `RUN` | git 带十来个 APK 依赖、受限网络下更容易超时；分开后成功那层可复用，重跑只补 git |
+| `FROM python:3.12-slim` | Debian trixie / glibc：`manylinux` 轮子覆盖最全；代价是基础层 119MB（alpine 只有 55MB）。选型理由见本节末 |
+| 不装 `build-essential` / `libpq-dev` / `curl` | 带 C 扩展的依赖（`psycopg2-binary` / `cryptography` / `lz4` / `cffi`）都有 `cp312 manylinux` 轮子；少数只有 sdist 的纯 Python 包（`aliyun-python-sdk-*`）uv 会现场打包，但**不需要编译器**。`build-essential` 会带进 gcc / g++ / make，装进运行期镜像纯属体积 |
+| `apt-get update` 与 `install` 同一层，并加 `--no-install-recommends` | 分开会用到过期索引；不装 recommends 可避免把 git 的 `ssh-client` / `less` / `patch` 等拖进来 |
 | 运行期必须有 `git` 可执行文件 | `apps/ingest/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
+| 运行期 `libpq5` | psycopg2 用的是 `psycopg2-binary`（自带 libpq），系统库只是兜底；不需要 `libpq-dev` |
+| 删系统 pip / site-packages（路径用 `site.getsitepackages()` 取） | 基础镜像自带的那份约 7MB，依赖都将在 `Dockerfile.venv` 里装进 `/opt/venv`；不写死 `python3.12`，换小版本不会删错 |
 
-### 3.2 `uv sync` 的参数
+**为什么是 slim 而不是 alpine**：alpine 基础层小一半（55MB vs 119MB），但 musl 与 glibc 的差异会以「某个依赖没有 musllinux 轮子 → 构建期现场编译」「musl 的解析器 / 本地化行为与开发机不一致」的形式出现；本项目依赖里有 `lz4`、`protobuf`、`cryptography` 这类带 C 扩展的包，slim 的 manylinux 轮子覆盖最全、与开发机（glibc）同构。用 64MB 换掉一类构建 / 运行期不确定性，划算。
+
+**体积账**（实测三层链式继承）：
+
+| 镜像 | 累计大小 | 内容 |
+|------|---------|------|
+| `network-ops-base:py312` | ~193MB | slim 基础层 119MB + git 及其 perl 依赖 ~74MB |
+| `network-ops-venv:latest` | ~332MB | 再加 `/opt/venv` ~139MB |
+| `network-ops:latest` | ~344MB | 再加源码 + 静态成品 ~12MB |
+
+大头是 **Debian 的 git 硬依赖 `perl` / `perl-modules` / `git-man`（约 58MB）**——`--no-install-recommends` 省不掉（它们是 `Depends`），alpine 的 git 则不拖 perl。这是选 slim 的固定成本，不是可以再「优化」掉的浪费。
+
+## 3.5 `Dockerfile.venv`（Python venv 镜像）
+
+### 3.5.2 `uv sync` 的参数
 
 `uv sync --frozen --no-dev --no-install-project --active --no-cache`，一层到底（装完即清理）：
 
@@ -65,7 +94,7 @@ docker compose up -d app worker
 | `--active` | 装进 `VIRTUAL_ENV`（`/opt/venv`），而不是另建 `.venv` |
 | `--no-cache` | 不读也不写缓存，层里不留 `~/.cache/uv` |
 
-### 3.3 冒烟自检（**契约：与 `dependencies` 对齐**）
+### 3.5.3 冒烟自检（**契约：与 `dependencies` 对齐**）
 
 ```dockerfile
 RUN python -c "import importlib.metadata as m; [__import__(n) for n in (...)]; print('deps ok:', {...})"
@@ -74,16 +103,23 @@ RUN python -c "import importlib.metadata as m; [__import__(n) for n in (...)]; p
 - **清单必须与 `pyproject.toml` 的 `dependencies` 一致**：漏检的包会让这里"看起来构建成功"，到 `Dockerfile.app` 运行期（甚至只在某个功能被调用时）才 `ModuleNotFoundError`。**加依赖要改两处**。
 - 版本号只能走 `importlib.metadata`——`ttp` 这类包没有 `__version__`。
 
-### 3.4 镜像源
+### 3.5.4 镜像源
 
-- `APK_MIRROR`：`sed` 替换 `/etc/apk/repositories`。
-- `UV_DEFAULT_INDEX`：⚠️ Python 包**只能**用 uv 自己的变量（uv 不读 `pip.conf` / `PIP_*`）；且 `uv.lock` 固化了 registry 与 wheel URL → **换源后必须 `uv lock` 重解析**。细节与实测：技能 `uv-package-and-lockfile`。
+- `UV_DEFAULT_INDEX`（继承自 `Dockerfile.base`）：⚠️ Python 包**只能**用 uv 自己的变量（uv 不读 `pip.conf` / `PIP_*`）；且 `uv.lock` 固化了 registry 与 wheel URL → **换源后必须 `uv lock` 重解析**。细节与实测：技能 `uv-package-and-lockfile`。
 
-### 3.5 刻意不定义 `CMD` / `ENTRYPOINT`
+### 3.5.5 刻意不定义 `CMD` / `ENTRYPOINT`
 
 本镜像只有环境、单独 `docker run` 跑不起来。一旦写了会被项目镜像**继承**，等于把 gunicorn 参数钉回镜像、`env/gunicorn.env` 的 `GUNICORN_*` 就调不动了（命令整条在 `docker/entrypoint.sh` 里拼）。
 
+### 3.6 `Dockerfile.base` 的镜像源（APT_MIRROR）
+
+- `APT_MIRROR`：`sed` 替换 `/etc/apt/sources.list.d/debian.sources` 里的 `deb.debian.org`（deb822 格式；只换主机名，`/debian` 与 `/debian-security` 两个路径保持不变）。
+
 ## 4. `Dockerfile.app`（项目镜像）
+
+### 4.0 FROM ${VENV_IMAGE}
+
+`Dockerfile.app` 从 `Dockerfile.venv` 产出的镜像继承（不再是 `Dockerfile.base`）。compose 的 `x-app-build` 锚点给 app / worker / consumer 传同一个 `VENV_IMAGE`，默认值 `network-ops-venv:latest`（`.env` 可覆盖）。
 
 ### 4.1 构建前置（镜像里不做）
 

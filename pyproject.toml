@@ -3,8 +3,9 @@ name = "network-ops"
 version = "2.0.0"
 description = "网络运维管理平台：Django REST 后端 + Vue 3 前端"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
+    "aliyun-log-python-sdk>=0.9.52",
     "aliyun-python-sdk-asapi>=2.4.7.2",
     "aliyun-python-sdk-core>=2.16.1",
     "aliyun-python-sdk-ecs>=4.24.83",
@@ -34,7 +35,7 @@ exclude-dependencies = ["aliyun-python-sdk-core-v3"]
 django_settings_module = "netops.settings"
 
 [tool.ruff]
-line-length = 120
+line-length = 180
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -54,6 +55,30 @@ exclude = ["**/migrations/*"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 testpaths = ["tests"]
+
+# Pyrefly：比 mypy/pyright 快的类型检查器（Meta 开源，Rust 实现）。
+# 关键是 search-path：项目把 core/ingest/assets/analysis/aliyun 放在 apps/ 下，
+# 运行时由 netops/settings/__init__.py 把 apps/ 插进 sys.path，
+# Pyrefly 不知道这层，不配 search-path 会把所有顶层 import 标成 missing-import。
+[tool.pyrefly]
+preset = "default"
+search-path = ["apps", "."]
+project-includes = ["**/*.py*"]
+project-excludes = [
+    "**/migrations/*",
+    "**/tests/*",
+    ".venv/**",
+    "frontend/**",
+    "data/**",
+    "tmp/**",
+    "**/node_modules/**",
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+include = ["apps"]
+exclude = ["**/.*"]
+reportIncompatibleVariableOverride = "none"
 
 
 [dependency-groups]

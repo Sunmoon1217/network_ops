@@ -1,37 +1,20 @@
 # syntax=docker/dockerfile:1
 #
-# 基础（环境）镜像：只装依赖、不含项目代码（构建一次长期复用）。
+# 基础（OS 运行时）镜像：只装 git / libpq5 / 清理系统 pip，不含 Python 依赖、不含项目代码。
 # 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
 
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
-ARG APK_MIRROR=mirrors.aliyun.com
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple
 ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
-RUN sed -i "s#dl-cdn.alpinelinux.org#${APK_MIRROR}#g" /etc/apk/repositories \
-    && apk add --no-cache --timeout 120 libpq
-
-RUN apk add --no-cache --timeout 300 git
-
-RUN rm -rf /usr/local/lib/python3.12/site-packages /usr/local/bin/pip*
-
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH=${VIRTUAL_ENV}/bin:${PATH}
-ENV UV_PYTHON_DOWNLOADS=never
-
-COPY pyproject.toml uv.lock ./
-
-RUN --mount=from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
-    uv venv --python python3 "${VIRTUAL_ENV}" \
-    && mkdir -p /opt/app \
-    && cp pyproject.toml uv.lock /opt/app/ \
-    && uv sync --frozen --no-dev --no-install-project --active --no-cache \
-    && rm -rf /opt/app /root/.cache/uv \
-    && find "${VIRTUAL_ENV}" -name '__pycache__' -type d -prune -exec rm -rf {} +
-
-RUN python -c "import importlib.metadata as m; \
-[__import__(n) for n in ('django','rest_framework','django_filters','psycopg2','ttp','git','openpyxl','requests','dns','celery','redis','gunicorn','uvicorn_worker')]; \
-print('deps ok:', {n: m.version(n) for n in ('django','djangorestframework','psycopg2-binary','ttp','GitPython','openpyxl','requests','dnspython','celery','redis','gunicorn','uvicorn','uvicorn-worker')})"
-
-WORKDIR /app
+# 运行期只需要 git（配置仓库）与 libpq5（psycopg2 的系统库兜底）；**不装** build-essential /
+# libpq-dev / curl —— 依赖都有 cp312 manylinux 轮子，编译工具只会把 gcc 与头文件带进运行期镜像。
+# 同一层里清掉 apt 索引与基础镜像自带的系统 pip / site-packages，依赖只留 /opt/venv。
+RUN set -eux; \
+    sed -i "s#deb.debian.org#${APT_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git libpq5; \
+    rm -rf /var/lib/apt/lists/*; \
+    rm -rf "$(python -c 'import site; print(site.getsitepackages()[0])')" /usr/local/bin/pip*

@@ -34,7 +34,7 @@ x-app-build: &app-build
   context: .
   dockerfile: Dockerfile.app
   args:
-    BASE_IMAGE: ${BASE_IMAGE:-network-ops-base:py312}
+    VENV_IMAGE: ${VENV_IMAGE:-network-ops-venv:latest}
 
 services:
   db:

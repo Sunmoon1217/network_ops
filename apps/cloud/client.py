@@ -6,6 +6,7 @@
 """
 
 import json
+from types import SimpleNamespace as Ns
 from typing import cast
 
 from aliyunsdkasapi.AsapiRequest import AsapiRequest
@@ -13,6 +14,28 @@ from aliyunsdkasapi.ASClient import ASClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 from aliyunsdkcore.client import AcsClient
 from django.conf import settings
+
+aliyunapi_ecs = Ns(
+    list=Ns(product="Ecs", version="2014-05-26", action="DescribeInstances"),
+    info=Ns(product="Ecs", version="2014-05-26", action="DescribeInstanceAttribute"),
+)
+
+aliyunapi_vpc = Ns(
+    list=Ns(product="Vpc", version="2016-04-28", action="DescribeVpcs"),
+    info=Ns(product="Vpc", version="2016-04-28", action="DescribeVpcAttribute"),
+)
+
+aliyunapi_slb = Ns(
+    list=Ns(product="Slb", version="2014-05-15", action="DescribeLoadBalancers"),
+    info=Ns(product="Slb", version="2014-05-15", action="DescribeLoadBalancerAttribute"),
+)
+
+
+aliyunapi = Ns(
+    ecs=aliyunapi_ecs,
+    vpc=aliyunapi_vpc,
+    slb=aliyunapi_slb,
+)
 
 
 def get_client(account: str = "prod", product: str = "") -> AcsClient:
