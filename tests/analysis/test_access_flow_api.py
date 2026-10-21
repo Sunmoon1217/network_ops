@@ -97,6 +97,23 @@ def test_policy_filter(client):
 
 
 @pytest.mark.django_db
+def test_policy_pks_filter_matches_any_policy(client):
+    """?policy_pks= 收集群合并行的多条策略主键（命中任一即可）。"""
+    device = _device("_t_afapi_polpks")
+    _seed(device, 11)
+    _seed(device, 22, src_ip="192.0.2.5", port="443")
+    pks = list(AccessFlow.objects.values_list("policy_ids", flat=True))
+    first = sorted(pk for ids in pks for pk in ids)
+
+    resp = client.get(URL, {"policy_pks": ",".join(str(pk) for pk in first)})
+
+    body = resp.json()
+    assert body["count"] == 2
+    assert client.get(URL, {"policy_pks": first[0]}).json()["count"] == 1
+    assert client.get(URL, {"policy_pks": "11,x"}).status_code == 400
+
+
+@pytest.mark.django_db
 def test_invalid_filter_param_is_400(client):
     resp = client.get(URL, {"device": "not-a-number"})
     assert resp.status_code == 400

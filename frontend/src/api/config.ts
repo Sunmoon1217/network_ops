@@ -40,6 +40,24 @@ export const getGslbClusterFacets = () => api.get('/api/analysis/gslb-clusters/f
 export const exportGslbClusters = (params?: Record<string, any>) =>
   api.get('/api/analysis/gslb-clusters/export/', { params, responseType: 'blob' })
 
+// LTM 主备合并（analysis 域）：同主备组多台 SLB 的 VS→池→成员逐层合并，device 逗号拼接
+export const getLtmGroups = (params?: Record<string, any>) =>
+  api.get('/api/analysis/ltm-groups/', { params })
+
+export const getLtmGroupFacets = () => api.get('/api/analysis/ltm-groups/facets/')
+
+export const exportLtmGroups = (params?: Record<string, any>) =>
+  api.get('/api/analysis/ltm-groups/export/', { params, responseType: 'blob' })
+
+// 防火墙主备合并（analysis 域）：策略按 policy_id、NAT 按 order 合并，主机名第一台 + 标注
+export const getFirewallGroupPolicies = (params?: Record<string, any>) =>
+  api.get('/api/analysis/firewall-groups/policies/', { params })
+
+export const getFirewallGroupNatRules = (params?: Record<string, any>) =>
+  api.get('/api/analysis/firewall-groups/nat-rules/', { params })
+
+export const getFirewallGroupFacets = () => api.get('/api/analysis/firewall-groups/facets/')
+
 // Firewall
 export const getPolicies = (params?: Record<string, any>) =>
   api.get('/api/assets/policies/', { params })

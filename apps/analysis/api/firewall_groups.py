@@ -115,6 +115,8 @@ def _merge_policies(group: GroupKey) -> list[dict]:
                 "device": _join_devices(row_device_ids, hostname),
                 "device_ids": row_device_ids,
                 "policy_id": policy_id,
+                # 合并行对应每台设备各一条 Policy 记录：访问流「展开」要按这些主键一起过滤
+                "policy_pks": [policy.pk for policy in items],
                 "order": first.order,
                 "name": first.name or "",
                 "action": first.action,

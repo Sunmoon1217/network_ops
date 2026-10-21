@@ -176,10 +176,10 @@ export interface LbRootRow {
   rtype?: string
   /** 负载算法（GTM WideIP 行的 lb_mode） */
   mode?: string
-  /** 集群名（GSLB 集群接口；单机集群即设备 hostname） */
-  cluster?: string
-  /** 集群内全部设备 hostname（合并行的 device 只含「有这条配置」的设备） */
-  clusterDevices?: string[]
+  /** 组名（GSLB 集群 / LTM 主备；单机组即设备 hostname） */
+  groupName?: string
+  /** 组内全部设备 hostname（合并行的 device 只含「有这条配置」的设备） */
+  groupDevices?: string[]
   /** 该合并条目是否命中同名配置不一致 */
   inconsistent?: boolean
   /** 不一致的字段名（hover 里列出，便于定位漂移点） */
@@ -246,14 +246,14 @@ export interface LbMemberRow {
   state?: 'ok' | 'disabled' | 'lost'
 }
 
-/** GSLB 集群里的成员设备（合并行的 cluster_devices） */
-export interface GslbClusterDevice {
+/** 设备组里的成员设备（合并行的 group_devices / cluster_devices） */
+export interface GroupDevice {
   id: number
   hostname: string
 }
 
-/** GSLB 集群合并条目的公共字段：出现它的设备 + 配置不一致标记 */
-export interface GslbClusterFlag {
+/** 设备组合并条目的公共字段：出现它的设备 + 配置不一致标记 */
+export interface GroupFlag {
   /** 出现该条目的设备主机名，逗号拼接（如 gtm-a,gtm-b） */
   device: string
   device_ids: number[]
@@ -263,7 +263,7 @@ export interface GslbClusterFlag {
 }
 
 /** GSLB 集群合并后的池成员（按 server/vserver 并集去重） */
-export interface GslbClusterMember extends GslbClusterFlag {
+export interface GslbClusterMember extends GroupFlag {
   server: string
   vserver: string
   address: string | null
@@ -278,7 +278,7 @@ export interface GslbClusterMember extends GslbClusterFlag {
 }
 
 /** GSLB 集群合并后的池（按池名并集去重） */
-export interface GslbClusterPool extends GslbClusterFlag {
+export interface GslbClusterPool extends GroupFlag {
   name: string
   lb_mode: string
   alternate_mode: string
@@ -304,7 +304,7 @@ export interface GslbClusterRow {
   /** 集群名：集群组名 / 单机设备 hostname */
   cluster_name: string
   /** 该集群全部设备（合并行里 device 只含「有这条配置」的设备） */
-  cluster_devices: GslbClusterDevice[]
+  cluster_devices: GroupDevice[]
   device: string
   device_ids: number[]
   name: string
@@ -318,7 +318,7 @@ export interface GslbClusterRow {
 }
 
 /** GSLB 集群过滤下拉项（GET /api/analysis/gslb-clusters/facets/ 的 clusters） */
-export interface GslbClusterOption {
+export interface GroupOption {
   /** 集群键（group-<id> / device-<id>），下拉的选中值 */
   key: string
   /** 集群组名 / 单机设备名，下拉的显示文本 */
@@ -333,5 +333,92 @@ export interface GslbClusterOption {
 export interface GslbClusterFacets {
   rtypes: string[]
   monitors: string[]
-  clusters: GslbClusterOption[]
+  clusters: GroupOption[]
+}
+
+/** 设备组合并行（LTM / 防火墙共用）的组维度信封 */
+export interface GroupEnvelope extends GroupFlag {
+  /** 组键：group-<id> / device-<id> */
+  group: string
+  /** 组名 / 单机设备 hostname */
+  group_name: string
+  /** 该组全部设备（合并行里 device 只含「有这条配置」的设备） */
+  group_devices: GroupDevice[]
+}
+
+/** LTM 主备合并后的池成员（按 名称+端口 并集去重） */
+export interface LtmGroupMember extends GroupFlag {
+  name: string
+  address: string
+  port: string
+}
+
+/** LTM 主备合并后的池（按池名并集去重） */
+export interface LtmGroupPool extends GroupFlag {
+  name: string
+  mode: string
+  monitors: string[]
+  /** 池记录是否存在（VS 引用了但池缺失时为 false） */
+  found: boolean
+  members: LtmGroupMember[]
+}
+
+/** LTM 主备合并行：一行 = 一个 VS 名的整条链（GET /api/analysis/ltm-groups/） */
+export interface LtmGroupRow extends GroupEnvelope {
+  name: string
+  vs_address: string
+  vs_port: string
+  protocol: string
+  status: string
+  snat_type: string
+  persist: string
+  /** 列表型字段取并集 */
+  profiles: string[]
+  rules: string[]
+  pools: LtmGroupPool[]
+}
+
+/** LTM 主备合并的过滤下拉（GET /api/analysis/ltm-groups/facets/） */
+export interface LtmGroupFacets {
+  groups: GroupOption[]
+  protocols: string[]
+  statuses: string[]
+}
+
+/** 防火墙主备合并后的策略行（同一 policy_id 取主机名第一台 + 标注） */
+export interface FirewallGroupPolicy extends GroupEnvelope {
+  policy_id: string
+  /** 该合并策略在每台设备上的 Policy 主键（访问流「展开」按它们过滤） */
+  policy_pks: number[]
+  order: number
+  name: string
+  action: string
+  enabled: boolean
+  log: boolean
+  description: string
+  source_addresses_display: string[]
+  destination_addresses_display: string[]
+  services_display: string[]
+}
+
+/** 防火墙主备合并后的 NAT 规则行（按 order 合并，主机名第一台 + 标注） */
+export interface FirewallGroupNatRule extends GroupEnvelope {
+  order: number
+  name: string
+  nat_type: string
+  enabled: boolean
+  description: string
+  source_addresses_display: string[]
+  destination_addresses_display: string[]
+  services_display: string[]
+  translated_source: string
+  translated_destination: string
+  translated_service: string
+}
+
+/** 防火墙主备合并的过滤下拉（GET /api/analysis/firewall-groups/facets/） */
+export interface FirewallGroupFacets {
+  groups: GroupOption[]
+  actions: string[]
+  nat_types: string[]
 }

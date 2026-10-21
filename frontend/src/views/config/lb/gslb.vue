@@ -8,14 +8,14 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportGslbClusters, getGslbClusterFacets, getGslbClusters } from '@/api/config'
-import type { GslbClusterOption, GslbClusterPool, GslbClusterRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
+import type { GroupOption, GslbClusterPool, GslbClusterRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
 
 // 过滤器按「GSLB 集群」而不是逐台设备：集群组名 / 单机设备名（下拉值为集群键）
 const filterCluster = ref('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
 const filterRtype = ref('')
 const filterMonitor = ref('')
-const clusterOptions = ref<GslbClusterOption[]>([])
+const clusterOptions = ref<GroupOption[]>([])
 const rtypeOptions = ref<string[]>([])
 const monitorOptions = ref<string[]>([])
 
@@ -123,8 +123,8 @@ const buildRoot = (r: GslbClusterRow): LbRootRow => ({
     r.inconsistent ? `配置不一致：${r.conflict_fields.join('、') || '多个字段'}` : '',
   ].filter(Boolean),
   device: r.device,
-  cluster: r.cluster_name,
-  clusterDevices: r.cluster_devices.map((item) => item.hostname),
+  groupName: r.cluster_name,
+  groupDevices: r.cluster_devices.map((item) => item.hostname),
   inconsistent: r.inconsistent,
   conflictFields: r.conflict_fields,
   rtype: r.rtype || '-',
@@ -440,10 +440,10 @@ onMounted(() => {
           <!-- 合并后的设备字段：逗号拼接出现该域名的设备；hover 列出集群全部设备 -->
           <!-- <DataColumn prop="device" label="设备" min-width="160">
             <template #default="{ row }">
-              <el-tooltip v-if="row.clusterDevices?.length" placement="top">
+              <el-tooltip v-if="row.groupDevices?.length" placement="top">
                 <template #content>
-                  <div>集群：{{ row.cluster }}</div>
-                  <div v-for="hostname in row.clusterDevices" :key="hostname">{{ hostname }}</div>
+                  <div>集群：{{ row.groupName }}</div>
+                  <div v-for="hostname in row.groupDevices" :key="hostname">{{ hostname }}</div>
                 </template>
                 <span>{{ row.device }}</span>
               </el-tooltip>

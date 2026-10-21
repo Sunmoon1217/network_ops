@@ -7,11 +7,14 @@
 
 - ``?device=<id>``：contexts 里挂着这台设备的行（``device_ids`` GIN 包含过滤）；
 - ``?policy=<id>``：命中这条策略的行（``policy_ids`` GIN 包含过滤）；
+- ``?policy_pks=1,2``：命中**任一**策略的行——防火墙主备合并行跨多台设备，每台各有一条
+  Policy 记录，页面的「展开访问流」要把这些主键一起带过来；
 - ``?action=allow|deny``：按行级动作过滤（action 进唯一键后每行动作单一，面板的
   「允许/拒绝」筛选走这里；非法值 400）；
 - ``?search=<词>``：键字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
 """
 
+from django.db.models import Q
 from rest_framework import serializers, viewsets
 from rest_framework.exceptions import ValidationError
 
@@ -54,6 +57,13 @@ class AccessFlowViewSet(viewsets.ReadOnlyModelViewSet):
         policy = self._int_param("policy")
         if policy is not None:
             queryset = queryset.filter(policy_ids__contains=[policy])
+        policy_pks = self._int_list_param("policy_pks")
+        if policy_pks:
+            # 主备合并行跨多台设备：命中任一策略即可（逐个 contains OR，JSONField 没有 overlap）
+            matched = Q()
+            for policy_pk in policy_pks:
+                matched |= Q(policy_ids__contains=[policy_pk])
+            queryset = queryset.filter(matched)
         action = self.request.query_params.get("action")
         if action:
             if action not in ("allow", "deny"):
@@ -69,3 +79,13 @@ class AccessFlowViewSet(viewsets.ReadOnlyModelViewSet):
             return int(raw)
         except ValueError:
             raise ValidationError({name: "必须是整数 ID"}) from None
+
+    def _int_list_param(self, name: str) -> list[int]:
+        """逗号分隔的整数 ID 列表；空值给空列表、非法值 400。"""
+        raw = self.request.query_params.get(name)
+        if raw in (None, ""):
+            return []
+        try:
+            return [int(part) for part in raw.split(",") if part.strip()]
+        except ValueError:
+            raise ValidationError({name: "必须是逗号分隔的整数 ID"}) from None
