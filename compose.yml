@@ -16,20 +16,6 @@ x-app-secrets: &app-secrets
   - aliyun_test_access_key_id
   - aliyun_test_access_key_secret
 
-secrets:
-  postgres_user:
-    file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}
-  postgres_password:
-    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}
-  aliyun_prod_access_key_id:
-    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_id}
-  aliyun_prod_access_key_secret:
-    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_secret}
-  aliyun_test_access_key_id:
-    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_test_access_key_id}
-  aliyun_test_access_key_secret:
-    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_test_access_key_secret}
-
 # app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
 # 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
 # 服务器 docker load 后，compose 直接从 code 镜像挂载 /app 到 venv 容器（不 docker cp）。
@@ -44,8 +30,8 @@ services:
     init: true
     entrypoint: ["/opt/netops/entrypoint/init.sh"]
     volumes:
-      - code_data:/app
-      - static_data:/static
+      - code:/app
+      - static:/static
     restart: "no"
 
   db:
@@ -96,8 +82,8 @@ services:
       - env/gunicorn.env
     secrets: *app-secrets
     volumes:
-      - code_data:/app:ro
-      - configs:/configs
+      - code:/app:ro
+      - repo:/configs
       - data:/data
     depends_on:
       code-init:
@@ -157,7 +143,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/docker-entrypoint.d/05-netops-resolver.sh:/docker-entrypoint.d/05-netops-resolver.sh:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - static_data:/usr/share/nginx/html:ro
+      - static:/usr/share/nginx/html:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/"]
       interval: 10s
@@ -177,13 +163,17 @@ networks:
 volumes:
   postgres_data:
     driver: local
+    name: network-ops-pgdata
   redis_data:
     driver: local
-  code_data:
+    name: network-ops-redis
+  code:
     driver: local
+    name: network-ops-code
   # 配置仓库（git，每台设备一个独立仓库）：app 写入 / worker 读取，纯内部数据用命名卷
-  configs:
+  repo:
     driver: local
+    name: network-ops-configrepo
   # 配置源目录：绑定宿主机 data 目录（运维放配置原文的地方，宿主可见）
   # ⚠ device 必须绝对路径（${PWD} = 运行 compose 的目录）；宿主目录不存在时 up 直接失败
   #   → 首次部署先 mkdir -p data；同名卷已存在时 driver_opts 被静默忽略（换绑定点要先 docker volume rm）
@@ -193,5 +183,21 @@ volumes:
       type: none
       o: bind
       device: ${PWD}/data
-  static_data:
+    name: network-ops-extradata
+  static:
     driver: local
+    name: network-ops-static
+
+secrets:
+  postgres_user:
+    file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}
+  aliyun_prod_access_key_id:
+    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_id}
+  aliyun_prod_access_key_secret:
+    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_prod_access_key_secret}
+  aliyun_test_access_key_id:
+    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./env/secrets/aliyun_test_access_key_id}
+  aliyun_test_access_key_secret:
+    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_test_access_key_secret}
