@@ -17,6 +17,12 @@ COPY www ./www
 COPY entrypoint/ /app/entrypoint/
 RUN chmod +x /app/entrypoint/*.sh
 
+# 嵌套挂载点必须预先存在：code_data:/app:ro 挂载后，/app/data/config_repo 与
+# /app/data/configs 这两个深层挂载点若不存在，Docker 无法在只读的 /app 下创建，
+# 容器启动会报 "read-only file system"。所以这里先把空目录铺好（内容由
+# config_repo_data 卷 / data/configs bind 在运行时覆盖）。
+RUN mkdir -p /app/data/config_repo /app/data/configs
+
 # 校验静态成品（与 Dockerfile.app 同款检查）
 RUN set -eux; \
     if [ ! -f /app/frontend/dist/index.html ]; then \
