@@ -42,9 +42,10 @@ services:
   code-init:
     image: ${CODE_IMAGE:-network-ops-code:latest}
     init: true
+    entrypoint: ["/app/entrypoint/init.sh"]
     volumes:
       - code_data:/opt/netops/code
-    command: ["sh", "-c", "cp -a /app/. /opt/netops/code/ && echo 'code initialized'"]
+      - static_data:/static
     restart: "no"
 
   db:
@@ -103,7 +104,6 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      - static_data:/var/lib/netops-static
     depends_on:
       code-init:
         condition: service_completed_successfully
