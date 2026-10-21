@@ -53,6 +53,7 @@ services:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
     restart: unless-stopped
+    init: true
     env_file:
       - env/db.env
     secrets: *db-secrets
@@ -72,6 +73,7 @@ services:
     image: redis:8.8.0
     container_name: netops-redis
     restart: unless-stopped
+    init: true
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -89,6 +91,7 @@ services:
     <<: *app-deploy
     container_name: netops-app
     restart: unless-stopped
+    init: true
     entrypoint: ["/app/netops-entrypoint"]
     env_file:
       - env/app.env
@@ -118,6 +121,7 @@ services:
     <<: *app-deploy
     container_name: netops-worker
     restart: unless-stopped
+    init: true
     env_file:
       - env/app.env
       - env/celery.env
@@ -146,6 +150,7 @@ services:
     <<: *app-deploy
     container_name: netops-consumer
     restart: unless-stopped
+    init: true
     env_file:
       - env/app.env
     entrypoint: ["/bin/sh", "-c"]
@@ -165,6 +170,7 @@ services:
     image: nginx:1.31-alpine
     container_name: netops-nginx
     restart: unless-stopped
+    init: true
     ports:
       - "${NGINX_PORT:-8000}:80"
       - "${NGINX_SSL_PORT:-8443}:443"
