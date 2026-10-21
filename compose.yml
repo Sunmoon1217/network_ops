@@ -30,16 +30,24 @@ secrets:
   aliyun_test_access_key_secret:
     file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./env/secrets/aliyun_test_access_key_secret}
 
-# app / worker / consumer 用 venv 镜像 + 挂载代码目录（跨沙箱传输场景）。
+# app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
 # 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
-# 服务器 docker cp 提取代码到 /opt/netops/code，再用 venv 镜像启动。
+# 服务器 docker load 后，compose 直接从 code 镜像挂载 /app 到 venv 容器（不 docker cp）。
 x-app-deploy: &app-deploy
   image: ${VENV_IMAGE:-network-ops-venv:latest}
   volumes:
-    - ${CODE_DIR:-/opt/netops/code}:/app
+    - code_data:/app:ro
     - config_repo_data:/app/data/config_repo
 
 services:
+  # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
+  code-init:
+    image: ${CODE_IMAGE:-network-ops-code:latest}
+    volumes:
+      - code_data:/app
+    command: ["sh", "-c", "rm -rf /app/* && cp -a /app/. /app/ && echo 'code initialized'"]
+    restart: "no"
+
   db:
     image: timescale/timescaledb:2.27.1-pg16
     container_name: netops-db
@@ -86,7 +94,7 @@ services:
       - env/gunicorn.env
     secrets: *app-secrets
     volumes:
-      - ${CODE_DIR:-/opt/netops/code}:/app
+      - code_data:/app:ro
       - config_repo_data:/app/data/config_repo
       - type: bind
         source: ./data/configs
@@ -96,6 +104,8 @@ services:
           create_host_path: false
       - static_data:/var/lib/netops-static
     depends_on:
+      code-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -125,7 +135,7 @@ services:
     command: ["exec celery -A netops worker -Q celery,access_flow --concurrency=2 --loglevel=\"$${CELERY_LOGLEVEL:-info}\""]
     secrets: *app-secrets
     volumes:
-      - ${CODE_DIR:-/opt/netops/code}:/app
+      - code_data:/app:ro
       - config_repo_data:/app/data/config_repo
     depends_on:
       app:
@@ -154,7 +164,7 @@ services:
     command: ["exec python manage.py access_flow_consumer"]
     secrets: *db-secrets
     volumes:
-      - ${CODE_DIR:-/opt/netops/code}:/app
+      - code_data:/app:ro
     depends_on:
       app:
         condition: service_healthy
@@ -201,6 +211,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  code_data:
     driver: local
   config_repo_data:
     driver: local
