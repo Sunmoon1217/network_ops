@@ -105,7 +105,6 @@ def cluster_options() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-
 def _uniq_join(values) -> str:
     """去重排序后顿号连接，空集返回 ``-``（导出宽表的池级 Order/Ratio 用）。"""
     items = sorted({value for value in values if value is not None})
@@ -226,15 +225,11 @@ def _merge_pools(items, pools, vservers, server_info, hostname, order) -> list[d
             if _differs([entries[device_id].get(field) for device_id in ref_ids]):
                 conflict_fields.append(field)
 
-        records = [
-            (device_id, pools[(device_id, pool_name)]) for device_id in ref_ids if (device_id, pool_name) in pools
-        ]
+        records = [(device_id, pools[(device_id, pool_name)]) for device_id in ref_ids if (device_id, pool_name) in pools]
         for field in _POOL_SCALARS:
             if _differs([getattr(record, field) for _device_id, record in records]):
                 conflict_fields.append(field)
-        member_sets = [
-            tuple(sorted(_member_key(entry) for entry in (record.members or []))) for _device_id, record in records
-        ]
+        member_sets = [tuple(sorted(_member_key(entry) for entry in (record.members or []))) for _device_id, record in records]
         if _differs(member_sets):
             conflict_fields.append("members")
 
@@ -275,14 +270,8 @@ def _merge_cluster(cluster: GroupKey) -> list[dict]:
         wideips.setdefault((wideip.name, wideip.rtype), []).append(wideip)
 
     pools = {(pool.device_id, pool.name): pool for pool in GtmPool.objects.filter(device_id__in=device_ids)}
-    server_info = {
-        (server.device_id, server.name): (server.datacenter or "", server.monitor or "")
-        for server in GtmServer.objects.filter(device_id__in=device_ids)
-    }
-    vservers = {
-        (vserver.device_id, vserver.server.name, vserver.name): vserver
-        for vserver in GtmVServer.objects.filter(device_id__in=device_ids).select_related("server")
-    }
+    server_info = {(server.device_id, server.name): (server.datacenter or "", server.monitor or "") for server in GtmServer.objects.filter(device_id__in=device_ids)}
+    vservers = {(vserver.device_id, vserver.server.name, vserver.name): vserver for vserver in GtmVServer.objects.filter(device_id__in=device_ids).select_related("server")}
 
     rows: list[dict] = []
     for (name, rtype), items in wideips.items():
@@ -352,7 +341,7 @@ def _row_haystack(row: dict) -> str:
                 parts.append(_join_ip_port(member["address"], member["port"]))
                 if member["port"]:
                     parts.append(f"{member['address']}:{member['port']}")
-    return " ".join(str(part) for part in parts if part).lower()
+    return " ".join(part for part in parts if part).lower()
 
 
 def _filter_rows(rows: list[dict], request) -> list[dict]:
@@ -394,11 +383,7 @@ def _build_rows(request) -> list[dict]:
             return []  # 设备 id 非法 = 无匹配，不静默退化成全量
     cluster_key = (request.query_params.get("cluster") or "").strip() or None
 
-    rows = [
-        row
-        for cluster in _resolve_clusters(device_id=device_id, cluster_key=cluster_key)
-        for row in _merge_cluster(cluster)
-    ]
+    rows = [row for cluster in _resolve_clusters(device_id=device_id, cluster_key=cluster_key) for row in _merge_cluster(cluster)]
     return _order_rows(_filter_rows(rows, request), request)
 
 
@@ -462,11 +447,7 @@ def _cluster_flat_rows(rows: list[dict]) -> list[list]:
                 flat.append(wide + pool_seg + [pool["name"]] + empty_member + ["是" if pool_flag else ""])
                 continue
             for member in pool["members"]:
-                label = (
-                    _join_ip_port(member["address"], member["port"])
-                    if member["found"] and member["address"]
-                    else f"{member['server']}/{member['vserver']}"
-                )
+                label = _join_ip_port(member["address"], member["port"]) if member["found"] and member["address"] else f"{member['server']}/{member['vserver']}"
                 state_key = "lost" if not member["found"] else ("disabled" if member["status"] == "disabled" else "ok")
                 member_seg = [
                     "" if member["order"] is None else str(member["order"]),

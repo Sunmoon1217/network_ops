@@ -96,11 +96,7 @@ def _merge_pools(vs_items, pools_by_key, members_by_key, hostname, order) -> lis
     merged: list[dict] = []
     for pool_name in pool_names:
         refs = [device_id for device_id, virtual in vs_items if (virtual.pool or "") == pool_name]
-        records = [
-            (device_id, pools_by_key[(device_id, pool_name)])
-            for device_id in refs
-            if (device_id, pool_name) in pools_by_key
-        ]
+        records = [(device_id, pools_by_key[(device_id, pool_name)]) for device_id in refs if (device_id, pool_name) in pools_by_key]
         conflict_fields = []
         if _differs([record.mode for _device_id, record in records]):
             conflict_fields.append("mode")
@@ -145,9 +141,7 @@ def _merge_group(group: GroupKey) -> list[dict]:
     for name, items in vs_by_name.items():
         items.sort(key=lambda virtual: order.get(virtual.device_id, 0))
         row_device_ids = [virtual.device_id for virtual in items]
-        conflict_fields = [
-            field for field in _VS_SCALARS if _differs([getattr(virtual, field) for virtual in items])
-        ]
+        conflict_fields = [field for field in _VS_SCALARS if _differs([getattr(virtual, field) for virtual in items])]
         first = items[0]
         rows.append(
             {
@@ -165,9 +159,7 @@ def _merge_group(group: GroupKey) -> list[dict]:
                 "persist": first.persist or "",
                 "profiles": _union_lists([virtual.profiles or [] for virtual in items]),
                 "rules": _union_lists([virtual.rules or [] for virtual in items]),
-                "pools": _merge_pools(
-                    [(virtual.device_id, virtual) for virtual in items], pools_by_key, members_by_key, hostname, order
-                ),
+                "pools": _merge_pools([(virtual.device_id, virtual) for virtual in items], pools_by_key, members_by_key, hostname, order),
                 "inconsistent": bool(conflict_fields),
                 "conflict_fields": conflict_fields,
             }
@@ -203,7 +195,7 @@ def _row_haystack(row: dict) -> str:
                 parts.append(_join_ip_port(member["address"], member["port"]))
                 if member["port"]:
                     parts.append(f"{member['address']}:{member['port']}")
-    return " ".join(str(part) for part in parts if part).lower()
+    return " ".join(part for part in parts if part).lower()
 
 
 def _filter_rows(rows: list[dict], request) -> list[dict]:
@@ -241,11 +233,7 @@ def _build_rows(request) -> list[dict]:
             return []
     group_key = (request.query_params.get("group") or "").strip() or None
 
-    rows = [
-        row
-        for group in resolve_groups("slb", HA_GROUP_TYPES, device_id=device_id, group_key=group_key)
-        for row in _merge_group(group)
-    ]
+    rows = [row for group in resolve_groups("slb", HA_GROUP_TYPES, device_id=device_id, group_key=group_key) for row in _merge_group(group)]
     return _order_rows(_filter_rows(rows, request), request)
 
 

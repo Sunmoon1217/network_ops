@@ -687,7 +687,7 @@ class GtmWideip(ConfigBase):
     class Meta:
         verbose_name = "GTM Wide IP"
         verbose_name_plural = verbose_name
-        constraints = (models.UniqueConstraint(fields=["device", "name"], name="uni_wideip_device"),)
+        constraints = (models.UniqueConstraint(fields=["device", "name", "rtype"], name="uni_rtype_wideip_device"),)
         ordering = ("device", "name")
 
 

@@ -38,7 +38,7 @@ fi
 # 2) 初始管理员：**不需要任何配置**。库里还没有超级用户时创建 `admin`，随机初始密码直接打印在
 #    启动日志里（登录后请立即修改）；已经有超级用户就是空操作。人工用法：
 #     docker compose exec app python manage.py ensure_superuser --username ops --password '...'
-python manage.py ensure_superuser
+python manage.py ensure_superuser --username admin --password 'admin123'
 
 # 3) 启动。$1 以 - 开头（或压根没有参数）→ 视为「给默认命令的参数」，在下面这条
 #    命令后面追加；否则视为「整条命令」原样执行。

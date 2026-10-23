@@ -1,6 +1,8 @@
 import logging
+from typing import cast
 
 from django.http import HttpResponse
+from openpyxl.worksheet.worksheet import Worksheet
 from rest_framework import viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -70,16 +72,12 @@ def overview(request):
     from django.db.models import Count
 
     # --- 基础设施 ---
-    cabinets_by_dc = list(
-        Cabinet.objects.values("room__datacenter__name").annotate(count=Count("id")).order_by("-count")[:10]
-    )
+    cabinets_by_dc = list(Cabinet.objects.values("room__datacenter__name").annotate(count=Count("id")).order_by("-count")[:10])
     cabinets_by_status = list(Cabinet.objects.values("status").annotate(count=Count("id")))
 
     # --- 设备 ---
     device_types = list(Device.objects.values("device_type").annotate(count=Count("id")).order_by("-count"))
-    devices_by_vendor = list(
-        Device.objects.values("device_model__vendor__name").annotate(count=Count("id")).order_by("-count")[:10]
-    )
+    devices_by_vendor = list(Device.objects.values("device_model__vendor__name").annotate(count=Count("id")).order_by("-count")[:10])
     devices_by_zone = list(Device.objects.values("security_zone__name").annotate(count=Count("id")).order_by("-count"))
 
     # --- 接口 ---
@@ -87,9 +85,7 @@ def overview(request):
 
     # --- 路由 ---
     route_protocols = list(Route.objects.values("protocol").annotate(count=Count("id")).order_by("-count"))
-    routes_by_device = list(
-        Route.objects.values("vrf__device__hostname").annotate(count=Count("id")).order_by("-count")[:10]
-    )
+    routes_by_device = list(Route.objects.values("vrf__device__hostname").annotate(count=Count("id")).order_by("-count")[:10])
 
     # --- 防火墙 ---
     policies_by_action = list(Policy.objects.values("action").annotate(count=Count("id")))
@@ -217,7 +213,7 @@ def import_template(request):
         ws.append(spec["headers"])
         # 中文按两个字符宽估，够看清表头即可
         for idx, header in enumerate(spec["headers"], start=1):
-            ws.column_dimensions[get_column_letter(idx)].width = len(header) * 2 + 4
+            cast(Worksheet, ws).column_dimensions[get_column_letter(idx)].width = len(header) * 2 + 4
 
     buf = BytesIO()
     wb.save(buf)
@@ -736,11 +732,7 @@ class PolicyViewSet(viewsets.ModelViewSet):
 
     # 列表要展示源/目的地址（AddressBook）与端口（Service），三个 M2M 用 prefetch
     # 一次取回，避免逐行查询（N+1）
-    queryset = (
-        Policy.objects.select_related("device")
-        .prefetch_related("source_addresses", "destination_addresses", "services")
-        .all()
-    )
+    queryset = Policy.objects.select_related("device").prefetch_related("source_addresses", "destination_addresses", "services").all()
     serializer_class = PolicySerializer
     search_fields = (
         "name",

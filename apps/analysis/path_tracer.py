@@ -411,12 +411,12 @@ def _match_nat(src: str, dst: str, port: str, device: Device) -> dict | None:
         src_ok = not rule.source_addresses.exists() or _match_address_list(src, rule.source_addresses)
         dst_ok = not rule.destination_addresses.exists() or _match_address_list(dst, rule.destination_addresses)
         port_ok = not rule.services.exists() or _match_service(port, rule.services)
-        if src_ok and dst_ok and port_ok:
+        if rule and src_ok and dst_ok and port_ok:
             result = {"id": rule.pk, "name": rule.name, "nat_type": rule.nat_type}
             if rule.translated_source:
-                result["translated_source"] = rule.translated_source.name
+                result["translated_source"] = rule.translated_source.name or ""
             if rule.translated_destination:
-                result["translated_destination"] = rule.translated_destination.name
+                result["translated_destination"] = rule.translated_destination.name or ""
             if rule.translated_service:
                 result["translated_service"] = rule.translated_service.name
             return result
@@ -459,12 +459,7 @@ def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
     vs = queryset.order_by("pk").first()
     if not vs:
         return []
-    return [
-        {"name": m.name, "address": m.address}
-        for m in LtmPoolMember.objects.filter(device_id=vs.device_id, pool_name=vs.pool)
-        if vs.pool
-        if m.address
-    ]
+    return [{"name": m.name, "address": m.address} for m in LtmPoolMember.objects.filter(device_id=vs.device_id, pool_name=vs.pool) if vs.pool if m.address]
 
 
 def _is_ip_address(s: str) -> bool:
@@ -572,9 +567,7 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
             device_addr = (conn_intf.ip_address or "") if conn_intf else ""
 
         subnet = _find_subnet_for_ip(current_src if hop_count == 0 else device_addr)
-        zone = (subnet.security_zone.name if subnet and subnet.security_zone else "") or (
-            src_device.security_zone.name if src_device.security_zone else ""
-        )
+        zone = (subnet.security_zone.name if subnet and subnet.security_zone else "") or (src_device.security_zone.name if src_device.security_zone else "")
 
         hop = HopResult(
             device_name=src_device.hostname,

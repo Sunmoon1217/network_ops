@@ -17,12 +17,14 @@ URL 前缀 ``/api/lb-chain/`` 沿用 analysis「路由跟 view 走」的惯例�
 
 from datetime import date
 from io import BytesIO
+from typing import cast
 from urllib.parse import quote
 
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -115,12 +117,7 @@ def _ltm_search(qs, search: str):
     - 成员侧：成员表按 address + port 查出 (device, pool_name)，再折算回
       「该设备上引用这些池的 VS」（VS 行上没有成员字段，只能这样反查）。
     """
-    q = (
-        Q(name__icontains=search)
-        | Q(vs_address__icontains=search)
-        | Q(pool__icontains=search)
-        | Q(device__hostname__icontains=search)
-    )
+    q = Q(name__icontains=search) | Q(vs_address__icontains=search) | Q(pool__icontains=search) | Q(device__hostname__icontains=search)
     pair = _split_addr_port(search)
     addr, port = pair if pair else (search, None)
     if pair:
@@ -144,12 +141,9 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
 
     pools: dict[tuple[int, str], LtmPool] = {}
     if pool_keys:
-        pools = {
-            (p.device_id, p.name): p
-            for p in LtmPool.objects.filter(device_id__in=device_ids, name__in=pool_names).select_related("device")
-        }
+        pools = {(p.device_id, p.name): p for p in LtmPool.objects.filter(device_id__in=device_ids, name__in=pool_names).select_related("device")}
 
-    members: dict[tuple[int, str], list[LtmPoolMember]] = {}
+    members: dict[tuple[int, str | None], list[LtmPoolMember]] = {}
     if pool_names:
         for m in LtmPoolMember.objects.filter(device_id__in=device_ids, pool_name__in=pool_names):
             members.setdefault((m.device_id, m.pool_name), []).append(m)
@@ -180,10 +174,7 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
                     if pool
                     else None
                 ),
-                "members": [
-                    {"name": m.name, "address": m.address, "port": m.port or ""}
-                    for m in members.get((vs.device_id, vs.pool), [])
-                ],
+                "members": [{"name": m.name, "address": m.address, "port": m.port or ""} for m in members.get((vs.device_id, vs.pool), [])],
             }
         )
     return rows
@@ -296,10 +287,7 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
 
     pools: dict[tuple[int, str], GtmPool] = {}
     if wideip_pool_names:
-        pools = {
-            (p.device_id, p.name): p
-            for p in GtmPool.objects.filter(device_id__in=device_ids, name__in=wideip_pool_names)
-        }
+        pools = {(p.device_id, p.name): p for p in GtmPool.objects.filter(device_id__in=device_ids, name__in=wideip_pool_names)}
 
     # (device_id, server 名, vs 名) → GtmVServer；server 是 FK，名字与数据中心在 GtmServer 上
     vserver_index: dict[tuple[int, str, str], GtmVServer] = {}
@@ -308,9 +296,7 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
     if device_ids:
         # 一次查询同时建 id→名（vserver 索引用）与 (device_id, 名)→数据中心（成员列用）两个索引；
         # 后者的键必须是 device_id——写成 server.id 会在两者恰好相等时「蒙对」，套跑即错
-        servers_qs = GtmServer.objects.filter(device_id__in=device_ids).values_list(
-            "id", "device_id", "name", "datacenter"
-        )
+        servers_qs = GtmServer.objects.filter(device_id__in=device_ids).values_list("id", "device_id", "name", "datacenter")
         for sid, sdev, sname, sdc in servers_qs.iterator():
             server_names[sid] = sname
             server_dc[(sdev, sname)] = sdc or ""
@@ -543,11 +529,7 @@ def _gtm_flat_rows(chain_rows: list[dict]) -> list[list]:
                 rows.append(wide + pool_seg + [p["name"]] + empty_member)
                 continue
             for m in p["members"]:
-                label = (
-                    _join_ip_port(m["address"], m["port"])
-                    if m["found"] and m["address"]
-                    else f"{m['server']}/{m['vserver']}"
-                )
+                label = _join_ip_port(m["address"], m["port"]) if m["found"] and m["address"] else f"{m['server']}/{m['vserver']}"
                 state_key = "lost" if not m["found"] else ("disabled" if m["status"] == "disabled" else "ok")
                 member_seg = [
                     "" if m["order"] is None else str(m["order"]),
@@ -573,7 +555,7 @@ def _xlsx_response(headers: list[str], widths: tuple, rows: list[list], title: s
     # 列宽跟着表头走：写死列字母在加列时会静默少设宽度（与互联网资产分析同约定）
     assert len(widths) == len(headers)  # noqa: S101 —— 测试里另有断言守，这里尽早炸
     for index, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
+        cast(Worksheet, sheet).column_dimensions[get_column_letter(index)].width = width
 
     buffer = BytesIO()
     workbook.save(buffer)

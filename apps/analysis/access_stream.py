@@ -71,7 +71,7 @@ def backlog() -> int:
     这里不该先把任务打断。
     """
     try:
-        return int(get_redis().xlen(STREAM))
+        return get_redis().xlen(STREAM)
     except Exception:
         logger.warning("读取 %s 积压长度失败（按 0 处理）", STREAM, exc_info=True)
         return 0

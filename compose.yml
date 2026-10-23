@@ -26,6 +26,7 @@ x-app-base: &app-base
 services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
   code-init:
+    container_name: netops-codeinit
     image: ${CODE_IMAGE:?请在 .env 设置 CODE_IMAGE，如 network-ops-code:<git-sha>}
     init: true
     entrypoint: ["/opt/netops/code/entrypoint/code_init.sh"]

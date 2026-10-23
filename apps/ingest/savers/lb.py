@@ -93,9 +93,7 @@ class LBVirtualServerSaver(BaseSaver):
             (LtmIRule, list(rules.values()), LtmIRuleSerializer),
             (LtmPersist, list(persists.values()), LtmPersistSerializer),
         ):
-            sub_created, sub_updated = self.bulk_upsert(
-                model, device, rows, key_fields=("name",), serializer_cls=serializer_cls
-            )
+            sub_created, sub_updated = self.bulk_upsert(model, device, rows, key_fields=("name",), serializer_cls=serializer_cls)
             created += sub_created
             updated += sub_updated
         return (created, updated)
@@ -128,7 +126,7 @@ class LBVirtualServerSaver(BaseSaver):
 
     def _basename(self, name: str) -> str:
         """``/Common/http`` -> ``http``，用作 LtmProfile.type / LtmPersist.type"""
-        return str(name).rstrip("/").rsplit("/", 1)[-1] or "unknown"
+        return name.rstrip("/").rsplit("/", 1)[-1] or "unknown"
 
     def _extract_persist(self, value: Any) -> str | None:
         if not value:
@@ -244,15 +242,17 @@ class GTMWideipSaver(BaseSaver):
         created, updated = 0, 0
         for w in wideips:
             name = self._leaf(w.get("wideip_name") or w.get("name"))
+            rtype = self._leaf(w.get("wideip_type") or w.get("rypte"))
             if not name:
                 continue
             _, is_created = GtmWideip.objects.update_or_create(
                 device=device,
                 name=name,
+                rtype=rtype,
                 defaults={
                     # f5_gtm.ttp 产出的是 wideip_type / wideip_lbmode，
                     # 原先直接取 rtype / lb_mode，这两个字段永远是空
-                    "rtype": w.get("wideip_type", w.get("rtype", "")),
+                    # "rtype": w.get("wideip_type", w.get("rtype", "")),
                     "lb_mode": w.get("wideip_lbmode", w.get("lb_mode", "")),
                     "pools": self._normalize_pools(w.get("pools", [])),
                 },
@@ -353,9 +353,7 @@ class GtmServerSaver(BaseSaver):
                 if vs_name:
                     pending_vservers.append((name, vs))
 
-        created, updated = self.bulk_upsert(
-            GtmServer, device, server_rows, key_fields=("name",), serializer_cls=GtmServerSerializer
-        )
+        created, updated = self.bulk_upsert(GtmServer, device, server_rows, key_fields=("name",), serializer_cls=GtmServerSerializer)
 
         # 父记录刚批量写完，一次取回 pk；原先每个 server 都要再 filter().first() 查一次
         server_ids = dict(GtmServer.objects.filter(device=device).values_list("name", "pk"))

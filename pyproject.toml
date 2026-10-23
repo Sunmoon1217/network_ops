@@ -31,6 +31,9 @@ dependencies = [
 [tool.uv]
 exclude-dependencies = ["aliyun-python-sdk-core-v3"]
 
+[tool.pyrefly.errors]
+bad-override = "ignore"
+
 [tool.django-stubs]
 django_settings_module = "netops.settings"
 
@@ -56,29 +59,17 @@ exclude = ["**/migrations/*"]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 testpaths = ["tests"]
 
-# Pyrefly：比 mypy/pyright 快的类型检查器（Meta 开源，Rust 实现）。
-# 关键是 search-path：项目把 core/ingest/assets/analysis/aliyun 放在 apps/ 下，
-# 运行时由 netops/settings/__init__.py 把 apps/ 插进 sys.path，
-# Pyrefly 不知道这层，不配 search-path 会把所有顶层 import 标成 missing-import。
-[tool.pyrefly]
-preset = "default"
-search-path = ["apps", "."]
-project-includes = ["**/*.py*"]
-project-excludes = [
-    "**/migrations/*",
-    "**/tests/*",
-    ".venv/**",
-    "frontend/**",
-    "data/**",
-    "tmp/**",
-    "**/node_modules/**",
-]
-
 [tool.pyright]
 typeCheckingMode = "standard"
 include = ["apps"]
 exclude = ["**/.*"]
 reportIncompatibleVariableOverride = "none"
+
+[tool.pyrefly]
+search-path = ["apps"]
+project-includes = ["apps"]
+project-excludes = ["**/.*"]
+infer-with-first-use = false
 
 
 [dependency-groups]
@@ -87,6 +78,8 @@ dev = [
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
     "ipykernel>=7.3.0",
+    "openpyxl-stubs>=0.1.25",
+    "pyrefly>=1.4.0",
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
     "ruff>=0.16.5",

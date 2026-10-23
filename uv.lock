@@ -885,6 +885,8 @@ dev = [
     { name = "django-stubs" },
     { name = "djangorestframework-stubs" },
     { name = "ipykernel" },
+    { name = "openpyxl-stubs" },
+    { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-django" },
     { name = "ruff" },
@@ -921,6 +923,8 @@ dev = [
     { name = "django-stubs", specifier = ">=6.1.0" },
     { name = "djangorestframework-stubs", specifier = ">=3.18.1" },
     { name = "ipykernel", specifier = ">=7.3.0" },
+    { name = "openpyxl-stubs", specifier = ">=0.1.25" },
+    { name = "pyrefly", specifier = ">=1.4.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-django", specifier = ">=4.14.0" },
     { name = "ruff", specifier = ">=0.16.5" },
@@ -936,6 +940,20 @@ dependencies = [
 sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz", hash = "sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050" }
 wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl", hash = "sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2" },
+]
+
+[[package]]
+name = "openpyxl-stubs"
+version = "0.1.25"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+dependencies = [
+    { name = "mypy" },
+    { name = "openpyxl" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/82/c4/8dfd61c01a2fb0ac8bd37cadf0f19b87a8133eb6f690fc057a9536b4def0/openpyxl-stubs-0.1.25.tar.gz", hash = "sha256:108b112df072f7645ca356eacdd5730b1bd986c67ae33366a4a13c6879c369e7" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/b9/04/5847e2e75c39f80e65c388f8e292719b46c00cda2c987f2d5c53ed617d11/openpyxl_stubs-0.1.25-py3-none-any.whl", hash = "sha256:db29f7804993b4a46b155fc4be45314c14538cb475b00591d8096e5af486abf1" },
 ]
 
 [[package]]
@@ -1090,6 +1108,25 @@ source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
 sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/49/2e/ced460408999b33da6b31b0021b0f37d329e202d4169aeb164493778f25b/pygments-2.21.0.tar.gz", hash = "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c" }
 wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl", hash = "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9" },
+]
+
+[[package]]
+name = "pyrefly"
+version = "1.4.0"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/b3/3e/ea6893be167fa14307d7f9a924bed9ecbbbd91b01953890b9b3c58ed5359/pyrefly-1.4.0.tar.gz", hash = "sha256:bb57c004a4842cfe93f93aebb5203ca6209a5f0c8bda47e8bc289e70940fd910" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/6a/17/dfce6611acc00cb26667e5e1011438cc510f3067f961e0f07f7a0c68f416/pyrefly-1.4.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:460cec39bc8743915e9c2c8c10ba926ad0b29b099d89c1859fb97e0059f42fa7" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/a6/78/a7b96442123fa6ed733de0d1ea933e35d6fc6b7c9cf16e05279abb493493/pyrefly-1.4.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:5a6370d686b6cbbac8869832f09a52012888371956fbc68d446a349bc85ccd43" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/23/97/dfcfec6a9d8948ab4b2746f7e87558a82bffabb7a54c22e7d3ce4bdc1932/pyrefly-1.4.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8f1b16923a6583a6764e8aec07787e2ef4df644c7030294cba71339783a9451c" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/31/12/6fa414aa87e398d6ddc7145a5d993b0975fc3511198dbb72c47873653ab6/pyrefly-1.4.0-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:688ad4cb4d6e711d67026fdcfb37b599f86061efe11ba5704287330e7041a69e" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/a8/73/2d7312262cf6481d6ad46eed55b8f2592c3cff60f95cc2f30a114cd1484e/pyrefly-1.4.0-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:f5f3c9dddb6f3128beb49cf4e0f5cb88d4d17f039008d8e0c2be653966acd234" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/2c/65/b44a1cb23667bcbcdc88558cbef79fa9e07a1152c2a1da148036b1a2e0d1/pyrefly-1.4.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b6951f51687304caebfedf13dd1a943aeafdbc95abcc4e24a683b97467a77007" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/a6/07/7ca6ff0c53e3a90ecdab05790d33f430fca5c48687613a0b182744166d98/pyrefly-1.4.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:838de4d4a8b9b8ed39bedd0b8b55629c69661d73a6fa3a3a4adff24b9dbeb399" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/61/be/ec7b2f38a898ce5b2219dda730e87d31fc8cfb2108a3d5844f9d590f1281/pyrefly-1.4.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:afb9ce2e0ae3e6106fb45f6d47536ac92b6423e601e08401cdefa850066444f5" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/6e/16/1b9549168b38a575d9c168e17b4b4ee30028d602ec0f7b07c198ef265dbe/pyrefly-1.4.0-py3-none-win32.whl", hash = "sha256:839db536d0ac29f1b23e2d974fb911075c2283e3e623755c45d826aafac175bc" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/03/02/18f075d4de0e255f184f42fc28c1f0ecc9f49dd528678479fc90cf12246c/pyrefly-1.4.0-py3-none-win_amd64.whl", hash = "sha256:7aff37c2b711c8240ed650da0c6148237b327bf7e5dfacee65884f1adea22305" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/92/62/92947076681550904c72a9dd03b24e92694ede9a48548f5e487c849e66ea/pyrefly-1.4.0-py3-none-win_arm64.whl", hash = "sha256:88879f0cb749e5fea81d9ff4c2d5431a70349c458bcdf0b61de72c79214d90a5" },
 ]
 
 [[package]]
