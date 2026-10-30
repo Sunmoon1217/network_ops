@@ -62,6 +62,8 @@ network_ops/
 │       ├── access_stream.py     # 访问流：Redis Stream 编解码 / 背压 / 设备锁 / 心跳
 │       ├── tasks.py             # 访问流重建任务 analysis.rebuild_access_flows（独立队列）
 │       ├── queue_monitor.py     # 队列积压巡检（celery 队列 / Stream lag / PEL / 心跳，只读）
+│       ├── redis_monitor.py     # Redis 服务状态巡检（INFO：内存/连接/命中率/键空间，只读）
+│       ├── celery_monitor.py    # Celery worker/任务巡检（inspect：名单/执行中/排队/延迟，只读）
 │       ├── management/commands/{access_flow_consumer, rebuild_access_flows, queue_status}.py  # 单写者消费者 / 手工重建 / 积压巡检
 │       ├── models.py            # InternetAnalysis（分析结果缓存）+ AccessFlow（访问流，2026-09 由 ingest 迁入）
 │       └── migrations/{0001_initial,0002_accessflow}.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
@@ -295,6 +297,8 @@ ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/acc
 | `access_stream.py` | 访问流：Redis Stream 编解码、背压、设备锁、心跳（生产者-消费者通道） |
 | `tasks.py` | `analysis.rebuild_access_flows`：展开一台设备投进 Stream（独立 `access_flow` 队列） |
 | `queue_monitor.py` | 队列积压巡检（celery 队列 LLEN / unacked / Stream lag / PEL 毒消息 / 心跳，只读报警不干预；命令与 API 共用） |
+| `redis_monitor.py` | Redis 服务状态巡检（INFO 口径：内存/连接/命中率/键空间/运行时长，只读；maxmemory=0 与零流量时比率为 null） |
+| `celery_monitor.py` | Celery worker/任务巡检（inspect 口径：worker 名单/执行中/排队/延迟，只读；分段降级、参数截断） |
 | `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建）/ `queue_status`（积压巡检，超阈值退出码 1） |
 | `api/trace.py` | 路径追踪 / 路由采集 / DNS 查询接口（路由采集用 TTP 模板，路径经 `ingest.parsers.template_keys.TMPLS_DIR` 取） |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
@@ -431,6 +435,8 @@ tags, subnets, ip-addresses
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
 | `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤（2026-09 由 ingest 迁入，URL 不变） |
 | `/api/analysis/queue-status/` | 队列积压巡检（只读）：celery 队列 / 访问流 Stream lag / PEL / 消费者心跳 + 告警列表，Home 页卡片 30s 轮询 |
+| `/api/analysis/redis-status/` | Redis 服务状态（只读，INFO 口径）：内存/连接/命中率/键空间/运行时长，「任务中心 → 运行监控」页轮询 |
+| `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，「任务中心 → 运行监控」页轮询 |
 
 ## 注意事项
 
