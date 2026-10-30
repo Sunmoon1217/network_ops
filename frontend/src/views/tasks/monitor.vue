@@ -24,6 +24,21 @@ const queueError = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 let polling = false
 
+/**
+ * 失败原因要能自证：只报「接口不可达」会把 401（未认证）/ 404（后端旧）/ 超时混成一种，
+ * 排查时看不出到底是哪层出了问题。这里把 HTTP 状态与 DRF 的 detail 带出来。
+ */
+const describeError = (reason: unknown, label: string): string => {
+  const err = reason as { response?: { status?: number; data?: { detail?: string } } } | undefined
+  const status = err?.response?.status
+  if (status === 401) return `${label}获取失败：401 未认证（token 失效或未带上，请重新登录）`
+  if (status) {
+    const detail = err?.response?.data?.detail
+    return `${label}获取失败：HTTP ${status}${detail ? `（${detail}）` : ''}`
+  }
+  return `${label}获取失败：网络错误或超时（后端无响应）`
+}
+
 const fetchAll = async () => {
   if (polling) return
   polling = true
@@ -32,19 +47,19 @@ const fetchAll = async () => {
     redisStatus.value = redis.value.data
     redisError.value = ''
   } else {
-    redisError.value = 'Redis 状态获取失败（接口不可达）'
+    redisError.value = describeError(redis.reason, 'Redis 状态')
   }
   if (celery.status === 'fulfilled') {
     celeryStatus.value = celery.value.data
     celeryError.value = ''
   } else {
-    celeryError.value = 'Celery 状态获取失败（接口不可达）'
+    celeryError.value = describeError(celery.reason, 'Celery 状态')
   }
   if (queue.status === 'fulfilled') {
     queueStatus.value = queue.value.data
     queueError.value = ''
   } else {
-    queueError.value = '队列积压获取失败（接口不可达）'
+    queueError.value = describeError(queue.reason, '队列积压')
   }
   polling = false
 }
