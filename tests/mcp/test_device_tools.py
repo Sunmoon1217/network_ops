@@ -14,7 +14,7 @@ import pytest
 from mcp import Client
 
 from assets.models import Device, DeviceGroup, DeviceGroupMember, DeviceModel, Vendor
-from mcp_tools import mcp as netops_mcp
+from netops.mcp_server import mcp as netops_mcp
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
