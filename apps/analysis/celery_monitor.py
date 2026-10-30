@@ -31,8 +31,10 @@ from netops.celery import app as celery_app
 
 logger = getLogger(__name__)
 
-#: inspect 广播超时（秒）：监控是 30s 轮询的旁路，宁可空着也不拖慢请求
-INSPECT_TIMEOUT = 3.0
+#: inspect 广播超时（秒）：应答在健康 broker 上是毫秒级，这只是「多久没动静算没有」。
+#: ping 阶段没有 limit、注定等满一次（见 collect 注释），所以别设长；1.5s × 5 段
+#: 是最坏情况，仍远低于前端 20s 的接口超时。
+INSPECT_TIMEOUT = 1.5
 
 #: active 任务的 args/kwargs 展示上限（字符），防整份配置原文进响应
 _ARG_CLIP = 200
@@ -77,7 +79,15 @@ def _workers(stats: dict, ping: dict) -> list[dict]:
 
 
 def collect(inspector=None) -> dict:
-    """采集一轮 Celery worker / 任务全貌（只读）；broker 无应答降级为 ok=False。"""
+    """采集一轮 Celery worker / 任务全貌（只读）；broker 无应答降级为 ok=False。
+
+    为什么两段式 inspector（别改回一个）：kombu 的收包循环在**没有 limit** 时收满
+    现有应答后还会把 timeout 等满才返回（它不知道还会有谁应答）——5 个方法各等
+    一次 = 5 × timeout，曾经 5 × 3s = 15s 撞穿前端 axios 10s 超时，页面只显示
+    「接口不可达」。所以先用 ping 问出 worker 数（这一步省不掉，只能等满一次），
+    后续调用带 ``limit=len(ping)``：收满应答立即返回，不再空等。
+    """
+    injected = inspector is not None
     inspector = inspector or celery_app.control.inspect(timeout=INSPECT_TIMEOUT)
     stats: dict = {
         "checked_at": time.time(),
@@ -108,6 +118,9 @@ def collect(inspector=None) -> dict:
         stats["ok"] = False
         stats["error"] = "没有 worker 应答（进程未启动或 broker 不可达）"
         return stats
+    if not injected:
+        # limit=worker 数：收满应答立即返回（语义见 docstring）
+        inspector = celery_app.control.inspect(timeout=INSPECT_TIMEOUT, limit=len(ping))
 
     stats["workers"] = _workers(safe(inspector.stats, {}) or {}, ping)
     now = time.time()

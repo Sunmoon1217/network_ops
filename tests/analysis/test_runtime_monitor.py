@@ -157,6 +157,25 @@ def test_celery_collect_healthy_shape():
     assert stats["scheduled"][0]["eta"] == "2026-01-01T00:00:00"
 
 
+def test_celery_inspect_calls_after_ping_pass_limit(monkeypatch):
+    """回归：ping 后的 inspect 必须带 limit=len(ping)——没有 limit 时 kombu 收包循环
+    会把 timeout 等满才返回，5 个方法 × timeout 曾撞穿前端 axios 超时（接口不可达）。"""
+    calls = []
+
+    def fake_inspect(timeout, limit=None):
+        calls.append(limit)
+        return FakeInspector(
+            ping={"w1": {"ok": "pong"}, "w2": {"ok": "pong"}},
+            stats={"w1": {"pool": {"max-concurrency": 1}, "total": {}}, "w2": {"pool": {"max-concurrency": 1}, "total": {}}},
+        )
+
+    monkeypatch.setattr("analysis.celery_monitor.celery_app.control.inspect", fake_inspect)
+    stats = celery_collect()
+    assert stats["ok"] is True
+    assert calls[0] is None  # 第一次只做 ping（问 worker 数）
+    assert all(limit == 2 for limit in calls[1:])  # 后续调用收满 2 个应答立即返回
+
+
 def test_celery_no_worker_is_degraded_not_crash():
     stats = celery_collect(inspector=FakeInspector(ping=None))
     assert stats["ok"] is False
@@ -216,7 +235,9 @@ def test_redis_status_api_returns_collect_shape(api_client, monkeypatch):
 def test_celery_status_api_returns_collect_shape(api_client, monkeypatch):
     monkeypatch.setattr(
         "analysis.celery_monitor.celery_app.control.inspect",
-        lambda timeout: FakeInspector(ping={"w": {"ok": "pong"}}, stats={"w": {"pool": {"max-concurrency": 2}, "total": {}}}),
+        lambda timeout, limit=None: FakeInspector(
+            ping={"w": {"ok": "pong"}}, stats={"w": {"pool": {"max-concurrency": 2}, "total": {}}}
+        ),
     )
     resp = api_client.get(CELERY_API)
     assert resp.status_code == 200
@@ -237,6 +258,8 @@ def test_monitor_apis_require_auth(monkeypatch):
 def test_monitor_apis_surface_outage_without_500(api_client, monkeypatch):
     """Redis / broker 都挂时 API 照样 200（ok=False 如实上报），监控自身不炸。"""
     monkeypatch.setattr("analysis.redis_monitor.get_redis", lambda: FakeRedis(info=ConnectionError("redis down")))
-    monkeypatch.setattr("analysis.celery_monitor.celery_app.control.inspect", lambda timeout: FakeInspector(ping=None))
+    monkeypatch.setattr(
+        "analysis.celery_monitor.celery_app.control.inspect", lambda timeout, limit=None: FakeInspector(ping=None)
+    )
     assert api_client.get(REDIS_API).json()["redis_ok"] is False
     assert api_client.get(CELERY_API).json()["ok"] is False
