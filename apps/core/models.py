@@ -112,7 +112,7 @@ class Task(models.Model):
     celery_task_id = models.CharField(max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID")
     task_type = models.CharField(max_length=50, choices=TASK_TYPES, verbose_name="任务类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
-    device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, related_name="tasks", verbose_name="关联设备")
+    device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备")
     params = models.JSONField(default=dict, verbose_name="任务参数")
     result = models.JSONField(null=True, blank=True, verbose_name="任务结果")
     error_message = models.TextField(blank=True, default="", verbose_name="错误信息")
