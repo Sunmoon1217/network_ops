@@ -49,6 +49,10 @@ export const TABLE_KEYS = {
   // ── tasks ────────────────────────────────────────────────
   taskList: 'tasks.list', // 任务列表 主表 预留
   taskStages: 'tasks.stages', // 任务详情展开的阶段表 预留
+  monitorWorkers: 'tasks.monitor.workers', // 运行监控·Celery worker 表
+  monitorActive: 'tasks.monitor.active', // 运行监控·执行中任务表
+  monitorPending: 'tasks.monitor.pending', // 运行监控·待执行任务表
+  monitorTopPending: 'tasks.monitor.top-pending', // 运行监控·毒消息表
 
   // ── tools ────────────────────────────────────────────────
   dnsQuery: 'tools.dns-query', // DNS 查询·分组结果 预留

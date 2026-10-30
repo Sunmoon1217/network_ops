@@ -101,6 +101,7 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'task-list', component: () => import('@/views/tasks/index.vue') },
+        { path: 'monitor', name: 'task-monitor', component: () => import('@/views/tasks/monitor.vue') },
       ],
     },
     {
