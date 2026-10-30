@@ -7,6 +7,9 @@
 
 - ``manage.py queue_status``：人看表格 / ``--json`` 机器可读，超阈值退出码 1（可接 cron 告警）；
 - ``/api/analysis/queue-status/``：前端 Home 页的积压监控卡片轮询；
+- ``manage.py queue_backlog``：积压**明细**（``collect_backlog``）——数量告警之外
+  回答「积压了哪些」：各队列排队消息（解码任务名/参数）、Stream 待确认与未投递
+  条目（点名设备）；
 - 生产者背压：``access_stream.backlog()``（那是独立函数，本模块只读不干预）。
 
 采集全部是 O(1) 的 Redis 命令（LLEN / HLEN / XLEN / XINFO GROUPS / XPENDING 明细
@@ -30,6 +33,8 @@ Redis 不可达时**不抛异常**：返回 ``redis_ok=False`` + critical 告警
 
 from __future__ import annotations
 
+import base64
+import json
 import time
 from logging import getLogger
 
@@ -53,7 +58,7 @@ DEFAULT_THRESHOLDS: dict[str, int] = {
 _PENDING_PROBE = 50
 
 
-def _queue_names() -> list[str]:
+def queue_names() -> list[str]:
     """要巡检的 celery 队列名：默认队列 + CELERY_TASK_ROUTES 里声明的全部队列。"""
     names = {"celery"}
     for route in settings.CELERY_TASK_ROUTES.values():
@@ -125,7 +130,7 @@ def collect(client=None, thresholds: dict | None = None) -> dict:
         "thresholds": {**DEFAULT_THRESHOLDS, **(thresholds or {})},
     }
     try:
-        stats["queues"] = {name: int(client.llen(name)) for name in _queue_names()}
+        stats["queues"] = {name: int(client.llen(name)) for name in queue_names()}
         stats["unacked"] = int(client.hlen("unacked"))
         stats["stream"] = _stream_stats(client)
         stats["heartbeat_age"] = _heartbeat_age(client)
@@ -180,3 +185,101 @@ def evaluate(stats: dict, thresholds: dict | None = None) -> list[dict]:
     elif heartbeat > t["heartbeat_stale"]:
         add("warning", "heartbeat_stale", f"访问流消费者心跳已 {int(heartbeat)}s 未更新（阈值 {t['heartbeat_stale']}s）")
     return alerts
+
+
+# ---------------------------------------------------------------------------
+# 积压明细（collect_backlog）：数量告警之外回答「积压了哪些」
+# ---------------------------------------------------------------------------
+
+
+def _celery_brief(raw) -> dict:
+    """broker 队列一条消息（JSON + base64 body）→ 任务名/id/参数摘要；解不动就原样截断。"""
+    brief = {"task": None, "id": None, "args": None, "decode_error": False}
+    try:
+        envelope = json.loads(raw)
+        headers = envelope.get("headers") or {}
+        brief["task"] = str(headers.get("task") or "") or None
+        brief["id"] = str(headers.get("id") or "") or None
+        body = json.loads(base64.b64decode(envelope["body"]).decode())
+        # body 是 celery 的 [args, kwargs, embed] 三元组；只留 args 预览
+        brief["args"] = _clip(str(body[0])) if body else None
+    except Exception:
+        brief["decode_error"] = True
+        brief["args"] = _clip(str(raw))
+    return brief
+
+
+def _clip(text: str, limit: int = 120) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _stream_entry(client, entry_id: str) -> dict:
+    """按消息 ID 取 Stream 条目摘要（device_id / hostname）；取不到给空。"""
+    info = {"id": entry_id, "device_id": None, "hostname": None}
+    try:
+        rows = client.xrange(STREAM, min=entry_id, max=entry_id) or []
+    except Exception:
+        logger.warning("XRANGE %s 读取失败（忽略）", entry_id, exc_info=True)
+        return info
+    for _id, fields in rows:
+        raw_device = fields.get(b"device_id", fields.get("device_id"))
+        raw_host = fields.get(b"hostname", fields.get("hostname"))
+        info["device_id"] = int(raw_device) if raw_device is not None else None
+        info["hostname"] = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
+    return info
+
+
+def collect_backlog(client=None, limit: int = 20) -> dict:
+    """采集积压**明细**（只读）：各 celery 队列排队消息 + Stream 两段积压的点名清单。
+
+    与 ``collect``（数量 + 告警）互补，回答「积压了哪些」：
+
+    - ``queues``：每个队列 LRANGE 头部若干条 → 任务名/id/参数预览（broker 消息是
+      JSON + base64 body，解不动按原文截断，不影响其余条目）；
+    - ``stream.pending``：PEL（已投递未确认，含毒消息）逐条点名——ID/设备/空闲/重投；
+    - ``stream.undelivered``：从未投递给消费者的 lag 部分（``last-delivered`` 之后的
+      XRANGE，**不含**已消费未 trim 的旧条目）逐条点名 ID/设备。
+
+    ``limit`` 限制每个清单的条数（LRANGE/XPENDING/XRANGE 各自的 count），明细是
+    人看的抽样，不是全量导出。
+    """
+    client = client or get_redis()
+    stats: dict = {
+        "checked_at": time.time(),
+        "redis_ok": True,
+        "error": None,
+        "limit": limit,
+        "queues": {},
+        "stream": {"pending": [], "undelivered": []},
+    }
+    try:
+        for name in queue_names():
+            rows = client.lrange(name, 0, limit - 1) or []
+            stats["queues"][name] = [_celery_brief(raw) for raw in rows]
+        # PEL：已投递未确认（毒消息在这里）——逐条补设备名
+        entries = client.xpending_range(STREAM, GROUP, min="-", max="+", count=limit) or []
+        for entry in sorted(entries, key=lambda e: int(e.get("times_delivered") or 0), reverse=True):
+            info = _stream_entry(client, str(entry.get("message_id")))
+            info.update(
+                {
+                    "idle_ms": int(entry.get("time_since_delivered") or 0),
+                    "deliveries": int(entry.get("times_delivered") or 0),
+                }
+            )
+            stats["stream"]["pending"].append(info)
+        # 未投递积压（lag）：last-delivered 之后的才是积压，别把已消费未 trim 的翻出来
+        last_delivered = "0-0"
+        try:
+            for group in client.xinfo_groups(STREAM) or []:
+                if group.get("name") == GROUP:
+                    last_delivered = group.get("last-delivered") or "0-0"
+        except Exception:
+            logger.warning("XINFO GROUPS %s 读取失败（按无组处理）", STREAM, exc_info=True)
+        undelivered = client.xrange(STREAM, min=f"({last_delivered}", max="+", count=limit) or []
+        for entry_id, _fields in undelivered:
+            stats["stream"]["undelivered"].append(_stream_entry(client, str(entry_id)))
+    except Exception as exc:
+        logger.warning("积压明细采集失败", exc_info=True)
+        stats["redis_ok"] = False
+        stats["error"] = str(exc)
+    return stats
