@@ -1,6 +1,8 @@
 """队列积压巡检命令：celery 队列 + 访问流 Stream + 消费者心跳，只读、不干预。
 
-三个出口共用 ``analysis.queue_monitor`` 的采集逻辑（本命令 / API / 前端卡片），
+命令本体在 core（运维命令统一放 core：ensure_superuser / migrate_if_needed / queue_*），
+采集逻辑仍共用 ``analysis.queue_monitor``（API / 前端卡片同源）——core 的运维命令
+跨域 import analysis 与 ``purge_configs`` 同属运维工具例外。
 本命令的增量价值是**阈值退出码**：超阈值退出码 1，可以直接接 cron / 告警脚本::
 
     # cron 示例：每分钟巡检，非 0 就把输出喂给告警
