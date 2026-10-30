@@ -1,11 +1,13 @@
 """设备库 MCP 工具测试。
 
-两处约定：
+三处约定：
 - 工具是同步 def，SDK v2 在**工作线程**执行——主线程事务里的数据对其他数据库连接
   不可见，所以必须用 ``django_db(transaction=True)``（提交真数据、测后截断），
   普通 ``db`` fixture 会让工具查不到夹具数据。
 - 调用走 ``mcp.Client(server)`` 的内存传输，把「schema → 分发 → 工具 → 序列化」
   整条链跑通，而不是绕过 MCP 直调函数。
+- 工具靠 ``import assets.mcp.tools`` 的副作用注册到根 server（与 asgi 的组合方式
+  一致）——只 import netops.mcp_server 拿到的是空 server。
 """
 
 import asyncio
@@ -13,6 +15,7 @@ import asyncio
 import pytest
 from mcp import Client
 
+import assets.mcp.tools  # noqa: F401 — import 即注册（工具挂到 netops.mcp_server.mcp 上）
 from assets.models import Device, DeviceGroup, DeviceGroupMember, DeviceModel, Vendor
 from netops.mcp_server import mcp as netops_mcp
 
