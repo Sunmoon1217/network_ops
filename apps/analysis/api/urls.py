@@ -46,6 +46,9 @@ urlpatterns = [
     path("analysis/firewall-groups/facets/", firewall_groups.firewall_group_facets, name="firewall-groups-facets"),
     # 队列积压巡检（celery 队列 / 访问流 Stream / 消费者心跳）：只读，Home 页卡片轮询
     path("analysis/queue-status/", monitor.queue_status, name="queue-status"),
+    # 运行监控（只读）：Redis 服务状态（INFO）/ Celery worker 与任务（inspect），运行监控页轮询
+    path("analysis/redis-status/", monitor.redis_status, name="redis-status"),
+    path("analysis/celery-status/", monitor.celery_status, name="celery-status"),
 ]
 
 urlpatterns += router.urls
