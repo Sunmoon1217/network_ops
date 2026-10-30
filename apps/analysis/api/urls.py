@@ -10,7 +10,7 @@ URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analys
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, firewall_groups, gslb_clusters, lb_chain, ltm_groups, trace
+from . import accessflows, analysis, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
@@ -44,6 +44,8 @@ urlpatterns = [
     path("analysis/firewall-groups/policies/", firewall_groups.firewall_policies, name="firewall-groups-policies"),
     path("analysis/firewall-groups/nat-rules/", firewall_groups.firewall_nat_rules, name="firewall-groups-nat-rules"),
     path("analysis/firewall-groups/facets/", firewall_groups.firewall_group_facets, name="firewall-groups-facets"),
+    # 队列积压巡检（celery 队列 / 访问流 Stream / 消费者心跳）：只读，Home 页卡片轮询
+    path("analysis/queue-status/", monitor.queue_status, name="queue-status"),
 ]
 
 urlpatterns += router.urls

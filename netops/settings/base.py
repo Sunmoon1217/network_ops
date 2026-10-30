@@ -111,13 +111,18 @@ CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
 # 访问流（AccessFlow）重建链路的旋钮与任务名约定：
-# - 背压阈值：生产者投递前查 Stream 积压，超过就 self.retry 让路（不占 worker 进程）；
+# - 背压阈值：生产者投递前查 Stream **未投递积压**（XINFO GROUPS 的 lag，见
+#   access_stream.backlog——不是 XLEN，后者含已消费未 trim 的条目，会把「消化完了
+#   但条目还躺着」误判成积压），超过就 self.retry 让路（不占 worker 进程）。默认 500：
+#   consumer 消化一条大设备消息要分钟级，500 条已是数小时量级的真实积压；再往上堆
+#   只会放大「consumer 卡死无人知」的静默窗口（2026-10 实盘事故：47 条积压 + OOM
+#   循环重启无人发现）。监控出口是 manage.py queue_status / /api/analysis/queue-status/。
 # - 投递开关：测试里默认关（conftest 统一置 False），否则 PolicySaver 每保存一次
 #   就往真实 Redis 发消息；
 # - 任务名唯一定义处：ingest 的投递触点（access_flow_trigger）按它 send_task——不 import
 #   analysis（依赖方向单向）；analysis.tasks 的 name= 与下方 CELERY_TASK_ROUTES 的 key
 #   必须与之一致，tests/analysis/test_access_flow_task.py 有对账断言。
-ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "50000"))
+ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
