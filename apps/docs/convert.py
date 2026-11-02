@@ -120,20 +120,20 @@ def _csv_to_md(text: str) -> str:
 
 
 def _xlsx_to_md(content: bytes) -> str:
-    import openpyxl  # 本地导入：openpyxl 启动慢，仅 xlsx 路径需要
+    from docs import xlsx_io  # 本地导入：openpyxl 启动慢，仅 xlsx 路径需要
 
+    # 走 parse_xlsx 而不是裸调 openpyxl：它带「样式表损坏免疫」（降级跳过样式、
+    # 自扫 numFmt 保日期）与合并单元格填充——裸调会在坏 styles.xml 上整个判死
+    # （TypeError: expected <class 'openpyxl.styles.fills.Fill'>）。
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+        data = xlsx_io.parse_xlsx(io.BytesIO(content))
     except Exception as e:
         raise ConvertError(f"xlsx 解析失败：{e}") from e
     parts = []
-    try:
-        for ws in wb.worksheets:
-            rows = [list(row) for row in ws.iter_rows(values_only=True)]
-            table = _rows_to_md(rows)
-            parts.append(f"## {ws.title}\n\n{table}" if table else f"## {ws.title}")
-    finally:
-        wb.close()
+    for sheet in data.get("sheets") or []:
+        name = str(sheet.get("name") or "")
+        table = _rows_to_md(sheet.get("rows") or [])
+        parts.append(f"## {name}\n\n{table}" if table else f"## {name}")
     return "\n\n".join(parts)
 
 

@@ -181,3 +181,19 @@ def test_docx_with_image_to_html():
 def test_docx_broken_file_rejected():
     with pytest.raises(ConvertError, match="docx 解析失败"):
         convert("文档.docx", b"not a zip")
+
+
+# ---------------------------------------------------------------------------
+# 样式表损坏免疫（复用 docs.xlsx_io.parse_xlsx 的降级解析）
+# ---------------------------------------------------------------------------
+
+
+def test_xlsx_with_corrupted_styles_survives():
+    from tests.docs.test_xlsx_io import _build_xlsx, _corrupt_styles
+
+    # 裸调 openpyxl 会在这种文件上报 TypeError: expected openpyxl.styles.fills.Fill，
+    # 转换路径走 parse_xlsx 的降级解析，值与日期都保住
+    out = convert("坏样式.xlsx", _corrupt_styles(_build_xlsx()).getvalue())
+    assert out.target_format == "md"
+    assert "## 数据" in out.text
+    assert "甲" in out.text and "2024-01-01" in out.text  # 单元格值与日期都没丢
