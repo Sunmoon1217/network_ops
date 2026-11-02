@@ -120,6 +120,15 @@ const router = createRouter({
         { path: 'spreadsheet/:id', name: 'tools-spreadsheet-edit', component: () => import('@/views/tools/spreadsheet-edit.vue') },
       ],
     },
+    {
+      path: '/docs',
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: '/docs/knowledge' },
+        { path: 'knowledge', name: 'docs-knowledge', component: () => import('@/views/docs/knowledge.vue') },
+        { path: 'temp', name: 'docs-temp', component: () => import('@/views/docs/temp.vue') },
+      ],
+    },
     // 兜底：未注册路径（含 /login——它是不注册路由的"伪路径"，靠下面的守卫与 App.vue 协作）。
     // 必须用「匹配组件」而不是 redirect：
     //   ① redirect 到 '/' 会与守卫的 return '/login' 互相触发，形成无限重定向；

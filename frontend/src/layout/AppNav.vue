@@ -10,6 +10,7 @@ import {
   IconOverview, IconDevices, IconDeviceList, IconBaseline, IconInterfaces,
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,
   IconIp, IconSubnet, IconTools, IconPathTrace, IconRouting,
+  IconDoc, IconKnowledge, IconTemp,
   IconLayoutSide,
 } from '@/assets/menu-icons'
 
@@ -68,6 +69,13 @@ const menuOptions: MenuItem[] = [
     children: [
       { index: '/tasks', label: '任务列表', icon: renderIcon(Timer) },
       { index: '/tasks/monitor', label: '运行监控', icon: renderIcon(DataAnalysis) },
+    ],
+  },
+  {
+    index: '/docs', label: '文档', icon: renderIcon(IconDoc),
+    children: [
+      { index: '/docs/knowledge', label: '知识库', icon: renderIcon(IconKnowledge) },
+      { index: '/docs/temp', label: '临时', icon: renderIcon(IconTemp) },
     ],
   },
   {
