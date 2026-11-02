@@ -129,3 +129,34 @@ def test_update_by_file_request_shape(monkeypatch):
     assert seen["url"] == "https://dify.example.com/v1/datasets/ds-1/documents/doc-2/update-by-file"
     filename, content, content_type = seen["files"]["file"]
     assert (filename, content, content_type) == ("手册.pdf", b"%PDF", "application/pdf")
+
+
+@override_settings(DIFY_CONFIG={**CFG, "process_mode": "custom", "segment_separator": "\\n- ", "segment_max_tokens": 200})
+def test_custom_process_rule_payload(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(**kwargs)
+        return _Resp(200, {"document": {"id": "d"}, "batch": "b"})
+
+    monkeypatch.setattr("docs.dify.requests.request", fake_request)
+    dify.create_document_by_text("表.md", "内容")
+    rule = seen["json"]["process_rule"]
+    assert rule["mode"] == "custom"
+    # env 里写的是 \n 两字符，客户端还原成真换行
+    assert rule["rules"]["segmentation"] == {"separator": "\n- ", "max_tokens": 200}
+    # URL / 邮箱不清洗（运维文档里它们可能是检索目标）
+    assert {"id": "remove_urls_emails", "enabled": False} in rule["rules"]["pre_processing_rules"]
+
+
+@override_settings(DIFY_CONFIG=CFG)
+def test_default_process_rule_is_automatic(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(**kwargs)
+        return _Resp(200, {"document": {"id": "d"}, "batch": "b"})
+
+    monkeypatch.setattr("docs.dify.requests.request", fake_request)
+    dify.create_document_by_text("表.md", "内容")
+    assert seen["json"]["process_rule"] == {"mode": "automatic"}

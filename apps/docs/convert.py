@@ -10,9 +10,14 @@ Dify 知识库 ``document/create-by-file`` **一次只收一个文件**（多文
     md       → md；引用的本地图片随附上传后内嵌 → 自包含 html
     docx     → md；含内嵌图片 → 自包含 html（base64 内嵌）
     html/htm → html（本地图片引用随附上传后 base64 内嵌；无图原样保留）
-    xlsx     → md（每个 sheet 一个 markdown 表格）
-    csv      → md（markdown 表格）
+    xlsx     → md（每 sheet：网格表 + 行式键值「行记录」双写）
+    csv      → md（网格表 + 行式键值「行记录」双写）
     pdf      → 直传（不转换；Dify 原生解析保留版式与图片）
+
+表格**双写**的由来：Dify 的分段是「分隔符 + max_tokens」机械切分、不认表格结构
+（社区有 content-aware chunker 专门绕这一点）——大表网格会被拦腰切、表头留在
+上一个 chunk，行碎片 `| 甲 | 1 |` 缺列名语义，向量/关键词检索都吃亏。「行记录」
+段落每行自带「列名：值」、天然抗分段切断，网格表保留给人看与编辑。
 
 md / html 里引用**本地图片**（相对路径或裸文件名）时，图片必须随附上传
 （接口的 attachments 字段）：引用全部能解析到 → 内嵌；解析不到 → 转换报错，
@@ -95,8 +100,12 @@ def _decode_text(raw: bytes) -> str:
     raise ConvertError("文本解码失败：既不是 UTF-8 也不是 GB18030")
 
 
+def _cell_text(value) -> str:
+    return str(value if value is not None else "").replace("\n", " ").strip()
+
+
 def _escape_cell(value) -> str:
-    return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ").strip()
+    return _cell_text(value).replace("|", "\\|")
 
 
 def _rows_to_md(rows: list[list]) -> str:
@@ -112,11 +121,46 @@ def _rows_to_md(rows: list[list]) -> str:
     return "\n".join(lines)
 
 
+def _rows_to_records(rows: list[list]) -> str:
+    """行式键值展开（检索用）：每行一条「列名：值」记录，自带表头语义、抗分段切断。
+
+    首行是表头（与 :func:`_rows_to_md` 同口径）；空值格跳过、空表头回退「列N」。
+    """
+    norm = [[_cell_text(c) for c in row] for row in rows]
+    norm = [row for row in norm if any(row)]
+    if len(norm) < 2:
+        return ""
+    header, body = norm[0], norm[1:]
+    lines = []
+    for row in body:
+        pairs = []
+        for i, value in enumerate(row):
+            if not value:
+                continue
+            name = header[i] if i < len(header) and header[i] else f"列{i + 1}"
+            pairs.append(f"{name}：{value}")
+        if pairs:
+            lines.append("- " + "；".join(pairs))
+    return "\n".join(lines)
+
+
+def _tabular_md(rows: list[list]) -> str:
+    """表格双写：网格表（人看/可编辑）+ 行记录（检索），两段之间空行。"""
+    parts = []
+    table = _rows_to_md(rows)
+    if table:
+        parts.append(table)
+    records = _rows_to_records(rows)
+    if records:
+        parts.append("行记录：\n" + records)
+    return "\n\n".join(parts)
+
+
 def _csv_to_md(text: str) -> str:
     sample = text[:4096]
     delimiter = "\t" if ("\t" in sample and "," not in sample) else ","
     rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
-    return _rows_to_md(rows)
+    return _tabular_md(rows)
 
 
 def _xlsx_to_md(content: bytes) -> str:
@@ -132,8 +176,8 @@ def _xlsx_to_md(content: bytes) -> str:
     parts = []
     for sheet in data.get("sheets") or []:
         name = str(sheet.get("name") or "")
-        table = _rows_to_md(sheet.get("rows") or [])
-        parts.append(f"## {name}\n\n{table}" if table else f"## {name}")
+        body = _tabular_md(sheet.get("rows") or [])
+        parts.append(f"## {name}\n\n{body}" if body else f"## {name}")
     return "\n\n".join(parts)
 
 

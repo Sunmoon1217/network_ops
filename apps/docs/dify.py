@@ -79,8 +79,32 @@ def create_document_by_file(filename: str, content: bytes, content_type: str = "
 
 
 def _create_payload() -> dict:
+    """建文档的 data 载荷：索引方式 + 分段规则。
+
+    分段规则默认 ``automatic``；``DIFY_PROCESS_MODE=custom`` 时按
+    ``DIFY_SEGMENT_SEPARATOR``（支持 ``\n`` ``\t`` 转义）与
+    ``DIFY_SEGMENT_MAX_TOKENS`` 自定义——表格类文档常用「按行切 + 小上限」
+    缓解机械分段拦腰切断表格（表头丢失问题见 docs.convert 模块注释）。
+    预清洗保留 remove_extra_spaces、**关掉 remove_urls_emails**：运维文档里
+    URL / 邮箱本身可能是检索目标，不该被清掉。
+    """
     cfg = _config()
-    return {"indexing_technique": cfg.get("indexing_technique") or "high_quality", "process_rule": {"mode": "automatic"}}
+    payload = {"indexing_technique": cfg.get("indexing_technique") or "high_quality"}
+    if (cfg.get("process_mode") or "automatic") == "custom":
+        separator = str(cfg.get("segment_separator") or "\n").replace("\\n", "\n").replace("\\t", "\t")
+        payload["process_rule"] = {
+            "mode": "custom",
+            "rules": {
+                "pre_processing_rules": [
+                    {"id": "remove_extra_spaces", "enabled": True},
+                    {"id": "remove_urls_emails", "enabled": False},
+                ],
+                "segmentation": {"separator": separator, "max_tokens": int(cfg.get("segment_max_tokens") or 500)},
+            },
+        }
+    else:
+        payload["process_rule"] = {"mode": "automatic"}
+    return payload
 
 
 def create_document_by_text(name: str, text: str) -> dict:

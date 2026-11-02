@@ -197,3 +197,33 @@ def test_xlsx_with_corrupted_styles_survives():
     assert out.target_format == "md"
     assert "## 数据" in out.text
     assert "甲" in out.text and "2024-01-01" in out.text  # 单元格值与日期都没丢
+
+
+# ---------------------------------------------------------------------------
+# 表格双写：网格表（人看）+ 行记录（检索，每行自带列名、抗分段切断）
+# ---------------------------------------------------------------------------
+
+
+def test_csv_dual_writes_grid_and_records():
+    out = convert("表.csv", "名称,IP\nFW01,10.0.0.1\n".encode("utf-8"))
+    assert "| 名称 | IP |" in out.text  # 网格表保留
+    assert "行记录：" in out.text
+    assert "- 名称：FW01；IP：10.0.0.1" in out.text  # 每行自带列名
+
+
+def test_xlsx_dual_writes_records_per_sheet():
+    out = convert("设备.xlsx", _xlsx_bytes({"主表": [["名称", "IP"], ["FW01", "10.0.0.1"]], "附表": [["x"], ["y"]]}))
+    assert out.text.count("行记录：") == 2
+    assert "- 名称：FW01；IP：10.0.0.1" in out.text
+
+
+def test_records_skip_empty_cells_and_fallback_header():
+    out = convert("表.csv", "名称,,IP\nFW01,,10.0.0.1\n,,\n只名,有值,\n".encode("utf-8"))
+    assert "- 名称：FW01；IP：10.0.0.1" in out.text  # 空值格跳过
+    assert "- 名称：只名；列2：有值" in out.text  # 空表头回退「列N」
+    assert "- \n" not in out.text  # 全空行不产出记录
+
+
+def test_records_not_written_for_table_without_data_rows():
+    out = convert("表.csv", "名称,IP\n".encode("utf-8"))
+    assert "行记录：" not in out.text
