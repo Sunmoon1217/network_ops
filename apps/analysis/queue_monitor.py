@@ -194,7 +194,7 @@ def evaluate(stats: dict, thresholds: dict | None = None) -> list[dict]:
 
 def _celery_brief(raw) -> dict:
     """broker 队列一条消息（JSON + base64 body）→ 任务名/id/参数摘要；解不动就原样截断。"""
-    brief = {"task": None, "id": None, "args": None, "decode_error": False}
+    brief: dict[str, str | bool | None] = {"task": None, "id": None, "args": None, "decode_error": False}
     try:
         envelope = json.loads(raw)
         headers = envelope.get("headers") or {}
@@ -216,7 +216,7 @@ def _clip(text: str, limit: int = 120) -> str:
 def _stream_entry(client, entry_id) -> dict:
     """按消息 ID 取 Stream 条目摘要（device_id / hostname）；取不到给空。"""
     entry_id = as_str(entry_id)  # bytes 的 str() 会拼出 "b'...'" 伪 ID → XRANGE 报错
-    info = {"id": entry_id, "device_id": None, "hostname": None}
+    info: dict[str, str | int | None] = {"id": entry_id, "device_id": None, "hostname": None}
     try:
         rows = client.xrange(STREAM, min=entry_id, max=entry_id) or []
     except Exception:

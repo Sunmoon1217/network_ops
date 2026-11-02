@@ -26,6 +26,9 @@ from __future__ import annotations
 
 import time
 from logging import getLogger
+from typing import Any, cast
+
+from celery.app.control import Inspect
 
 from netops.celery import app as celery_app
 
@@ -81,6 +84,18 @@ def _workers(stats: dict, ping: dict) -> list[dict]:
     return rows
 
 
+def _make_inspector(timeout: float, limit: int | None = None) -> Inspect:
+    """构建 inspect 广播客户端，等价于 ``celery_app.control.inspect(timeout=..., limit=...)``。
+
+    不直写而包一层的原因（stub 失真，不是代码问题）：celery-stubs 0.1.3 把
+    ``Celery.control`` 与 ``Control.inspect`` 都声明成普通方法，而真身是 kombu 的
+    ``cached_property``（后者解出来还是个绑定好 app 的可调用子类）——pyrefly 按 stub
+    把 ``celery_app.control`` 当成 FunctionType，直写会误报 missing-attribute。
+    cast 只绕过这个误报，运行时行为与直写完全一致。
+    """
+    return cast(Inspect, cast(Any, celery_app.control).inspect(timeout=timeout, limit=limit))
+
+
 def collect(inspector=None) -> dict:
     """采集一轮 Celery worker / 任务全貌（只读）；broker 无应答降级为 ok=False。
 
@@ -91,7 +106,7 @@ def collect(inspector=None) -> dict:
     后续调用带 ``limit=len(ping)``：收满应答立即返回，不再空等。
     """
     injected = inspector is not None
-    inspector = inspector or celery_app.control.inspect(timeout=INSPECT_TIMEOUT)
+    inspector = inspector or _make_inspector(INSPECT_TIMEOUT)
     stats: dict = {
         "checked_at": time.time(),
         "ok": True,
@@ -123,16 +138,14 @@ def collect(inspector=None) -> dict:
         return stats
     if not injected:
         # limit=worker 数：收满应答立即返回（语义见 docstring）
-        inspector = celery_app.control.inspect(timeout=INSPECT_TIMEOUT, limit=len(ping))
+        inspector = _make_inspector(INSPECT_TIMEOUT, limit=len(ping))
 
     stats["workers"] = _workers(safe(inspector.stats, {}) or {}, ping)
     now = time.time()
     for worker, tasks in (safe(inspector.active, {}) or {}).items():
         for task in tasks or []:
             started = float(task.get("time_start") or 0)
-            stats["active"].append(
-                _task_brief(task, {"started": started, "runtime": round(now - started, 1) if started else None})
-            )
+            stats["active"].append(_task_brief(task, {"started": started, "runtime": round(now - started, 1) if started else None}))
     for worker, tasks in (safe(inspector.reserved, {}) or {}).items():
         for task in tasks or []:
             stats["reserved"].append(_task_brief(task))
