@@ -2,8 +2,8 @@
 import { h, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
-// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心
-import { DataAnalysis, Connection, Timer } from '@element-plus/icons-vue'
+// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心 / 表格编辑器
+import { DataAnalysis, Connection, Timer, Grid } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
 import {
@@ -79,6 +79,7 @@ const menuOptions: MenuItem[] = [
       { index: '/tools/dns-query', label: 'DNS 查询', icon: renderIcon(IconDns) },
       { index: '/tools/internet-asset', label: '互联网资产分析', icon: renderIcon(DataAnalysis) },
       { index: '/tools/parser-mapping', label: '解析映射', icon: renderIcon(Connection) },
+      { index: '/tools/spreadsheet', label: '表格编辑器', icon: renderIcon(Grid) },
     ],
   },
 ]
