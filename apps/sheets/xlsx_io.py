@@ -2,7 +2,8 @@
 
 data 结构见 ``sheets.models.Spreadsheet`` 的文档串；本模块负责两件事：
 
-- ``parse_xlsx``：上传的 xlsx → data（每张表的第 1 行即表头行，尾部空行/空列裁掉）；
+- ``parse_xlsx``：上传的 xlsx → data（每张表的第 1 行即表头行；**合并单元格拆分
+  填充**——区域内每格写上左上角的值；尾部空行/空列裁掉）；
 - ``build_xlsx``：data → xlsx 字节串（导出当前版本或历史版本共用）。
 
 ``parse_xlsx`` 是**两层解析**：先正常走 openpyxl；失败则降级为「跳过样式表」重试——
@@ -12,6 +13,8 @@ patternFill/gradientFill 的空 ``<fill/>``，openpyxl 的 apply_stylesheet 直�
 降级路径自扫 numFmt 保住日期识别（日期格不会退化成序列号），其余样式全部放弃。
 """
 
+import re
+import zipfile
 from datetime import date, datetime, time
 from io import BytesIO
 from xml.etree import ElementTree
@@ -20,6 +23,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.reader import excel as openpyxl_excel
 from openpyxl.styles.numbers import BUILTIN_FORMATS, is_date_format, is_timedelta_format
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import range_boundaries
 
 # 单元格字符数上限（Excel 自身的上限），导出超限 openpyxl 会直接抛错，提前在这里兜住
 MAX_CELL_STR_LEN = 32767
@@ -27,6 +31,7 @@ MAX_CELL_STR_LEN = 32767
 MAX_COL_WIDTH = 60
 
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+REL_ATTR = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 STYLES_PATH = "xl/styles.xml"
 
 
@@ -53,11 +58,62 @@ def _trim(rows):
     return [row[:width] for row in rows]
 
 
-def _extract_rows(wb) -> dict:
+def _merged_ranges_by_name(file) -> dict:
+    """自扫 zip 提取每张表（按名字）的合并单元格区域，返回 ``{表名: [(min_row, min_col, max_row, max_col)]}``（1 基）。
+
+    不走 openpyxl：只读模式根本不暴露合并区域（``ReadOnlyWorksheet`` 没有 merged_cells），
+    而合并信息就在 sheet XML 的 ``<mergeCell ref="A1:B2"/>`` 里——正则只认这个标签，
+    不整棵解析大 sheet XML；样式表坏不坏也与此无关。任何失败都退化为「无合并」，不挡解析。
+    """
+    out: dict = {}
+    try:
+        zf = zipfile.ZipFile(file)
+        try:
+            rel_ns = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+            wb_root = ElementTree.fromstring(zf.read("xl/workbook.xml"))
+            rels_root = ElementTree.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+            rels = {rel.get("Id"): rel.get("Target", "") for rel in rels_root.iter(f"{rel_ns}Relationship")}
+            for sheet in wb_root.iter(f"{SHEET_NS}sheet"):
+                target = rels.get(sheet.get(REL_ATTR), "").lstrip("/")
+                if not target.startswith("xl/"):
+                    target = "xl/" + target
+                if "worksheets/" not in target:  # chartsheet 等不进 wb.worksheets，跳过保持对齐
+                    continue
+                ranges = []
+                for ref in re.findall(rb'<mergeCell\b[^>]*ref="([A-Z]+\d+:[A-Z]+\d+)"', zf.read(target)):
+                    bounds = range_boundaries(ref.decode())
+                    if bounds:
+                        min_col, min_row, max_col, max_row = bounds
+                        ranges.append((min_row, min_col, max_row, max_col))
+                out[sheet.get("name")] = ranges
+        finally:
+            zf.close()
+    except Exception:
+        return {}
+    return out
+
+
+def _fill_merged(rows: list, ranges) -> None:
+    """合并单元格拆分填充：区域内每格写上左上角的值（Excel 合并语义 = 区域共享一个值）。"""
+    for min_row, min_col, max_row, max_col in ranges:
+        while len(rows) < max_row:
+            rows.append([])
+        anchor = rows[min_row - 1][min_col - 1] if len(rows[min_row - 1]) >= min_col else None
+        for r in range(min_row - 1, max_row):
+            row = rows[r]
+            while len(row) < max_col:
+                row.append(None)
+            for c in range(min_col - 1, max_col):
+                row[c] = anchor
+
+
+def _extract_rows(wb, merged: dict) -> dict:
     try:
         sheets = []
         for ws in wb.worksheets:
-            rows = _trim([[_cell(v) for v in row] for row in ws.iter_rows(values_only=True)])
+            rows = [[_cell(v) for v in row] for row in ws.iter_rows(values_only=True)]
+            _fill_merged(rows, merged.get(ws.title) or [])
+            rows = _trim(rows)
             sheets.append({"name": ws.title, "rows": rows})
         return {"sheets": sheets}
     finally:
@@ -96,11 +152,11 @@ def _lenient_date_formats(styles_bytes: bytes) -> tuple[dict, dict]:
     return date_formats, timedelta_formats
 
 
-def _load_values(file, lenient_styles: bool) -> dict:
+def _load_values(file, lenient_styles: bool, merged: dict) -> dict:
     """openpyxl 解析单元格值；``lenient_styles`` 时跳过样式表解析（日期识别自扫兜底）。"""
     if not lenient_styles:
         file.seek(0)
-        return _extract_rows(load_workbook(file, read_only=True, data_only=True))
+        return _extract_rows(load_workbook(file, read_only=True, data_only=True), merged)
 
     real_apply = openpyxl_excel.apply_stylesheet
 
@@ -124,17 +180,19 @@ def _load_values(file, lenient_styles: bool) -> dict:
     openpyxl_excel.apply_stylesheet = apply_stylesheet_lenient
     try:
         file.seek(0)
-        return _extract_rows(load_workbook(file, read_only=True, data_only=True))
+        return _extract_rows(load_workbook(file, read_only=True, data_only=True), merged)
     finally:
         openpyxl_excel.apply_stylesheet = real_apply
 
 
 def parse_xlsx(file) -> dict:
-    """把上传的 xlsx 文件对象解析成 data 结构（样式表损坏自动降级）。"""
+    """把上传的 xlsx 文件对象解析成 data 结构（合并单元格拆分填充；样式表损坏自动降级）。"""
+    file.seek(0)
+    merged = _merged_ranges_by_name(file)
     try:
-        return _load_values(file, lenient_styles=False)
+        return _load_values(file, lenient_styles=False, merged=merged)
     except Exception:
-        return _load_values(file, lenient_styles=True)
+        return _load_values(file, lenient_styles=True, merged=merged)
 
 
 def build_xlsx(data: dict) -> bytes:

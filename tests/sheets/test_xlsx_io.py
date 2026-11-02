@@ -109,3 +109,54 @@ def test_upload_with_corrupted_styles(operator_client):
 
     assert resp.status_code == 201
     assert resp.json()["data"] == {"sheets": [{"name": "数据", "rows": EXPECTED_ROWS}]}
+
+
+# ---------------------------------------------------------------------------
+# 合并单元格：拆分填充（区域内每格写上左上角的值）
+# ---------------------------------------------------------------------------
+
+
+def _build_merged_xlsx() -> BytesIO:
+    wb = Workbook()
+    ws0 = wb.active
+    ws0.title = "普通"
+    ws0.append(["a", "b"])
+    ws = wb.create_sheet("合并")
+    ws.append(["大标题", None, None])
+    ws.append(["甲", 1, None])
+    ws.append(["乙", None, "x"])
+    ws.merge_cells("A1:C1")  # 横向合并：标题铺满整行
+    ws.merge_cells("B2:B3")  # 纵向合并：1 铺满 B2:B3
+    buf = BytesIO()
+    wb.save(buf)
+    return buf
+
+
+MERGED_ROWS = [
+    ["大标题", "大标题", "大标题"],
+    ["甲", 1, None],
+    ["乙", 1, "x"],
+]
+
+
+def test_parse_unmerges_and_fills_merged_cells():
+    data = parse_xlsx(_build_merged_xlsx())
+
+    assert data == {"sheets": [{"name": "普通", "rows": [["a", "b"]]}, {"name": "合并", "rows": MERGED_ROWS}]}
+
+
+def test_parse_fills_merged_even_with_corrupted_styles():
+    """降级路径（样式损坏）也走同一套合并填充——合并信息与样式无关。"""
+    data = parse_xlsx(_corrupt_styles(_build_merged_xlsx()))
+
+    assert data["sheets"][1] == {"name": "合并", "rows": MERGED_ROWS}
+
+
+@pytest.mark.django_db
+def test_upload_merged_cells_filled(operator_client):
+    f = SimpleUploadedFile("合并.xlsx", _build_merged_xlsx().getvalue())
+
+    resp = operator_client.post("/api/sheets/upload/", {"file": f}, format="multipart")
+
+    assert resp.status_code == 201
+    assert resp.json()["data"]["sheets"][1]["rows"] == MERGED_ROWS
