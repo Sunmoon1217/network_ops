@@ -84,3 +84,48 @@ def test_network_error_wrapped(monkeypatch):
     monkeypatch.setattr("docs.dify.requests.request", fake_request)
     with pytest.raises(dify.DifyError, match="请求失败"):
         dify.indexing_status("b-1")
+
+
+@override_settings(DIFY_CONFIG=CFG)
+def test_create_by_text_request_shape(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, headers=None, timeout=None, **kwargs):
+        seen.update(method=method, url=url, headers=headers, **kwargs)
+        return _Resp(200, {"document": {"id": "doc-2", "indexing_status": "waiting"}, "batch": "b-2"})
+
+    monkeypatch.setattr("docs.dify.requests.request", fake_request)
+    body = dify.create_document_by_text("报告.md", "内容")
+    assert body["batch"] == "b-2"
+    # Dify 官方路径是下划线 create_by_text，别"统一"成连字符
+    assert seen["url"] == "https://dify.example.com/v1/datasets/ds-1/document/create_by_text"
+    assert seen["json"] == {"name": "报告.md", "text": "内容", "indexing_technique": "high_quality", "process_rule": {"mode": "automatic"}}
+
+
+@override_settings(DIFY_CONFIG=CFG)
+def test_update_by_text_request_shape(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(method=method, url=url, **kwargs)
+        return _Resp(200, {"document": {"id": "doc-2"}, "batch": "b-3"})
+
+    monkeypatch.setattr("docs.dify.requests.request", fake_request)
+    dify.update_document_by_text("doc-2", "报告.md", "新内容")
+    assert seen["url"] == "https://dify.example.com/v1/datasets/ds-1/documents/doc-2/update_by-text"
+    assert seen["json"] == {"name": "报告.md", "text": "新内容"}
+
+
+@override_settings(DIFY_CONFIG=CFG)
+def test_update_by_file_request_shape(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(method=method, url=url, **kwargs)
+        return _Resp(200, {"document": {"id": "doc-2"}, "batch": "b-4"})
+
+    monkeypatch.setattr("docs.dify.requests.request", fake_request)
+    dify.update_document_by_file("doc-2", "手册.pdf", b"%PDF", "application/pdf")
+    assert seen["url"] == "https://dify.example.com/v1/datasets/ds-1/documents/doc-2/update-by-file"
+    filename, content, content_type = seen["files"]["file"]
+    assert (filename, content, content_type) == ("手册.pdf", b"%PDF", "application/pdf")

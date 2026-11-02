@@ -3,8 +3,13 @@
 对接自托管 Dify 的「知识库 API」（``{DIFY_API_BASE_URL}/datasets/...``，
 鉴权 ``Authorization: Bearer {DIFY_API_KEY}``）：
 
-- ``create_document_by_file``：``POST /datasets/{dataset_id}/document/create-by-file``
-  （multipart：``file`` + ``data`` JSON），**一次只收一个文件**；
+- 建文档：``create_document_by_text``（``document/create_by_text``）/
+  ``create_document_by_file``（``document/create-by-file``，multipart：``file``
+  + ``data`` JSON，**一次只收一个文件**）——路径下划线/连字符混用是 Dify 官方
+  接口原样，别"顺手统一"；
+- 更新已推送文档：``update_document_by_text`` / ``update_document_by_file``
+  （``documents/{document_id}/update_by-text`` / ``update-by-file``）——按
+  document_id **原地更新**，不产生重复文档；
 - ``indexing_status``：``GET /datasets/{dataset_id}/documents/{batch}/indexing-status``
   （索引进度：waiting / indexing / completed / error）。
 
@@ -68,12 +73,43 @@ def create_document_by_file(filename: str, content: bytes, content_type: str = "
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
     url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/document/create-by-file"
-    data = {
-        "data": json.dumps(
-            {"indexing_technique": cfg.get("indexing_technique") or "high_quality", "process_rule": {"mode": "automatic"}},
-            ensure_ascii=False,
-        )
-    }
+    data = {"data": json.dumps(_create_payload(), ensure_ascii=False)}
+    files = {"file": (filename, content, content_type)}
+    return _request("POST", url, data=data, files=files)
+
+
+def _create_payload() -> dict:
+    cfg = _config()
+    return {"indexing_technique": cfg.get("indexing_technique") or "high_quality", "process_rule": {"mode": "automatic"}}
+
+
+def create_document_by_text(name: str, text: str) -> dict:
+    """以文本建文档（md / html 产物走这条），返回 ``{"document": {...}, "batch": "..."}``。"""
+    cfg = _config()
+    if not is_configured():
+        raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
+    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/document/create_by_text"
+    body = {"name": name, "text": text, **_create_payload()}
+    return _request("POST", url, json=body)
+
+
+def update_document_by_text(document_id: str, name: str, text: str) -> dict:
+    """按 document_id 原地更新文档内容（文本），返回 ``{"document": {...}, "batch": "..."}``。"""
+    cfg = _config()
+    if not is_configured():
+        raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
+    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update_by-text"
+    body = {"name": name, "text": text}
+    return _request("POST", url, json=body)
+
+
+def update_document_by_file(document_id: str, filename: str, content: bytes, content_type: str = "application/octet-stream") -> dict:
+    """按 document_id 原地更新文档内容（文件，pdf 换源文件后走这条）。"""
+    cfg = _config()
+    if not is_configured():
+        raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
+    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update-by-file"
+    data = {"data": json.dumps(_create_payload(), ensure_ascii=False)}
     files = {"file": (filename, content, content_type)}
     return _request("POST", url, data=data, files=files)
 

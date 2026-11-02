@@ -76,7 +76,10 @@ class Document(models.Model):
       ``push_failed``（推送失败，可重试，``error`` 记原因）；
       转换失败不落记录、直接在接口层返回 400；
     - ``dify_indexing_status`` 由 ``/status/`` 接口从 Dify 的 indexing-status
-      同步（waiting / indexing / completed / error）。
+      同步（waiting / indexing / completed / error）；
+    - ``edited``：产物被人工编辑过（区别于纯转换产出）；``pending_sync``：产物
+      已改但知识库里的还是旧的，等手动重推（已推送文档走 Dify update 接口原地
+      更新，不产生重复文档）。
     """
 
     STATUS_CONVERTED = "converted"
@@ -99,6 +102,9 @@ class Document(models.Model):
     dify_document_id = models.CharField("Dify 文档 ID", max_length=64, blank=True, default="")
     dify_batch = models.CharField("Dify 批次号", max_length=64, blank=True, default="")
     dify_indexing_status = models.CharField("Dify 索引状态", max_length=32, blank=True, default="")
+    latest_revision = models.PositiveIntegerField("最新版本号", default=0)
+    edited = models.BooleanField("人工修改", default=False)
+    pending_sync = models.BooleanField("待同步 Dify", default=False)
     pushed_at = models.DateTimeField("推送时间", null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+", verbose_name="创建人")
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+", verbose_name="最后操作人")
@@ -112,3 +118,36 @@ class Document(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.status})"
+
+
+class DocumentRevision(models.Model):
+    """文档产物的一次保存快照（查看 / 回滚都基于快照）。
+
+    - ``revision``：文档内自增版本号（锚点是 :class:`Document.latest_revision`）——
+      初始转换是 1，之后每次保存编辑 / 重新转换 / 恢复历史都 +1（恢复以新版本
+      落地，历史不被改写，语义同 :class:`SpreadsheetRevision`）；
+    - ``converted``：该版本的**转换产物**全量快照（md / html；pdf 直传无产物）。
+      只快照产物不快照源文件：替换源文件是显式动作，回滚的是知识库要收的内容；
+    - ``edited``：该版本是人工编辑产物（True）还是转换产出（False）；
+    - ``target_format`` / ``has_images`` 随版本记（重新转换可能从 md 变 html）。
+    """
+
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="revisions", verbose_name="文档")
+    revision = models.PositiveIntegerField("版本号")
+    note = models.CharField("变更说明", max_length=200, blank=True, default="")
+    converted = models.TextField("产物快照", blank=True, default="")
+    target_format = models.CharField("产物格式", max_length=8)
+    has_images = models.BooleanField("含图片", default=False)
+    latest_revision = models.PositiveIntegerField("最新版本号", default=0)
+    edited = models.BooleanField("人工修改", default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+", verbose_name="操作人")
+    created_at = models.DateTimeField("保存时间", auto_now_add=True)
+
+    class Meta:
+        ordering = ["-revision"]
+        constraints = [models.UniqueConstraint(fields=["document", "revision"], name="uniq_document_revision")]
+        verbose_name = "文档版本"
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f"{self.document_id} v{self.revision}"
