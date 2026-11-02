@@ -21,8 +21,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from assets.api.serializers import DeviceSerializer
 from assets.models import Device, DeviceGroup
-from core.mcp_utils import with_db_lifecycle
-from netops.mcp_server import mcp
+from netops.mcp_server import mcp, with_db_lifecycle
 
 
 class DeviceInfo(TypedDict):
