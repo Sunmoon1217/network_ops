@@ -40,7 +40,7 @@ from logging import getLogger
 
 from django.conf import settings
 
-from analysis.access_stream import GROUP, HEARTBEAT_KEY, STREAM, get_redis
+from analysis.access_stream import GROUP, HEARTBEAT_KEY, STREAM, as_str, get_redis
 
 logger = getLogger(__name__)
 
@@ -81,7 +81,7 @@ def _stream_stats(client) -> dict:
         # 键不存在（XINFO 对缺失键报错）或旧版 redis：按无组处理
         groups = []
     for group in groups or []:
-        if group.get("name") != GROUP:
+        if as_str(group.get("name")) != GROUP:
             continue
         info["pending"] = int(group.get("pending") or 0)
         info["consumers"] = int(group.get("consumers") or 0)
@@ -93,7 +93,7 @@ def _stream_stats(client) -> dict:
             top = sorted(entries, key=lambda e: int(e.get("times_delivered") or 0), reverse=True)[:5]
             info["top_pending"] = [
                 {
-                    "id": str(e.get("message_id")),
+                    "id": as_str(e.get("message_id")),
                     "idle_ms": int(e.get("time_since_delivered") or 0),
                     "deliveries": int(e.get("times_delivered") or 0),
                 }
@@ -213,8 +213,9 @@ def _clip(text: str, limit: int = 120) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def _stream_entry(client, entry_id: str) -> dict:
+def _stream_entry(client, entry_id) -> dict:
     """按消息 ID 取 Stream 条目摘要（device_id / hostname）；取不到给空。"""
+    entry_id = as_str(entry_id)  # bytes 的 str() 会拼出 "b'...'" 伪 ID → XRANGE 报错
     info = {"id": entry_id, "device_id": None, "hostname": None}
     try:
         rows = client.xrange(STREAM, min=entry_id, max=entry_id) or []
@@ -224,7 +225,7 @@ def _stream_entry(client, entry_id: str) -> dict:
     for _id, fields in rows:
         raw_device = fields.get(b"device_id", fields.get("device_id"))
         raw_host = fields.get(b"hostname", fields.get("hostname"))
-        info["device_id"] = int(raw_device) if raw_device is not None else None
+        info["device_id"] = int(as_str(raw_device)) if raw_device is not None else None
         info["hostname"] = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
     return info
 
@@ -259,7 +260,7 @@ def collect_backlog(client=None, limit: int = 20) -> dict:
         # PEL：已投递未确认（毒消息在这里）——逐条补设备名
         entries = client.xpending_range(STREAM, GROUP, min="-", max="+", count=limit) or []
         for entry in sorted(entries, key=lambda e: int(e.get("times_delivered") or 0), reverse=True):
-            info = _stream_entry(client, str(entry.get("message_id")))
+            info = _stream_entry(client, as_str(entry.get("message_id")))
             info.update(
                 {
                     "idle_ms": int(entry.get("time_since_delivered") or 0),
@@ -271,13 +272,14 @@ def collect_backlog(client=None, limit: int = 20) -> dict:
         last_delivered = "0-0"
         try:
             for group in client.xinfo_groups(STREAM) or []:
-                if group.get("name") == GROUP:
-                    last_delivered = group.get("last-delivered") or "0-0"
+                if as_str(group.get("name")) == GROUP:
+                    raw_last = group.get("last-delivered-id", group.get("last-delivered"))
+                    last_delivered = as_str(raw_last) or "0-0"
         except Exception:
             logger.warning("XINFO GROUPS %s 读取失败（按无组处理）", STREAM, exc_info=True)
         undelivered = client.xrange(STREAM, min=f"({last_delivered}", max="+", count=limit) or []
         for entry_id, _fields in undelivered:
-            stats["stream"]["undelivered"].append(_stream_entry(client, str(entry_id)))
+            stats["stream"]["undelivered"].append(_stream_entry(client, as_str(entry_id)))
     except Exception as exc:
         logger.warning("积压明细采集失败", exc_info=True)
         stats["redis_ok"] = False

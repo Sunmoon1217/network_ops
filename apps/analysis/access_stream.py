@@ -46,6 +46,19 @@ GROUP = "access_flow_consumers"
 HEARTBEAT_KEY = "access_flow:heartbeat"
 
 
+def as_str(value) -> str:
+    """redis 响应值统一转 str。
+
+    本模块的 client 是 ``decode_responses=False``（消息体按 bytes 处理，见 get_redis），
+    于是组名 / 消息 ID / 字段值全是 bytes——直接与 str 常量比较恒为 False（组永远
+    匹配不上），``str(bytes)`` 又会得到 ``"b'...'"`` 伪 ID（喂给 XRANGE 即报
+    Invalid stream ID）。凡读 redis 响应做比较 / 拼接 / 展示的地方，一律过这里。
+    """
+    if value is None:
+        return ""
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
 @lru_cache(maxsize=1)
 def get_redis():
     """进程内共享一个连接池（decode_responses=False：消息体按 bytes 处理）。
@@ -77,7 +90,7 @@ def backlog() -> int:
     try:
         client = get_redis()
         for group in client.xinfo_groups(STREAM):
-            if group.get("name") != GROUP:
+            if as_str(group.get("name")) != GROUP:
                 continue
             lag = group.get("lag")
             if lag is not None:

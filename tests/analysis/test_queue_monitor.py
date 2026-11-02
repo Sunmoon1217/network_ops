@@ -52,10 +52,12 @@ class FakeRedis:
     def xinfo_groups(self, stream):
         if self.groups is None:
             raise LookupError("no such key")
-        return self.groups
+        # 真实 redis-py（decode_responses=False）的组名 / 消息 ID 都是 bytes——
+        # 假 client 若按 str 返回，代码里的 bytes/str 比较 bug 就永远测不出来
+        return [{**g, "name": str(g.get("name", "")).encode()} for g in self.groups]
 
     def xpending_range(self, stream, group, min, max, count):
-        return self.pending_entries
+        return [{**e, "message_id": str(e.get("message_id", "")).encode()} for e in self.pending_entries]
 
     def get(self, key):
         if isinstance(self.heartbeat, Exception):
@@ -119,6 +121,17 @@ def test_collect_ignores_foreign_groups_and_missing_key():
 
 
 @pytest.mark.django_db
+def test_collect_bytes_responses_match_group_and_clean_ids():
+    """回归：redis-py 返回 bytes——组名比较（b'g'=='g' 为 False）曾让组永远匹配不上、
+    lag 永远 None、背压永远 0；str(bytes) 又把消息 ID 拼成 \"b'...'\" 伪值。"""
+    client = _healthy_client(groups=[_group_info(lag=7, pending=1)], xlen=9)
+    stats = collect(client=client)
+    assert stats["stream"]["lag"] == 7  # 组匹配上了（bytes 组名被归一）
+    assert stats["stream"]["pending"] == 1
+    assert stats["alerts"] == [] or all("b'" not in a["message"] for a in stats["alerts"])
+
+
+@pytest.mark.django_db
 def test_collect_top_pending_sorted_by_deliveries():
     entries = [
         {"message_id": "1-0", "consumer": "a", "time_since_delivered": 1000, "times_delivered": 2},
@@ -130,7 +143,7 @@ def test_collect_top_pending_sorted_by_deliveries():
 
     top = stats["stream"]["top_pending"]
     assert [e["deliveries"] for e in top] == [13, 7, 2]
-    assert top[0]["id"] == "2-0"
+    assert top[0]["id"] == "2-0"  # bytes ID 已归一成干净 str，不是 "b'2-0'"
     # 重投 13 次 ≥ 阈值 10 → 毒消息 critical
     poison = [a for a in stats["alerts"] if a["code"] == "poison_message"]
     assert len(poison) == 1 and "2-0" in poison[0]["message"]

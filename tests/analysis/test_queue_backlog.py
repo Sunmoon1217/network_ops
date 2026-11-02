@@ -37,20 +37,28 @@ class FakeRedis:
         return self.queues.get(name, [])[start : end + 1]
 
     def xpending_range(self, stream, group, min, max, count):
-        return self.pending[:count]
+        # 真实 redis-py（decode_responses=False）：message_id 是 bytes
+        return [{**e, "message_id": str(e.get("message_id", "")).encode()} for e in self.pending[:count]]
 
     def xinfo_groups(self, stream):
         if not self.groups:
             raise LookupError("no such key")
-        return [{"name": GROUP, "last-delivered": self.last_delivered, "lag": len(self.undelivered)}]
+        # 真实 redis-py：name / last-delivered-id 都是 bytes，且字段名是 last-delivered-id
+        return [{
+            "name": GROUP.encode(),
+            "last-delivered-id": self.last_delivered.encode(),
+            "lag": len(self.undelivered),
+        }]
 
     def xrange(self, stream, min="-", max="+", count=None):
         self.xrange_calls.append(min)
         if min.startswith("("):
             rows = self.undelivered  # 积压段：fake 不做区间过滤，由调用方的 min 标记断言
         else:
-            # 按 ID 精确取（_stream_entry 补设备名用）
-            rows = [(i, f) for i, f in self.undelivered if i == min]
+            # 按 ID 精确取（_stream_entry 补设备名用）；真实返回的 id 是 bytes
+            rows = [(i.encode(), f) for i, f in self.undelivered if i == min]
+            return rows[:count] if count else rows
+        rows = [(i.encode(), f) for i, f in rows]
         return rows[:count] if count else rows
 
 
@@ -127,7 +135,7 @@ def test_undelivered_uses_exclusive_last_delivered():
     client = FakeRedis(last_delivered="100-0", undelivered=[("101-0", _fields(5, "NET-FW03"))])
     stats = collect_backlog(client=client, limit=20)
     assert client.xrange_calls[0] == "(100-0"  # 排他区间标记
-    assert stats["stream"]["undelivered"] == [{"id": "101-0", "device_id": 5, "hostname": "NET-FW03"}]
+    assert stats["stream"]["undelivered"] == [{"id": "101-0", "device_id": 5, "hostname": "NET-FW03"}]  # id 不是 "b'101-0'"
 
 
 def test_missing_group_gives_empty_undelivered():
