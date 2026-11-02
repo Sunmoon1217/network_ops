@@ -61,7 +61,7 @@ export const TABLE_KEYS = {
   parserMapping: 'tools.parser-mapping.parsers', // 解析器映射主表 预留
   parserMappingMissing: 'tools.parser-mapping.missing-producers', // 契约缺口表 预留
   spreadsheetList: 'tools.spreadsheet', // 表格工作簿列表（/tools/spreadsheet）
-  // 表格编辑器的网格列是动态的（列随 xlsx 变），挂偏好会按列序错位，刻意不注册。
+  spreadsheetGrid: 'tools.spreadsheet.grid', // 表格编辑器·网格（动态列：列键 s<表序>c<列序>，列只追加不删插故键稳定）
   // 拓扑的 DeviceSelector 是弹窗选择列表，列宽偏好价值低，刻意不注册。
 } as const
 

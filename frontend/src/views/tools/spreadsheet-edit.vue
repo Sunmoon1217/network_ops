@@ -12,6 +12,7 @@ import {
 import PageLayout from '@/layout/PageLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataColumn from '@/components/DataColumn.vue'
+import { TABLE_KEYS } from '@/constants/tableKeys'
 import type {
   SheetChangeSummary,
   SheetCellValue,
@@ -60,6 +61,13 @@ const headerLabels = computed(() =>
 const bodyRows = computed(() =>
   sheetRows.value.slice(headerCount.value).map((cells, i) => ({ cells, gridRow: i + headerCount.value })),
 )
+
+/**
+ * 网格动态列的列键（列宽 / 列设置偏好的列标识）：按表分域（s<表序>）、按列序追加。
+ * 列只经「添加列」追加、从不删除/中间插入，键不会串位；隐藏列与列顺序走
+ * DataTable 的列设置弹窗（只影响展示，数据与导出顺序不动）。
+ */
+const gridColKey = (colIdx: number) => `s${activeIdx.value}c${colIdx}`
 
 const cellAt = (cells: SheetCellValue[], c: number): SheetCellValue => cells[c] ?? null
 const cellText = (v: SheetCellValue) => (v === null || v === undefined ? '' : String(v))
@@ -368,16 +376,18 @@ onBeforeRouteLeave(async () => {
       <div class="toolbar">
         <el-button size="small" @click="addRow">添加行</el-button>
         <el-button size="small" @click="openHeaderEditor">编辑表头</el-button>
-        <span class="hint">双击单元格编辑，回车/失焦提交、Esc 取消；蓝底格是未保存的修改；列名过长自动截断、悬停看全文</span>
+        <span class="hint">
+          双击单元格编辑，回车/失焦提交、Esc 取消；蓝底格是未保存的修改；列名过长自动截断、悬停看全文；右上「列设置」可隐藏列 / 拖拽调列序（仅展示，不动数据）
+        </span>
       </div>
 
       <div class="grid-wrap">
-        <DataTable :data="bodyRows" :loading="loading">
+        <DataTable :data="bodyRows" :loading="loading" :table-key="TABLE_KEYS.spreadsheetGrid">
           <DataColumn type="index" label="#" :width="56" fixed="left" />
           <DataColumn
             v-for="(label, colIdx) in headerLabels"
-            :key="`c${colIdx}`"
-            :column-key="`c${colIdx}`"
+            :key="gridColKey(colIdx)"
+            :column-key="gridColKey(colIdx)"
             :label="label"
             :min-width="130"
           >
