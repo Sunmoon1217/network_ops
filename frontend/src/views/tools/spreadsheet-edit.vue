@@ -21,9 +21,9 @@ import type {
 } from '@/types'
 
 // ---------------------------------------------------------------------------
-// 表格编辑器·工作簿编辑页：每个工作表一张网格（rows[0] 是表头行），双击单元格
-// 编辑、增删行；保存走后端 diff 落「全量快照 + 单元格级变更」的新版本，右侧抽屉
-// 是修改历史（查看差异 / 导出历史版本 / 回滚）。
+// 表格编辑器·工作簿编辑页：每个工作表一张网格，rows 的前 header_rows 行是表头
+// （多行表头），双击单元格编辑、增删行；保存走后端 diff 落「全量快照 + 单元格级
+// 变更」的新版本，右侧抽屉是修改历史（查看差异 / 导出历史版本 / 回滚）。
 // ---------------------------------------------------------------------------
 
 const route = useRoute()
@@ -41,13 +41,25 @@ const activeName = ref('')
 const activeIdx = computed(() => book.value?.sheets.findIndex((s) => s.name === activeName.value) ?? -1)
 const sheetRows = computed(() => (activeIdx.value >= 0 ? book.value!.sheets[activeIdx.value].rows : []))
 const colCount = computed(() => sheetRows.value.reduce((m, r) => Math.max(m, r.length), 0))
+/** 表头行数（多行表头）：data 里的 header_rows，缺省 1；展示时夹进实际行数 */
+const headerCount = computed(() => {
+  const sheet = activeIdx.value >= 0 ? book.value!.sheets[activeIdx.value] : null
+  return Math.min(Math.max(1, sheet?.header_rows ?? 1), sheetRows.value.length || 1)
+})
+/** 列名 = 该列各行表头的非空内容用「 / 」拼接（多行表头），全空回退「列 N」 */
 const headerLabels = computed(() =>
   Array.from({ length: colCount.value }, (_, c) => {
-    const v = sheetRows.value[0]?.[c]
-    return v === null || v === undefined || v === '' ? `列 ${c + 1}` : String(v)
+    const parts = sheetRows.value
+      .slice(0, headerCount.value)
+      .map((r) => r[c])
+      .filter((v) => v !== null && v !== undefined && v !== '')
+      .map((v) => String(v))
+    return parts.length ? parts.join(' / ') : `列 ${c + 1}`
   }),
 )
-const bodyRows = computed(() => sheetRows.value.slice(1).map((cells, i) => ({ cells, gridRow: i + 1 })))
+const bodyRows = computed(() =>
+  sheetRows.value.slice(headerCount.value).map((cells, i) => ({ cells, gridRow: i + headerCount.value })),
+)
 
 const cellAt = (cells: SheetCellValue[], c: number): SheetCellValue => cells[c] ?? null
 const cellText = (v: SheetCellValue) => (v === null || v === undefined ? '' : String(v))
@@ -115,25 +127,57 @@ const removeRow = (gridRow: number) => {
   dirty.value = true
 }
 
-// ── 表头编辑（改列名 + 添加列；rows[0] 即表头行） ──────────────────────────
+// ── 表头编辑（多行表头：纳入下一行 / 删行（≥1）/ 编辑内容 / 添加列） ─────────
 
 const headerVisible = ref(false)
-const headerDraft = ref<string[]>([])
+/** 对话框草稿：表头块各行（确定时整块写回） */
+const headerDraft = ref<SheetCellValue[][]>([])
+/** 草稿里从数据区纳入了几行表头（确定时这些行随表头块一起写回） */
+const headerConsumed = ref(0)
+
+const cloneRow = (row: SheetCellValue[], width: number): SheetCellValue[] => {
+  const copy = JSON.parse(JSON.stringify(row)) as SheetCellValue[]
+  while (copy.length < width) copy.push(null)
+  return copy
+}
 
 const openHeaderEditor = () => {
-  headerDraft.value = Array.from({ length: colCount.value }, (_, c) => cellText(sheetRows.value[0]?.[c] ?? null))
+  const width = colCount.value
+  headerDraft.value = sheetRows.value.slice(0, headerCount.value).map((r) => cloneRow(r, width))
+  if (headerDraft.value.length === 0) headerDraft.value.push(new Array(width).fill(null))
+  headerConsumed.value = 0
   headerVisible.value = true
 }
 
-const addColumn = () => {
-  headerDraft.value.push('')
+/** 指定多行为表头：把下一行数据行纳入表头（内容不动）；没有数据行就补一行空表头 */
+const addHeaderRow = () => {
+  const next = sheetRows.value[headerCount.value + headerConsumed.value]
+  if (next) {
+    headerDraft.value.push(cloneRow(next, colCount.value))
+    headerConsumed.value += 1
+  } else {
+    const width = Math.max(colCount.value, headerDraft.value[0]?.length ?? 0)
+    headerDraft.value.push(new Array(width).fill(null))
+  }
+}
+
+/** 删除表头行（整行删除）；至少保留 1 行表头 */
+const removeHeaderRow = (idx: number) => {
+  if (headerDraft.value.length <= 1) return
+  headerDraft.value.splice(idx, 1)
+}
+
+const addHeaderColumn = () => {
+  headerDraft.value.forEach((r) => r.push(null))
 }
 
 const commitHeader = () => {
   if (!book.value || activeIdx.value < 0) return
-  const rows = book.value.sheets[activeIdx.value].rows
-  if (rows.length === 0) rows.push([])
-  rows[0] = headerDraft.value.map((n) => (n.trim() === '' ? null : n.trim()))
+  const sheet = book.value.sheets[activeIdx.value]
+  // 表头块 + 纳入过的数据行整体替换为草稿：删除的行即消失、纳入的行原位进表头
+  sheet.rows.splice(0, headerCount.value + headerConsumed.value, ...headerDraft.value)
+  if (headerDraft.value.length > 1) sheet.header_rows = headerDraft.value.length
+  else delete sheet.header_rows
   headerVisible.value = false
   dirty.value = true
 }
@@ -233,6 +277,7 @@ const summaryText = (s: SheetChangeSummary) => {
   const parts = [`修改 ${s.cells_changed} 格`, `增 ${s.rows_added} 行`, `删 ${s.rows_removed} 行`]
   if (s.sheets_added) parts.push(`增 ${s.sheets_added} 张表`)
   if (s.sheets_removed) parts.push(`删 ${s.sheets_removed} 张表`)
+  if (s.header_rows_changed) parts.push(`表头行数变更 ${s.header_rows_changed} 张表`)
   return parts.join(' · ') + (s.truncated ? '（明细已截断）' : '')
 }
 
@@ -323,7 +368,7 @@ onBeforeRouteLeave(async () => {
       <div class="toolbar">
         <el-button size="small" @click="addRow">添加行</el-button>
         <el-button size="small" @click="openHeaderEditor">编辑表头</el-button>
-        <span class="hint">双击单元格编辑，回车/失焦提交、Esc 取消；蓝底格是未保存的修改</span>
+        <span class="hint">双击单元格编辑，回车/失焦提交、Esc 取消；蓝底格是未保存的修改；列名过长自动截断、悬停看全文</span>
       </div>
 
       <div class="grid-wrap">
@@ -336,6 +381,9 @@ onBeforeRouteLeave(async () => {
             :label="label"
             :min-width="130"
           >
+            <template #header>
+              <span class="header-cell" :title="label">{{ label }}</span>
+            </template>
             <template #default="{ row }">
               <el-input
                 v-if="isEditing(row.gridRow, colIdx)"
@@ -366,13 +414,25 @@ onBeforeRouteLeave(async () => {
     </div>
   </PageLayout>
 
-  <!-- 表头编辑：rows[0] 即表头行，留空的列名展示为「列 N」 -->
-  <el-dialog v-model="headerVisible" title="编辑表头" width="560px">
-    <div v-for="(draft, i) in headerDraft" :key="i" class="header-row">
-      <span class="header-col-no">第 {{ i + 1 }} 列</span>
-      <el-input v-model="headerDraft[i]" placeholder="列名（留空显示为「列 N」）" />
+  <!-- 表头编辑：多行表头块——每行可改内容/删除（至少留 1 行），可纳入下一行或加列 -->
+  <el-dialog v-model="headerVisible" title="编辑表头" width="760px">
+    <div class="header-hint">表头共 {{ headerDraft.length }} 行；列名取该列各行非空内容拼接，过长截断展示</div>
+    <div v-for="(draftRow, ri) in headerDraft" :key="ri" class="header-row">
+      <span class="header-col-no">第 {{ ri + 1 }} 行</span>
+      <el-input
+        v-for="(_, ci) in draftRow"
+        :key="ci"
+        class="header-cell-input"
+        :model-value="cellText(headerDraft[ri][ci])"
+        :placeholder="`列 ${ci + 1}`"
+        @update:model-value="(v) => (headerDraft[ri][ci] = v)"
+      />
+      <el-button link type="danger" :disabled="headerDraft.length <= 1" @click="removeHeaderRow(ri)">删除</el-button>
     </div>
-    <el-button size="small" @click="addColumn">＋ 添加列</el-button>
+    <div class="header-actions">
+      <el-button size="small" @click="addHeaderRow">＋ 增加表头行</el-button>
+      <el-button size="small" @click="addHeaderColumn">＋ 添加列</el-button>
+    </div>
     <template #footer>
       <el-button @click="headerVisible = false">取消</el-button>
       <el-button type="primary" @click="commitHeader">确定</el-button>
@@ -464,7 +524,12 @@ onBeforeRouteLeave(async () => {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cell-dirty { background: var(--el-color-primary-light-9); }
-.header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 列名截断展示（表头内容允许截断），全文在 title 悬停 */
+.header-cell { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.header-hint { margin-bottom: 10px; color: var(--el-text-color-secondary); font-size: 12px; }
+.header-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .header-col-no { width: 56px; flex-shrink: 0; color: var(--el-text-color-secondary); font-size: 12px; }
+.header-cell-input { width: 150px; }
+.header-actions { margin-top: 4px; }
 .rev-meta { display: flex; gap: 12px; margin-bottom: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>

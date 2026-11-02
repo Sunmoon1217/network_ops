@@ -3,9 +3,11 @@
 /** 单元格值：JSON 标量（空单元格为 null） */
 export type SheetCellValue = string | number | boolean | null
 
-/** 一张表的矩形网格；rows[0] 是表头行（列名），行/列都是定长数组 */
+/** 一张表的矩形网格；rows 的前 header_rows 行是表头行，其余是数据行 */
 export interface SheetData {
   name: string
+  /** 表头行数（多行表头）；缺省 1（单行表头不落键） */
+  header_rows?: number
   rows: SheetCellValue[][]
 }
 
@@ -38,10 +40,12 @@ export interface SheetChangeSummary {
   rows_removed: number
   sheets_added: number
   sheets_removed: number
+  /** 表头行数变更的表数；旧版本快照可能没有这个字段 */
+  header_rows_changed?: number
   truncated: boolean
 }
 
-/** 单元格级变更（row/col 是网格索引，row 0 即表头行） */
+/** 单元格级变更（row/col 是网格索引，含表头行在内） */
 export interface SheetCellChange {
   sheet: string
   row: number
