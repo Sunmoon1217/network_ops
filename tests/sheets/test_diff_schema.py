@@ -79,6 +79,23 @@ def test_diff_identical_is_empty():
     assert is_empty(summary)
 
 
+def test_diff_header_rows_change():
+    old = _data(("S1", [["a"], ["b"]]))  # 单行表头（不落键）
+    new = {"sheets": [{"name": "S1", "header_rows": 2, "rows": [["a"], ["b"]]}]}
+
+    changes, summary = diff_data(old, new)
+
+    # 只改表头行数、格子没动：进摘要、不进明细，且不算「无改动」
+    assert changes == []
+    assert summary["header_rows_changed"] == 1
+    assert summary["cells_changed"] == 0
+    assert not is_empty(summary)
+
+    # 显式 header_rows=1 与不落键等价（同样算表头行数变了）
+    _, summary = diff_data(new, {"sheets": [{"name": "S1", "header_rows": 1, "rows": [["a"], ["b"]]}]})
+    assert summary["header_rows_changed"] == 1
+
+
 # ---------------------------------------------------------------------------
 # schema
 # ---------------------------------------------------------------------------
@@ -88,6 +105,20 @@ def test_normalize_ok_and_cell_coercion():
     out = normalize_data({"sheets": [{"name": " S1 ", "rows": [["a", 1, True, None, 1.5]]}]})
 
     assert out == {"sheets": [{"name": "S1", "rows": [["a", 1, True, None, 1.5]]}]}
+    # 单行表头不落键
+    assert "header_rows" not in out["sheets"][0]
+
+
+def test_normalize_header_rows():
+    out = normalize_data({"sheets": [{"name": "S", "header_rows": 3, "rows": [["a"], ["b"], ["c"]]}]})
+
+    assert out["sheets"][0]["header_rows"] == 3
+
+
+@pytest.mark.parametrize("bad", [0, 11, "2", True, 2.5, None])
+def test_normalize_header_rows_rejects(bad):
+    with pytest.raises(DataError, match="表头行数|header_rows"):
+        normalize_data({"sheets": [{"name": "S", "header_rows": bad, "rows": [["a"]]}]})
 
 
 @pytest.mark.parametrize(

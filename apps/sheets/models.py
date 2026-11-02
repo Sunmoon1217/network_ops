@@ -10,7 +10,9 @@ class Spreadsheet(models.Model):
         {"sheets": [{"name": "Sheet1", "rows": [[单元格, ...], ...]}, ...]}
 
     - 单元格只能是 JSON 标量（str / int / float / bool / None）；
-    - ``rows`` 的第 1 行即表头行，整张表就是一张矩形网格，语义由使用者自己定义；
+    - ``rows`` 的前 ``header_rows`` 行是表头行（多行表头），其余是数据行——
+      ``header_rows`` 缺省 1（单行表头不落键）、上限见 ``sheets.schema.MAX_HEADER_ROWS``；
+    - 整张表就是一张矩形网格，语义由使用者自己定义；
     - 当前状态存这里；每次保存在 :class:`SpreadsheetRevision` 落一份全量快照
       + 单元格级 diff（修改历史与回滚都基于快照，导出历史版本也直接读快照）。
     """

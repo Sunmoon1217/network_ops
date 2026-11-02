@@ -196,3 +196,24 @@ def test_normal_user_is_read_only(normal_user, operator_client):
 @pytest.mark.django_db
 def test_unauthenticated_rejected():
     assert APIClient().get(LIST_URL).status_code == 401
+
+
+@pytest.mark.django_db
+def test_save_header_rows_change_creates_revision(operator_client):
+    """只改表头行数也要落版本（格子没动），原样再保存不建版本。"""
+    sp_id = _upload(operator_client).json()["id"]
+    data = operator_client.get(f"/api/sheets/{sp_id}/").json()["data"]
+
+    data["sheets"][0]["header_rows"] = 2
+    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": data, "note": "两行表头"}, format="json")
+
+    assert resp.status_code == 201
+    save = resp.json()
+    assert save["created"] is True
+    assert save["summary"]["header_rows_changed"] == 1
+    assert save["summary"]["cells_changed"] == 0
+
+    # 原样再保存：无改动、不建版本
+    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json")
+    assert resp.json()["created"] is False
+    assert SpreadsheetRevision.objects.filter(spreadsheet_id=sp_id).count() == 2

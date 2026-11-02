@@ -14,6 +14,7 @@ MAX_COLS = 512
 MAX_TOTAL_CELLS = 200000
 MAX_SHEET_NAME_LEN = 31  # Excel 自身的 sheet 名长度上限
 MAX_CELL_STR_LEN = 32767  # Excel 单元格字符上限
+MAX_HEADER_ROWS = 10  # 表头行数上限（多行表头；缺省 1 行、不落键）
 # Excel 不允许出现在 sheet 名里的字符
 INVALID_SHEET_NAME_CHARS = set("[]:*?/\\")
 
@@ -69,6 +70,13 @@ def normalize_data(payload) -> dict:
         if len(rows) > MAX_ROWS_PER_SHEET:
             raise DataError(f"表「{name}」：行数超过上限 {MAX_ROWS_PER_SHEET}")
 
+        # 多行表头：表头行数（1~10）；缺省 1 行时不落键（data 里没有该字段即单行表头）
+        header_rows = sheet.get("header_rows", 1)
+        if isinstance(header_rows, bool) or not isinstance(header_rows, int):
+            raise DataError(f"表「{name}」：header_rows 必须是整数")
+        if not 1 <= header_rows <= MAX_HEADER_ROWS:
+            raise DataError(f"表「{name}」：表头行数必须在 1~{MAX_HEADER_ROWS} 之间")
+
         out_rows = []
         for ri, row in enumerate(rows, start=1):
             if not isinstance(row, list):
@@ -79,5 +87,8 @@ def normalize_data(payload) -> dict:
             if total_cells > MAX_TOTAL_CELLS:
                 raise DataError(f"表格总单元格数超过上限 {MAX_TOTAL_CELLS}")
             out_rows.append([_norm_cell(c, f"表「{name}」第 {ri} 行") for c in row])
-        out_sheets.append({"name": name, "rows": out_rows})
+        out_sheet = {"name": name, "rows": out_rows}
+        if "header_rows" in sheet:
+            out_sheet["header_rows"] = header_rows
+        out_sheets.append(out_sheet)
     return {"sheets": out_sheets}
