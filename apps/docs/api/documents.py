@@ -31,7 +31,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from docs import dify
-from docs.convert import MAX_TEXT_BYTES, SOURCE_FORMATS, ConversionResult, ConvertError, convert
+from docs.convert import MAX_TEXT_BYTES, SOURCE_FORMATS, ConversionResult, ConvertError, convert, render_preview
 from docs.models import Document, DocumentRevision
 
 _PUSH_CONTENT_TYPES = {"md": "text/markdown", "html": "text/html", "pdf": "application/pdf"}
@@ -221,6 +221,15 @@ def document_detail(request, pk):
     except IntegrityError:
         return Response({"detail": "保存冲突：其他会话刚保存过，请刷新后重试"}, status=status.HTTP_409_CONFLICT)
     return Response({**_detail(doc), "revision": rev.revision}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+def document_preview(request, pk):
+    """查看用渲染产物：md 渲染成 html、html 原样（前端沙箱 iframe 展示）。"""
+    doc = get_object_or_404(Document, pk=pk)
+    if doc.target_format == "pdf":
+        return Response({"detail": "pdf 直传无产物，请下载源文件查看"}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({"html": render_preview(doc.converted, doc.target_format), "target_format": doc.target_format})
 
 
 @api_view(["GET"])

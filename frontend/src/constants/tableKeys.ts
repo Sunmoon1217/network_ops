@@ -46,6 +46,9 @@ export const TABLE_KEYS = {
   ipamAddresses: 'ipam.ip-addresses', // IP 地址 预留
   ipamTags: 'ipam.tags', // 标签 预留
 
+  // ── docs ─────────────────────────────────────────────────
+  docsKnowledge: 'docs.knowledge', // 知识库文档列表（/docs/knowledge）
+
   // ── tasks ────────────────────────────────────────────────
   taskList: 'tasks.list', // 任务列表 主表 预留
   taskStages: 'tasks.stages', // 任务详情展开的阶段表 预留

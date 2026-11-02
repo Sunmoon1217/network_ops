@@ -15,6 +15,7 @@ urlpatterns = [
     # 文档转换与 Dify 推送
     path("docs/documents/", documents.document_list, name="document-list"),
     path("docs/documents/<int:pk>/", documents.document_detail, name="document-detail"),
+    path("docs/documents/<int:pk>/preview/", documents.document_preview, name="document-preview"),
     path("docs/documents/<int:pk>/download/", documents.document_download, name="document-download"),
     path("docs/documents/<int:pk>/reconvert/", documents.document_reconvert, name="document-reconvert"),
     path("docs/documents/<int:pk>/revisions/", documents.revision_list, name="document-revision-list"),

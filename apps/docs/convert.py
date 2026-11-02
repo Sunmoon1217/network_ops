@@ -191,6 +191,16 @@ def _inline_local_images(text: str, atts: dict[str, bytes], is_html: bool) -> tu
 # ---------------------------------------------------------------------------
 
 
+def render_preview(text: str, target_format: str) -> str:
+    """查看用渲染：md 交给 markdown 库渲成 html（与转换同一套渲染），html 原样。
+
+    只用于**预览**（前端沙箱 iframe 展示），不落库、不影响推送产物。
+    """
+    if target_format == "html":
+        return text
+    return _wrap_html("文档", markdown_lib.markdown(text, extensions=["tables", "fenced_code"]))
+
+
 def _wrap_html(title: str, body: str) -> str:
     escaped = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f'<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>{escaped}</title>\n</head>\n<body>\n{body}\n</body>\n</html>\n'
