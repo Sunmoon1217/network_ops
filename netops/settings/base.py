@@ -194,6 +194,7 @@ INSTALLED_APPS = [
     "assets.apps.AssetsConfig",
     "analysis.apps.AnalysisConfig",
     "cloud.apps.CloudConfig",
+    "sheets.apps.SheetsConfig",
 ]
 
 MIDDLEWARE = [

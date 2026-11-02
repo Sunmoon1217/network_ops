@@ -116,7 +116,8 @@ const router = createRouter({
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@/views/tools/dns-query.vue') },
         { path: 'internet-asset', name: 'tools-internet-asset', component: () => import('@/views/tools/internet-asset.vue') },
         { path: 'parser-mapping', name: 'tools-parser-mapping', component: () => import('@/views/tools/parser-mapping.vue') },
-
+        { path: 'spreadsheet', name: 'tools-spreadsheet', component: () => import('@/views/tools/spreadsheet.vue') },
+        { path: 'spreadsheet/:id', name: 'tools-spreadsheet-edit', component: () => import('@/views/tools/spreadsheet-edit.vue') },
       ],
     },
     // 兜底：未注册路径（含 /login——它是不注册路由的"伪路径"，靠下面的守卫与 App.vue 协作）。

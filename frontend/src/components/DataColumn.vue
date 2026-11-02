@@ -82,5 +82,9 @@ const elMinWidth = computed(() => {
     <template v-if="slots.default" #default="scope">
       <slot v-bind="scope" />
     </template>
+    <!-- 表头插槽透传：页面要自定义表头内容（截断 + tooltip 等）时用，不给走 label -->
+    <template v-if="slots.header" #header="scope">
+      <slot name="header" v-bind="scope" />
+    </template>
   </el-table-column>
 </template>
