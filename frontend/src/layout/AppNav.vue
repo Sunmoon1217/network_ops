@@ -67,6 +67,7 @@ const menuOptions: MenuItem[] = [
     index: '/tasks', label: '任务中心', icon: renderIcon(Timer),
     children: [
       { index: '/tasks', label: '任务列表', icon: renderIcon(Timer) },
+      { index: '/tasks/monitor', label: '运行监控', icon: renderIcon(DataAnalysis) },
     ],
   },
   {
