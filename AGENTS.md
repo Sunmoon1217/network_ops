@@ -62,6 +62,12 @@ network_ops/
 │   │   ├── client.py        # 阿里云 API 客户端封装
 │   │   ├── products.py      # 产品/规格语义映射（云产品名 → 运维语义）
 │   │   └── response.py      # 云 API 响应类型对象
+│   ├── docs/             # 文档域（通用表格编辑 + 文档转换与 Dify 知识库推送）
+│   │   ├── models.py            # Spreadsheet/SpreadsheetRevision（xlsx 工作簿）+ Document（转换与推送留档）
+│   │   ├── convert.py           # 文档转换：txt/csv/xlsx→md、md/docx→md 或含图→自包含 html、pdf 直传
+│   │   ├── dify.py              # Dify 知识库 API 客户端（create-by-file / indexing-status）
+│   │   ├── schema.py / diff.py / xlsx_io.py   # 表格数据格式归一 / 单元格 diff / xlsx 读写
+│   │   └── api/{views.py, documents.py, urls.py}  # /api/docs/spreadsheets/*、/api/docs/documents/*
 │   └── analysis/        # 分析域（只读消费 ingest 与 assets，不许被它们反向依赖）
 │       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, firewall_groups.py, gslb_clusters.py, ltm_groups.py, group_merge.py, monitor.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*、/api/analysis/*（URL 前缀沿用拆分前）
 │       ├── path_tracer.py       # 路径追踪算法（模拟报文逐跳转发）
@@ -86,6 +92,7 @@ network_ops/
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
 │   ├── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger
+│   ├── docs/            # 表格（schema / diff / xlsx_io / API）+ 文档转换 / Dify 客户端 / 文档 API
 │   └── mcp/               # MCP 工具：mcp.Client(server) 内存传输整链 + django_db(transaction=True)
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
@@ -207,7 +214,7 @@ uv run ruff format
 - **settings：env 动态项在 base 只定义一遍，环境文件只放「不走环境变量的硬差异与守卫」（环境旋钮唯一 `DJANGO_ENV`，`DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`）**：`netops/settings/`——`base.py` 集中全部可被环境变量影响的配置（`SECRET_KEY` / `DEBUG` / `ALLOWED_HOSTS` / `CSRF` / `DATABASES` / Redis，凭据链 `*_FILE > 同名环境变量 > 默认值`），**同一段读取逻辑写一遍、靠各环境注入不同的值区分**，不在每个环境文件里重复接线；三个环境文件只放环境变量表达不了的东西：`dev.py` **空壳**（base 即 dev 语义）、`container.py` 两条 host 必填守卫（env_file 被误删一行时**启动即拒**，而不是退到 localhost 等首个请求才 connection refused——Django 连接是惰性的）、`prod.py` `DEBUG=False` **硬覆盖**（不吃 `DJANGO_DEBUG` 后门）+ 5 个守卫（`DJANGO_SECRET_KEY`、`ALLOWED_HOSTS` 空或 `*`、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST`——查 `os.environ` 原始值，因为 base 的 default 会兜底，缺失即拒绝启动）。环境选择：**不设 → dev**（manage/asgi/wsgi/celery 的 setdefault、pytest 都指包）；容器由 `env/app.env` 注入 `DJANGO_ENV=container`；生产显式 `DJANGO_ENV=prod`；**白名单**：未知值（拼错如 `prd`）拒绝启动，不静默落 dev。`*_FILE` secrets **只在容器里设置**（宿主操作上不用它，链路三环境不分叉）。**防循环硬规矩**：`base.py` 与三个环境文件禁止 `from netops.settings import ...` / `from . import ...`，只允许 `from .base import ...`（反向依赖父包执行结果会在 `__init__` 半初始化时炸——BASE_DIR 那次事故的形态）。守卫与分发矩阵由 `tests/deploy/test_settings_environments.py` 守。
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
-- **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`。
+- **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、`docs.apps.DocsConfig`。
 - **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。**积压监控**（2026-10，47 条静默积压 + consumer OOM 循环的事后补防）：`manage.py queue_status`（`--json` 机器可读，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）共用 `analysis.queue_monitor.py` 的采集——celery 队列 LLEN、unacked、Stream **lag**（XINFO GROUPS，不是 XLEN）、PEL 待确认、毒消息点名（重投次数）、心跳新鲜度；背压阈值 `ACCESS_FLOW_MAX_QUEUE` 默认已调低为 500，且 `backlog()` 同步改为 lag 口径（XLEN 含已消费未 trim 条目，低阈值下会误触发背压）。
 - **DeviceConfig 的解析入库默认仍是同步的**：走 `ingest.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ingest.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
@@ -457,6 +464,19 @@ tags, subnets, ip-addresses
 | `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，「任务中心 → 运行监控」页轮询 |
 | `/api/analysis/lb-chain/slb/`、`/api/analysis/lb-chain/gslb/` 等 | SLB/GSLB 链路查询与导出（含 `facets/`、`export/`） |
 | `/api/analysis/gslb-clusters/`、`/api/analysis/ltm-groups/`、`/api/analysis/firewall-groups/` | 分组聚合查询（列表 / `facets/` / `export/`；防火墙分 `policies/` 与 `nat-rules/`） |
+
+**docs**（`docs/api/urls.py`）
+
+| 路径 | 说明 |
+|------|------|
+| `/api/docs/spreadsheets/` | 通用表格工作簿列表 / 上传 xlsx 建簿（原 `/api/sheets/`，随 sheets→docs 改名迁到此前缀） |
+| `/api/docs/spreadsheets/<id>/`、`/export/`、`/revisions/…` | 详情 / 保存编辑 / 导出 xlsx / 修改历史与回滚（同前） |
+| `/api/docs/documents/` | 文档列表 / **上传转换**（multipart：`file` 主文档 + `attachments` 图片附件）；转换规则见 `docs/convert.py` 模块注释（无图→md、含图→base64 自包含 html、pdf 直传） |
+| `/api/docs/documents/<id>/` | 详情（含转换产物预览）/ 删除 |
+| `/api/docs/documents/<id>/push/` | 推送 Dify 知识库（`document/create-by-file`，一次一文件）；已推送 409、Dify 未配置 503、失败 502 且落 `push_failed` 可重推 |
+| `/api/docs/documents/<id>/status/` | 从 Dify 同步索引进度（waiting / indexing / completed / error） |
+
+> Dify 推送配置在 `settings/base.py` 的 `DIFY_CONFIG`（`DIFY_API_BASE_URL` / `DIFY_API_KEY`（`*_FILE` 凭据链）/ `DIFY_DATASET_ID` / `DIFY_INDEXING_TECHNIQUE` / `DIFY_TIMEOUT`），容器注入 `env/app.env`（模板见 `env/example/app.env`）。依赖新增 `python-docx` / `markdown`——**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
 
 ## 注意事项
 
