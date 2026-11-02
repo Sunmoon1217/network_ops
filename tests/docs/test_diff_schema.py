@@ -1,6 +1,7 @@
 """docs.diff / docs.schema 的纯逻辑测试（不碰数据库）。"""
 
 import pytest
+
 from docs.diff import MAX_CHANGES, diff_data, is_empty
 from docs.schema import DataError, normalize_data
 

@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
+
 from docs.xlsx_io import parse_xlsx
 
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"

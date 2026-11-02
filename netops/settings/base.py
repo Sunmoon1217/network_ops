@@ -161,6 +161,25 @@ ALIYUN_CONFIG = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Dify 知识库（docs 文档转换的推送目标）
+#
+# 文档转换产物（md / 自包含 html，pdf 直传）经「知识库 API」推入自托管 Dify 的固定知识库。
+# 环境变量清单（容器注入 env/app.env；API Key 走凭据链 *_FILE > 同名环境变量）：
+#   DIFY_API_BASE_URL       知识库 API 地址（含 /v1），如 https://dify.example.com/v1
+#   DIFY_API_KEY(_FILE)     知识库 API Key（Bearer 认证）
+#   DIFY_DATASET_ID         目标知识库（dataset）ID
+#   DIFY_INDEXING_TECHNIQUE 索引方式：high_quality（默认）/ economy
+#   DIFY_TIMEOUT            HTTP 超时秒数（默认 30）
+# 前三项齐备才启用推送；缺失时推送接口返回 503，转换与留档不受影响。
+DIFY_CONFIG = {
+    "api_base_url": os.environ.get("DIFY_API_BASE_URL", "").rstrip("/"),
+    "api_key": _env_or_file("DIFY_API_KEY"),
+    "dataset_id": os.environ.get("DIFY_DATASET_ID", ""),
+    "indexing_technique": os.environ.get("DIFY_INDEXING_TECHNIQUE", "high_quality"),
+    "timeout": int(os.environ.get("DIFY_TIMEOUT", "30")),
+}
+
 
 # ---------------------------------------------------------------------------
 # 以下为环境无关的静态配置
