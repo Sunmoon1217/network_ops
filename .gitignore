@@ -86,7 +86,7 @@ network_ops-archive-*
 
 # AI / Compose
 .mimocode/
-docs/
+/docs/
 
 # Database init scripts (keep in repo)
 
