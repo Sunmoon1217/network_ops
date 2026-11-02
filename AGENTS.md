@@ -472,8 +472,12 @@ tags, subnets, ip-addresses
 | `/api/docs/spreadsheets/` | 通用表格工作簿列表 / 上传 xlsx 建簿（原 `/api/sheets/`，随 sheets→docs 改名迁到此前缀） |
 | `/api/docs/spreadsheets/<id>/`、`/export/`、`/revisions/…` | 详情 / 保存编辑 / 导出 xlsx / 修改历史与回滚（同前） |
 | `/api/docs/documents/` | 文档列表 / **上传转换**（multipart：`file` 主文档 + `attachments` 图片附件）；转换规则见 `docs/convert.py` 模块注释（无图→md、含图→base64 自包含 html、pdf 直传） |
-| `/api/docs/documents/<id>/` | 详情（含转换产物预览）/ 删除 |
-| `/api/docs/documents/<id>/push/` | 推送 Dify 知识库（`document/create-by-file`，一次一文件）；已推送 409、Dify 未配置 503、失败 502 且落 `push_failed` 可重推 |
+| `/api/docs/documents/<id>/` | 详情（含转换产物）/ **编辑产物**（PUT，落新版本快照）/ 删除 |
+| `/api/docs/documents/<id>/preview/` | 查看用渲染产物（md 由后端 markdown 库渲染 html，前端沙箱 iframe 展示） |
+| `/api/docs/documents/<id>/download/` | 源文件下载（docx/pdf 等原文件留档） |
+| `/api/docs/documents/<id>/reconvert/` | 替换源文件重新转换（产物落新版本；人工修改被覆盖但旧产物在历史里可回滚） |
+| `/api/docs/documents/<id>/revisions/…` | 版本历史（`DocumentRevision` 产物快照）/ 快照详情 / 回滚（恢复以新版本落地，历史不改写） |
+| `/api/docs/documents/<id>/push/` | 推送 Dify 知识库，**两态**：未推送 create（md/html 走 `create_by_text`、pdf 走 `create-by-file`）；已推送且 `pending_sync` 走 `update_by-text`/`update-by-file` 按 dify_document_id **原地更新**（不产生重复文档）；已推送无待同步 409、未配置 503、失败 502（更新失败保持待同步可重试） |
 | `/api/docs/documents/<id>/status/` | 从 Dify 同步索引进度（waiting / indexing / completed / error） |
 
 > Dify 推送配置在 `settings/base.py` 的 `DIFY_CONFIG`（`DIFY_API_BASE_URL` / `DIFY_API_KEY`（`*_FILE` 凭据链）/ `DIFY_DATASET_ID` / `DIFY_INDEXING_TECHNIQUE` / `DIFY_TIMEOUT`），容器注入 `env/app.env`（模板见 `env/example/app.env`）。依赖新增 `python-docx` / `markdown`——**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
