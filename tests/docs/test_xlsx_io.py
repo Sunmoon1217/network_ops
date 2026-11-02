@@ -14,7 +14,7 @@ from xml.etree import ElementTree
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
-from sheets.xlsx_io import parse_xlsx
+from docs.xlsx_io import parse_xlsx
 
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
@@ -105,7 +105,7 @@ def test_parse_survives_styles_without_numfmt_info():
 def test_upload_with_corrupted_styles(operator_client):
     f = SimpleUploadedFile("坏样式.xlsx", _corrupt_styles(_build_xlsx()).getvalue())
 
-    resp = operator_client.post("/api/sheets/upload/", {"file": f}, format="multipart")
+    resp = operator_client.post("/api/docs/spreadsheets/upload/", {"file": f}, format="multipart")
 
     assert resp.status_code == 201
     assert resp.json()["data"] == {"sheets": [{"name": "数据", "rows": EXPECTED_ROWS}]}
@@ -156,7 +156,7 @@ def test_parse_fills_merged_even_with_corrupted_styles():
 def test_upload_merged_cells_filled(operator_client):
     f = SimpleUploadedFile("合并.xlsx", _build_merged_xlsx().getvalue())
 
-    resp = operator_client.post("/api/sheets/upload/", {"file": f}, format="multipart")
+    resp = operator_client.post("/api/docs/spreadsheets/upload/", {"file": f}, format="multipart")
 
     assert resp.status_code == 201
     assert resp.json()["data"]["sheets"][1]["rows"] == MERGED_ROWS

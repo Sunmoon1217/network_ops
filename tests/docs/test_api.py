@@ -1,4 +1,4 @@
-"""`/api/sheets/`：通用表格（上传 / 保存 / 修改历史 / 回滚 / 导出）。
+"""`/api/docs/spreadsheets/`：通用表格（上传 / 保存 / 修改历史 / 回滚 / 导出）。
 
 守住的边界：
 
@@ -16,10 +16,10 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
 from rest_framework.test import APIClient
-from sheets.models import Spreadsheet, SpreadsheetRevision
+from docs.models import Spreadsheet, SpreadsheetRevision
 
-LIST_URL = "/api/sheets/"
-UPLOAD_URL = "/api/sheets/upload/"
+LIST_URL = "/api/docs/spreadsheets/"
+UPLOAD_URL = "/api/docs/spreadsheets/upload/"
 
 
 def _xlsx_bytes(sheets: dict) -> bytes:
@@ -74,12 +74,12 @@ def test_upload_rejects_bad_file(operator_client):
 @pytest.mark.django_db
 def test_save_records_cell_diff_and_history(operator_client):
     sp_id = _upload(operator_client).json()["id"]
-    detail = operator_client.get(f"/api/sheets/{sp_id}/").json()
+    detail = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()
 
     # 改一个单元格 + 加一行
     detail["data"]["sheets"][0]["rows"][1][0] = "改过的值"
     detail["data"]["sheets"][0]["rows"].append(["新增", "行"])
-    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": detail["data"], "note": "补一行"}, format="json")
+    resp = operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": detail["data"], "note": "补一行"}, format="json")
 
     assert resp.status_code == 201
     save = resp.json()
@@ -89,12 +89,12 @@ def test_save_records_cell_diff_and_history(operator_client):
     assert save["summary"]["rows_added"] == 1
     assert {"sheet": "Sheet1", "row": 1, "col": 0, "old": "a", "new": "改过的值"} in save["changes"]
 
-    history = operator_client.get(f"/api/sheets/{sp_id}/revisions/").json()["results"]
+    history = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/revisions/").json()["results"]
     assert [r["revision"] for r in history] == [2, 1]
     assert history[0]["note"] == "补一行"
     assert history[0]["created_by"] == "_t_operator"
 
-    rev2 = operator_client.get(f"/api/sheets/{sp_id}/revisions/2/").json()
+    rev2 = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/revisions/2/").json()
     assert rev2["data"]["sheets"][0]["rows"][1][0] == "改过的值"
     assert rev2["summary"]["cells_changed"] == 1
 
@@ -102,9 +102,9 @@ def test_save_records_cell_diff_and_history(operator_client):
 @pytest.mark.django_db
 def test_save_without_changes_creates_no_revision(operator_client):
     sp_id = _upload(operator_client).json()["id"]
-    data = operator_client.get(f"/api/sheets/{sp_id}/").json()["data"]
+    data = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()["data"]
 
-    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json")
+    resp = operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data}, format="json")
 
     assert resp.status_code == 200
     assert resp.json()["created"] is False
@@ -115,18 +115,18 @@ def test_save_without_changes_creates_no_revision(operator_client):
 def test_save_rejects_invalid_data(operator_client):
     sp_id = _upload(operator_client).json()["id"]
 
-    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": {"sheets": []}}, format="json")
+    resp = operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": {"sheets": []}}, format="json")
     assert resp.status_code == 400
 
 
 @pytest.mark.django_db
 def test_restore_creates_new_revision_without_rewriting_history(operator_client):
     sp_id = _upload(operator_client).json()["id"]
-    data = operator_client.get(f"/api/sheets/{sp_id}/").json()["data"]
+    data = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()["data"]
     data["sheets"][0]["rows"][1][0] = "v2 改动"
-    operator_client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json")
+    operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data}, format="json")
 
-    resp = operator_client.post(f"/api/sheets/{sp_id}/revisions/1/restore/")
+    resp = operator_client.post(f"/api/docs/spreadsheets/{sp_id}/revisions/1/restore/")
 
     assert resp.status_code == 201
     save = resp.json()
@@ -135,22 +135,22 @@ def test_restore_creates_new_revision_without_rewriting_history(operator_client)
     # 回滚 = 相对 v2 反向改回来
     assert save["summary"]["cells_changed"] == 1
 
-    current = operator_client.get(f"/api/sheets/{sp_id}/").json()
+    current = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()
     assert current["latest_revision"] == 3
     assert current["data"]["sheets"][0]["rows"][1][0] == "a"
     # 历史仍是 3 个版本，v2 的快照原样保留
     assert SpreadsheetRevision.objects.filter(spreadsheet_id=sp_id).count() == 3
-    assert operator_client.get(f"/api/sheets/{sp_id}/revisions/2/").json()["data"]["sheets"][0]["rows"][1][0] == "v2 改动"
+    assert operator_client.get(f"/api/docs/spreadsheets/{sp_id}/revisions/2/").json()["data"]["sheets"][0]["rows"][1][0] == "v2 改动"
 
 
 @pytest.mark.django_db
 def test_export_current_and_historical_revision(operator_client):
     sp_id = _upload(operator_client).json()["id"]
-    data = operator_client.get(f"/api/sheets/{sp_id}/").json()["data"]
+    data = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()["data"]
     data["sheets"][0]["rows"][1][0] = "新值"
-    operator_client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json")
+    operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data}, format="json")
 
-    resp = operator_client.get(f"/api/sheets/{sp_id}/export/")
+    resp = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/export/")
     assert resp.status_code == 200
     assert resp["Content-Type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -159,18 +159,18 @@ def test_export_current_and_historical_revision(operator_client):
     rows = list(wb["Sheet1"].iter_rows(values_only=True))
     assert rows[1][0] == "新值"
 
-    resp = operator_client.get(f"/api/sheets/{sp_id}/export/?revision=1")
+    resp = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/export/?revision=1")
     wb = load_workbook(BytesIO(resp.content), read_only=True)
     assert list(wb["Sheet1"].iter_rows(values_only=True))[1][0] == "a"
 
-    assert operator_client.get(f"/api/sheets/{sp_id}/export/?revision=abc").status_code == 400
+    assert operator_client.get(f"/api/docs/spreadsheets/{sp_id}/export/?revision=abc").status_code == 400
 
 
 @pytest.mark.django_db
 def test_delete(operator_client):
     sp_id = _upload(operator_client).json()["id"]
 
-    assert operator_client.delete(f"/api/sheets/{sp_id}/").status_code == 204
+    assert operator_client.delete(f"/api/docs/spreadsheets/{sp_id}/").status_code == 204
     assert not Spreadsheet.objects.filter(pk=sp_id).exists()
     # 级联删历史
     assert not SpreadsheetRevision.objects.filter(spreadsheet_id=sp_id).exists()
@@ -183,13 +183,13 @@ def test_normal_user_is_read_only(normal_user, operator_client):
     client.force_authenticate(user=normal_user)
 
     assert client.get(LIST_URL).status_code == 200
-    assert client.get(f"/api/sheets/{sp_id}/").status_code == 200
-    assert client.get(f"/api/sheets/{sp_id}/export/").status_code == 200
+    assert client.get(f"/api/docs/spreadsheets/{sp_id}/").status_code == 200
+    assert client.get(f"/api/docs/spreadsheets/{sp_id}/export/").status_code == 200
 
-    data = client.get(f"/api/sheets/{sp_id}/").json()["data"]
-    assert client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json").status_code == 403
-    assert client.post(f"/api/sheets/{sp_id}/revisions/1/restore/").status_code == 403
-    assert client.delete(f"/api/sheets/{sp_id}/").status_code == 403
+    data = client.get(f"/api/docs/spreadsheets/{sp_id}/").json()["data"]
+    assert client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data}, format="json").status_code == 403
+    assert client.post(f"/api/docs/spreadsheets/{sp_id}/revisions/1/restore/").status_code == 403
+    assert client.delete(f"/api/docs/spreadsheets/{sp_id}/").status_code == 403
     assert client.post(UPLOAD_URL, {"file": SimpleUploadedFile("a.xlsx", _xlsx_bytes({"S": [["h"]]}))}, format="multipart").status_code == 403
 
 
@@ -202,10 +202,10 @@ def test_unauthenticated_rejected():
 def test_save_header_rows_change_creates_revision(operator_client):
     """只改表头行数也要落版本（格子没动），原样再保存不建版本。"""
     sp_id = _upload(operator_client).json()["id"]
-    data = operator_client.get(f"/api/sheets/{sp_id}/").json()["data"]
+    data = operator_client.get(f"/api/docs/spreadsheets/{sp_id}/").json()["data"]
 
     data["sheets"][0]["header_rows"] = 2
-    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": data, "note": "两行表头"}, format="json")
+    resp = operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data, "note": "两行表头"}, format="json")
 
     assert resp.status_code == 201
     save = resp.json()
@@ -214,6 +214,6 @@ def test_save_header_rows_change_creates_revision(operator_client):
     assert save["summary"]["cells_changed"] == 0
 
     # 原样再保存：无改动、不建版本
-    resp = operator_client.put(f"/api/sheets/{sp_id}/", {"data": data}, format="json")
+    resp = operator_client.put(f"/api/docs/spreadsheets/{sp_id}/", {"data": data}, format="json")
     assert resp.json()["created"] is False
     assert SpreadsheetRevision.objects.filter(spreadsheet_id=sp_id).count() == 2

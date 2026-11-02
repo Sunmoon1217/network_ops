@@ -12,8 +12,8 @@ urlpatterns = [
     path("api/", include("ingest.api.urls")),
     # 分析域：URL 前缀沿用拆分前的 /api/trace/、/api/internet-analysis/（前端零改动）
     path("api/", include("analysis.api.urls")),
-    # 通用表格（xlsx 编辑与历史）：/api/sheets/
-    path("api/", include("sheets.api.urls")),
+    # 文档域（表格编辑 + 文档转换）：/api/docs/
+    path("api/", include("docs.api.urls")),
     path("favicon.ico", views.favicon),
     re_path(r"^assets/(?P<path>.*)$", views.serve_frontend_assets),
 ]

@@ -11,7 +11,7 @@ class Spreadsheet(models.Model):
 
     - 单元格只能是 JSON 标量（str / int / float / bool / None）；
     - ``rows`` 的前 ``header_rows`` 行是表头行（多行表头），其余是数据行——
-      ``header_rows`` 缺省 1（单行表头不落键）、上限见 ``sheets.schema.MAX_HEADER_ROWS``；
+      ``header_rows`` 缺省 1（单行表头不落键）、上限见 ``docs.schema.MAX_HEADER_ROWS``；
     - 整张表就是一张矩形网格，语义由使用者自己定义；
     - 当前状态存这里；每次保存在 :class:`SpreadsheetRevision` 落一份全量快照
       + 单元格级 diff（修改历史与回滚都基于快照，导出历史版本也直接读快照）。
@@ -39,7 +39,7 @@ class SpreadsheetRevision(models.Model):
 
     - ``revision``：工作簿内自增版本号（上传导入是 1，之后每次保存 +1，恢复也 +1）；
     - ``data``：该版本的全量快照——历史查看、导出历史版本、回滚都不再依赖前一版本；
-    - ``changes``：相对上一版本的单元格级 diff（截断上限见 ``sheets.diff.MAX_CHANGES``）；
+    - ``changes``：相对上一版本的单元格级 diff（截断上限见 ``docs.diff.MAX_CHANGES``）；
     - ``summary``：变更计数（cells_changed / rows_added / rows_removed / sheets_added /
       sheets_removed / truncated），供历史列表直接展示。
     """

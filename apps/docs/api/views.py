@@ -14,10 +14,10 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from sheets.diff import ZERO_SUMMARY, diff_data, is_empty
-from sheets.models import Spreadsheet, SpreadsheetRevision
-from sheets.schema import DataError, normalize_data
-from sheets.xlsx_io import build_xlsx, parse_xlsx
+from docs.diff import ZERO_SUMMARY, diff_data, is_empty
+from docs.models import Spreadsheet, SpreadsheetRevision
+from docs.schema import DataError, normalize_data
+from docs.xlsx_io import build_xlsx, parse_xlsx
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 

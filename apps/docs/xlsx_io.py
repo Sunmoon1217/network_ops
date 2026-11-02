@@ -1,6 +1,6 @@
 """xlsx ↔ data 结构的互转（openpyxl 只在本模块出现）。
 
-data 结构见 ``sheets.models.Spreadsheet`` 的文档串；本模块负责两件事：
+data 结构见 ``docs.models.Spreadsheet`` 的文档串；本模块负责两件事：
 
 - ``parse_xlsx``：上传的 xlsx → data（每张表的第 1 行即表头行；**合并单元格拆分
   填充**——区域内每格写上左上角的值；尾部空行/空列裁掉）；

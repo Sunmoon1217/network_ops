@@ -1,8 +1,8 @@
-"""sheets.diff / sheets.schema 的纯逻辑测试（不碰数据库）。"""
+"""docs.diff / docs.schema 的纯逻辑测试（不碰数据库）。"""
 
 import pytest
-from sheets.diff import MAX_CHANGES, diff_data, is_empty
-from sheets.schema import DataError, normalize_data
+from docs.diff import MAX_CHANGES, diff_data, is_empty
+from docs.schema import DataError, normalize_data
 
 # ---------------------------------------------------------------------------
 # diff
