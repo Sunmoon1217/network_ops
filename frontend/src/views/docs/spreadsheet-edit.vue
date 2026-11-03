@@ -47,11 +47,14 @@ const headerCount = computed(() => {
   const sheet = activeIdx.value >= 0 ? book.value!.sheets[activeIdx.value] : null
   return Math.min(Math.max(1, sheet?.header_rows ?? 1), sheetRows.value.length || 1)
 })
-/** 列名 = 该列各行表头的非空内容用「 / 」拼接（多行表头），全空回退「列 N」 */
+/** 列名 = 该列各行表头的非空内容用「 / 」拼接（多行表头），全空回退「列 N」。
+ *  拼接按**新行在前**（行倒序）：「增加表头行」纳入的行拼在原表头前面——
+ *  后加的行是上层字段，列名读作「上层 / 下层」。 */
 const headerLabels = computed(() =>
   Array.from({ length: colCount.value }, (_, c) => {
     const parts = sheetRows.value
       .slice(0, headerCount.value)
+      .reverse()
       .map((r) => r[c])
       .filter((v) => v !== null && v !== undefined && v !== '')
       .map((v) => String(v))
@@ -426,7 +429,7 @@ onBeforeRouteLeave(async () => {
 
   <!-- 表头编辑：多行表头块——每行可改内容/删除（至少留 1 行），可纳入下一行或加列 -->
   <el-dialog v-model="headerVisible" title="编辑表头" width="760px">
-    <div class="header-hint">表头共 {{ headerDraft.length }} 行；列名取该列各行非空内容拼接，过长截断展示</div>
+    <div class="header-hint">表头共 {{ headerDraft.length }} 行；列名取该列各行非空内容按「新行在前」拼接，过长截断展示</div>
     <div v-for="(draftRow, ri) in headerDraft" :key="ri" class="header-row">
       <span class="header-col-no">第 {{ ri + 1 }} 行</span>
       <el-input
