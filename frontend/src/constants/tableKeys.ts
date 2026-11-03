@@ -63,8 +63,8 @@ export const TABLE_KEYS = {
   internetAsset: 'tools.internet-asset', // 互联网资产路径 预留
   parserMapping: 'tools.parser-mapping.parsers', // 解析器映射主表 预留
   parserMappingMissing: 'tools.parser-mapping.missing-producers', // 契约缺口表 预留
-  spreadsheetList: 'tools.spreadsheet', // 表格工作簿列表（/tools/spreadsheet）
-  spreadsheetGrid: 'tools.spreadsheet.grid', // 表格编辑器·网格（动态列：列键 s<表序>c<列序>，列只追加不删插故键稳定）
+  spreadsheetList: 'docs.spreadsheet', // 电子表格·工作簿列表（/docs/spreadsheet）
+  spreadsheetGrid: 'docs.spreadsheet.grid', // 电子表格·网格（动态列：列键 s<表序>c<列序>，列只追加不删插故键稳定）
   // 拓扑的 DeviceSelector 是弹窗选择列表，列宽偏好价值低，刻意不注册。
 } as const
 
@@ -73,4 +73,8 @@ export const TABLE_KEYS = {
  * 读端在新键还没有数据时回退读旧键，用户已存列宽不丢；首次拖动即整体迁移到新键。
  * 键值都必须是字符串；旧键故意不查 `TABLE_KEYS`（它已从注册表移除）。
  */
-export const TABLE_KEY_RENAMES: Record<string, (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS]> = {}
+export const TABLE_KEY_RENAMES: Record<string, (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS]> = {
+  // 表格编辑器移入「文档」菜单（/tools/spreadsheet → /docs/spreadsheet），key 随路由改名
+  'tools.spreadsheet': TABLE_KEYS.spreadsheetList,
+  'tools.spreadsheet.grid': TABLE_KEYS.spreadsheetGrid,
+}

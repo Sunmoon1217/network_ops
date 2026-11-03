@@ -22,7 +22,7 @@ import type {
 } from '@/types'
 
 // ---------------------------------------------------------------------------
-// 表格编辑器·工作簿编辑页：每个工作表一张网格，rows 的前 header_rows 行是表头
+// 电子表格·工作簿编辑页：每个工作表一张网格，rows 的前 header_rows 行是表头
 // （多行表头），双击单元格编辑、增删行；保存走后端 diff 落「全量快照 + 单元格级
 // 变更」的新版本，右侧抽屉是修改历史（查看差异 / 导出历史版本 / 回滚）。
 // ---------------------------------------------------------------------------
@@ -339,7 +339,7 @@ const loadBook = async () => {
     }
   } catch {
     ElMessage.error('表格加载失败')
-    router.push({ name: 'tools-spreadsheet' })
+    router.push({ name: 'docs-spreadsheet' })
   } finally {
     loading.value = false
   }
@@ -359,10 +359,10 @@ onBeforeRouteLeave(async () => {
 </script>
 
 <template>
-  <PageLayout :title="name || '表格编辑器'">
+  <PageLayout :title="name || '电子表格'">
     <template #actions>
       <el-tag v-if="dirty" type="warning">未保存</el-tag>
-      <el-button @click="router.push({ name: 'tools-spreadsheet' })">返回列表</el-button>
+      <el-button @click="router.push({ name: 'docs-spreadsheet' })">返回列表</el-button>
       <el-button @click="onExport()">导出 xlsx</el-button>
       <el-button @click="openHistory">修改历史</el-button>
       <el-button type="primary" @click="openSaveDialog">保存</el-button>

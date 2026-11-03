@@ -116,8 +116,6 @@ const router = createRouter({
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@/views/tools/dns-query.vue') },
         { path: 'internet-asset', name: 'tools-internet-asset', component: () => import('@/views/tools/internet-asset.vue') },
         { path: 'parser-mapping', name: 'tools-parser-mapping', component: () => import('@/views/tools/parser-mapping.vue') },
-        { path: 'spreadsheet', name: 'tools-spreadsheet', component: () => import('@/views/tools/spreadsheet.vue') },
-        { path: 'spreadsheet/:id', name: 'tools-spreadsheet-edit', component: () => import('@/views/tools/spreadsheet-edit.vue') },
       ],
     },
     {
@@ -127,8 +125,13 @@ const router = createRouter({
         { path: '', redirect: '/docs/knowledge' },
         { path: 'knowledge', name: 'docs-knowledge', component: () => import('@/views/docs/knowledge.vue') },
         { path: 'temp', name: 'docs-temp', component: () => import('@/views/docs/temp.vue') },
+        { path: 'spreadsheet', name: 'docs-spreadsheet', component: () => import('@/views/docs/spreadsheet.vue') },
+        { path: 'spreadsheet/:id', name: 'docs-spreadsheet-edit', component: () => import('@/views/docs/spreadsheet-edit.vue') },
       ],
     },
+    // 旧 /tools/spreadsheet* 路径兼容（表格编辑器已移入「文档」菜单）
+    { path: '/tools/spreadsheet', redirect: '/docs/spreadsheet' },
+    { path: '/tools/spreadsheet/:id', redirect: '/docs/spreadsheet/:id' },
     // 兜底：未注册路径（含 /login——它是不注册路由的"伪路径"，靠下面的守卫与 App.vue 协作）。
     // 必须用「匹配组件」而不是 redirect：
     //   ① redirect 到 '/' 会与守卫的 return '/login' 互相触发，形成无限重定向；

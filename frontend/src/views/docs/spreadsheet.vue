@@ -10,7 +10,7 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import type { SpreadsheetSummary } from '@/types'
 
 // ---------------------------------------------------------------------------
-// 表格编辑器·工作簿列表：上传 xlsx 建工作簿，进编辑页做表格展示 / 修改保存 /
+// 电子表格·工作簿列表：上传 xlsx 建工作簿，进编辑页做表格展示 / 修改保存 /
 // 导出 / 修改历史（历史在编辑页右侧抽屉）。
 // ---------------------------------------------------------------------------
 
@@ -49,7 +49,7 @@ const onFileChange = async (uploadFile: { raw?: File }) => {
     const detail = (await uploadSpreadsheet(raw)).data
     ElMessage.success(`已导入「${detail.name}」`)
     await load()
-    router.push({ name: 'tools-spreadsheet-edit', params: { id: detail.id } })
+    router.push({ name: 'docs-spreadsheet-edit', params: { id: detail.id } })
   } catch (e) {
     const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
     ElMessage.error(detail ? `上传失败：${detail}` : '上传失败：仅支持 .xlsx 文件')
@@ -88,7 +88,7 @@ onMounted(load)
 </script>
 
 <template>
-  <PageLayout title="表格编辑器">
+  <PageLayout title="电子表格">
     <template #actions>
       <el-upload :show-file-list="false" :auto-upload="false" accept=".xlsx" :on-change="onFileChange">
         <el-button type="primary" :loading="uploading">
@@ -102,7 +102,7 @@ onMounted(load)
       <DataTable :table-key="TABLE_KEYS.spreadsheetList" :data="rows" :loading="loading">
         <DataColumn prop="name" label="名称" :min-width="220">
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push({ name: 'tools-spreadsheet-edit', params: { id: row.id } })">
+            <el-button link type="primary" @click="router.push({ name: 'docs-spreadsheet-edit', params: { id: row.id } })">
               {{ row.name }}
             </el-button>
           </template>
@@ -129,7 +129,7 @@ onMounted(load)
         </DataColumn>
         <DataColumn label="操作" :width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push({ name: 'tools-spreadsheet-edit', params: { id: row.id } })">
+            <el-button link type="primary" @click="router.push({ name: 'docs-spreadsheet-edit', params: { id: row.id } })">
               编辑
             </el-button>
             <el-button link type="primary" @click="onExport(row.id, row.name)">导出</el-button>
