@@ -70,7 +70,7 @@ def convert(name: str, content: bytes, attachments: dict[str, bytes] | None = No
     fmt = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if fmt not in SOURCE_FORMATS:
         raise ConvertError(f"不支持的文件格式：.{fmt or '(无扩展名)'}，支持 {'/'.join(sorted(SOURCE_FORMATS))}")
-    atts = {str(k).lower(): v for k, v in (attachments or {}).items()}
+    atts = {k.lower(): v for k, v in (attachments or {}).items()}
 
     if fmt == "pdf":
         return ConversionResult("pdf", "", False)
@@ -333,7 +333,7 @@ def _runs_to_md(runs) -> str:
 
 
 def _html_escape(text: str) -> str:
-    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _runs_to_html(runs) -> str:

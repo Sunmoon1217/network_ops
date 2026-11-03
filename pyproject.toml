@@ -86,4 +86,5 @@ dev = [
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
     "ruff>=0.16.5",
+    "types-markdown>=3.11.2.20261029",
 ]
