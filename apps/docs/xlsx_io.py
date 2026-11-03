@@ -17,13 +17,21 @@ import re
 import zipfile
 from datetime import date, datetime, time
 from io import BytesIO
+from typing import cast
 from xml.etree import ElementTree
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.reader import excel as openpyxl_excel
-from openpyxl.styles.numbers import BUILTIN_FORMATS, is_date_format, is_timedelta_format
+
+# is_timedelta_format 运行期真实存在、openpyxl-stubs 没写声明，抑制过检
+from openpyxl.styles.numbers import (
+    BUILTIN_FORMATS,
+    is_date_format,
+    is_timedelta_format,  # pyrefly: ignore
+)
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import range_boundaries
+from openpyxl.worksheet.worksheet import Worksheet
 
 # 单元格字符数上限（Excel 自身的上限），导出超限 openpyxl 会直接抛错，提前在这里兜住
 MAX_CELL_STR_LEN = 32767
@@ -132,8 +140,11 @@ def _lenient_date_formats(styles_bytes: bytes) -> tuple[dict, dict]:
         root = ElementTree.fromstring(styles_bytes)
         custom = {}
         for num_fmt in root.iter(f"{SHEET_NS}numFmt"):
+            fmt_id_raw = num_fmt.get("numFmtId")
+            if fmt_id_raw is None:
+                continue
             try:
-                custom[int(num_fmt.get("numFmtId"))] = num_fmt.get("formatCode", "")
+                custom[int(fmt_id_raw)] = num_fmt.get("formatCode", "")
             except (TypeError, ValueError):
                 continue
         cell_xfs = root.find(f"{SHEET_NS}cellXfs")
@@ -158,7 +169,8 @@ def _load_values(file, lenient_styles: bool, merged: dict) -> dict:
         file.seek(0)
         return _extract_rows(load_workbook(file, read_only=True, data_only=True), merged)
 
-    real_apply = openpyxl_excel.apply_stylesheet
+    # getattr/setattr 访问 monkey-patch 目标：apply_stylesheet 运行期存在、stub 未声明
+    real_apply = getattr(openpyxl_excel, "apply_stylesheet")
 
     def apply_stylesheet_lenient(archive, wb):
         try:
@@ -177,12 +189,12 @@ def _load_values(file, lenient_styles: bool, merged: dict) -> dict:
 
     # 短暂替换 openpyxl 的样式入口、用完即还原（并发上传的最坏情况只是另一请求拿到
     # 同款宽松样式解析，值不受影响）
-    openpyxl_excel.apply_stylesheet = apply_stylesheet_lenient
+    setattr(openpyxl_excel, "apply_stylesheet", apply_stylesheet_lenient)
     try:
         file.seek(0)
         return _extract_rows(load_workbook(file, read_only=True, data_only=True), merged)
     finally:
-        openpyxl_excel.apply_stylesheet = real_apply
+        setattr(openpyxl_excel, "apply_stylesheet", real_apply)
 
 
 def parse_xlsx(file) -> dict:
@@ -200,7 +212,8 @@ def build_xlsx(data: dict) -> bytes:
     wb = Workbook()
     wb.remove(wb.active)
     for sheet in data.get("sheets", []):
-        ws = wb.create_sheet(title=str(sheet.get("name", ""))[:31] or "Sheet")
+        # create_sheet 的 stub 返回含 WriteOnlyWorksheet 的联合，实际恒为普通 Worksheet
+        ws = cast(Worksheet, wb.create_sheet(title=str(sheet.get("name", ""))[:31] or "Sheet"))
         width = 0
         for row in sheet.get("rows", []):
             ws.append(["" if v is None else v for v in row])
