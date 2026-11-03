@@ -12,18 +12,23 @@ export type TableColumnWidths = Record<string, number>
 /**
  * 列布局偏好（列设置弹窗的产物）：
  * - `order`：列 key 顺序（未登记的列按默认槽序排在尾部）；
- * - `hidden`：被隐藏的列 key。
+ * - `hidden`：被隐藏的列 key（**显式**隐藏，覆盖列的默认显隐）；
+ * - `shown`：被显式显示的列 key（覆盖列的默认显隐，给 default-hidden 列开开关用）。
+ * 三者都是显式状态：没被 hidden/shown 提到的列吃列默认（ColumnMeta.defaultHidden）。
  * 与列宽分开存偏好键（列宽是裸 key→宽度映射，塞结构字段会与名为 order/hidden 的列撞 key）。
  */
 export interface TableColumnLayout {
     order?: string[]
     hidden?: string[]
+    shown?: string[]
 }
 
 /** 列设置弹窗的列元数据（DataTable 从默认插槽 vnode 提取后喂给弹窗） */
 export interface ColumnMeta {
     key: string
     label: string
+    /** 默认隐藏：用户没显式决定过该列显隐时默认不显示（「列设置」里可开） */
+    defaultHidden?: boolean
 }
 
 /** PUT /api/me/preferences/ 的单条载荷（后端按 key upsert，不做全量替换） */

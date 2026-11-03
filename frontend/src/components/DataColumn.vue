@@ -30,6 +30,8 @@ const props = defineProps<{
   /** 强制锚点列；不传时 fixed 列（操作列等）默认就是锚点 */
   anchor?: boolean
   columnKey?: string
+  /** 默认隐藏：不传 = 默认显示。会进「列设置」清单，用户显式开/关后以其选择为准 */
+  defaultHidden?: boolean
   fixed?: boolean | 'left' | 'right'
   sortable?: boolean | string
   align?: 'left' | 'right' | 'center'

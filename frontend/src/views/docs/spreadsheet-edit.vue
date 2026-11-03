@@ -383,7 +383,7 @@ onBeforeRouteLeave(async () => {
 
       <div class="grid-wrap">
         <DataTable :data="bodyRows" :loading="loading" :table-key="TABLE_KEYS.spreadsheetGrid">
-          <DataColumn type="index" label="#" :width="56" fixed="left" />
+          <DataColumn type="index" column-key="row-index" label="#" :width="56" fixed="left" default-hidden />
           <DataColumn
             v-for="(label, colIdx) in headerLabels"
             :key="gridColKey(colIdx)"

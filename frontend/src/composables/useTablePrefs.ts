@@ -97,8 +97,19 @@ export const useTablePrefs = (tableKey: TableKey) => {
 
   /** 列 key 顺序；空数组 = 默认槽序 */
   const columnOrder = computed(() => layout.value.order ?? [])
-  /** 被隐藏的列 key 集合 */
-  const hiddenKeys = computed(() => new Set(layout.value.hidden ?? []))
+  const hiddenSet = computed(() => new Set(layout.value.hidden ?? []))
+  const shownSet = computed(() => new Set(layout.value.shown ?? []))
+
+  /**
+   * 该列当前是否隐藏：用户的 hidden / shown 显式决定优先，
+   * 两者都没说过就吃列默认（default-hidden 列默认隐藏）；
+   * 「恢复默认」删条目后回到列默认。
+   */
+  const isHidden = (key: string, defaultHidden = false) => {
+    if (hiddenSet.value.has(key)) return true
+    if (shownSet.value.has(key)) return false
+    return defaultHidden
+  }
 
   const saveLayout = (patch: Partial<TableColumnLayout>) => {
     preferences.value = {
@@ -115,12 +126,18 @@ export const useTablePrefs = (tableKey: TableKey) => {
    */
   const saveOrder = (order: string[]) => saveLayout({ order })
 
-  /** 切换列显隐 */
-  const toggleColumn = (key: string) => {
+  /** 切换列显隐（目标态取反，写显式 hidden / shown 记录覆盖列默认） */
+  const toggleColumn = (key: string, defaultHidden = false) => {
     const hidden = new Set(layout.value.hidden ?? [])
-    if (hidden.has(key)) hidden.delete(key)
-    else hidden.add(key)
-    saveLayout({ hidden: [...hidden] })
+    const shown = new Set(layout.value.shown ?? [])
+    if (isHidden(key, defaultHidden)) {
+      shown.add(key)
+      hidden.delete(key)
+    } else {
+      hidden.add(key)
+      shown.delete(key)
+    }
+    saveLayout({ hidden: [...hidden], shown: [...shown] })
   }
 
   /** 恢复默认布局（删偏好条目，value=null 即删） */
@@ -138,7 +155,7 @@ export const useTablePrefs = (tableKey: TableKey) => {
     onHeaderDragend,
     ensureLoaded,
     columnOrder,
-    hiddenKeys,
+    isHidden,
     saveOrder,
     toggleColumn,
     resetColumnLayout,
