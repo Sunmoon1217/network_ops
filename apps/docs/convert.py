@@ -30,9 +30,11 @@ import io
 import mimetypes
 import re
 from dataclasses import dataclass
+from typing import Any, cast
 
 import markdown as markdown_lib
-from docx import Document as DocxDocument
+from docx import Document as DocxDocumentFactory
+from docx.document import Document as DocxDocument
 from docx.oxml.ns import qn
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph as DocxParagraph
@@ -348,11 +350,12 @@ def _runs_to_html(runs) -> str:
 
 def _convert_docx(content: bytes, atts: dict[str, bytes]) -> ConversionResult:
     try:
-        doc = DocxDocument(io.BytesIO(content))
+        doc = DocxDocumentFactory(io.BytesIO(content))
     except Exception as e:
         raise ConvertError(f"docx 解析失败：{e}") from e
 
-    blocks = list(_docx_blocks(doc))
+    # 块是四种异构元组（见 _docx_blocks docstring），消费端按 kind 分支后整块取字段
+    blocks = cast(list[tuple[Any, ...]], list(_docx_blocks(doc)))
     has_images = any(b[0] == "image" for b in blocks)
     if not has_images:
         lines = []

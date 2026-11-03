@@ -14,7 +14,7 @@ DeviceSerializer（与 REST API 同一套字段规则），不在工具层重复
 序列化器加/删字段要同步改这里，tests/mcp/test_device_tools.py 会跑出校验错误。
 """
 
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from django.db.models import Q
 from mcp.server.mcpserver.exceptions import ToolError
@@ -129,7 +129,8 @@ def search_devices(keyword: str = "", device_type: str = "", vendor: str = "", g
     if group:
         qs = qs.filter(group_memberships__group__name__icontains=group).distinct()
     total = qs.count()
-    devices = [DeviceSerializer(device).data for device in qs[start:stop]]
+    # 序列化器输出是 ReturnDict，字段口径由 tests/mcp/test_device_tools.py 与 DeviceInfo 对账
+    devices = [cast(DeviceInfo, DeviceSerializer(device).data) for device in qs[start:stop]]
     return {"total": total, "page": page, "page_size": page_size, "devices": devices}
 
 
@@ -147,15 +148,15 @@ def get_device(hostname: str) -> GetDeviceResult:
     if device is None:
         raise ToolError(f"设备不存在：{hostname}（可先用 search_devices 按关键字搜索）")
     groups = [
-        {
-            "group_name": membership.group.name,
-            "group_type": membership.group.group_type,
-            "group_type_display": membership.group.get_group_type_display(),
-            "device_role": membership.device_role,
-        }
+        DeviceGroupRef(
+            group_name=membership.group.name,
+            group_type=membership.group.group_type,
+            group_type_display=membership.group.get_group_type_display(),
+            device_role=membership.device_role,
+        )
         for membership in device.group_memberships.select_related("group")
     ]
-    return {"device": DeviceSerializer(device).data, "groups": groups}
+    return {"device": cast(DeviceInfo, DeviceSerializer(device).data), "groups": groups}
 
 
 @mcp.tool()
@@ -176,13 +177,13 @@ def list_device_groups(keyword: str = "", page: int = 1, page_size: int = 20) ->
         qs = qs.filter(Q(name__icontains=keyword) | Q(description__icontains=keyword))
     total = qs.count()
     groups = [
-        {
-            "name": group.name,
-            "group_type": group.group_type,
-            "group_type_display": group.get_group_type_display(),
-            "description": group.description,
-            "members": [{"hostname": member.device.hostname, "device_role": member.device_role} for member in group.members.all()],
-        }
+        DeviceGroupInfo(
+            name=group.name,
+            group_type=group.group_type,
+            group_type_display=group.get_group_type_display(),
+            description=group.description,
+            members=[DeviceGroupMemberInfo(hostname=member.device.hostname, device_role=member.device_role) for member in group.members.all()],
+        )
         for group in qs[start:stop]
     ]
     return {"total": total, "page": page, "page_size": page_size, "groups": groups}

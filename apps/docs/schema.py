@@ -6,6 +6,7 @@
 """
 
 import math
+from typing import Any
 
 # 规模上限（通用页面也要有闸门，防止一次误操作把整库写爆）
 MAX_SHEETS = 64
@@ -87,7 +88,7 @@ def normalize_data(payload) -> dict:
             if total_cells > MAX_TOTAL_CELLS:
                 raise DataError(f"表格总单元格数超过上限 {MAX_TOTAL_CELLS}")
             out_rows.append([_norm_cell(c, f"表「{name}」第 {ri} 行") for c in row])
-        out_sheet = {"name": name, "rows": out_rows}
+        out_sheet: dict[str, Any] = {"name": name, "rows": out_rows}
         if "header_rows" in sheet:
             out_sheet["header_rows"] = header_rows
         out_sheets.append(out_sheet)
