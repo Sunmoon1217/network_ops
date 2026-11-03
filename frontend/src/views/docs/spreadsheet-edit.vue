@@ -22,7 +22,7 @@ import type {
 } from '@/types'
 
 // ---------------------------------------------------------------------------
-// 表格编辑器·工作簿编辑页：每个工作表一张网格，rows 的前 header_rows 行是表头
+// 电子表格·工作簿编辑页：每个工作表一张网格，rows 的前 header_rows 行是表头
 // （多行表头），双击单元格编辑、增删行；保存走后端 diff 落「全量快照 + 单元格级
 // 变更」的新版本，右侧抽屉是修改历史（查看差异 / 导出历史版本 / 回滚）。
 // ---------------------------------------------------------------------------
@@ -47,11 +47,14 @@ const headerCount = computed(() => {
   const sheet = activeIdx.value >= 0 ? book.value!.sheets[activeIdx.value] : null
   return Math.min(Math.max(1, sheet?.header_rows ?? 1), sheetRows.value.length || 1)
 })
-/** 列名 = 该列各行表头的非空内容用「 / 」拼接（多行表头），全空回退「列 N」 */
+/** 列名 = 该列各行表头的非空内容用「 / 」拼接（多行表头），全空回退「列 N」。
+ *  拼接按**新行在前**（行倒序）：「增加表头行」纳入的行拼在原表头前面——
+ *  后加的行是上层字段，列名读作「上层 / 下层」。 */
 const headerLabels = computed(() =>
   Array.from({ length: colCount.value }, (_, c) => {
     const parts = sheetRows.value
       .slice(0, headerCount.value)
+      .reverse()
       .map((r) => r[c])
       .filter((v) => v !== null && v !== undefined && v !== '')
       .map((v) => String(v))
@@ -339,7 +342,7 @@ const loadBook = async () => {
     }
   } catch {
     ElMessage.error('表格加载失败')
-    router.push({ name: 'tools-spreadsheet' })
+    router.push({ name: 'docs-spreadsheet' })
   } finally {
     loading.value = false
   }
@@ -359,10 +362,10 @@ onBeforeRouteLeave(async () => {
 </script>
 
 <template>
-  <PageLayout :title="name || '表格编辑器'">
+  <PageLayout :title="name || '电子表格'">
     <template #actions>
       <el-tag v-if="dirty" type="warning">未保存</el-tag>
-      <el-button @click="router.push({ name: 'tools-spreadsheet' })">返回列表</el-button>
+      <el-button @click="router.push({ name: 'docs-spreadsheet' })">返回列表</el-button>
       <el-button @click="onExport()">导出 xlsx</el-button>
       <el-button @click="openHistory">修改历史</el-button>
       <el-button type="primary" @click="openSaveDialog">保存</el-button>
@@ -383,7 +386,7 @@ onBeforeRouteLeave(async () => {
 
       <div class="grid-wrap">
         <DataTable :data="bodyRows" :loading="loading" :table-key="TABLE_KEYS.spreadsheetGrid">
-          <DataColumn type="index" label="#" :width="56" fixed="left" />
+          <DataColumn type="index" column-key="row-index" label="#" :width="56" fixed="left" default-hidden />
           <DataColumn
             v-for="(label, colIdx) in headerLabels"
             :key="gridColKey(colIdx)"
@@ -426,7 +429,7 @@ onBeforeRouteLeave(async () => {
 
   <!-- 表头编辑：多行表头块——每行可改内容/删除（至少留 1 行），可纳入下一行或加列 -->
   <el-dialog v-model="headerVisible" title="编辑表头" width="760px">
-    <div class="header-hint">表头共 {{ headerDraft.length }} 行；列名取该列各行非空内容拼接，过长截断展示</div>
+    <div class="header-hint">表头共 {{ headerDraft.length }} 行；列名取该列各行非空内容按「新行在前」拼接，过长截断展示</div>
     <div v-for="(draftRow, ri) in headerDraft" :key="ri" class="header-row">
       <span class="header-col-no">第 {{ ri + 1 }} 行</span>
       <el-input

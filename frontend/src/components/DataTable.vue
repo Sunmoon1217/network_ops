@@ -81,6 +81,12 @@ export default defineComponent({
     /** 展开列（`type="expand"`）：箭头列不是数据列，不参与列序/显隐/宽度偏好 */
     const isExpandCol = (vnode: VNode) => String((vnode.props ?? {})['type'] ?? '') === 'expand'
 
+    /** 列默认显隐：`default-hidden` 的列未被用户显式决定时默认隐藏（进「列设置」可开） */
+    const defaultHiddenOf = (vnode: VNode) => {
+      const p = (vnode.props ?? {}) as Record<string, any>
+      return Boolean(p.defaultHidden ?? p['default-hidden'])
+    }
+
     return () => {
       // 每次渲染现算（不 computed）：slot 执行时读到的响应式（v-if 条件等）只在渲染期建立依赖，
       // computed 缓存有过不更新的坑；列数量小，重算零成本
@@ -93,13 +99,12 @@ export default defineComponent({
       let ordered = columns
       if (prefs) {
         const order = prefs.columnOrder.value
-        const hidden = prefs.hiddenKeys.value
         const rank = (key: string) => {
           const idx = order.indexOf(key)
           return idx < 0 ? Number.MAX_SAFE_INTEGER : idx
         }
         ordered = columns
-          .filter((v) => !hidden.has(keyOf(v)))
+          .filter((v) => !prefs.isHidden(keyOf(v), defaultHiddenOf(v)))
           .map((v, i) => ({ v, i }))
           .sort((a, b) => rank(keyOf(a.v)) - rank(keyOf(b.v)) || a.i - b.i)
           .map(({ v }) => v)
@@ -142,7 +147,7 @@ export default defineComponent({
         table,
         h(ColumnSettings, {
           tableKey: props.tableKey,
-          columns: columns.filter((v) => keyOf(v)).map((v) => ({ key: keyOf(v), label: labelOf(v) })),
+          columns: columns.filter((v) => keyOf(v)).map((v) => ({ key: keyOf(v), label: labelOf(v), defaultHidden: defaultHiddenOf(v) })),
         }),
       ])
     }
