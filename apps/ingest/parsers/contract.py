@@ -25,6 +25,12 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "vrouter",
         "vswitches",
         "zones",
+        # cisco_fw.ttp 的 usernames（本地用户清单）尚无 DeviceAccount 消费路径
+        "usernames",
+        # TopSec（topsec_fw.ttp）产出的 vlans / snmp / ssh 在 firewall 类型下无 Saver
+        "vlans",
+        "snmp",
+        "ssh",
     },
     # regions / topologies / monitors 尚无对应模型
     "gslb": {"monitors", "regions", "topologies"},
@@ -43,5 +49,28 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
         "ssh",
         "stp",
         "version",
+    },
+    # 无线 AC（h3c_wirelessac.ttp 复用 Comware 交换机语法）：Saver 尚未按
+    # wirelessac 设备类型注册，产出全部未消费——interfaces / static_routes /
+    # vlans / vrfs / local_users 等都有现成 Saver，只差注册（产品待办）
+    "wirelessac": {
+        "dhcp",
+        "dhcp_pools",
+        "domain_default",
+        "domains",
+        "hostname",
+        "interfaces",
+        "irf",
+        "lldp",
+        "local_users",
+        "radius",
+        "roles",
+        "snmp",
+        "ssh",
+        "static_routes",
+        "stp",
+        "version",
+        "vlans",
+        "vrfs",
     },
 }

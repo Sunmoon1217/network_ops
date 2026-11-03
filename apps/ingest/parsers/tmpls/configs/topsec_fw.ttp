@@ -1,0 +1,40 @@
+# TopSec TopsecOS（网络卫士）TTP 模板
+
+# 语法依据 TopsecOS 扁平命令风格：系统级直接执行完整命令，如手册中的
+# network interface eth0 ip add 192.168.53.237 mask 255.255.255.0
+# 尚未经真实 show_running 输出校准：拿到真实配置样例后逐行核对语法再收窄
+# 每个 group 只放一行——TTP 多行 group 要求每行都命中才产出，备选行会互相拖累
+
+# 系统信息
+<group name="hostname">
+hostname {{ hostname }}
+</group>
+
+<group name="version">
+Topsec Operating System v{{ version }}
+</group>
+
+# VLAN配置（network vlan 管理）
+<group name="vlans">
+network vlan add id {{ vlan_id }} name {{ vlan_name }}
+</group>
+
+# 接口配置（network interface 管理）
+<group name="interfaces">
+network interface {{ interface }} ip add {{ ip_address }} mask {{ subnet_mask }}
+</group>
+
+# 静态路由配置（network route 管理，目的为前缀形式）
+<group name="static_routes">
+network route add dst {{ destination_network }}/{{ mask }} gw {{ next_hop }}
+</group>
+
+# SNMP配置
+<group name="snmp">
+snmp community {{ access_type }} {{ community }}
+</group>
+
+# SSH配置（system sshd 启停）
+<group name="ssh">
+system sshd {{ enable }}
+</group>
