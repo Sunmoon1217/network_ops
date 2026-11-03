@@ -23,7 +23,21 @@ from django.conf import settings
 from django.test import Client
 
 NGINX_CONF_DIR = settings.BASE_DIR / "nginx" / "conf.d"
-COMPOSE_FILE = settings.BASE_DIR / "docker-compose.yml"
+# compose 文件已由 docker-compose.yml 改名为 compose.yml（2776e46）
+COMPOSE_FILE = settings.BASE_DIR / "compose.yml"
+
+
+def _env_file(name: str) -> str:
+    """读按服务拆分的 env 文件做契约断言。
+
+    `env/*.env` 是部署本地实例、**不入库**（见 env/README.md），fresh clone 里只有
+    `env/example/*.env` 模板——模板是变量清单的契约源头，实例是它的部署副本。
+    所以实例优先（部署副本校验实际注入容器的文件），没有实例就校验入库模板。
+    """
+    path = settings.BASE_DIR / "env" / name
+    if not path.exists():
+        path = settings.BASE_DIR / "env" / "example" / name
+    return path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("conf_name", ["netops.conf", "netops-ssl.conf.disabled"])
@@ -67,11 +81,11 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`env/*.env` 给容器、`env/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：app / worker（celery 双队列）/ access-flow-consumer（访问流单写者消费者）
+    当前注入方：app / worker（celery 双队列）/ consumer（访问流单写者消费者）
     ——新增跑 Django 的服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
-    app_env = (settings.BASE_DIR / "env" / "app.env").read_text(encoding="utf-8")
+    app_env = _env_file("app.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in app_env
     assert compose.count("- env/app.env") == 3
@@ -80,15 +94,14 @@ def test_app_and_worker_share_the_django_runtime_env_file():
 def test_each_service_only_gets_its_own_env_file():
     """按服务拆分的 env_file 不许串味：gunicorn 的旋钮不该进 worker，celery 的不该进 app。"""
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
-    env_dir = settings.BASE_DIR / "env"
 
-    assert (env_dir / "gunicorn.env").read_text(encoding="utf-8").count("GUNICORN_WORKERS=") == 1
-    assert (env_dir / "celery.env").read_text(encoding="utf-8").count("CELERY_LOGLEVEL=") == 1
+    assert _env_file("gunicorn.env").count("GUNICORN_WORKERS=") == 1
+    assert _env_file("celery.env").count("CELERY_LOGLEVEL=") == 1
 
     app_block = compose.split("  worker:")[0]
-    # worker 块切到下一个服务为止：后面还有 access-flow-consumer，
+    # worker 块切到下一个服务为止：后面还有 consumer（访问流单写者消费者），
     # 跨着切会让「串味」断言被别的服务满足（假绿）
-    worker_block = compose.split("  worker:")[1].split("  access-flow-consumer:")[0]
+    worker_block = compose.split("  worker:")[1].split("  consumer:")[0]
     assert "- env/gunicorn.env" in app_block
     assert "- env/celery.env" not in app_block
     assert "- env/celery.env" in worker_block
@@ -109,19 +122,24 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     环境变量在 `docker inspect`、`/proc/1/environ` 里是明文，secret 文件只有挂它的容器看得到。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
-    env_dir = settings.BASE_DIR / "env"
 
     # db 与 app/worker 的 env 文件都把凭据指向 /run/secrets/*
     for name in ("db.env", "app.env"):
-        text = (env_dir / name).read_text(encoding="utf-8")
+        text = _env_file(name)
         assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in text
         assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in text
 
-    # compose 声明了这两个 secret，并挂给全部需要数据库的服务
-    # （db / app / worker / access-flow-consumer；新增时跟着加）
+    # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
+    # db / consumer 只拿数据库凭据（*db-secrets），app / worker 拿 *app-secrets
+    # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
     assert "file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}" in compose
     assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}" in compose
-    assert compose.count("secrets: *db-secrets") == 4
+    assert compose.count("secrets: *db-secrets") == 2
+    assert compose.count("secrets: *app-secrets") == 2
+    # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
+    for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
+        block = compose.split(anchor)[1].split("\n\n")[0]
+        assert "- postgres_user" in block and "- postgres_password" in block, anchor
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
     assert "${POSTGRES_PASSWORD:-" not in compose
