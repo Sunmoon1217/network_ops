@@ -46,6 +46,19 @@ GROUP = "access_flow_consumers"
 HEARTBEAT_KEY = "access_flow:heartbeat"
 
 
+def as_str(value) -> str:
+    """redis 响应值统一转 str。
+
+    本模块的 client 是 ``decode_responses=False``（消息体按 bytes 处理，见 get_redis），
+    于是组名 / 消息 ID / 字段值全是 bytes——直接与 str 常量比较恒为 False（组永远
+    匹配不上），``str(bytes)`` 又会得到 ``"b'...'"`` 伪 ID（喂给 XRANGE 即报
+    Invalid stream ID）。凡读 redis 响应做比较 / 拼接 / 展示的地方，一律过这里。
+    """
+    if value is None:
+        return ""
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
 @lru_cache(maxsize=1)
 def get_redis():
     """进程内共享一个连接池（decode_responses=False：消息体按 bytes 处理）。
@@ -65,13 +78,26 @@ def stream_maxlen() -> int:
 
 
 def backlog() -> int:
-    """当前积压的未消费消息数——生产者据此做背压判断。
+    """当前**未投递给消费者**的积压条数——生产者据此做背压判断。
+
+    口径是 XINFO GROUPS 的 ``lag``（从未投递给组内任何成员的条数），**不是 XLEN**：
+    XACK 不删条目，已消费的会一直躺到 XADD 的 maxlen trim 才走——用 XLEN 当积压，
+    「消化完了但条目还躺着」会被误判成积压，背压阈值调低（500）后必然误触发。
 
     Redis 不可达时返回 0（不背压）：真正的失败会在随后的加锁/投递处暴露并转成重试，
     这里不该先把任务打断。
     """
     try:
-        return int(get_redis().xlen(STREAM))
+        client = get_redis()
+        for group in client.xinfo_groups(STREAM):
+            if as_str(group.get("name")) != GROUP:
+                continue
+            lag = group.get("lag")
+            if lag is not None:
+                return int(lag)
+            # lag 未知（条目被 trim 过 / 旧版 redis）：退回 XLEN 估算，宁紧勿漏
+            return client.xlen(STREAM)
+        return 0  # 组不存在（Stream 未建或键刚被清）：无积压
     except Exception:
         logger.warning("读取 %s 积压长度失败（按 0 处理）", STREAM, exc_info=True)
         return 0

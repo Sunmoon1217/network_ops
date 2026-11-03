@@ -72,6 +72,8 @@ def run_parsing_stage(self, stage_id):
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
         device = task.device
+        if device is None:
+            raise ValueError("任务未关联设备，无法解析")
 
         # 从采集阶段获取原始配置
         collection_stage = task.stages.filter(stage_type="collection", status="success").first()
@@ -109,6 +111,8 @@ def run_storage_stage(self, stage_id):
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
         device = task.device
+        if device is None:
+            raise ValueError("任务未关联设备，无法入库")
 
         # 从解析阶段获取结构化数据
         parsing_stage = task.stages.filter(stage_type="parsing", status="success").first()

@@ -7,18 +7,20 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
-import { exportGtmChain, getGtmChain, getGtmChainFacets } from '@/api/config'
-import type { GtmChainPool, GtmChainRow, GtmFlatRow, LbPanelRow, LbRootRow } from '@/types'
+import { exportGslbClusters, getGslbClusterFacets, getGslbClusters } from '@/api/config'
+import type { GslbClusterOption, GslbClusterPool, GslbClusterRow, GtmFlatRow, LbMemberRow, LbPoolRow, LbRootRow } from '@/types'
 
-const filterDevice = ref<number | ''>('')
+// 过滤器按「GSLB 集群」而不是逐台设备：集群组名 / 单机设备名（下拉值为集群键）
+const filterCluster = ref('')
 // 两个下拉过滤：WideIP 记录类型（?rtype=）与健康检查类型（?monitor=）
 const filterRtype = ref('')
 const filterMonitor = ref('')
+const clusterOptions = ref<GslbClusterOption[]>([])
 const rtypeOptions = ref<string[]>([])
 const monitorOptions = ref<string[]>([])
 
-// 关联链聚合（/api/lb-chain/gslb/）：每行一条 域名 → 池 → 虚拟服务器，
-// 前端转成「根行（WideIP 自身字段）+ 展开面板（池 → 成员）」——两者各用各的列
+// GSLB 集群分析（/api/analysis/gslb-clusters/）：同集群多台设备的 GTM 配置已逐层合并，
+// 每行是一条（域名 + 记录类型）的整条链，device 是出现该条目的设备名逗号拼接。
 const {
   data: rows,
   loading,
@@ -30,26 +32,28 @@ const {
   pageParams,
   resetAndFetch,
   search,
-} = useCrudApi<GtmChainRow>()
+} = useCrudApi<GslbClusterRow>()
 
 const loadRows = () =>
   fetchData(() =>
-    getGtmChain(
+    getGslbClusters(
       pageParams({
-        device: filterDevice.value || undefined,
+        cluster: filterCluster.value || undefined,
         rtype: filterRtype.value || undefined,
         monitor: filterMonitor.value || undefined,
       }),
     ),
   )
 
-/** 下拉选项走 facets；拿不到不阻塞列表（下拉退化为空、可手动清空） */
+/** 下拉选项走 facets（集群列表 + 记录类型 + 健康检查）；拿不到不阻塞列表（下拉退化为空、可手动清空） */
 const loadFacets = async () => {
   try {
-    const res = await getGtmChainFacets()
+    const res = await getGslbClusterFacets()
+    clusterOptions.value = res.data?.clusters ?? []
     rtypeOptions.value = res.data?.rtypes ?? []
     monitorOptions.value = res.data?.monitors ?? []
   } catch {
+    clusterOptions.value = []
     rtypeOptions.value = []
     monitorOptions.value = []
   }
@@ -63,49 +67,72 @@ const KIND_LABEL = { wideip: 'Wide IP', pool: '池', member: '成员', vs: '' } 
 // 插槽 row 是 el-table 的 DefaultRow（any），索引前先收敛成 string，找不到就兜底
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
+// 成员链路状态 → 标签色与文案（记录式明细里的「状态」字段用）
+const STATE_TAG = { ok: 'success', disabled: 'info', lost: 'warning' } as const
+const STATE_LABEL = { ok: '正常', disabled: '停用', lost: '未找到' } as const
+const stateTagOf = (state: string) => STATE_TAG[state as keyof typeof STATE_TAG] ?? 'info'
+const stateLabelOf = (state: string) => STATE_LABEL[state as keyof typeof STATE_LABEL] ?? state
 
 /** 去重后顿号连接：面板池行的 order/ratio 显示池内成员的取值集合（逐成员值看成员行） */
 const uniqJoin = (vals: (number | null | undefined)[]) =>
   [...new Set(vals.filter((v) => v !== null && v !== undefined))].join('、')
 
-/** 池及其成员 → 面板池行（成员是池的 children）；找不到上游虚拟服务器的成员标 lost */
-const buildPoolPanel = (device: number, pool: GtmChainPool): LbPanelRow => ({
-  id: `pool-${device}-${pool.name}`,
-  kind: 'pool',
+/** 池及其成员 → pool 表行：`panel` 是该池的 member 表（严格依赖，展开池行才可见） */
+const buildPoolPanel = (cluster: string, pool: GslbClusterPool): LbPoolRow => ({
+  id: `pool-${cluster}-${pool.name}`,
   label: pool.name,
-  tipLines: [],
   // 负载算法 = lb_mode / alternate_mode；fallback = 模式 + 回退IP
   algo: [pool.lb_mode, pool.alternate_mode].filter(Boolean).join(' / '),
   fallback: [pool.fallback_mode, pool.fallback_ip ? `（${pool.fallback_ip}）` : ''].filter(Boolean).join(''),
   ttl: pool.ttl != null ? String(pool.ttl) : '',
   monitor: pool.monitor?.length ? pool.monitor.join('、') : '',
-  order: uniqJoin(pool.members.map((m) => m.order)),
-  ratio: uniqJoin(pool.members.map((m) => m.ratio)),
-  children: pool.members.map((m, idx) => ({
-    id: `member-${device}-${pool.name}-${idx}`,
-    kind: 'member' as const,
-    // 找到就显示 IP#端口；断链回退显示 server/vserver 名字
-    label: m.found && m.address ? addrPort(m.address, m.port) : `${m.server}/${m.vserver}`,
-    tipLines: [`${m.server} / ${m.vserver}`, m.found ? '' : '未找到虚拟服务器'].filter(Boolean),
-    // 成员行：成员自身的调度权重、成员级健康检查与所属 server 的数据中心
-    order: m.order != null ? String(m.order) : '',
-    ratio: m.ratio != null ? String(m.ratio) : '',
-    monitor: m.monitor || '',
-    datacenter: m.datacenter || '',
-    state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
-  })),
+  // wideip 级权重（pool_order / pool_ratio）：老数据没有 order → 空、ratio 兜底 1
+  order: pool.order != null ? String(pool.order) : '',
+  ratio: pool.ratio != null ? String(pool.ratio) : '1',
+  // 合并维度：出现该池的设备（可能只是集群的一部分）
+  device: pool.device,
+  inconsistent: pool.inconsistent,
+  // 成员按 member_order 升序；缺省（老数据无 order）排最后
+  panel: [...pool.members]
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
+    .map((m, idx) => ({
+      id: `member-${cluster}-${pool.name}-${idx}`,
+      // 名称拆成 server / vs 两列展示；地址只在真解析出 IP 时才占一格
+      server: m.server || '',
+      vs: m.vserver || '',
+      address: m.found && m.address ? addrPort(m.address, m.port) : '',
+      order: m.order != null ? String(m.order) : '',
+      ratio: m.ratio != null ? String(m.ratio) : '1',
+      monitor: m.monitor || '',
+      datacenter: m.datacenter || '',
+      device: m.device,
+      inconsistent: m.inconsistent,
+      state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+    })) as LbMemberRow[],
 })
 
-/** 关联链行 → 根行：WideIP 上主表，池/成员收进 panel 由展开列渲染 */
-const buildRoot = (r: GtmChainRow): LbRootRow => ({
-  id: `wideip-${r.device}-${r.name}`,
+/** 集群合并行 → 根行：WideIP 上主表，池/成员收进 panel 由展开列渲染 */
+const buildRoot = (r: GslbClusterRow): LbRootRow => ({
+  id: `wideip-${r.cluster}-${r.name}`,
   kind: 'wideip',
   label: r.name,
-  tipLines: [],
-  device: r.device_hostname,
+  // 次要信息收进 hover：集群、合并进来的设备、以及不一致的字段名
+  tipLines: [
+    `集群：${r.cluster_name}`,
+    `设备：${r.device}`,
+    r.inconsistent ? `配置不一致：${r.conflict_fields.join('、') || '多个字段'}` : '',
+  ].filter(Boolean),
+  device: r.device,
+  cluster: r.cluster_name,
+  clusterDevices: r.cluster_devices.map((item) => item.hostname),
+  inconsistent: r.inconsistent,
+  conflictFields: r.conflict_fields,
   rtype: r.rtype || '-',
   mode: r.lb_mode || '-',
-  panel: r.pools.map((p) => buildPoolPanel(r.device, p)),
+  // 池按 pool_order 升序；缺省（老数据无 order）排最后
+  panel: [...r.pools]
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
+    .map((p) => buildPoolPanel(r.cluster, p)),
 })
 
 const rootRows = computed(() => rows.value.map(buildRoot))
@@ -115,8 +142,8 @@ const exportLoading = ref(false)
 const handleExport = async () => {
   exportLoading.value = true
   try {
-    const res = await exportGtmChain({
-      device: filterDevice.value || undefined,
+    const res = await exportGslbClusters({
+      cluster: filterCluster.value || undefined,
       rtype: filterRtype.value || undefined,
       monitor: filterMonitor.value || undefined,
       search: search.value || undefined,
@@ -124,7 +151,7 @@ const handleExport = async () => {
     const url = URL.createObjectURL(res.data as Blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `dn-chains-${new Date().toISOString().slice(0, 10)}.xlsx`
+    link.download = `gslb-clusters-${new Date().toISOString().slice(0, 10)}.xlsx`
     link.click()
     URL.revokeObjectURL(url)
   } catch {
@@ -145,11 +172,12 @@ const toggleView = () => (viewMode.value = viewMode.value === 'detail' ? 'flat' 
  * 扁平宽表 = SQL join 式展开：**以链最深层为行粒度**——
  * 有成员则每成员一行（wideip + 池字段整条下填），池无成员则以池为行，
  * 无池则以 WideIP 为行；配合专属宽表列（TTL/池监控/成员监控…）融合成一张大表。
+ * 「配置不一致」列取该行路径上**任一层**的不一致（叶子漂移不至于被 wideip 层掩盖）。
  */
 const flatRows = computed(() => {
   const out: GtmFlatRow[] = []
   for (const w of rows.value) {
-    const wide = { device: w.device_hostname, domain: w.name, rtype: w.rtype || '-', wideAlgo: w.lb_mode || '-' }
+    const wide = { device: w.device, domain: w.name, rtype: w.rtype || '-', wideAlgo: w.lb_mode || '-' }
     const emptyPool = {
       poolName: '-',
       poolAlgo: '-',
@@ -159,10 +187,19 @@ const flatRows = computed(() => {
       poolOrder: '-',
       poolRatio: '-',
     }
-    const emptyMember = { order: '', ratio: '', memberMonitor: '', datacenter: '' }
-    const prefix = `flat-w-${w.device}-${w.name}`
+    const emptyMember = { server: '', vs: '', order: '', ratio: '', memberMonitor: '', datacenter: '' }
+    const prefix = `flat-${w.cluster}-${w.name}`
     if (!w.pools.length) {
-      out.push({ ...wide, ...emptyPool, ...emptyMember, id: prefix, kind: 'wideip', label: w.name, tipLines: [] })
+      out.push({
+        ...wide,
+        ...emptyPool,
+        ...emptyMember,
+        id: prefix,
+        kind: 'wideip',
+        label: w.name,
+        tipLines: [],
+        inconsistent: w.inconsistent,
+      })
       continue
     }
     for (const p of w.pools) {
@@ -173,9 +210,10 @@ const flatRows = computed(() => {
         ttl: p.ttl != null ? String(p.ttl) : '-',
         poolMonitor: p.monitor?.length ? p.monitor.join('、') : '-',
         // 池级权重 = 池内成员取值集合去重（与展开面板的池行同义），成员行也带上下文
-        poolOrder: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.order)) || '-',
-        poolRatio: uniqJoin(p.members.map((m: GtmChainPool['members'][number]) => m.ratio)) || '-',
+        poolOrder: uniqJoin(p.members.map((m: GslbClusterPool['members'][number]) => m.order)) || '-',
+        poolRatio: uniqJoin(p.members.map((m: GslbClusterPool['members'][number]) => m.ratio)) || '-',
       }
+      const poolFlag = w.inconsistent || p.inconsistent
       if (!p.members.length) {
         out.push({
           ...wide,
@@ -185,10 +223,11 @@ const flatRows = computed(() => {
           kind: 'pool',
           label: p.name,
           tipLines: [`链路：${w.name}（池无成员，以池为行）`],
+          inconsistent: poolFlag,
         })
         continue
       }
-      p.members.forEach((m: GtmChainPool['members'][number], idx: number) =>
+      p.members.forEach((m: GslbClusterPool['members'][number], idx: number) =>
         out.push({
           ...wide,
           ...pool,
@@ -200,11 +239,14 @@ const flatRows = computed(() => {
           tipLines: [`${m.server} / ${m.vserver}`, `链路：${w.name} → ${p.name}`, m.found ? '' : '未找到虚拟服务器'].filter(
             Boolean,
           ),
+          server: m.server || '',
+          vs: m.vserver || '',
           order: m.order != null ? String(m.order) : '',
           ratio: m.ratio != null ? String(m.ratio) : '',
           memberMonitor: m.monitor || '',
           datacenter: m.datacenter || '',
           state: m.found ? (m.status === 'disabled' ? 'disabled' : 'ok') : 'lost',
+          inconsistent: poolFlag || m.inconsistent,
         }),
       )
     }
@@ -212,7 +254,7 @@ const flatRows = computed(() => {
   return out
 })
 
-watch(filterDevice, resetAndFetch)
+watch(filterCluster, resetAndFetch)
 watch(filterRtype, resetAndFetch)
 watch(filterMonitor, resetAndFetch)
 onMounted(() => {
@@ -239,12 +281,18 @@ onMounted(() => {
         切换{{ viewMode === 'detail' ? '扁平' : '明细' }}视图
       </el-button>
       <FilterBar
-        v-model:device="filterDevice"
         v-model:search="search"
-        device-type="gslb"
-        search-placeholder="搜索 域名/池/服务器/虚拟服务器/IP:端口/健康检查"
-        search-width="260px"
+        :show-device="false"
+        search-placeholder="搜索 域名/集群/池/服务器/虚拟服务器/IP:端口/健康检查"
+        search-width="280px"
       >
+        <!-- 过滤器按 GSLB 集群（集群组名 / 单机设备名）而不是逐台设备；值为集群键 -->
+        <el-select v-model="filterCluster" placeholder="集群 / 单机" clearable filterable style="width: 200px">
+          <el-option v-for="c in clusterOptions" :key="c.key" :label="c.name" :value="c.key">
+            <span>{{ c.name }}</span>
+            <span class="opt-hint">{{ c.group_id === null ? '单机' : `集群 ${c.devices.length} 台` }}</span>
+          </el-option>
+        </el-select>
         <el-select v-model="filterRtype" placeholder="记录类型" clearable style="width: 110px">
           <el-option v-for="t in rtypeOptions" :key="t" :label="t" :value="t" />
         </el-select>
@@ -272,46 +320,105 @@ onMounted(() => {
                    子表首列对齐主表第一列（名称），而不是箭头列 -->
               <div class="panel">
                 <div v-if="!row.panel?.length" class="panel-empty">无关联池</div>
-                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
-                <el-table
-                  v-else
-                  :data="row.panel"
-                  row-key="id"
-                  :tree-props="{ children: 'children' }"
-                  default-expand-all
-                  border
-                  size="small"
-                >
-                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
+                <!-- pool 表：无表头，格子自带「字段名：」前缀；池行再展开一层才是 member 表 -->
+                <el-table v-else :data="row.panel" row-key="id" :show-header="false" size="small">
+                  <DataColumn type="expand" label="">
                     <template #default="{ row: p }">
-                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
+                      <div class="panel">
+                        <div v-if="!p.panel?.length" class="panel-empty">无成员</div>
+                        <!-- member 表：同样无表头，字段名前缀与 pool 表一致 -->
+                        <el-table v-else :data="p.panel" row-key="id" :show-header="false" size="small">
+                          <DataColumn prop="order" column-key="mOrder" label="Order" min-width="68">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">Order：</span>{{ m.order }}
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="ratio" column-key="mRatio" label="Ratio" min-width="68">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">Ratio：</span>{{ m.ratio }}
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="server" column-key="mServer" label="server" min-width="150">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">server：</span><strong>{{ m.server }}</strong>
+                              <el-tag v-if="m.inconsistent" type="warning" size="small" class="flag">不一致</el-tag>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="vs" column-key="mVs" label="vs" min-width="160">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">vs：</span><strong>{{ m.vs }}</strong>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="address" column-key="mAddr" label="地址" min-width="150">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">地址：</span>{{ m.address }}
+                            </template>
+                          </DataColumn>
+                          <!-- 合并维度：出现该成员的设备（集群里可能只有部分设备配了这条） -->
+                          <!-- <DataColumn prop="device" column-key="mDevice" label="设备" min-width="140">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">设备：</span>{{ m.device }}
+                            </template>
+                          </DataColumn> -->
+                          <DataColumn prop="monitor" column-key="mMonitor" label="监控" min-width="120">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">监控：</span>{{ m.monitor }}
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="datacenter" column-key="mDatacenter" label="数据中心" min-width="110">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">数据中心：</span>{{ m.datacenter }}
+                            </template>
+                          </DataColumn>
+                          <DataColumn label="状态" column-key="mState" min-width="95">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">状态：</span>
+                              <el-tag v-if="m.state" :type="stateTagOf(m.state)" size="small">{{ stateLabelOf(m.state) }}</el-tag>
+                            </template>
+                          </DataColumn>
+                        </el-table>
+                      </div>
                     </template>
                   </DataColumn>
-                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="200">
+                  <DataColumn prop="order" column-key="poolOrder" label="Order" min-width="78">
                     <template #default="{ row: p }">
-                      <el-tooltip v-if="p.tipLines?.length" placement="top">
-                        <template #content>
-                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
-                        </template>
-                        <span>{{ p.label }}</span>
-                      </el-tooltip>
-                      <span v-else>{{ p.label }}</span>
+                      <span class="cell-k">Order：</span>{{ p.order }}
                     </template>
                   </DataColumn>
-                  <!-- 池行填自身配置，成员行留空；成员自己的权重/检查/数据中心在右侧成员段列 -->
-                  <DataColumn prop="algo" column-key="pAlgo" label="负载算法" min-width="150" />
-                  <DataColumn prop="fallback" column-key="pFallback" label="fallback" min-width="150" />
-                  <DataColumn prop="ttl" column-key="pTtl" label="TTL" min-width="70" />
-                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="130" />
-                  <DataColumn prop="order" column-key="pOrder" label="Order" min-width="85" />
-                  <DataColumn prop="ratio" column-key="pRatio" label="Ratio" min-width="85" />
-                  <DataColumn prop="datacenter" column-key="pDatacenter" label="数据中心" min-width="100" />
-                  <DataColumn label="状态" column-key="pState" min-width="85">
+                  <DataColumn prop="ratio" column-key="poolRatio" label="Ratio" min-width="78">
                     <template #default="{ row: p }">
-                      <el-tag v-if="p.state === 'ok'" type="success" size="small">正常</el-tag>
-                      <el-tag v-else-if="p.state === 'disabled'" type="info" size="small">停用</el-tag>
-                      <el-tag v-else-if="p.state === 'lost'" type="warning" size="small">未找到</el-tag>
-                      <span v-else class="muted">-</span>
+                      <span class="cell-k">Ratio：</span>{{ p.ratio }}
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="label" column-key="poolLabel" label="池" min-width="200">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">池：</span><strong>{{ p.label }}</strong>
+                      <el-tag v-if="p.inconsistent" type="warning" size="small" class="flag">不一致</el-tag>
+                    </template>
+                  </DataColumn>
+                  <!-- <DataColumn prop="device" column-key="poolDevice" label="设备" min-width="140">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">设备：</span>{{ p.device }}
+                    </template>
+                  </DataColumn> -->
+                  <DataColumn prop="algo" column-key="poolAlgo" label="负载算法" min-width="160">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">负载算法：</span>{{ p.algo }}
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="fallback" column-key="poolFallback" label="fallback" min-width="150">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">fallback：</span>{{ p.fallback }}
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="ttl" column-key="poolTtl" label="TTL" min-width="85">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">TTL：</span>{{ p.ttl }}
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="monitor" column-key="poolMonitor" label="监控" min-width="140">
+                    <template #default="{ row: p }">
+                      <span class="cell-k">监控：</span>{{ p.monitor }}
                     </template>
                   </DataColumn>
                 </el-table>
@@ -329,7 +436,20 @@ onMounted(() => {
               <span v-else>{{ row.label }}</span>
             </template>
           </DataColumn>
-          <DataColumn prop="device" label="设备" min-width="130" />
+          <DataColumn prop="cluster" label="集群" min-width="120" show-overflow-tooltip />
+          <!-- 合并后的设备字段：逗号拼接出现该域名的设备；hover 列出集群全部设备 -->
+          <!-- <DataColumn prop="device" label="设备" min-width="160">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.clusterDevices?.length" placement="top">
+                <template #content>
+                  <div>集群：{{ row.cluster }}</div>
+                  <div v-for="hostname in row.clusterDevices" :key="hostname">{{ hostname }}</div>
+                </template>
+                <span>{{ row.device }}</span>
+              </el-tooltip>
+              <span v-else>{{ row.device }}</span>
+            </template>
+          </DataColumn> -->
           <DataColumn label="类型" column-key="kind" min-width="100">
             <template #default="{ row }">
               <el-tag :type="kindTagOf(row.kind)" size="small">{{ kindLabelOf(row.kind) }}</el-tag>
@@ -338,10 +458,22 @@ onMounted(() => {
           <DataColumn prop="rtype" label="记录类型" min-width="90" />
           <!-- 只有 WideIP 自身的 lb_mode 上主表；池的算法/fallback/TTL/权重等一律进面板 -->
           <DataColumn prop="mode" label="负载算法" min-width="150" />
+          <DataColumn label="配置不一致" column-key="conflict" min-width="120">
+            <template #default="{ row }">
+              <el-tooltip
+                v-if="row.inconsistent"
+                placement="top"
+                :content="`不一致字段：${row.conflictFields?.join('、') || '多个字段'}`"
+              >
+                <el-tag type="warning" size="small">不一致</el-tag>
+              </el-tooltip>
+              <span v-else class="muted">-</span>
+            </template>
+          </DataColumn>
         </template>
         <!-- 扁平宽表列组：按链层级排序——wideip 段 → 池段（权重/名/监控）→ 成员段 -->
         <template v-else>
-          <DataColumn prop="device" label="设备" min-width="120" />
+          <DataColumn prop="device" label="设备" min-width="160" show-overflow-tooltip />
           <DataColumn prop="domain" label="域名" min-width="170" show-overflow-tooltip />
           <DataColumn prop="rtype" label="记录类型" min-width="85" />
           <DataColumn prop="wideAlgo" label="WideIP算法" min-width="110" />
@@ -363,6 +495,8 @@ onMounted(() => {
               <span v-else>{{ row.label }}</span>
             </template>
           </DataColumn>
+          <DataColumn prop="server" label="server" min-width="110" show-overflow-tooltip />
+          <DataColumn prop="vs" label="vs" min-width="150" show-overflow-tooltip />
           <DataColumn prop="order" label="成员Order" min-width="95" />
           <DataColumn prop="ratio" label="成员Ratio" min-width="95" />
           <DataColumn prop="memberMonitor" label="成员监控" min-width="110" />
@@ -372,6 +506,13 @@ onMounted(() => {
               <el-tag v-if="row.state === 'ok'" type="success" size="small">正常</el-tag>
               <el-tag v-else-if="row.state === 'disabled'" type="info" size="small">停用</el-tag>
               <el-tag v-else-if="row.state === 'lost'" type="warning" size="small">未找到</el-tag>
+              <span v-else class="muted">-</span>
+            </template>
+          </DataColumn>
+          <!-- 与后端导出末列同义：该行路径上任一层命中不一致即标「是」 -->
+          <DataColumn label="配置不一致" column-key="conflict" min-width="110">
+            <template #default="{ row }">
+              <el-tag v-if="row.inconsistent" type="warning" size="small">是</el-tag>
               <span v-else class="muted">-</span>
             </template>
           </DataColumn>
@@ -387,6 +528,12 @@ onMounted(() => {
 .muted { color: var(--el-text-color-placeholder); }
 /* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
 .panel { padding-left: 48px; }
+/* 子表（pool / member 表）无表头：字段名前缀放进格子里，用次要色与值区分 */
+.cell-k { color: var(--el-text-color-secondary); }
 /* 展开面板里的占位文案（WideIP 无关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
+/* 配置不一致标记：跟在对象名后面，与值留一点间距 */
+.flag { margin-left: 6px; }
+/* 集群下拉项右侧的类型提示（单机 / 集群 N 台） */
+.opt-hint { float: right; margin-left: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

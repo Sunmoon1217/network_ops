@@ -13,6 +13,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value)
 
+  /** 是否可写（增删改）：由后端 /api/me/ 的 can_write 决定（超管恒 true，不看 role）。 */
+  const canWrite = computed(() => !!user.value?.can_write)
+
   const login = async (username: string, password: string) => {
     loading.value = true
     try {
@@ -20,6 +23,8 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.token
       setToken(data.token)
       user.value = data.user
+      // 登录响应只含 id/username，补拉一次 /api/me/ 才拿得到 role / can_write
+      await fetchUser()
       resetUserPreferences() // 换账号登录，清掉上一个账号的偏好缓存
       return true
     } finally {
@@ -35,6 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.token
       setToken(data.token)
       user.value = data.user
+      await fetchUser()
       resetUserPreferences()
       return true
     } finally {
@@ -76,5 +82,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, loading, isAuthenticated, login, register, logout, fetchUser, changePassword }
+  return { token, user, loading, isAuthenticated, canWrite, login, register, logout, fetchUser, changePassword }
 })

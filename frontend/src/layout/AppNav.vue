@@ -2,14 +2,15 @@
 import { h, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
-// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心
-import { DataAnalysis, Connection, Timer } from '@element-plus/icons-vue'
+// Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心 / 电子表格
+import { DataAnalysis, Connection, Timer, Grid } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
 import {
   IconOverview, IconDevices, IconDeviceList, IconBaseline, IconInterfaces,
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,
   IconIp, IconSubnet, IconTools, IconPathTrace, IconRouting,
+  IconDoc, IconKnowledge, IconTemp,
   IconLayoutSide,
 } from '@/assets/menu-icons'
 
@@ -67,6 +68,15 @@ const menuOptions: MenuItem[] = [
     index: '/tasks', label: '任务中心', icon: renderIcon(Timer),
     children: [
       { index: '/tasks', label: '任务列表', icon: renderIcon(Timer) },
+      { index: '/tasks/monitor', label: '运行监控', icon: renderIcon(DataAnalysis) },
+    ],
+  },
+  {
+    index: '/docs', label: '文档', icon: renderIcon(IconDoc),
+    children: [
+      { index: '/docs/knowledge', label: '知识库', icon: renderIcon(IconKnowledge) },
+      { index: '/docs/spreadsheet', label: '电子表格', icon: renderIcon(Grid) },
+      { index: '/docs/temp', label: '临时', icon: renderIcon(IconTemp) },
     ],
   },
   {

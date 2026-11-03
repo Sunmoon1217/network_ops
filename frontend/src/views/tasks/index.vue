@@ -10,10 +10,12 @@ import {
   getTasks, getTask, createTask, cancelTask, getTaskDeviceOptions,
 } from '@/api/tasks'
 import type { Task, DeviceOption } from '@/types'
+import { useAuthStore } from '@/stores/auth'
 
 const { data: tasks, loading, search, page, pageSize, total, fetchData, refetch, pageParams } =
   useCrudApi<Task>()
 
+const authStore = useAuthStore()
 const deviceOptions = ref<DeviceOption[]>([])
 const filterDevice = ref<number | ''>('')
 const filterStatus = ref<string>('')
@@ -213,7 +215,7 @@ onMounted(() => {
       </el-select>
       <el-input v-model="search" placeholder="搜索设备主机名" clearable style="width: 220px" />
       <el-button :icon="Refresh" @click="refetch()">刷新</el-button>
-      <el-button type="primary" @click="openCreate">新建任务</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="openCreate">新建任务</el-button>
     </template>
 
     <div class="table-wrapper">
@@ -240,6 +242,7 @@ onMounted(() => {
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="openDetail(row.id)">详情</el-button>
             <el-button
+              v-if="authStore.canWrite"
               size="small" link type="danger"
               :disabled="!canCancel(row.status)"
               @click="cancelRow(row.id)"

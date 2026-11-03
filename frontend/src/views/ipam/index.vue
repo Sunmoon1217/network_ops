@@ -7,8 +7,10 @@ import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getSubnets, deleteSubnet } from '@/api/ipam'
 import { fetchAllPages } from '@/utils/fetchAllPages'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const {
   data: subnets,
   loading,
@@ -54,7 +56,7 @@ onMounted(() => {
         <el-option v-for="t in tags" :key="t.id" :label="t.name" :value="t.id" />
       </el-select>
       <el-input v-model="search" placeholder="搜索网段/描述" clearable style="width: 200px" />
-      <el-button type="primary" @click="router.push('/ipam/subnets/create')">新增网段</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/ipam/subnets/create')">新增网段</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.ipamSubnets" :data="subnets" :loading="loading">
@@ -70,7 +72,7 @@ onMounted(() => {
           <template #default="{ row }"><el-progress :percentage="row.utilization || 0" :stroke-width="14" :text-inside="true" style="width: 70px" /></template>
         </DataColumn>
         <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
-        <DataColumn label="操作" width="120" fixed="right" align="center">
+        <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/ipam/subnets/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>

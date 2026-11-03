@@ -8,8 +8,10 @@ import { useCrudApi } from '@/composables/useCrudApi'
 import { TABLE_KEYS } from '@/constants/tableKeys'
 import { modeTagType } from '@/composables/useTagType'
 import { getInterfaces } from '@/api/interfaces'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const { data: interfaces, loading, search, page, pageSize, total, fetchData, refetch, pageParams, resetAndFetch } =
   useCrudApi()
 const filterDevice = ref<number | ''>('')
@@ -70,7 +72,7 @@ onMounted(fetchAll)
           </template>
         </DataColumn>
         <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
-        <DataColumn column-key="operation" label="操作" :width="80" fixed="right" align="center">
+        <DataColumn v-if="authStore.canWrite" column-key="operation" label="操作" :width="80" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/devices/interfaces/${row.id}/edit`)">编辑</el-button>
           </template>

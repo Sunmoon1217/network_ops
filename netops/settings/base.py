@@ -111,15 +111,80 @@ CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
 # 访问流（AccessFlow）重建链路的旋钮与任务名约定：
-# - 背压阈值：生产者投递前查 Stream 积压，超过就 self.retry 让路（不占 worker 进程）；
+# - 背压阈值：生产者投递前查 Stream **未投递积压**（XINFO GROUPS 的 lag，见
+#   access_stream.backlog——不是 XLEN，后者含已消费未 trim 的条目，会把「消化完了
+#   但条目还躺着」误判成积压），超过就 self.retry 让路（不占 worker 进程）。默认 500：
+#   consumer 消化一条大设备消息要分钟级，500 条已是数小时量级的真实积压；再往上堆
+#   只会放大「consumer 卡死无人知」的静默窗口（2026-10 实盘事故：47 条积压 + OOM
+#   循环重启无人发现）。监控出口是 manage.py queue_status / /api/analysis/queue-status/。
 # - 投递开关：测试里默认关（conftest 统一置 False），否则 PolicySaver 每保存一次
 #   就往真实 Redis 发消息；
 # - 任务名唯一定义处：ingest 的投递触点（access_flow_trigger）按它 send_task——不 import
 #   analysis（依赖方向单向）；analysis.tasks 的 name= 与下方 CELERY_TASK_ROUTES 的 key
 #   必须与之一致，tests/analysis/test_access_flow_task.py 有对账断言。
-ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "50000"))
+ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
+
+# 阿里云配置：一朵云、两个资源集（生产/测试），两套账号，共用 region；
+# 各产品 endpoint 不同，分别由环境变量传递。
+# 凭据链路 *_FILE > 同名环境变量 > 默认值（空），与项目其他凭据一致。
+# 环境变量清单：
+#   ALIYUN_REGION                区域，例 cn-hangzhou（两个账号共用）
+#   ALIYUN_ECS_ENDPOINT          ECS endpoint
+#   ALIYUN_VPC_ENDPOINT          VPC（含 VSwitch）endpoint
+#   ALIYUN_SLB_ENDPOINT          SLB endpoint
+#   ALIYUN_SLS_ENDPOINT          SLS endpoint
+#   ALIYUN_ASAPI_ENDPOINT        ASAPI endpoint
+#   ALIYUN_PROD_ACCESS_KEY_ID    生产账号 AK
+#   ALIYUN_PROD_ACCESS_KEY_SECRET
+#   ALIYUN_TEST_ACCESS_KEY_ID    测试账号 AK
+#   ALIYUN_TEST_ACCESS_KEY_SECRET
+ALIYUN_CONFIG = {
+    "region": os.environ.get("ALIYUN_REGION", ""),
+    "endpoints": {
+        "Ecs": os.environ.get("ALIYUN_ECS_ENDPOINT", ""),
+        "Vpc": os.environ.get("ALIYUN_VPC_ENDPOINT", ""),
+        "Slb": os.environ.get("ALIYUN_SLB_ENDPOINT", ""),
+        "Sls": os.environ.get("ALIYUN_SLS_ENDPOINT", ""),
+        "Asapi": os.environ.get("ALIYUN_ASAPI_ENDPOINT", ""),
+    },
+    "accounts": {
+        "prod": {
+            "access_key_id": _env_or_file("ALIYUN_PROD_ACCESS_KEY_ID"),
+            "access_key_secret": _env_or_file("ALIYUN_PROD_ACCESS_KEY_SECRET"),
+        },
+        "test": {
+            "access_key_id": _env_or_file("ALIYUN_TEST_ACCESS_KEY_ID"),
+            "access_key_secret": _env_or_file("ALIYUN_TEST_ACCESS_KEY_SECRET"),
+        },
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Dify 知识库（docs 文档转换的推送目标）
+#
+# 文档转换产物（md / 自包含 html，pdf 直传）经「知识库 API」推入自托管 Dify 的固定知识库。
+# 环境变量清单（容器注入 env/app.env；API Key 走凭据链 *_FILE > 同名环境变量）：
+#   DIFY_API_BASE_URL       知识库 API 地址（含 /v1），如 https://dify.example.com/v1
+#   DIFY_API_KEY(_FILE)     知识库 API Key（Bearer 认证）
+#   DIFY_DATASET_ID         目标知识库（dataset）ID
+#   DIFY_INDEXING_TECHNIQUE 索引方式：high_quality（默认）/ economy
+#   DIFY_TIMEOUT            HTTP 超时秒数（默认 30）
+#   DIFY_PROCESS_MODE       分段模式：automatic（默认）/ custom
+#   DIFY_SEGMENT_SEPARATOR  custom 模式的分段分隔符（\n \t 转义会被还原，默认 \n）
+#   DIFY_SEGMENT_MAX_TOKENS custom 模式的分段 token 上限（默认 500）
+# 前三项齐备才启用推送；缺失时推送接口返回 503，转换与留档不受影响。
+DIFY_CONFIG = {
+    "api_base_url": os.environ.get("DIFY_API_BASE_URL", "").rstrip("/"),
+    "api_key": _env_or_file("DIFY_API_KEY"),
+    "dataset_id": os.environ.get("DIFY_DATASET_ID", ""),
+    "indexing_technique": os.environ.get("DIFY_INDEXING_TECHNIQUE", "high_quality"),
+    "timeout": int(os.environ.get("DIFY_TIMEOUT", "30")),
+    "process_mode": os.environ.get("DIFY_PROCESS_MODE", "automatic"),
+    "segment_separator": os.environ.get("DIFY_SEGMENT_SEPARATOR", "\n"),
+    "segment_max_tokens": int(os.environ.get("DIFY_SEGMENT_MAX_TOKENS", "500")),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +218,8 @@ INSTALLED_APPS = [
     "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
     "analysis.apps.AnalysisConfig",
+    "cloud.apps.CloudConfig",
+    "docs.apps.DocsConfig",
 ]
 
 MIDDLEWARE = [
@@ -240,8 +307,10 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
+    # 默认权限：读方法任何已认证用户可用，写方法限操作员（role=operator）或超管，
+    # 见 core.permissions.IsOperatorOrReadOnly
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "core.permissions.IsOperatorOrReadOnly",
     ],
     # 列表接口统一启用搜索与排序，各 ViewSet 通过 search_fields / ordering_fields 声明可用字段
     "DEFAULT_FILTER_BACKENDS": [

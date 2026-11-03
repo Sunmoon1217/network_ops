@@ -22,7 +22,7 @@ const props = defineProps<{
   columns: ColumnMeta[]
 }>()
 
-const { columnOrder, hiddenKeys, saveOrder, toggleColumn, resetColumnLayout } = useTablePrefs(props.tableKey)
+const { columnOrder, isHidden, saveOrder, toggleColumn, resetColumnLayout } = useTablePrefs(props.tableKey)
 
 const visible = ref(false)
 const listRef = ref<HTMLElement>()
@@ -86,8 +86,8 @@ const handleReset = () => {
     <div ref="listRef" class="col-list">
       <div v-for="col in ordered" :key="col.key" class="col-row">
         <el-checkbox
-          :model-value="!hiddenKeys.has(col.key)"
-          @change="toggleColumn(col.key)"
+          :model-value="!isHidden(col.key, col.defaultHidden)"
+          @change="toggleColumn(col.key, col.defaultHidden)"
         >
           {{ col.label }}
         </el-checkbox>

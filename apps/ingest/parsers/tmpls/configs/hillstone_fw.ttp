@@ -15,6 +15,7 @@ exit {{ _end_ }}
 
 <group name="interfaces.{{ interface }}">
 interface {{ interface }}
+  shutdown {{ enabled | set(0) | default(1) }}
 exit {{ _end_ }}
 </group>
 

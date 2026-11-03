@@ -8,7 +8,7 @@ import DataPagination from '@/components/DataPagination.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { exportLtmChain, getLtmChain } from '@/api/config'
-import type { LbPanelRow, LbRootRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
+import type { LbMemberRow, LbPoolRow, LbRootRow, LtmChainPool, LtmChainRow, LtmFlatRow } from '@/types'
 
 const filterDevice = ref<number | ''>('')
 
@@ -39,21 +39,22 @@ const KIND_LABEL = { vs: '虚拟服务器', pool: '池', member: '成员', widei
 const kindTagOf = (kind: string) => KIND_TAG[kind as keyof typeof KIND_TAG] ?? 'info'
 const kindLabelOf = (kind: string) => KIND_LABEL[kind as keyof typeof KIND_LABEL] ?? kind
 
-/** 池及其成员 → 面板池行（成员是池的 children）：明细走面板自有列，不借主表列 */
-const buildPoolPanel = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbPanelRow => ({
+/** 池及其成员 → pool 表行：`panel` 是该池的 member 表（严格依赖，展开池行才可见） */
+const buildPoolPanel = (device: number, pool: LtmChainPool, members: LtmChainRow['members']): LbPoolRow => ({
   id: `pool-${device}-${pool.name}`,
-  kind: 'pool',
   label: pool.name,
-  tipLines: [],
   algo: pool.mode || '',
   monitor: pool.monitors?.length ? pool.monitors.join('、') : '',
-  children: members.map((m, idx) => ({
-    // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
-    id: `member-${device}-${pool.name}-${idx}`,
-    kind: 'member' as const,
-    label: m.address ? addrPort(m.address, m.port) : m.name,
-    tipLines: [m.name],
-  })),
+  panel: members.map((m, idx) => {
+    const addr = m.address ? addrPort(m.address, m.port) : ''
+    return {
+      // 成员唯一键是 设备+池名+名字+端口，这里挂在池下用序号即可
+      id: `member-${device}-${pool.name}-${idx}`,
+      name: m.name || addr,
+      // 名称里已经有地址时不再重复占一格
+      address: m.name && addr && addr !== m.name ? addr : '',
+    } as LbMemberRow
+  }),
 })
 
 /** 关联链行 → 根行：VS 上主表，池/成员收进 panel 由展开列渲染 */
@@ -207,34 +208,49 @@ onMounted(loadRows)
                    子表首列对齐主表第一列（名称），而不是箭头列 -->
               <div class="panel">
                 <div v-if="!row.panel?.length" class="panel-empty">未关联池</div>
-                <!-- 面板内的嵌套小表格：池行 → 成员子行，列是面板自己的（p* 键） -->
-                <el-table
-                  v-else
-                  :data="row.panel"
-                  row-key="id"
-                  :tree-props="{ children: 'children' }"
-                  default-expand-all
-                  border
-                  size="small"
-                >
-                  <DataColumn prop="kind" column-key="pKind" label="类型" width="76" anchor>
+                <!-- pool 表：无表头，格子自带「字段名：」前缀；池行再展开一层才是 member 表 -->
+                <el-table v-else :data="row.panel" row-key="id" :show-header="false" size="small">
+                  <DataColumn type="expand" label="">
                     <template #default="{ row: p }">
-                      <el-tag :type="kindTagOf(p.kind)" size="small">{{ kindLabelOf(p.kind) }}</el-tag>
+                      <div class="panel">
+                        <div v-if="!p.panel?.length" class="panel-empty">无成员</div>
+                        <!-- member 表：同样无表头，字段名前缀与 pool 表一致 -->
+                        <el-table v-else :data="p.panel" row-key="id" :show-header="false" size="small">
+                          <DataColumn prop="name" column-key="mName" label="名称" min-width="200">
+                            <template #default="{ row: m }">
+                              <span class="cell-k">名称：</span><strong>{{ m.name }}</strong>
+                            </template>
+                          </DataColumn>
+                          <DataColumn prop="address" column-key="mAddr" label="地址" min-width="170">
+                            <template #default="{ row: m }">
+                              <template v-if="m.address">
+                                <span class="cell-k">地址：</span>{{ m.address }}
+                              </template>
+                            </template>
+                          </DataColumn>
+                        </el-table>
+                      </div>
                     </template>
                   </DataColumn>
-                  <DataColumn prop="label" column-key="pLabel" label="名称 / 地址#端口" min-width="220">
+                  <DataColumn prop="label" column-key="poolLabel" label="池" min-width="220">
                     <template #default="{ row: p }">
-                      <el-tooltip v-if="p.tipLines?.length" placement="top">
-                        <template #content>
-                          <div v-for="line in p.tipLines" :key="line">{{ line }}</div>
-                        </template>
-                        <span>{{ p.label }}</span>
-                      </el-tooltip>
-                      <span v-else>{{ p.label }}</span>
+                      <span class="cell-k">池：</span><strong>{{ p.label }}</strong>
                     </template>
                   </DataColumn>
-                  <DataColumn prop="algo" column-key="pAlgo" label="负载模式" min-width="140" />
-                  <DataColumn prop="monitor" column-key="pMonitor" label="监控" min-width="170" />
+                  <DataColumn prop="algo" column-key="poolAlgo" label="负载模式" min-width="150">
+                    <template #default="{ row: p }">
+                      <template v-if="p.algo">
+                        <span class="cell-k">负载模式：</span>{{ p.algo }}
+                      </template>
+                    </template>
+                  </DataColumn>
+                  <DataColumn prop="monitor" column-key="poolMonitor" label="监控" min-width="170">
+                    <template #default="{ row: p }">
+                      <template v-if="p.monitor">
+                        <span class="cell-k">监控：</span>{{ p.monitor }}
+                      </template>
+                    </template>
+                  </DataColumn>
                 </el-table>
               </div>
             </template>
@@ -315,6 +331,8 @@ onMounted(loadRows)
 .table-wrapper { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
 /* 展开面板：右移一个展开列宽（48px），子表首列与主表首列（名称）对齐 */
 .panel { padding-left: 48px; }
+/* 子表（pool / member 表）无表头：字段名前缀放进格子里，用次要色与值区分 */
+.cell-k { color: var(--el-text-color-secondary); }
 /* 展开面板里的占位文案（VS 未关联池时） */
 .panel-empty { padding: 4px 0; font-size: 13px; color: var(--el-text-color-secondary); }
 </style>

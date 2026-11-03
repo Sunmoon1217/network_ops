@@ -6,6 +6,16 @@
 
 后端提供数据模型与 REST API，负责设备配置的解析与入库。前端构建产物默认可由 Django 直接托管（便于开发调试）；生产/集成环境使用 `docker compose` 起 db / redis / app / worker / nginx，由 `nginx/` 作为统一入口（静态资源直出，`/api` 反向代理到 app 容器）。
 
+## 项目拓扑
+
+```
+外网远程开发 <--git--> 托管平台 <-- 代理git --> 内网开发 | 内网沙箱 <--ssh--> 内网服务器
+```
+
+- **外网远程开发 ↔ 托管平台**：直接走 git（push / pull），代码以托管平台为汇聚点。
+- **托管平台 ↔ 内网开发 / 内网沙箱**：内网不能直连外网托管平台，经**代理 git** 同步（内网侧 clone / pull / push 都过代理）。
+- **内网开发 / 内网沙箱 ↔ 内网服务器**：走 **ssh**（部署、调试、远程执行都在内网服务器上进行）；内网开发与内网沙箱是内网侧的两个并行工作环境。
+
 ## 项目结构
 
 ```
@@ -21,16 +31,19 @@ network_ops/
 │   │   └── prod.py      # DEBUG=False 硬覆盖 + 5 个关键 env 必填守卫（fail loud）
 │   ├── urls.py          # /admin/、/api/、前端 SPA 兜底
 │   ├── views.py         # 托管 frontend/dist（index.html、assets、favicon）
+│   ├── mcp_server.py    # MCP 基建：根 server 单例 + with_db_lifecycle（见「关键约定」MCP 条）
 │   ├── asgi.py
 │   └── wsgi.py
 ├── apps/
-│   ├── core/            # 用户与认证
-│   │   ├── models.py            # User、Token
+│   ├── core/            # 用户与认证 + 运维命令（ensure_superuser / migrate_if_needed / queue_status / queue_backlog）
+│   │   ├── models.py            # User、Token、Task/Stage、前端偏好（/api/me/preferences/）
+│   │   ├── management/commands/{ensure_superuser, migrate_if_needed, queue_status, queue_backlog}.py
 │   │   └── api/{auth.py, urls.py}
-│   ├── assets/          # 全部数据模型（单文件，41 个模型）
+│   ├── assets/          # 网络域数据模型（单文件，43 个类，含 ConfigBase）
 │   │   ├── models.py
 │   │   ├── serializers/{base.py, views.py}   # 序列化器（API 视图与解析入库共用）
 │   │   ├── management/commands/import_server_owners.py  # xlsx 导入服务器负责人
+│   │   ├── mcp/                 # MCP 工具（LLM 出口）：tools.py 设备库三工具（import 即注册）
 │   │   └── api/{serializers.py, urls.py, views.py}
 │   ├── ingest/             # 数据采集与解析入库（配置管道：Git 仓库 → TTP 解析 → Saver 写库）
 │   │   ├── api/{configs.py, parsers.py, urls.py}
@@ -44,13 +57,26 @@ network_ops/
 │   │   ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
 │   │   ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
 │   │   ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run，含 analysis 的缓存）
-│   │   └── ansible/             # ⚠️ 仅剩 __pycache__，源文件已移除
+│   ├── cloud/             # 云平台接入（阿里云）：API 客户端 + 云资源缓存（暂无对外 API）
+│   │   ├── models.py        # AliyunVPC 等云资源缓存模型（8 个）
+│   │   ├── client.py        # 阿里云 API 客户端封装
+│   │   ├── products.py      # 产品/规格语义映射（云产品名 → 运维语义）
+│   │   └── response.py      # 云 API 响应类型对象
+│   ├── docs/             # 文档域（通用表格编辑 + 文档转换与 Dify 知识库推送）
+│   │   ├── models.py            # Spreadsheet/SpreadsheetRevision（xlsx 工作簿）+ Document（转换与推送留档）
+│   │   ├── convert.py           # 文档转换：txt/csv/xlsx→md、md/docx→md 或含图→自包含 html、pdf 直传
+│   │   ├── dify.py              # Dify 知识库 API 客户端（create-by-file / indexing-status）
+│   │   ├── schema.py / diff.py / xlsx_io.py   # 表格数据格式归一 / 单元格 diff / xlsx 读写
+│   │   └── api/{views.py, documents.py, urls.py}  # /api/docs/spreadsheets/*、/api/docs/documents/*
 │   └── analysis/        # 分析域（只读消费 ingest 与 assets，不许被它们反向依赖）
-│       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*（URL 前缀沿用拆分前）
+│       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, firewall_groups.py, gslb_clusters.py, ltm_groups.py, group_merge.py, monitor.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*、/api/analysis/*（URL 前缀沿用拆分前）
 │       ├── path_tracer.py       # 路径追踪算法（模拟报文逐跳转发）
 │       ├── policy_expand.py     # 访问流：策略 M2M 笛卡尔积展开 + 合并入库（单写者路径）
 │       ├── access_stream.py     # 访问流：Redis Stream 编解码 / 背压 / 设备锁 / 心跳
 │       ├── tasks.py             # 访问流重建任务 analysis.rebuild_access_flows（独立队列）
+│       ├── queue_monitor.py     # 队列积压巡检（celery 队列 / Stream lag / PEL / 心跳，只读）
+│       ├── redis_monitor.py     # Redis 服务状态巡检（INFO：内存/连接/命中率/键空间，只读）
+│       ├── celery_monitor.py    # Celery worker/任务巡检（inspect：名单/执行中/排队/延迟，只读）
 │       ├── management/commands/{access_flow_consumer, rebuild_access_flows}.py  # 单写者消费者 / 手工重建
 │       ├── models.py            # InternetAnalysis（分析结果缓存）+ AccessFlow（访问流，2026-09 由 ingest 迁入）
 │       └── migrations/{0001_initial,0002_accessflow}.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
@@ -65,7 +91,9 @@ network_ops/
 │   ├── assets/          # device_group / serializer_migration / service_unique
 │   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
 │   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
-│   └── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger
+│   ├── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger
+│   ├── docs/            # 表格（schema / diff / xlsx_io / API）+ 文档转换 / Dify 客户端 / 文档 API
+│   └── mcp/               # MCP 工具：mcp.Client(server) 内存传输整链 + django_db(transaction=True)
 ├── frontend/            # Vue 3 + TypeScript + Vite
 │   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
 │   └── src/{api,assets,components,composables,constants,layout,router,stores,types,utils,views}
@@ -106,6 +134,7 @@ network_ops/
 | `container-healthchecks` | healthcheck 的执行用户、`pg_isready -U`、`celery inspect -d`、`--noproxy '*'`、secrets vs 环境变量 |
 | `nginx-container-proxy` | `resolver` 推导、变量式 upstream、envsubst 静默失效、`$http_host` 与 Origin 校验 |
 | `uv-package-and-lockfile` | uv 不读 pip 配置（只有 `UV_DEFAULT_INDEX` 有效）、`uv.lock` 固化 registry / wheel URL、依赖层镜像的重建时机 |
+| `product-roadmap` | **项目本地**技能（真身 `.dsh/skills/product-roadmap/`，不入全局仓库）：产品功能开发列表——四阶段 18 项任务（T1-T18）+ MCP 工具路线 + 硬约束；规划排期、确认需求归属阶段时读 |
 | `ttp-template-gotchas` | 模板按 **XML** 解析（注释里的尖括号会炸）、`re()` 可内联正则、**单条命中给 dict / 多条给 list**、内置 `IPV6` 不含点号 |
 | `frontend-types` | 前端数据类型组织：具名类型进 `src/types/` + `import type ... from '@/types'`、barrel 撞名语义化改名、`.ts` / `.d.ts` 分工、忘 export / 复制不接线的坑 |
 | `git-branch-flow` | **本仓分支模型**：feature 一律从 `develop` 切（**不从 master**）、**一个需求一个 feature 分支、修 bug 用 fix 分支**、**新分支必须用 worktree 建在 `.worktrees/` 下开发**、**每一个改动及时 commit**；合并只在 develop 侧、master 只整批收 develop 的发布合并；除非用户主动要求不执行合并；commit/merge message 用中文；含建 worktree→提交→合并→推送命令序列 |
@@ -158,6 +187,8 @@ cd frontend && pnpm install
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
+uv run python manage.py queue_status   # 队列积压巡检（--json 机器可读；超阈值退出码 1，可接 cron）
+uv run python manage.py queue_backlog  # 积压明细（--json / --limit）：队列排队消息 + Stream 待确认/未投递的点名清单
 ```
 
 **前端（`frontend/` 目录）：**
@@ -183,13 +214,13 @@ uv run ruff format
 - **settings：env 动态项在 base 只定义一遍，环境文件只放「不走环境变量的硬差异与守卫」（环境旋钮唯一 `DJANGO_ENV`，`DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`）**：`netops/settings/`——`base.py` 集中全部可被环境变量影响的配置（`SECRET_KEY` / `DEBUG` / `ALLOWED_HOSTS` / `CSRF` / `DATABASES` / Redis，凭据链 `*_FILE > 同名环境变量 > 默认值`），**同一段读取逻辑写一遍、靠各环境注入不同的值区分**，不在每个环境文件里重复接线；三个环境文件只放环境变量表达不了的东西：`dev.py` **空壳**（base 即 dev 语义）、`container.py` 两条 host 必填守卫（env_file 被误删一行时**启动即拒**，而不是退到 localhost 等首个请求才 connection refused——Django 连接是惰性的）、`prod.py` `DEBUG=False` **硬覆盖**（不吃 `DJANGO_DEBUG` 后门）+ 5 个守卫（`DJANGO_SECRET_KEY`、`ALLOWED_HOSTS` 空或 `*`、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST`——查 `os.environ` 原始值，因为 base 的 default 会兜底，缺失即拒绝启动）。环境选择：**不设 → dev**（manage/asgi/wsgi/celery 的 setdefault、pytest 都指包）；容器由 `env/app.env` 注入 `DJANGO_ENV=container`；生产显式 `DJANGO_ENV=prod`；**白名单**：未知值（拼错如 `prd`）拒绝启动，不静默落 dev。`*_FILE` secrets **只在容器里设置**（宿主操作上不用它，链路三环境不分叉）。**防循环硬规矩**：`base.py` 与三个环境文件禁止 `from netops.settings import ...` / `from . import ...`，只允许 `from .base import ...`（反向依赖父包执行结果会在 `__init__` 半初始化时炸——BASE_DIR 那次事故的形态）。守卫与分发矩阵由 `tests/deploy/test_settings_environments.py` 守。
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**：compose 会插值 `$`（`pa$word` 只剩 `pa`，要字面量得写 `$$`），`#` 前有空格即行内注释，**双引号不保护 `$`**。细节与实测：技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型都在单文件 `apps/assets/models.py`，没有 models 子目录。
-- **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`。
-- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。
+- **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`、`assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、`docs.apps.DocsConfig`。
+- **Celery 分阶段工作流**：采集→解析→存储三个阶段由 Celery 任务串联（`ingest/tasks.py` 的 `run_collection_stage` / `run_parsing_stage` / `run_storage_stage`），`Stage` 状态回写触发下一阶段（`ingest/signals.py`）。**入口是 `/api/tasks/`**：`ingest/workflow.py` 的 `start_task` 建 Task 并投递第一个（采集）阶段——此前 Task/Stage 只有模型与任务、没有任何创建者，整条链在产品里不可达；阶段失败或任务被取消时，信号负责收尾/停止推进。批量导入配置（`_import_configs`）走另一条链：`submit_config_job` = `run_config_parsing → run_config_storage`（用 `.si()` 保证两个任务拿到同一个 `config_id`）。broker/backend 都是 Redis（`REDIS_HOST`/`REDIS_PORT`）；**必须有 worker 消费**（否则 `.delay()` 只把消息堆在 Redis 里）——compose 的 `worker` 服务就是干这个的。**访问流（AccessFlow）是第三条链**（2026-09 整链由 ingest 迁入 analysis，URL 与队列名不变）：`PolicySaver` 保存成功后调 `ingest.access_flow_trigger.request_rebuild`，它按 `settings.ACCESS_FLOW_TASK`（唯一定义处）的**任务名字符串** `send_task`——**不 import analysis**（依赖方向 `analysis → ingest` 单向，投递侧只认字符串，celery worker 拿名字查注册表执行）→ `analysis.rebuild_access_flows`（任务级 `acks_late` + 背压 `self.retry` + 设备锁，独立队列 `access_flow` 由 compose 的 `worker` 以 `-Q celery,access_flow --concurrency=2` 一并消费——曾有独占的 `worker-access` 服务做隔离，实测其常驻 677MB/16 进程，而两条链皆低频、共享 2 槽最坏只是秒级排队，故合并；**队列仍独立**，出现主链被饿死的实测证据再拆回独占服务）→ 展开结果 `XADD` 进 `access_flow_stream` → `manage.py access_flow_consumer`（compose 的 `access-flow-consumer`，**单写者、只能跑一个实例**）以「先合并、再摘残留」的幂等方式入库、**成功才 `XACK`**；细节见 `docker/README.md` §5 与 `analysis/policy_expand.py` 模块注释。手工补跑：`manage.py rebuild_access_flows --device <H> [--sync]`；投递总开关 `ACCESS_FLOW_DISPATCH`（测试里 conftest 统一置 False，防测试把消息发进真实 Redis）。任务名三处（`ACCESS_FLOW_TASK` 常量 / 装饰器 `name=` / `CELERY_TASK_ROUTES` key）由 `tests/analysis/test_access_flow_task.py` 对账，改名不同步直接红；**任务名变更的部署注意**：Redis 里未消费的旧 `ingest.rebuild_access_flows` 消息会 `Unknown task`——升级前停 worker、清空 `access_flow` 队列再滚动（同 ops→ingest 改名那次的动作）。**积压监控**（2026-10，47 条静默积压 + consumer OOM 循环的事后补防）：`manage.py queue_status`（`--json` 机器可读，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）共用 `analysis.queue_monitor.py` 的采集——celery 队列 LLEN、unacked、Stream **lag**（XINFO GROUPS，不是 XLEN）、PEL 待确认、毒消息点名（重投次数）、心跳新鲜度；背压阈值 `ACCESS_FLOW_MAX_QUEUE` 默认已调低为 500，且 `backlog()` 同步改为 lag 口径（XLEN 含已消费未 trim 条目，低阈值下会误触发背压）。
 - **DeviceConfig 的解析入库默认仍是同步的**：走 `ingest.pipeline.run_config_pipeline`，在 `post_save` 的调用栈里跑完（见下文「配置处理流程」）。**例外是批量导入**：`_import_configs` 在 save 之前给实例挂 `_defer_pipeline`，信号据此跳过同步处理，改由 `ingest.workflow.submit_config_job` 投递 celery 链（几十行配置不该在一个请求里串行跑几十次解析+入库）。两套链路并存，别混。
 - **前端托管**：`netops/views.py` 从 `frontend/dist/` 读取 `index.html` 与静态资源；`netops/urls.py` 用正则把非 `/api`、`/admin`、`/static`、`/assets`、`/media` 的请求交给 Vue 路由。
 - **反向代理与容器化**：`nginx/` 作为统一入口（80/443）：`/api/*`、`/admin/*`、`/media/*` 代理到 compose 里的 **app 容器**（不再指向宿主机 Django），`/assets/*`、`/static/*` 由 nginx 直出。静态资源的流向是**宿主机**（`pnpm build` + `collectstatic`）→ `Dockerfile.app` COPY 进镜像的 `/app/www` 与 `/app/frontend/dist`（同时就是 Django 的 `STATIC_ROOT` / `FRONTEND`）→ 启动时 `docker/entrypoint.sh` 复制**另一份**到命名卷 `static_data` → nginx 只读挂载。详见 `nginx/README.md`。
 - **静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic，因为 `STATIC_URL` 就是 `/static/`），所以 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖 `/`、`/assets/*`、`/static/*`；宿主机上 `www/` 与 `frontend/dist/` 仍各由自己的工具清空（`collectstatic --clear` / `pnpm build` 的 `emptyOutDir`），只有容器里这一份被合并。**为什么非要绕这一层卷**（跨容器只能靠卷；卷会遮住镜像内容且只播种一次）：技能 `nginx-container-proxy` 第 6 节。入口脚本每次都**权威**重铺，清卷根时用 `! -name static` 排除 `static/`。
-- **配置仓库是命名卷、配置源目录是只读 bind**：app 挂 `config_repo_data:/app/data/config_repo`（**命名卷**，读写）+ `./data/configs:/app/data/configs:ro`（**只读 bind**，写成 long syntax 并显式 **`create_host_path: false`**：缺 `data/configs` 时 `up` 直接报错，而不是让 dockerd 建一个 root 属主、宿主用户写不进也删不掉的空目录——**首次部署要先 `mkdir -p data/configs`**；这是唯一需要宿主目录的挂载点），worker **只**挂那个卷（导入配置是 app 的接口）。`config_repo` 是解析流水线的**内部工作目录**（`ingest/config_repo.py`；`init_repo()` mkdir + git init + commit、`save_config()` 每次导入都提交，连 `get_config` / `list_devices` 这些**读**路径也先调 `init_repo()`），**不需要宿主可见**，所以用命名卷（属主继承自镜像、容器 root 写自己的卷，无需 uid 对齐——语义见技能 `docker-mounts-and-ownership`）；`configs` 是运维放文件的地方（Excel「配置文件」sheet 的 C 列 `config_dir`，按**进程 CWD** 解析，容器里写 `data/configs`），所以是 bind 且挂 `:ro`。**沿革别绕回去**：它曾经是 bind，为此要「容器跑成宿主 uid + `export UID GID` + `HOME=/tmp` + 静态卷 777 + `safe.directory` + 两处挂载点自检」，这些**已全部删除**；唯一保留的是**镜像里的 git 提交身份**（`user.name` / `user.email`），它不是为 bind 服务的——原因见技能 `git-in-containers`。**代价**：宿主侧看不到这份仓库，宿主直跑 Django 用的是 `<项目根>/data/config_repo`（**另一份**，dev 用）。看 / 清理容器那份：`docker compose exec app git -C /app/data/config_repo log --oneline`、`docker compose exec app python manage.py purge_configs --all --purge-repo --yes`；把已有宿主仓库搬进**空卷**：`docker compose run --rm --no-deps -v ./data/config_repo:/from:ro app sh -c 'cp -a /from/. /app/data/config_repo/'`。卷名用新的 `config_repo_data`（不复用旧 `app_data`，避免静默合并两份历史）。
+- **配置仓库是命名卷、配置源目录是只读 bind**：app 挂 `config_repo_data:/app/data/config_repo`（**命名卷**，读写）+ `./data/configs:/app/data/configs:ro`（**只读 bind**，写成 long syntax 并显式 **`create_host_path: false`**：缺 `data/configs` 时 `up` 直接报错，而不是让 dockerd 建一个 root 属主、宿主用户写不进也删不掉的空目录——**首次部署要先 `mkdir -p data/configs`**；这是唯一需要宿主目录的挂载点），worker **只**挂那个卷（导入配置是 app 的接口）。`config_repo` 是解析流水线的**内部工作目录**（`ingest/config_repo.py`；**每台设备一个独立仓库**——`init_repo(hostname)` 在 `data/config_repo/<hostname>/` 下 git init + 初始 commit，`save_config` / `get_config` / `diff_configs` / `get_history` 都按设备打开，内容未变时返回**自己**的上次提交（configs 表按 (device, hash) 去重因此天然命中，不会拿到别的设备的 commit）；首次打开某设备仓库时自动把旧**共享仓库**（根 `.git`，只读兜底、不主动创建）里该设备的历史**重放**进来并回写 `DeviceConfig.git_commit_hash`），**不需要宿主可见**，所以用命名卷（属主继承自镜像、容器 root 写自己的卷，无需 uid 对齐——语义见技能 `docker-mounts-and-ownership`）；`configs` 是运维放文件的地方（Excel「配置文件」sheet 的 C 列 `config_dir`，按**进程 CWD** 解析，容器里写 `data/configs`），所以是 bind 且挂 `:ro`。**沿革别绕回去**：它曾经是 bind，为此要「容器跑成宿主 uid + `export UID GID` + `HOME=/tmp` + 静态卷 777 + `safe.directory` + 两处挂载点自检」，这些**已全部删除**；唯一保留的是**镜像里的 git 提交身份**（`user.name` / `user.email`），它不是为 bind 服务的——原因见技能 `git-in-containers`。**代价**：宿主侧看不到这份仓库，宿主直跑 Django 用的是 `<项目根>/data/config_repo`（**另一份**，dev 用）。看 / 清理容器那份：`docker compose exec app git -C /app/data/config_repo/<hostname> log --oneline`、`docker compose exec app python manage.py purge_configs --all --purge-repo --yes`；把已有宿主仓库搬进**空卷**：`docker compose run --rm --no-deps -v ./data/config_repo:/from:ro app sh -c 'cp -a /from/. /app/data/config_repo/'`。卷名用新的 `config_repo_data`（不复用旧 `app_data`，避免静默合并两份历史）。
 - **不用 `volumes_from`**：它会把源容器的**所有**卷带过来、且容器内路径被绑死；显式写 `static_data:/usr/share/nginx/html:ro` 才能只读、挑卷、放在 nginx 自己的路径上。理由与替代方案：技能 `nginx-container-proxy` 第 6 节。
 - **nginx 侧与本项目耦合的两条硬要求**：① 后端地址用**变量式** upstream（`set $netops_upstream "app:8000"`）并配 `resolver`，`resolver` 地址在启动时从 runtime 的 `/etc/resolv.conf` 推导（写死 `127.0.0.11` 换 Podman 就 502）——做法见 `nginx/docker-entrypoint.d/05-netops-resolver.sh`，原理与 envsubst 陷阱见技能 `nginx-container-proxy`；② conf.d 必须用 `$http_host`（含端口）透传 Host，否则后台登录 403。这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守。
 - **改动基础镜像的时机**：`pyproject.toml` / `uv.lock` 变了必须重建 `Dockerfile.base`，否则运行期才报 `ModuleNotFoundError`；换源要用 uv 自己的变量、且必须重新 `uv lock`——见技能 `uv-package-and-lockfile`。**基础镜像本身可换**：`Dockerfile.app` 用 `ARG BASE_IMAGE=network-ops-base:py312` + `FROM ${BASE_IMAGE}`（`FROM` 里只能用 `ARG`），compose 用 `x-app-build` 锚点给 app 与 worker 传同一个 build arg（`${BASE_IMAGE:-network-ops-base:py312}`，一处定义不会漂移），所以换私有 registry / Python 版本只需 `BASE_IMAGE=registry.example.com/netops-base:py312 docker compose build app worker`。**构建顺序与命令、两个镜像的分层取舍、`uv sync` 参数、冒烟清单契约、compose 里"看不出来"的约束、改回去会踩的坑**：`docker/README.md`（三个 Dockerfile/compose 文件只在头部留一行指针，注释一律外迁到那里）。
@@ -214,7 +245,7 @@ uv run ruff format
   `grep -rnE "(background|color|border[a-z-]*)[^;]*#[0-9a-fA-F]{3,6}\b" frontend/src --include=*.ts --include=*.vue | grep -viE "var\(|rgba|transparent"`
 - **表格列宽偏好的 tableKey 只认注册表**：全部 key 集中在 `frontend/src/constants/tableKeys.ts`（`TABLE_KEYS`，命名 `<路由顶级域>.<路径余段>[.<表区分>]`，一页多表各一条、**全局唯一**），**页面不再自己调 `useTablePrefs` / `widthFor`**——只在 `<DataTable :table-key="TABLE_KEYS.xxx">` 传注册表常量，类型 `TableKey` 由注册表派生，拼错编译期即红；列宽读偏好与拖拽持久化都在 DataTable 内部完成（单实例，读写同处）。**后端 `/api/me/preferences/` 只是按用户存取的不透明 JSON KV，从不解析 key/value**，撞名/写错的防线全在前端这一处，所以不要在页面里散写字符串字面量。改 key 走同文件的 `TABLE_KEY_RENAMES`（旧→新）登记，读端自动回退旧键、用户已存宽度不丢。不传 `table-key` = 无持久化（DeviceSelector 弹窗即刻意不挂）。
 - **表格列一律用 `DataColumn`，不要在页面裸写 `el-table-column`**：`<DataColumn>`（`frontend/src/components/DataColumn.vue`）在列级封装两件事——① 列 key（`column-key > prop`）经 DataTable 下发的 context 解析偏好宽度；② **宽度档位自动选**：锚点列（`anchor` 或带 `fixed` 的列，如操作列）用固定 `width` 所拖即所得，**内容列一律走 `min-width` 参与容器富余空间的比例分配**——即「列总宽至少 100%、超出即横向滚动」，宽屏不再留白。单元格照旧用默认插槽写任意组件（el-tag / 按钮 / 进度条），不给插槽走 el-table-column 原生 `row[prop]` 文本渲染；页面想要极窄列不被拉伸时显式加 `anchor`。
-- **Ruff**：`line-length = 120`；`select = ["E","F","I","N","W"]`，忽略 `F405/F403/E402`；`known-first-party = ["assets","core","ingest"]`；`**/migrations/*` 忽略 `E501`，并通过 `[tool.ruff.format]` 排除（迁移文件不参与格式化）。
+- **Ruff**：`line-length = 180`；`select = ["E","F","I","N","W"]`，忽略 `F405/F403/E402`；`known-first-party = ["aliyun","analysis","assets","core","ingest","netops"]`；`**/migrations/*` 忽略 `E501`，并通过 `[tool.ruff.format]` 排除（迁移文件不参与格式化）。
 - **测试**：pytest + pytest-django，`DJANGO_SETTINGS_MODULE = "netops.settings"`（pyproject；不设 `DJANGO_ENV` → 默认 dev，环境机制见上文 settings 条目），`testpaths = ["tests"]`；测试统一放项目根 `tests/<应用>/`（不散落在应用目录内，应用下不留脚手架的 `tests.py`——pytest 不收集该文件名），各层带 `__init__.py`，路径形如 `tests.assets.test_analysis`。
 - **测试内的资源定位**：用包路径（`Path(ingest.__file__).parent / ...`）或 `settings.BASE_DIR`，**不要**用 `Path(__file__).parent.parent`——依赖测试文件自身位置，目录一挪就静默失效（踩过一次，测试因 `exists()` 判断长期"空跑通过"）。
 
@@ -231,7 +262,7 @@ uv run ruff format
 
 ### 资产层 `assets/`
 
-全部数据模型集中在 `apps/assets/models.py`，按领域分组：
+网络域数据模型集中在 `apps/assets/models.py`（43 个类，含 `ConfigBase` 基类），按领域分组：
 
 | 领域 | 模型 |
 |------|------|
@@ -282,7 +313,10 @@ ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/acc
 | `policy_expand.py` | 访问流：Policy 三个 M2M 笛卡尔积展开 + 先查后合并入库（单写者路径） |
 | `access_stream.py` | 访问流：Redis Stream 编解码、背压、设备锁、心跳（生产者-消费者通道） |
 | `tasks.py` | `analysis.rebuild_access_flows`：展开一台设备投进 Stream（独立 `access_flow` 队列） |
-| `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建） |
+| `queue_monitor.py` | 队列积压巡检（celery 队列 LLEN / unacked / Stream lag / PEL 毒消息 / 心跳，只读报警不干预）+ 积压明细 `collect_backlog`（队列排队消息解码 / Stream 两段积压点名设备）；命令与 API 共用 |
+| `redis_monitor.py` | Redis 服务状态巡检（INFO 口径：内存/连接/命中率/键空间/运行时长，只读；maxmemory=0 与零流量时比率为 null） |
+| `celery_monitor.py` | Celery worker/任务巡检（inspect 口径：worker 名单/执行中/排队/延迟，只读；分段降级、参数截断） |
+| `management/commands/` | `access_flow_consumer`（单写者入库进程）/ `rebuild_access_flows`（手工重建）——积压巡检命令 `queue_status` / `queue_backlog` 在 `core`（运维命令统一放 core，跨域 import 本模块采集） |
 | `api/trace.py` | 路径追踪 / 路由采集 / DNS 查询接口（路由采集用 TTP 模板，路径经 `ingest.parsers.template_keys.TMPLS_DIR` 取） |
 | `api/analysis.py` | 互联网资产分析的查询 / 分析 / 导出接口 |
 | `api/accessflows.py` | `/api/access-flows/` 只读列表（GIN 包含过滤，唯一写入口是 consumer） |
@@ -314,6 +348,14 @@ ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/acc
 
 - `NtpConfig` / `SyslogConfig` 已继承 `ConfigBase`，但**没有 Saver**：模板侧还没有 ntp / syslog 产出，写了也永不触发。补齐需连模板一起加 group。
 - `SecurityZone` 保持裸 `models.Model`：它是安全域这类人工维护的信息，不从设备配置提取，故不纳入 `ConfigBase`。
+
+### 云接入层 `cloud/`
+
+阿里云接入（蓝图「混合云」的雏形）：`client.py`（API 客户端封装）、`products.py`（产品/规格语义映射）、`response.py`（云 API 响应类型）、`models.py`（AliyunVPC 等云资源缓存 8 个模型）。**目前无 `api/`、无 serializers**，尚未对外暴露；云资源将来经统一配置项体系（ci_id）纳入资产与关系。
+
+### MCP 工具出口（跨域，非 app）
+
+与各域 `api/` 平行的 **LLM 工具出口**：`netops/mcp_server.py` 持根单例与执行包装，各域 `apps/<域>/mcp/tools.py` 顶层装饰、**import 即注册**。完整布局与写法见「关键约定」的 **MCP 工具体系**条；当前已接入 `assets/mcp/`（设备库三工具），ingest（配置）/ analysis（关系）/ cloud（云资源）等域工具按需生长。
 
 ## 配置处理流程（信号驱动）
 
@@ -387,7 +429,7 @@ tags, subnets, ip-addresses
 | 路径 | 说明 |
 |------|------|
 | `/api/assets/overview/` | 总览聚合统计 |
-| `/api/assets/import-devices/` | Excel 导入设备（Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源是 `assets/api/views.py` 的 `IMPORT_SHEETS`，含「设备组」Sheet：组类型 \| 设备名(多个用逗号分隔) \| 描述，**一行 = 一个设备组**；组名与角色不填表、由导入推：非集群第一台=主、第二台=备且组名=主设备 hostname，集群全部=成员且组名=所有设备名的最长公共前缀（`cs-1`/`cs-2` → `cs-`，取不到回退第一台 hostname）；行是该组的完整快照，不在行里的既有成员会被摘掉） |
+| `/api/assets/import-devices/` | Excel 导入设备（Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源是 `assets/device_import.py` 的 `IMPORT_SHEETS`，含「设备组」Sheet：组类型 \| 设备名(多个用逗号分隔) \| 描述，**一行 = 一个设备组**；组名与角色不填表、由导入推：非集群第一台=主、第二台=备且组名=主设备 hostname，集群全部=成员且组名=设备名结构里的「安全区+设备类型」——设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`（首段 NET 大小写不敏感、段数≥4，安全区与类型取最后两段、类型段去尾部编号，`NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname；行是该组的完整快照，不在行里的既有成员会被摘掉） |
 | `/api/assets/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
 
 **ingest**（`ingest/api/urls.py`）
@@ -417,16 +459,38 @@ tags, subnets, ip-addresses
 | `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
 | `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤（2026-09 由 ingest 迁入，URL 不变） |
+| `/api/analysis/queue-status/` | 队列积压巡检（只读）：celery 队列 / 访问流 Stream lag / PEL / 消费者心跳 + 告警列表，Home 页卡片 30s 轮询 |
+| `/api/analysis/redis-status/` | Redis 服务状态（只读，INFO 口径）：内存/连接/命中率/键空间/运行时长，「任务中心 → 运行监控」页轮询 |
+| `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，「任务中心 → 运行监控」页轮询 |
+| `/api/analysis/lb-chain/slb/`、`/api/analysis/lb-chain/gslb/` 等 | SLB/GSLB 链路查询与导出（含 `facets/`、`export/`） |
+| `/api/analysis/gslb-clusters/`、`/api/analysis/ltm-groups/`、`/api/analysis/firewall-groups/` | 分组聚合查询（列表 / `facets/` / `export/`；防火墙分 `policies/` 与 `nat-rules/`） |
+
+**docs**（`docs/api/urls.py`）
+
+| 路径 | 说明 |
+|------|------|
+| `/api/docs/spreadsheets/` | 通用表格工作簿列表 / 上传 xlsx 建簿（原 `/api/sheets/`，随 sheets→docs 改名迁到此前缀） |
+| `/api/docs/spreadsheets/<id>/`、`/export/`、`/revisions/…` | 详情 / 保存编辑 / 导出 xlsx / 修改历史与回滚（同前） |
+| `/api/docs/documents/` | 文档列表 / **上传转换**（multipart：`file` 主文档 + `attachments` 图片附件）；转换规则见 `docs/convert.py` 模块注释（无图→md、含图→base64 自包含 html、pdf 直传） |
+| `/api/docs/documents/<id>/` | 详情（含转换产物）/ **编辑产物**（PUT，落新版本快照）/ 删除 |
+| `/api/docs/documents/<id>/preview/` | 查看用渲染产物（md 由后端 markdown 库渲染 html，前端沙箱 iframe 展示） |
+| `/api/docs/documents/<id>/download/` | 源文件下载（docx/pdf 等原文件留档） |
+| `/api/docs/documents/<id>/reconvert/` | 替换源文件重新转换（产物落新版本；人工修改被覆盖但旧产物在历史里可回滚） |
+| `/api/docs/documents/<id>/revisions/…` | 版本历史（`DocumentRevision` 产物快照）/ 快照详情 / 回滚（恢复以新版本落地，历史不改写） |
+| `/api/docs/documents/<id>/push/` | 推送 Dify 知识库，**两态**：未推送 create（md/html 走 `create_by_text`、pdf 走 `create-by-file`）；已推送且 `pending_sync` 走 `update_by-text`/`update-by-file` 按 dify_document_id **原地更新**（不产生重复文档）；已推送无待同步 409、未配置 503、失败 502（更新失败保持待同步可重试） |
+| `/api/docs/documents/<id>/status/` | 从 Dify 同步索引进度（waiting / indexing / completed / error） |
+
+> Dify 推送配置在 `settings/base.py` 的 `DIFY_CONFIG`（`DIFY_API_BASE_URL` / `DIFY_API_KEY`（`*_FILE` 凭据链）/ `DIFY_DATASET_ID` / `DIFY_INDEXING_TECHNIQUE` / `DIFY_TIMEOUT`），容器注入 `env/app.env`（模板见 `env/example/app.env`）。依赖新增 `python-docx` / `markdown`——**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
 
 ## 注意事项
 
 - **解析器 / Saver / 模型的关联与归一**：三层关联 = 解析器按 (vendor, device_type) 产出**原始**键 → `ingest.mapping` 归一（`KEY_ALIASES` 键别名、`FIELD_ALIASES` 字段别名；纯函数、幂等、**无厂商维度**——同一规范键下的字段同义性与厂商无关，无型号的 device 也要能归一）→ Saver 按 (device_type, key) 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`（模板方法，子类实现 `_save` 只读规范字段）而不是 pipeline：绕过分发直调 `save` 的调用方拿到同样结构。**分层规矩**：结构改名进声明表；**值语义**（permit→allow、enable/disable、route→layer3）留 Saver；**结构级差异**（SNMP 的 community/target_hosts 两形态、Hillstone 扁平地址拆 AddressBook）留 Saver——声明表只做纯改名，混入值转换会被误读成"字段同义"。契约测试：`tests/ingest/test_parser_contract.py`（产出/消费对账切**归一口径**，`KNOWN_MISSING_PRODUCER` 因此只剩 slb 的 snat 两条）+ `tests/ingest/test_mapping.py`（归一行为 + 声明不许说谎：死别名、未声明模型都会红）。清单接口 `/api/parsers/mapping/` 顶层新增 `key_aliases` / `field_aliases` / `savers`（按 Saver 聚合，带 `model_paths`），`consumers` 条目附 `canonical_key` / `models`——均为**增量字段**，前端旧消费不受影响。
 - **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
+- **MCP 工具体系（LLM 出口，与各域 `api/` 平行）**：**基建两件**都在 `netops/mcp_server.py`——根单例 `mcp = MCPServer("netops")`（admin.site 角色）与 `with_db_lifecycle`（工具执行包装：同步工具跑在 AnyIO 短命工作线程，调用前后 `close_old_connections()` 对齐一次 Web 请求的连接生命周期；`@wraps` 必须保留——SDK 沿 `__wrapped__` 读签名生成入参 schema）。**工具实现按域住 `apps/<域>/mcp/tools.py`**：模块顶层 `@mcp.tool()` + `@with_db_lifecycle` 直接装饰，**import 即注册**（对齐 Django admin「根注册表 + 叶子装饰」惯用法，没有 register 包装函数）；组合方（asgi / 测试）`import assets.mcp.tools` 一行接一域。**防循环硬规矩**：`netops/mcp_server.py` 禁止 import 任何域工具模块（叶子已 import 它，反向即成环）。**工具写法三条**：① 只做「参数校验 → 查库 → 序列化」，字段口径复用 `assets.serializers`；② 同步 `def` 别写 `async def`（事件循环里调 ORM 会 `SynchronousOnlyOperation`）；③ 模型可读的失败抛 `ToolError`（原文达模型、可自我纠正，如「设备不存在：xxx，可先用 search_devices 搜索」），程序 bug 不用管（SDK 泛化为 `Error executing tool …`，traceback 只进服务端日志）。**返回注解必须 `TypedDict`**：SDK 据它生成输出 schema 并做 pydantic 校验（裸 dict 注解无结构化输出；缺字段/类型不符直接把工具打成错误、多字段静默丢弃）——`DeviceInfo` 与 `DeviceSerializer` 字段一一对应，序列化器改动要同步，`tests/mcp/` 会红。工具名是全局平面命名空间，按域前缀（未来 `config_*` / `cloud_*` / `zabbix_*`）防撞名。测试模式：`mcp.Client(server)` 内存传输整链 + `django_db(transaction=True)`。现状：`assets/mcp/tools.py` 三工具（`search_devices` / `get_device` / `list_device_groups`）；SDK 依赖 `mcp>=2.3.0`，**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
 - **F5 池成员的端口分隔符有两种**：名字是普通串或 IPv4 时用冒号（`/Common/node:80`），名字本身是 IPv6 字面量时 F5 改用一个点号（`/Common/2001:db8::1.80`）。所以 `f5_ltm.ttp` 的 `pools` 里成员有两条备选行（点号那条是回退），**并且端口必须限成纯数字**（`vars` 块里的 `PORT`）——不限的话冒号那条会把 IPv6 成员贪婪切成 `name="/Common/2001:db8:"`、`port="1.80"`，永远轮不到回退行，表现为「端口被相邻成员的值带偏」。
 - **TTP 模板的引擎行为**（细节 + 内置模式表 + 复现脚本：技能 `ttp-template-gotchas`）：① 模板是被当 **XML** 解析的，所以注释是纯文本——注释行里出现尖括号（直接写 `<vars>` / `<group>`）会被当成未闭合标签，整个模板解析失败（`ParseError: mismatched tag`）；② `re()` 的解析顺序是 `vars` → 内置模式表 → **原样当正则**，也就是说**可以内联写正则**（旧笔记里「不能内联写正则」的说法是**错的**，2026-09 实测纠正）；③ **单条命中给 `dict`、多条命中给 `list`**，消费方两种都要兼容（`savers/lb.py` 注释记的正是这个）；④ 内置 `IPV6` 正则只认十六进制与冒号、**不含点号**（`::ffff:192.168.1.1` 匹配不到）。
 - **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`analysis/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。
 - **列表分页与搜索排序**：DRF 全局启用数字分页（`netops/pagination.py` 的 `StandardPagination`，默认 50 条/页、最大 500 条，客户端可用 `?page_size=` 覆盖），列表接口返回 `{count, next, previous, results}`；`DEFAULT_FILTER_BACKENDS` 启用 `SearchFilter` / `OrderingFilter`，各 ViewSet 通过 `search_fields` / `ordering_fields` 声明可用字段。前端统一用 `useCrudApi` + `DataPagination` 消费；必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。时序大表（ARP/MAC、路由、子网使用率）后续可单独启用游标分页。
-- **`apps/ingest/ansible/` 只剩 `__pycache__`**，源文件已删除，属重构残留。
 - `ingest` 应用的 label 是 `operator`（`OperatorConfig.label`），migrate 时用 `operator` 而非 `ingest`。**拆分只动 Python 路径、不动 label**：`InternetAnalysis` 的迁移历史留在 `operator.0001`（`operator.0003` 仅删 state；`0002_accessflow` / `0004_accessflow_action_key` 是主仓原有的 AccessFlow 建表与加键），新表名靠 `analysis.0001`（InternetAnalysis）与 `analysis.0002`（AccessFlow）的 `RunSQL RENAME` 对齐，模型摘除由 `operator.0005` 的 state-only（`SeparateDatabaseAndState`，**绝不 DROP**）完成——改 label 会让 `django_migrations` 里的历史对不上，别动。
 - **互联网资产分析走缓存**：结果存 `analysis.models.InternetAnalysis`（app `analysis`，2026-09 从 ingest 拆出），只有 `POST /api/internet-analysis/analyze/` 才真正计算；查询与导出接口都只读缓存，未分析过时返回 404。
 - **资产分析的表格列**：后端 `build_path_rows` 与前端 `internet-asset.vue` 里的 `buildPathRows` 是**两份各自独立**的扁平化实现（列序必须手工保持一致）。当前 7 列：域名 / LLB_VS地址#端口 / LLB_Rule规则 / SLB_VS地址#端口 / SLB_Rule规则 / 服务器地址#端口 / 负责人。

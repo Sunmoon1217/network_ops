@@ -30,6 +30,8 @@ const props = defineProps<{
   /** 强制锚点列；不传时 fixed 列（操作列等）默认就是锚点 */
   anchor?: boolean
   columnKey?: string
+  /** 默认隐藏：不传 = 默认显示。会进「列设置」清单，用户显式开/关后以其选择为准 */
+  defaultHidden?: boolean
   fixed?: boolean | 'left' | 'right'
   sortable?: boolean | string
   align?: 'left' | 'right' | 'center'
@@ -81,6 +83,10 @@ const elMinWidth = computed(() => {
   >
     <template v-if="slots.default" #default="scope">
       <slot v-bind="scope" />
+    </template>
+    <!-- 表头插槽透传：页面要自定义表头内容（截断 + tooltip 等）时用，不给走 label -->
+    <template v-if="slots.header" #header="scope">
+      <slot name="header" v-bind="scope" />
     </template>
   </el-table-column>
 </template>

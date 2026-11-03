@@ -28,3 +28,45 @@ def eager_celery(settings):
     app.conf.task_eager_propagates = False
     yield app
     app.conf.task_always_eager, app.conf.task_eager_propagates = prev
+
+
+# ---------------------------------------------------------------------------
+# 用户权限（core.permissions.IsOperatorOrReadOnly）的测试基建
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def normal_user(db):
+    """普通用户（role=normal）：登录后只读。"""
+    from core.models import User
+
+    return User.objects.create_user(username="_t_reader", password="x")
+
+
+@pytest.fixture
+def operator_user(db):
+    """操作员（role=operator）：登录后可读可写。"""
+    from core.models import User
+
+    return User.objects.create_user(username="_t_operator", password="x", role="operator")
+
+
+@pytest.fixture
+def api_client(normal_user):
+    """已认证的**普通用户**客户端（只读）——读接口测试用它，
+    顺带验证「普通用户能查询」这条权限契约。"""
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    client.force_authenticate(user=normal_user)
+    return client
+
+
+@pytest.fixture
+def operator_client(operator_user):
+    """已认证的**操作员**客户端（读写）——写接口测试用它。"""
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    client.force_authenticate(user=operator_user)
+    return client

@@ -4,7 +4,9 @@
 组名与角色都不填表、由导入推：
 
 - 非集群：组名 = 主设备（第一台）hostname，第一台 = 主、第二台 = 备
-- 集群：组名 = 所有设备名的最长公共前缀（``cs-1``/``cs-2`` → ``cs-``），组内全部 = 成员
+- 集群：组名 = 设备名结构里的「安全区 + 设备类型」（``NET-<数据中心+机柜位置>-<安全区>-<类型+编号>``，
+  ``NET-SH01-R05-SEC-FW01`` / ``NET-SH01-R06-SEC-FW02`` → ``SEC-FW``），组内全部 = 成员；
+  名字不符合结构 / 同行拆出的安全区或类型不一致 → 回退第一台 hostname
 - 行里的设备必须都已存在，缺任一台**整行报错、不建半截组**
 - 行是该组的**完整快照**：不在这一行里的既有成员会被摘掉
 
@@ -17,9 +19,8 @@ from io import BytesIO
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
-from rest_framework.test import APIClient
 
-from assets.api.views import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
+from assets.device_import import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
 from assets.models import Device, DeviceGroup
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -48,9 +49,17 @@ def _members(group):
 
 
 def test_group_name_rules():
-    assert _group_name("cluster", ["cs-1", "cs-2"]) == "cs-", "集群组名 = 设备名的逐字符交集"
-    assert _group_name("cluster", ["cs-1"]) == "cs-1", "单台集群组名就是它自己"
-    assert _group_name("cluster", ["rt1", "sw2"]) == "rt1", "毫无公共前缀时回退第一台"
+    # 集群：取设备名结构里的「安全区 + 设备类型」，类型段去尾部编号
+    assert _group_name("cluster", ["NET-SH01-R05-SEC-FW01", "NET-SH01-R06-SEC-FW02"]) == "SEC-FW"
+    assert _group_name("cluster", ["net-sh01-r05-sec-fw01"]) == "sec-fw", "单台集群组同样按结构取，前缀大小写不敏感"
+    assert _group_name("cluster", ["NET-SH01-R05-SEC-FW01", "NET-SH01-R05-DMZ-FW02"]) == "NET-SH01-R05-SEC-FW01", (
+        "同行拆出的安全区不一致 → 回退第一台"
+    )
+    # 不符合结构 → 回退第一台 hostname
+    assert _group_name("cluster", ["rt1", "sw2"]) == "rt1", "首段不是 NET"
+    assert _group_name("cluster", ["net-prod-cs01"]) == "net-prod-cs01", "段数不足 4"
+    assert _group_name("cluster", ["NET-SH01-R05-SEC-01"]) == "NET-SH01-R05-SEC-01", "类型段去掉编号后为空"
+    # 非集群不受影响
     assert _group_name("ha", ["core-sw", "core-sw-b"]) == "core-sw", "非集群组名 = 主设备 hostname"
 
 
@@ -83,27 +92,27 @@ def test_one_row_creates_one_group_with_derived_name_and_roles():
 
 
 @pytest.mark.django_db
-def test_cluster_group_name_is_common_prefix():
-    """集群：一个格子里逗号分隔多台，组名 = 所有设备名的交集（cs-1/cs-2 → cs-）"""
-    _device("cs-1")
-    _device("cs-2")
+def test_cluster_group_name_uses_zone_and_device_type():
+    """集群：一个格子里逗号分隔多台，组名 = 安全区 + 设备类型（去尾部编号），组内全部 = 成员"""
+    _device("NET-SH01-R05-SEC-FW01")
+    _device("NET-SH01-R06-SEC-FW02")
 
-    result = _import_device_groups(_sheet([["集群", "cs-1,cs-2", ""]]))
+    result = _import_device_groups(_sheet([["集群", "NET-SH01-R05-SEC-FW01,NET-SH01-R06-SEC-FW02", ""]]))
 
     assert result == {"created": 1, "updated": 0, "errors": []}, result
     group = DeviceGroup.objects.get()
-    assert group.name == "cs-"
+    assert group.name == "SEC-FW"
     assert group.group_type == "cluster"
-    assert _members(group) == {"cs-1": "member", "cs-2": "member"}
+    assert _members(group) == {"NET-SH01-R05-SEC-FW01": "member", "NET-SH01-R06-SEC-FW02": "member"}
 
 
 @pytest.mark.django_db
-def test_cluster_without_common_prefix_falls_back_to_first_device():
-    """设备名毫无公共前缀时组名回退第一台，不能出现空组名"""
+def test_cluster_with_unstructured_names_falls_back_to_first_device():
+    """设备名不符合 NET-…-安全区-类型 结构时组名回退第一台，不能出现空组名（中文顿号也认）"""
     _device("rt-x")
     _device("sw-y")
 
-    _import_device_groups(_sheet([["集群", "rt-x、sw-y", ""]]))  # 中文顿号也认
+    _import_device_groups(_sheet([["集群", "rt-x、sw-y", ""]]))
 
     group = DeviceGroup.objects.get()
     assert group.name == "rt-x"
@@ -168,9 +177,10 @@ def test_reimport_counts_as_update_and_row_is_full_snapshot():
 # ---------------------------------------------------------------------------
 
 
-def test_template_lists_every_import_sheet():
+@pytest.mark.django_db
+def test_template_lists_every_import_sheet(api_client):
     """模板的 Sheet 与列头 == IMPORT_SHEETS（同一份表），设备组 Sheet 必须在"""
-    resp = APIClient().get("/api/assets/import-template/")
+    resp = api_client.get("/api/assets/import-template/")
 
     assert resp.status_code == 200
     assert "spreadsheetml" in resp["Content-Type"]
@@ -187,17 +197,17 @@ def test_template_lists_every_import_sheet():
 
 
 @pytest.mark.django_db
-def test_import_excel_dispatches_device_group_sheet():
-    """走完整 HTTP 导入链：设备组 Sheet 被 IMPORT_SHEETS 认出并分发"""
-    _device("imp-http-dev")
+def test_import_excel_dispatches_device_group_sheet(operator_client):
+    """走完整 HTTP 导入链：设备组 Sheet 被 IMPORT_SHEETS 认出并分发（导入是写操作，操作员才可）"""
+    _device("NET-SH01-R09-SEC-FW07")
 
     buf = BytesIO()
-    _sheet([["集群", "imp-http-dev", "集群组"]]).parent.save(buf)
+    _sheet([["集群", "NET-SH01-R09-SEC-FW07", "集群组"]]).parent.save(buf)
     upload = SimpleUploadedFile("import.xlsx", buf.getvalue(), XLSX_CONTENT_TYPE)
 
-    payload = APIClient().post("/api/assets/import-devices/", {"file": upload}).json()
+    payload = operator_client.post("/api/assets/import-devices/", {"file": upload}).json()
 
     assert payload["success"] is True
     assert payload["results"]["设备组"]["created"] == 1, payload
     assert payload["results"]["配置文件"]["skipped"] is True, "未提供的 Sheet 应记为跳过"
-    assert DeviceGroup.objects.filter(name="imp-http-dev", group_type="cluster").exists()
+    assert DeviceGroup.objects.filter(name="SEC-FW", group_type="cluster").exists(), "单台集群组也按结构取组名"

@@ -37,3 +37,9 @@ export const IconTools = createIcon('<path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 
 export const IconPathTrace = createIcon('<polygon points="3 11 22 2 13 21 11 13 3 11"/>')
 
 export const IconRouting = createIcon('<polygon points="3 11 22 2 13 21 11 13 3 11"/>')
+
+export const IconDoc = createIcon('<path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/>')
+
+export const IconKnowledge = createIcon('<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><line x1="9" y1="7" x2="16" y2="7"/>')
+
+export const IconTemp = createIcon('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>')

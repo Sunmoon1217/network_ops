@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+#
+# 代码镜像：busybox + 代码 + 静态成品（~6.8MB），跨沙箱传输用。
+# tag 规则、构建与部署命令：.env.example「镜像构建」一节
+#
+# 布局：镜像内代码根是 /opt/netops（源）；code-init 把它复制到 code_data 卷（挂 /app）
+# 与 static_data 卷（挂 /static）。镜像源码路径与运行时卷路径分开，不绕圈。
+
+FROM busybox:1.38
+
+WORKDIR /opt/netops
+
+COPY manage.py pyproject.toml uv.lock ./code/
+COPY netops/ ./code/netops/
+COPY apps/ ./code/apps/
+COPY entrypoint/ ./code/entrypoint/
+
+COPY frontend/dist ./http/
+COPY www ./http/static
+
+RUN chmod +x ./code/entrypoint/*.sh
+
+# 校验静态成品（与项目镜像同款检查）
+RUN set -eux; \
+    if [ ! -f /opt/netops/http/index.html ]; then \
+        echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
+        exit 1; \
+    fi; \
+    if [ -z "$(ls -A /opt/netops/http/static)" ]; then \
+        echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
+        exit 1; \
+    fi; \
+    echo "static files: www=$(find /opt/netops/http/static -type f | wc -l) dist=$(find /opt/netops/http -type f | wc -l)"

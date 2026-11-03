@@ -78,6 +78,13 @@ def test_gtm_pool_members_go_to_json():
                     "member_order": "0",
                     "member_ratio": "2",
                 },
+                {
+                    # ratio=0 = 不参与调度的合法值，不能被兜底成 1
+                    "server_name": "/Common/s2",
+                    "vs_name": "vs_app",
+                    "member_order": "0",
+                    "member_ratio": "0",
+                },
             ],
         }
     }
@@ -100,7 +107,15 @@ def test_gtm_pool_members_go_to_json():
             "order": 0,
             "ratio": 2,
             "monitor": "",
-        }
+        },
+        {
+            "server": "s2",
+            "vserver": "vs_app",
+            "status": "enabled",
+            "order": 0,
+            "ratio": 0,
+            "monitor": "",
+        },
     ]
 
 
@@ -150,7 +165,38 @@ def test_gtm_wideip_reads_template_field_names():
     wideip = GtmWideip.objects.get(device=device)
     assert wideip.rtype == "A"
     assert wideip.lb_mode == "topology"
-    assert wideip.pools == ["pool_web"]
+    # 权重缺失时按 F5 语义兜底（order=0、ratio=1）；pool_names 是读侧统一入口
+    assert wideip.pools == [{"name": "pool_web", "order": 0, "ratio": 1}]
+    assert wideip.pool_names == ["pool_web"]
+
+
+@pytest.mark.django_db
+def test_gtm_wideip_saves_pool_order_ratio():
+    """wideip 组里每个池的 pool_order / pool_ratio 要跟着 wideip 存进 pools。
+
+    原实现只留池名，这两个值被整个丢掉；显式 0（order=0 合法、
+    ratio=0 = 不参与调度）也必须原样留住，不能被兜底值覆盖。
+    """
+    device = Device.objects.create(hostname="_t_gtm_wi_w", device_type="gslb")
+    parsed = {
+        "wideips": {
+            "wideip_name": "www.example.com",
+            "wideip_type": "A",
+            "pools": [
+                {"pool_name": "pool_a", "pool_order": "5", "pool_ratio": "3"},
+                {"pool_name": "pool_b", "pool_order": "0", "pool_ratio": "0"},
+            ],
+        }
+    }
+
+    assert GTMWideipSaver().save(device, parsed) == (1, 0)
+
+    wideip = GtmWideip.objects.get(device=device)
+    assert wideip.pools == [
+        {"name": "pool_a", "order": 5, "ratio": 3},
+        {"name": "pool_b", "order": 0, "ratio": 0},
+    ]
+    assert wideip.pool_names == ["pool_a", "pool_b"]
 
 
 @pytest.mark.django_db
@@ -232,4 +278,5 @@ def test_common_prefix_is_stripped_and_relations_still_match():
 
     wideip = GtmWideip.objects.get(device=device)
     assert wideip.name == "www.example.com"
-    assert wideip.pools == [pool.name]
+    # 归一后的读侧入口；底层结构是 {"name", "order", "ratio"} 字典列表
+    assert wideip.pool_names == [pool.name]

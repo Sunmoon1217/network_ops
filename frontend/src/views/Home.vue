@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '@/api/index'
 import StatCard from '@/components/StatCard.vue'
 import ChartCard from '@/components/ChartCard.vue'
 import { pieOpt, barOpt, gaugeOpt, lookup, mapItems } from '@/composables/useEcharts'
+import { getQueueStatus } from '@/api/monitor'
+import type { QueueStatus } from '@/types'
 
 const data = ref<any>(null)
 const loading = ref(true)
@@ -20,6 +22,99 @@ onMounted(async () => {
 const charts = ref<any[]>([])
 
 watch(data, (val) => { if (val) buildCharts() })
+
+// ---------------------------------------------------------------------------
+// 任务队列监控：celery 队列 / 访问流 Stream / 消费者心跳，30s 轮询（后端是几个
+// O(1) 的 Redis 命令，只读巡检不干预生产者）
+// ---------------------------------------------------------------------------
+
+const QUEUE_POLL_MS = 30_000
+const queueStatus = ref<QueueStatus | null>(null)
+const queueError = ref('')
+let queueTimer: ReturnType<typeof setInterval> | null = null
+let queuePolling = false
+
+const fetchQueueStatus = async () => {
+  if (queuePolling) return
+  queuePolling = true
+  try {
+    const resp = await getQueueStatus()
+    queueStatus.value = resp.data
+    queueError.value = ''
+  } catch {
+    queueError.value = '队列监控获取失败（接口不可达）'
+  } finally {
+    queuePolling = false
+  }
+}
+
+const stopQueuePolling = () => {
+  if (queueTimer) {
+    clearInterval(queueTimer)
+    queueTimer = null
+  }
+}
+
+onMounted(() => {
+  fetchQueueStatus()
+  queueTimer = setInterval(() => {
+    fetchQueueStatus()
+  }, QUEUE_POLL_MS)
+})
+
+onUnmounted(stopQueuePolling)
+
+const queueLevel = computed(() => {
+  const alerts = queueStatus.value?.alerts ?? []
+  if (alerts.some((a) => a.level === 'critical')) return 'critical'
+  if (alerts.length) return 'warning'
+  return 'ok'
+})
+
+const queueLevelText = computed(() => {
+  const count = queueStatus.value?.alerts.length ?? 0
+  if (queueLevel.value === 'ok') return '正常'
+  return `告警 ${count} 条`
+})
+
+const queueLevelTag = computed(() =>
+  queueLevel.value === 'ok' ? 'success' : queueLevel.value === 'warning' ? 'warning' : 'danger'
+)
+
+const queueCheckedAt = computed(() =>
+  queueStatus.value ? new Date(queueStatus.value.checked_at * 1000).toLocaleTimeString() : '--'
+)
+
+const heartbeatLabel = computed(() => {
+  const age = queueStatus.value?.heartbeat_age
+  if (age === null || age === undefined) return '缺失'
+  return `${Math.round(age)}s`
+})
+
+const heartbeatColor = computed(() => {
+  const s = queueStatus.value
+  const age = s?.heartbeat_age
+  if (age === null || age === undefined) return 'var(--el-color-danger)'
+  if (age > (s?.thresholds?.heartbeat_stale ?? Infinity)) return 'var(--el-color-danger)'
+  return 'var(--el-color-success)'
+})
+
+const queueCards = computed(() => {
+  const s = queueStatus.value
+  if (!s?.redis_ok) return []
+  const t = s.thresholds ?? {}
+  const danger = 'var(--el-color-danger)'
+  const mark = (v: number, limit?: number) => (limit !== undefined && v > limit ? danger : undefined)
+  const lag = s.stream?.lag ?? s.stream?.xlen ?? 0
+  return [
+    { label: 'celery 队列', value: s.queues['celery'] ?? 0, color: mark(s.queues['celery'] ?? 0, t.max_queue) },
+    { label: 'access_flow 队列', value: s.queues['access_flow'] ?? 0, color: mark(s.queues['access_flow'] ?? 0, t.max_queue) },
+    { label: '执行中', value: s.unacked, color: mark(s.unacked, t.max_unacked) },
+    { label: 'Stream 积压', value: lag, color: mark(lag, t.max_stream_lag) },
+    { label: '待确认(PEL)', value: s.stream?.pending ?? 0, color: mark(s.stream?.pending ?? 0, t.max_pending) },
+    { label: '消费者心跳', value: heartbeatLabel.value, color: heartbeatColor.value },
+  ]
+})
 
 const buildCharts = () => {
   const d = data.value
@@ -79,6 +174,52 @@ const buildCharts = () => {
         ]" :key="s.label" :label="s.label" :value="s.value" :color="s.color" style="flex: 1; min-width: 110px;" />
       </div>
 
+      <el-card class="queue-card" shadow="hover">
+        <template #header>
+          <div class="queue-header">
+            <span class="queue-title">任务队列监控</span>
+            <el-tag :type="queueLevelTag" size="small">{{ queueLevelText }}</el-tag>
+            <span class="queue-refresh">刷新于 {{ queueCheckedAt }} · 30s 自动刷新</span>
+          </div>
+        </template>
+        <el-alert
+          v-if="queueError"
+          :title="queueError"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <el-alert
+          v-else-if="queueStatus && !queueStatus.redis_ok"
+          :title="`Redis 不可达，队列状态未知：${queueStatus.error ?? ''}`"
+          type="error"
+          :closable="false"
+          show-icon
+        />
+        <template v-else-if="queueStatus">
+          <div class="queue-stats">
+            <StatCard
+              v-for="c in queueCards"
+              :key="c.label"
+              :label="c.label"
+              :value="c.value"
+              :color="c.color"
+              style="flex: 1; min-width: 120px;"
+            />
+          </div>
+          <div v-if="queueStatus.alerts.length" class="queue-alerts">
+            <el-alert
+              v-for="(a, i) in queueStatus.alerts"
+              :key="i"
+              :title="a.message"
+              :type="a.level === 'critical' ? 'error' : 'warning'"
+              :closable="false"
+              show-icon
+            />
+          </div>
+        </template>
+      </el-card>
+
       <div class="chart-grid">
         <ChartCard v-for="chart in charts" :key="chart.title" :option="chart.option" />
       </div>
@@ -106,6 +247,11 @@ const buildCharts = () => {
 <style scoped>
 .dashboard { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
 .summary-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.queue-header { display: flex; align-items: center; gap: 10px; }
+.queue-title { font-weight: 600; color: var(--el-text-color-primary); }
+.queue-refresh { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
+.queue-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+.queue-alerts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
 .count-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 </style>

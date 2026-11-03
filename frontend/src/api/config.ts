@@ -31,6 +31,15 @@ export const exportGtmChain = (params?: Record<string, any>) =>
 // GSLB 过滤下拉选项：记录类型 + 健康检查类型（三处 monitor 合集）
 export const getGtmChainFacets = () => api.get('/api/lb-chain/gslb/facets/')
 
+// GSLB 集群分析（analysis 域新前缀）：同集群多台设备的 GTM 配置逐层合并，device 逗号拼接
+export const getGslbClusters = (params?: Record<string, any>) =>
+  api.get('/api/analysis/gslb-clusters/', { params })
+
+export const getGslbClusterFacets = () => api.get('/api/analysis/gslb-clusters/facets/')
+
+export const exportGslbClusters = (params?: Record<string, any>) =>
+  api.get('/api/analysis/gslb-clusters/export/', { params, responseType: 'blob' })
+
 // Firewall
 export const getPolicies = (params?: Record<string, any>) =>
   api.get('/api/assets/policies/', { params })

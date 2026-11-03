@@ -6,8 +6,10 @@ import { TABLE_KEYS } from '@/constants/tableKeys'
 import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { getTags, deleteTag } from '@/api/ipam'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const { data: tags, loading, page, pageSize, total, fetchData, refetch, pageParams, handleDelete } = useCrudApi()
 
 const fetchAll = () => fetchData(() => getTags(pageParams()))
@@ -22,7 +24,7 @@ onMounted(fetchAll)
 <template>
   <PageLayout title="标签管理">
     <template #actions>
-      <el-button type="primary" @click="router.push('/ipam/tags/create')">新增标签</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/ipam/tags/create')">新增标签</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.ipamTags" :data="tags" :loading="loading">
@@ -34,7 +36,7 @@ onMounted(fetchAll)
           </template>
         </DataColumn>
         <DataColumn prop="subnet_count" label="关联网段" width="100" />
-        <DataColumn label="操作" width="120" fixed="right" align="center">
+        <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/ipam/tags/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>

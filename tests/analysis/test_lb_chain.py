@@ -5,7 +5,6 @@
 """
 
 import pytest
-from rest_framework.test import APIClient
 
 from assets.models import (
     Device,
@@ -20,8 +19,9 @@ from assets.models import (
 
 
 @pytest.fixture
-def api():
-    return APIClient()
+def api(api_client):
+    """只读接口：普通用户客户端（顺带验证「普通用户能查询」）。"""
+    return api_client
 
 
 def _slb_device(hostname: str = "_t_lb_slb") -> Device:
@@ -147,6 +147,40 @@ def test_gtm_chain_unresolved_member_and_pool_search(api):
     assert [r["name"] for r in hit["results"]] == ["www.example.com"]
     assert api.get("/api/lb-chain/gslb/", {"search": "www.example.com"}).data["count"] == 1
     assert api.get("/api/lb-chain/gslb/", {"search": "nothing-here"}).data["count"] == 0
+
+
+@pytest.mark.django_db
+def test_gtm_chain_carries_pool_weight_and_searches_both_shapes(api):
+    """wideip 的 pools 有两种历史形态：权重要带进 API，按池名反查也要两种都命中。
+
+    老形态是纯池名列表 ``["pool_old"]``，新形态是 ``{"name", "order", "ratio"}``——
+    ``_wideip_pairs_q`` 的 JSON 包含条件必须 OR 两条，否则改形态后老数据搜不到。
+    """
+    device = _gslb_device("_t_lb_gslb_weight")
+    GtmWideip.objects.create(device=device, name="old.example.com", rtype="A", lb_mode="global", pools=["pool_old"])
+    GtmWideip.objects.create(
+        device=device,
+        name="new.example.com",
+        rtype="A",
+        lb_mode="global",
+        pools=[{"name": "pool_new", "order": 5, "ratio": 3}],
+    )
+    GtmPool.objects.create(device=device, name="pool_old")
+    GtmPool.objects.create(device=device, name="pool_new")
+
+    rows = {row["name"]: row for row in api.get("/api/lb-chain/gslb/").data["results"]}
+    # 新形态：wideip 级权重进 API（增量字段，老消费方不读它）
+    assert rows["new.example.com"]["pools"][0]["order"] == 5
+    assert rows["new.example.com"]["pools"][0]["ratio"] == 3
+    # 老形态：权重没有就是 None，池本身照常出现
+    assert rows["old.example.com"]["pools"][0]["name"] == "pool_old"
+    assert rows["old.example.com"]["pools"][0]["order"] is None
+
+    # 按池名反查 wideip（?search=池名 走 pools__contains），两种形态都要命中
+    old_hit = api.get("/api/lb-chain/gslb/", {"search": "pool_old"}).data
+    assert [r["name"] for r in old_hit["results"]] == ["old.example.com"]
+    new_hit = api.get("/api/lb-chain/gslb/", {"search": "pool_new"}).data
+    assert [r["name"] for r in new_hit["results"]] == ["new.example.com"]
 
 
 @pytest.mark.parametrize(

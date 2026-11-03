@@ -13,13 +13,18 @@ import type { Fetcher } from '@/types'
  * 因此不要再对返回结果做本地过滤，否则只会过滤当前页。
  *
  * @param _searchFields 已废弃：搜索改由后端 search_fields 处理，仅为兼容旧调用保留
+ * @param options.initial 初始分页 / 搜索值：直接作为 ref 初值（如从 URL query 回填），
+ *   避免在 watch(search) 注册后赋值被误判成用户输入（双重请求 + 页码被重置）
  */
-export const useCrudApi = <T extends Record<string, any> = any>(_searchFields: string[] = []) => {
+export const useCrudApi = <T extends Record<string, any> = any>(
+  _searchFields: string[] = [],
+  options: { initial?: { search?: string; page?: number; pageSize?: number } } = {},
+) => {
   const data = ref<T[]>([]) as any
   const loading = ref(false)
-  const search = ref('')
-  const page = ref(1)
-  const pageSize = ref(50)
+  const search = ref(options.initial?.search ?? '')
+  const page = ref(options.initial?.page ?? 1)
+  const pageSize = ref(options.initial?.pageSize ?? 50)
   const total = ref(0)
 
   let lastFetcher: Fetcher | null = null

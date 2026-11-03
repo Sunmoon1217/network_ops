@@ -3,8 +3,15 @@ name = "network-ops"
 version = "2.0.0"
 description = "网络运维管理平台：Django REST 后端 + Vue 3 前端"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
+    "aliyun-log-python-sdk>=0.9.52",
+    "aliyun-python-sdk-asapi>=2.4.7.2",
+    "aliyun-python-sdk-core>=2.16.1",
+    "aliyun-python-sdk-ecs>=4.24.83",
+    "aliyun-python-sdk-slb>=3.3.22",
+    "aliyun-python-sdk-sls>=1.1.2",
+    "aliyun-python-sdk-vpc>=3.0.48",
     "celery>=5.6.3",
     "django>=6.1",
     "django-filter>=26.1",
@@ -12,8 +19,11 @@ dependencies = [
     "dnspython>=2.8.0",
     "gitpython>=3.1.61",
     "gunicorn>=26.2.0",
+    "markdown>=3.11.2",
+    "mcp>=2.3.0",
     "openpyxl>=3.1.5",
     "psycopg2-binary>=2.9.12",
+    "python-docx>=1.2.0",
     "redis>=8.1.0",
     "requests>=2.34.2",
     "ttp>=0.10.1",
@@ -21,12 +31,17 @@ dependencies = [
     "uvicorn-worker>=0.4.0",
 ]
 
+[tool.uv]
+exclude-dependencies = ["aliyun-python-sdk-core-v3"]
+
+[tool.pyrefly.errors]
+bad-override = "ignore"
 
 [tool.django-stubs]
 django_settings_module = "netops.settings"
 
 [tool.ruff]
-line-length = 120
+line-length = 180
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -34,7 +49,7 @@ select = ["E", "F", "I", "N", "W"]
 ignore = ["F405", "F403", "E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["analysis", "assets", "core", "ingest"]
+known-first-party = ["aliyun", "analysis", "assets", "core", "docs", "ingest", "netops"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
@@ -47,6 +62,18 @@ exclude = ["**/migrations/*"]
 DJANGO_SETTINGS_MODULE = "netops.settings"
 testpaths = ["tests"]
 
+[tool.pyright]
+typeCheckingMode = "standard"
+include = ["apps"]
+exclude = ["**/.*"]
+reportIncompatibleVariableOverride = "none"
+
+[tool.pyrefly]
+search-path = ["apps"]
+project-includes = ["apps"]
+project-excludes = ["**/.*"]
+infer-with-first-use = false
+
 
 [dependency-groups]
 dev = [
@@ -54,7 +81,10 @@ dev = [
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
     "ipykernel>=7.3.0",
+    "openpyxl-stubs>=0.1.25",
+    "pyrefly>=1.4.0",
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
     "ruff>=0.16.5",
+    "types-markdown>=3.11.2.20261029",
 ]

@@ -30,7 +30,14 @@ onMounted(() => {
     <Login v-else-if="!isAuthenticated" />
     <SideLayout v-else>
       <template #nav><AppNav /></template>
-      <template #main><router-view /></template>
+      <template #main>
+        <router-view v-slot="{ Component }">
+          <keep-alive>
+            <component :is="Component" v-if="route.meta.keepAlive" />
+          </keep-alive>
+          <component :is="Component" v-if="!route.meta.keepAlive" />
+        </router-view>
+      </template>
     </SideLayout>
   </el-config-provider>
 </template>

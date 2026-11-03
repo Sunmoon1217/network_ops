@@ -43,7 +43,7 @@ nohup.out
 env/
 
 # 文档与 AI 工具
-docs/
+/docs/
 .mimocode/
 .django-stub-gen/
 README.md

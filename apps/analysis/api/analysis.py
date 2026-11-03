@@ -30,9 +30,9 @@ from urllib.parse import quote
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from analysis.models import InternetAnalysis
@@ -112,7 +112,7 @@ def _join_ip_port(ip: str | None, port: str | None) -> str:
     """拼成 "地址#端口"，端口缺失时只返回地址"""
     if not ip:
         return ""
-    return f"{ip}{TARGET_SEPARATOR}{port}" if port else str(ip)
+    return f"{ip}{TARGET_SEPARATOR}{port}" if port else ip
 
 
 class _AssetIndex:
@@ -125,7 +125,7 @@ class _AssetIndex:
 
         self.ltm_virtuals: dict[tuple[str, str], list[LtmVirtualServer]] = {}
         for virtual in LtmVirtualServer.objects.select_related("device").all():
-            key = (_normalize_ip(virtual.vs_address), str(virtual.vs_port or ""))
+            key = (_normalize_ip(virtual.vs_address), virtual.vs_port or "")
             self.ltm_virtuals.setdefault(key, []).append(virtual)
 
         # 池与成员都按「设备 + 池名」索引：不同设备上可以有同名池，
@@ -144,7 +144,7 @@ class _AssetIndex:
         if not ip:
             return None
         normalized = _normalize_ip(ip)
-        candidates = self.ltm_virtuals.get((normalized, str(port or "")), [])
+        candidates = self.ltm_virtuals.get((normalized, port or ""), [])
         if not candidates and port:
             # 端口为空或写法不一致时，退化为只按地址匹配
             candidates = [v for (addr, _), items in self.ltm_virtuals.items() if addr == normalized for v in items]
@@ -206,13 +206,14 @@ def analyze_device(device: Device) -> dict:
             "name": wideip.name,
             "rtype": wideip.rtype,
             "lb_mode": wideip.lb_mode,
-            "pool_count": len(wideip.pools or []),
+            # pool_names 归一了 pools 的两种历史形态（纯池名 / {name,order,ratio}）
+            "pool_count": len(wideip.pool_names),
             "pools": [],
         }
 
-        for pool_name in wideip.pools or []:
-            pool_node: dict = {"name": str(pool_name), "found": False, "lb_mode": "", "members": []}
-            pool = pools_by_name.get(str(pool_name))
+        for pool_name in wideip.pool_names:
+            pool_node: dict = {"name": pool_name, "found": False, "lb_mode": "", "members": []}
+            pool = pools_by_name.get(pool_name)
             if pool:
                 pool_node["found"] = True
                 pool_node["lb_mode"] = pool.lb_mode
@@ -223,7 +224,9 @@ def analyze_device(device: Device) -> dict:
                         "vs_name": vs_name,
                         "member_ref": f"{server_name}:{vs_name}" if (server_name or vs_name) else "",
                         "state": raw.get("member_status", "") if isinstance(raw, dict) else "",
-                        "order": raw.get("member_order") if isinstance(raw, dict) else None,
+                        # 双轨：入库形态是 Saver 归一后的 order，手工 payload / 旧模板给
+                        # member_order——与 lb_chain 同款，只读 member_order 会恒为空
+                        "order": raw.get("order", raw.get("member_order")) if isinstance(raw, dict) else None,
                         "status": "",
                         "message": "",
                         "vserver": None,
@@ -307,7 +310,6 @@ def _get_cached_or_404(device):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
 def internet_analysis(request):
     """读取缓存的分析结果: GET /api/internet-analysis/?device=<id>
 
@@ -325,7 +327,6 @@ def internet_analysis(request):
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
 def internet_analysis_run(request):
     """立即分析并刷新缓存: POST /api/internet-analysis/analyze/?device=<id>"""
     device, error = _resolve_device(request)
@@ -546,13 +547,10 @@ def build_owner_map(result: dict) -> dict[str, str]:
     前端表格自己扁平化分析结果，拿不到数据库；这里把现查的负责人按**原始 IP 字符串**
     返回，前端就能用同一份回退规则直接查表，不必在 JS 里实现 IPv6 规范化。
     """
-    return {
-        row["final_ip"]: row["owner"] for row in build_path_rows(result) if row.get("final_ip") and row.get("owner")
-    }
+    return {row["final_ip"]: row["owner"] for row in build_path_rows(result) if row.get("final_ip") and row.get("owner")}
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
 def internet_analysis_export(request):
     """导出缓存的分析结果为 xlsx: GET /api/internet-analysis/export/?device=<id>
 
@@ -589,7 +587,7 @@ def internet_analysis_export(request):
         )
     # 列宽跟着表头走：写死 "ABCDEFGHIJKLM" 在加列时会静默少设宽度
     for index, width in enumerate(EXPORT_COLUMN_WIDTHS, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
+        cast(Worksheet, sheet).column_dimensions[get_column_letter(index)].width = width
 
     buffer = BytesIO()
     workbook.save(buffer)

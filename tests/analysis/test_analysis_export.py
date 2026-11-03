@@ -11,8 +11,8 @@ LtmVirtualServer 即为 LLB，LLB 池成员的 address:port 再命中一个 LtmV
 from io import BytesIO
 
 import pytest
-from django.test import Client
 from openpyxl import load_workbook
+from rest_framework.test import APIClient
 
 from analysis.api.analysis import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS, analyze_device, build_path_rows
 from assets.models import (
@@ -26,14 +26,23 @@ from assets.models import (
     LtmVirtualServer,
     ServerOwner,
 )
+from core.models import User
 
 EXPORT_URL = "/api/internet-analysis/export/"
 ANALYZE_URL = "/api/internet-analysis/analyze/"
 
 
+def _api() -> APIClient:
+    """分析接口要求登录；analyze 是写操作 → 操作员身份（读写皆可）。"""
+    user, _ = User.objects.get_or_create(username="_t_ia_operator", defaults={"role": "operator"})
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
 def _analyze(device) -> None:
     """触发一次分析，把结果写进缓存（导出接口只读缓存）"""
-    res = Client().post(f"{ANALYZE_URL}?device={device.pk}")
+    res = _api().post(f"{ANALYZE_URL}?device={device.pk}")
     assert res.status_code == 200, res.content
 
 
@@ -227,7 +236,7 @@ def test_export_returns_xlsx_workbook():
     ServerOwner.objects.create(hostname="srv-final", ip="10.9.9.9", owner="张三")
     _analyze(gslb)
 
-    res = Client().get(EXPORT_URL, {"device": gslb.pk})
+    res = _api().get(EXPORT_URL, {"device": gslb.pk})
 
     assert res.status_code == 200
     assert res["Content-Type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -258,12 +267,12 @@ def test_export_returns_xlsx_workbook():
 
 @pytest.mark.django_db
 def test_export_requires_device_param():
-    assert Client().get(EXPORT_URL).status_code == 400
+    assert _api().get(EXPORT_URL).status_code == 400
 
 
 @pytest.mark.django_db
 def test_export_unknown_device_returns_404():
-    assert Client().get(EXPORT_URL, {"device": 999999}).status_code == 404
+    assert _api().get(EXPORT_URL, {"device": 999999}).status_code == 404
 
 
 # ---------- rules 列与负责人 ----------

@@ -7,10 +7,24 @@ from django.db import models
 
 
 class User(AbstractUser):
-    """扩展用户模型"""
+    """扩展用户模型。
+
+    ``role`` 是业务角色，与 Django 自带的 ``is_staff`` / ``is_superuser`` 无关：
+    - ``normal``   普通用户：登录后只能读（查询）
+    - ``operator`` 操作员：登录后可读 + 增删改
+
+    写权限由 ``core.permissions.IsOperatorOrReadOnly`` 判定（``is_superuser`` 恒放行）。
+    注册接口只创建 ``normal``；``operator`` 由管理员在 Django admin 里赋给。
+    """
+
+    ROLE_CHOICES = (
+        ("normal", "普通用户"),
+        ("operator", "操作员"),
+    )
 
     phone = models.CharField(max_length=20, blank=True, default="", verbose_name="手机号")
     avatar = models.CharField(max_length=255, blank=True, default="", verbose_name="头像URL")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="normal", verbose_name="角色")
 
     class Meta:
         verbose_name = "用户"
@@ -18,6 +32,11 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.username
+
+    @property
+    def is_operator(self) -> bool:
+        """是否可写（操作员或超管）。"""
+        return self.is_superuser or self.role == "operator"
 
 
 class Token(models.Model):
@@ -90,14 +109,10 @@ class Task(models.Model):
         ("cancelled", "已取消"),
     )
 
-    celery_task_id = models.CharField(
-        max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID"
-    )
+    celery_task_id = models.CharField(max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID")
     task_type = models.CharField(max_length=50, choices=TASK_TYPES, verbose_name="任务类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
-    device = models.ForeignKey(
-        "assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备"
-    )
+    device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备")
     params = models.JSONField(default=dict, verbose_name="任务参数")
     result = models.JSONField(null=True, blank=True, verbose_name="任务结果")
     error_message = models.TextField(blank=True, default="", verbose_name="错误信息")

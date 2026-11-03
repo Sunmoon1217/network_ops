@@ -16,7 +16,8 @@ TASKS_URL = "/api/tasks/"
 
 @pytest.fixture
 def client(db):
-    user = User.objects.create_user(username="_t_task_api", password="x")
+    """建任务 / 取消是写操作，用操作员身份。"""
+    user = User.objects.create_user(username="_t_task_api", password="x", role="operator")
     api = APIClient()
     api.force_authenticate(user=user)
     return api
@@ -43,8 +44,17 @@ def _no_dispatch(monkeypatch):
 
 @pytest.mark.django_db
 def test_requires_auth():
-    """任务能触发设备采集，不能匿名可写（项目的 DEFAULT_PERMISSION_CLASSES 是 IsAuthenticated）"""
+    """任务能触发设备采集，不能匿名访问（全局默认权限是 IsOperatorOrReadOnly）"""
     assert APIClient().get(TASKS_URL).status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_normal_user_cannot_create_task(api_client, device):
+    """普通用户只读：建任务（写操作）要被拒成 403"""
+    resp = api_client.post(TASKS_URL, {"device": device.pk, "task_type": "collect_config"}, format="json")
+
+    assert resp.status_code == 403
+    assert Task.objects.count() == 0
 
 
 @pytest.mark.django_db

@@ -17,12 +17,14 @@ URL 前缀 ``/api/lb-chain/`` 沿用 analysis「路由跟 view 走」的惯例�
 
 from datetime import date
 from io import BytesIO
+from typing import cast
 from urllib.parse import quote
 
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -115,12 +117,7 @@ def _ltm_search(qs, search: str):
     - 成员侧：成员表按 address + port 查出 (device, pool_name)，再折算回
       「该设备上引用这些池的 VS」（VS 行上没有成员字段，只能这样反查）。
     """
-    q = (
-        Q(name__icontains=search)
-        | Q(vs_address__icontains=search)
-        | Q(pool__icontains=search)
-        | Q(device__hostname__icontains=search)
-    )
+    q = Q(name__icontains=search) | Q(vs_address__icontains=search) | Q(pool__icontains=search) | Q(device__hostname__icontains=search)
     pair = _split_addr_port(search)
     addr, port = pair if pair else (search, None)
     if pair:
@@ -144,12 +141,9 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
 
     pools: dict[tuple[int, str], LtmPool] = {}
     if pool_keys:
-        pools = {
-            (p.device_id, p.name): p
-            for p in LtmPool.objects.filter(device_id__in=device_ids, name__in=pool_names).select_related("device")
-        }
+        pools = {(p.device_id, p.name): p for p in LtmPool.objects.filter(device_id__in=device_ids, name__in=pool_names).select_related("device")}
 
-    members: dict[tuple[int, str], list[LtmPoolMember]] = {}
+    members: dict[tuple[int, str | None], list[LtmPoolMember]] = {}
     if pool_names:
         for m in LtmPoolMember.objects.filter(device_id__in=device_ids, pool_name__in=pool_names):
             members.setdefault((m.device_id, m.pool_name), []).append(m)
@@ -180,10 +174,7 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
                     if pool
                     else None
                 ),
-                "members": [
-                    {"name": m.name, "address": m.address, "port": m.port or ""}
-                    for m in members.get((vs.device_id, vs.pool), [])
-                ],
+                "members": [{"name": m.name, "address": m.address, "port": m.port or ""} for m in members.get((vs.device_id, vs.pool), [])],
             }
         )
     return rows
@@ -211,10 +202,15 @@ def ltm_chains(request):
 
 
 def _wideip_pairs_q(pairs) -> Q:
-    """(device_id, 池名) → wideip.pools JSON 包含该池名（逐对 OR，JSON 语义没法拆成 __in）。"""
+    """(device_id, 池名) → wideip.pools JSON 包含该池名（逐对 OR，JSON 语义没法拆成 __in）。
+
+    ``pools`` 有两种历史形态：老数据是纯池名列表 ``["pool_web"]``，
+    新数据是 ``[{"name": "pool_web", "order": 5, "ratio": 3}]``——
+    两种都得 OR 上，否则改形态后老数据搜不到、按池反查也漏。
+    """
     q = Q()
     for device_id, pool_name in pairs:
-        q |= Q(device_id=device_id, pools__contains=[pool_name])
+        q |= Q(device_id=device_id) & (Q(pools__contains=[pool_name]) | Q(pools__contains=[{"name": pool_name}]))
     return q
 
 
@@ -287,14 +283,11 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
     需要 (device, server 名, vs 名) 三元组才能定位——按页建索引一次查齐。
     """
     device_ids = {w.device_id for w in page}
-    wideip_pool_names = {name for w in page for name in (w.pools or [])}
+    wideip_pool_names = {name for w in page for name in w.pool_names}
 
     pools: dict[tuple[int, str], GtmPool] = {}
     if wideip_pool_names:
-        pools = {
-            (p.device_id, p.name): p
-            for p in GtmPool.objects.filter(device_id__in=device_ids, name__in=wideip_pool_names)
-        }
+        pools = {(p.device_id, p.name): p for p in GtmPool.objects.filter(device_id__in=device_ids, name__in=wideip_pool_names)}
 
     # (device_id, server 名, vs 名) → GtmVServer；server 是 FK，名字与数据中心在 GtmServer 上
     vserver_index: dict[tuple[int, str, str], GtmVServer] = {}
@@ -303,9 +296,7 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
     if device_ids:
         # 一次查询同时建 id→名（vserver 索引用）与 (device_id, 名)→数据中心（成员列用）两个索引；
         # 后者的键必须是 device_id——写成 server.id 会在两者恰好相等时「蒙对」，套跑即错
-        servers_qs = GtmServer.objects.filter(device_id__in=device_ids).values_list(
-            "id", "device_id", "name", "datacenter"
-        )
+        servers_qs = GtmServer.objects.filter(device_id__in=device_ids).values_list("id", "device_id", "name", "datacenter")
         for sid, sdev, sname, sdc in servers_qs.iterator():
             server_names[sid] = sname
             server_dc[(sdev, sname)] = sdc or ""
@@ -314,8 +305,11 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
 
     rows = []
     for w in page:
+        # 池条目自带 wideip 级权重（f5_gtm wideip 组的 order / ratio）；老数据只有池名 → None
+        pool_entries = w.pool_entries()
         pool_out = []
-        for pool_name in w.pools or []:
+        for entry in pool_entries:
+            pool_name = entry["name"]
             pool = pools.get((w.device_id, pool_name))
             member_out = []
             if pool:
@@ -343,6 +337,10 @@ def _gtm_rows(page: list[GtmWideip]) -> list[dict]:
             pool_out.append(
                 {
                     "name": pool_name,
+                    # wideip 级权重（wideip 组里每个池自己的 order / ratio）；
+                    # 与成员的 order/ratio 分开——同一个池被别的 wideip 引用时权重可以不同
+                    "order": entry.get("order"),
+                    "ratio": entry.get("ratio"),
                     # wideip 引用了但池记录不存在：给空骨架，前端才能显示「池缺失」而不是吞掉
                     "lb_mode": pool.lb_mode if pool else "",
                     "alternate_mode": pool.alternate_mode if pool else "",
@@ -403,13 +401,12 @@ def gtm_chains(request):
     return paginator.get_paginated_response(_gtm_rows(page))
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def gtm_facets(request):
-    """过滤下拉选项：GET /api/lb-chain/gslb/facets/
+def gtm_facet_values() -> dict:
+    """GTM 过滤下拉的取值（记录类型 + 健康检查类型合集）。
 
     ``rtypes`` 来自 wideip 记录类型去重；``monitors`` 是健康检查类型合集——
     池（JSON 列表，Python 侧展开）+ 服务器 / 虚拟服务器（CharField）三处 distinct。
+    旧接口与 GSLB 集群接口共用这一份，避免两处口径漂移。
     """
     rtypes = sorted({v for v in GtmWideip.objects.values_list("rtype", flat=True) if v})
     monitors: set[str] = set()
@@ -417,7 +414,14 @@ def gtm_facets(request):
         monitors.update(m for m in (lst or []) if isinstance(m, str) and m)
     monitors.update(v for v in GtmServer.objects.values_list("monitor", flat=True) if v)
     monitors.update(v for v in GtmVServer.objects.values_list("monitor", flat=True) if v)
-    return Response({"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)})
+    return {"rtypes": rtypes, "monitors": sorted(monitors, key=str.lower)}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gtm_facets(request):
+    """过滤下拉选项：GET /api/lb-chain/gslb/facets/（取值口径见 ``gtm_facet_values``）。"""
+    return Response(gtm_facet_values())
 
 
 # ---------------------------------------------------------------------------
@@ -525,11 +529,7 @@ def _gtm_flat_rows(chain_rows: list[dict]) -> list[list]:
                 rows.append(wide + pool_seg + [p["name"]] + empty_member)
                 continue
             for m in p["members"]:
-                label = (
-                    _join_ip_port(m["address"], m["port"])
-                    if m["found"] and m["address"]
-                    else f"{m['server']}/{m['vserver']}"
-                )
+                label = _join_ip_port(m["address"], m["port"]) if m["found"] and m["address"] else f"{m['server']}/{m['vserver']}"
                 state_key = "lost" if not m["found"] else ("disabled" if m["status"] == "disabled" else "ok")
                 member_seg = [
                     "" if m["order"] is None else str(m["order"]),
@@ -555,7 +555,7 @@ def _xlsx_response(headers: list[str], widths: tuple, rows: list[list], title: s
     # 列宽跟着表头走：写死列字母在加列时会静默少设宽度（与互联网资产分析同约定）
     assert len(widths) == len(headers)  # noqa: S101 —— 测试里另有断言守，这里尽早炸
     for index, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
+        cast(Worksheet, sheet).column_dimensions[get_column_letter(index)].width = width
 
     buffer = BytesIO()
     workbook.save(buffer)

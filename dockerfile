@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# 项目镜像：${BASE_IMAGE}（环境镜像）+ 源码 + 宿主机构建好的静态成品。
+# 项目镜像：${VENV_IMAGE}（venv 镜像）+ 源码 + 宿主机构建好的静态成品。
 # 构建前置与命令、COPY 范围、挂载点、git 身份与 safe.directory：docker/README.md §2、§4
 
-ARG BASE_IMAGE=network-ops-base:py312
+ARG VENV_IMAGE=network-ops-venv:latest
 
-FROM ${BASE_IMAGE}
+FROM ${VENV_IMAGE}
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ RUN set -eux; \
 
 RUN git config --system user.name "netops" && git config --system user.email "netops@localhost"
 
-COPY docker/entrypoint.sh /usr/local/bin/netops-entrypoint
+COPY entrypoint/app.sh /usr/local/bin/netops-entrypoint
 RUN chmod +x /usr/local/bin/netops-entrypoint
 
 RUN set -eux; \

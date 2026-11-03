@@ -10,6 +10,10 @@ export interface UserInfo {
     username: string
     email?: string
     is_staff?: boolean
+    /** 业务角色：normal 普通用户（只读）/ operator 操作员（可写） */
+    role?: 'normal' | 'operator'
+    /** 后端派生的写权限（超管恒为 true，不看 role）；前端据此隐藏写入口 */
+    can_write?: boolean
     phone?: string
     avatar?: string
 }

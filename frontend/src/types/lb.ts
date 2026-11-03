@@ -65,6 +65,9 @@ export interface GtmChainPool {
   ttl: number | null
   /** 池级健康检查类型列表（hover 弹出与监控列共用） */
   monitor: string[]
+  /** wideip 级权重：f5_gtm wideip 组里每个池自己的 order/ratio（老数据没有 → null） */
+  order?: number | null
+  ratio?: number | null
   members: GtmChainMember[]
 }
 
@@ -117,12 +120,16 @@ export interface GtmFlatRow {
   /** 池级调度权重 = 池内成员取值集合去重（与展开面板的池行同义），与成员自身值分列 */
   poolOrder: string
   poolRatio: string
-  /** 成员段（回退行为空串/ '-'） */
+  /** 成员段（回退行为空串/ '-'）；server / vs 与明细面板一致拆成两列 */
+  server: string
+  vs: string
   order: string
   ratio: string
   memberMonitor: string
   datacenter: string
   state?: 'ok' | 'disabled' | 'lost'
+  /** 该行是否命中同名配置不一致（集群接口） */
+  inconsistent?: boolean
 }
 
 /** 域名解析关联链行：WideIP → 池 → 虚拟服务器 */
@@ -169,37 +176,162 @@ export interface LbRootRow {
   rtype?: string
   /** 负载算法（GTM WideIP 行的 lb_mode） */
   mode?: string
-  /** 展开面板：池 → 成员的明细（面板内是嵌套小表格的自有列，与主表列无关） */
-  panel?: LbPanelRow[]
+  /** 集群名（GSLB 集群接口；单机集群即设备 hostname） */
+  cluster?: string
+  /** 集群内全部设备 hostname（合并行的 device 只含「有这条配置」的设备） */
+  clusterDevices?: string[]
+  /** 该合并条目是否命中同名配置不一致 */
+  inconsistent?: boolean
+  /** 不一致的字段名（hover 里列出，便于定位漂移点） */
+  conflictFields?: string[]
+  /** 展开面板 = **pool 表**（无表头、格子自带字段名；池行再展开一层才是 member 表） */
+  panel?: LbPoolRow[]
 }
 
 /**
- * 展开面板行（面板内嵌套小表格，`tree-props` 的 `children` 结构：池 → 成员）：
- * 字段与主表列**完全无关**——面板列增删/隐藏互不影响主表，反之亦然。
- * 两页共用一个结构、靠 `kind` 区分层级，没用到的字段留空。
+ * pool 表行（根行的展开面板里，`el-table` + `show-header=false`）：
+ * 字段与主表列**完全无关**——每格自带「字段名：」前缀，所以表头可以整个砍掉。
+ * `panel` 是该池的 **member 表**：严格依赖关系，成员只挂在自己的池行下。
+ * 两页共用一个结构（SLB 只用 label/algo/monitor，GTM 用全量），没用到的留空。
  */
-export interface LbPanelRow {
-  /** 面板内唯一（链根 + 层级 + 名字/序号） */
+export interface LbPoolRow {
+  /** pool 表内唯一（链根 + 池名） */
   id: string
-  kind: 'pool' | 'member'
-  /** 主显示：池名 / 成员地址#端口（成员无地址时回退名字） */
+  /** 池名（pool 表首列） */
   label: string
-  /** hover 弹出的多行说明（成员真名、断链原因等）；空数组不包 tooltip */
-  tipLines: string[]
   /** 负载算法/模式（SLB = pool.mode；GTM = 池 lb_mode / alternate_mode） */
   algo?: string
-  /** fallback 策略（仅 GTM 池行，已拼好 mode(ip)） */
+  /** fallback 策略（仅 GTM，已拼好 mode(ip)） */
   fallback?: string
-  /** TTL（仅 GTM 池行） */
+  /** TTL（仅 GTM） */
   ttl?: string
-  /** 健康检查（池行 = 列表 join / 成员行 = 单值） */
+  /** 健康检查（池级列表 join） */
   monitor?: string
-  /** 调度权重（池行 = 池内成员取值集合去重 / 成员行 = 自身值） */
+  /** wideip 级权重（pool_order / pool_ratio；老数据没有 → order 空、ratio 兜底 1） */
   order?: string
   ratio?: string
-  /** 数据中心（仅 GTM 成员行，来自其所属 server） */
+  /** 出现该池的设备（集群接口，逗号拼接）；单设备集群就是该设备名 */
+  device?: string
+  /** 该池是否命中同名配置不一致 */
+  inconsistent?: boolean
+  /** 展开面板 = member 表（空数组时面板显示占位文案） */
+  panel?: LbMemberRow[]
+}
+
+/**
+ * member 表行（pool 行的展开面板里，同样无表头、格子自带字段名）：
+ * SLB 只用 name/address，GTM 用全量（名称已拆成 server / vs 两列）。
+ */
+export interface LbMemberRow {
+  /** member 表内唯一（链根 + 池名 + 序号） */
+  id: string
+  /** 名称：节点名（仅 SLB）；没有名称时回退成地址 */
+  name?: string
+  /** 服务器名（仅 GTM，原「名称」列的 server 半段） */
+  server?: string
+  /** 虚拟服务器名（仅 GTM，原「名称」列的 vs 半段） */
+  vs?: string
+  /** 地址#端口；与名称重复时该格不渲染 */
+  address?: string
+  order?: string
+  ratio?: string
+  monitor?: string
+  /** 所属 server 的数据中心（仅 GTM） */
   datacenter?: string
-  /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器 */
+  /** 出现该成员的设备（集群接口，逗号拼接） */
+  device?: string
+  /** 该成员是否命中同名配置不一致 */
+  inconsistent?: boolean
+  /** 成员链路状态：ok 正常 / disabled 停用 / lost 未找到上游虚拟服务器（仅 GTM） */
   state?: 'ok' | 'disabled' | 'lost'
-  children?: LbPanelRow[]
+}
+
+/** GSLB 集群里的成员设备（合并行的 cluster_devices） */
+export interface GslbClusterDevice {
+  id: number
+  hostname: string
+}
+
+/** GSLB 集群合并条目的公共字段：出现它的设备 + 配置不一致标记 */
+export interface GslbClusterFlag {
+  /** 出现该条目的设备主机名，逗号拼接（如 gtm-a,gtm-b） */
+  device: string
+  device_ids: number[]
+  inconsistent: boolean
+  /** 不一致的字段名列表（同名条目在各设备上取值不同的字段） */
+  conflict_fields: string[]
+}
+
+/** GSLB 集群合并后的池成员（按 server/vserver 并集去重） */
+export interface GslbClusterMember extends GslbClusterFlag {
+  server: string
+  vserver: string
+  address: string | null
+  port: string
+  status: string
+  found: boolean
+  order: number | null
+  ratio: number | null
+  monitor: string
+  /** 所属 server 的数据中心 */
+  datacenter: string
+}
+
+/** GSLB 集群合并后的池（按池名并集去重） */
+export interface GslbClusterPool extends GslbClusterFlag {
+  name: string
+  lb_mode: string
+  alternate_mode: string
+  fallback_mode: string
+  fallback_ip: string
+  ttl: number | null
+  monitor: string[]
+  /** wideip 级权重（wideip 的 pools 条目；老数据没有 → null） */
+  order?: number | null
+  ratio?: number | null
+  /** 池记录是否存在（wideip 引用了但池缺失时为 false，返回空骨架） */
+  found: boolean
+  members: GslbClusterMember[]
+}
+
+/**
+ * GSLB 集群合并行：一行 = 一个（域名 + 记录类型）在集群内的整条链。
+ * GET /api/analysis/gslb-clusters/
+ */
+export interface GslbClusterRow {
+  /** 集群键：group-<id> / device-<id> */
+  cluster: string
+  /** 集群名：集群组名 / 单机设备 hostname */
+  cluster_name: string
+  /** 该集群全部设备（合并行里 device 只含「有这条配置」的设备） */
+  cluster_devices: GslbClusterDevice[]
+  device: string
+  device_ids: number[]
+  name: string
+  rtype: string
+  lb_mode: string
+  /** 该行涉及的健康检查类型合集（池 / 成员 / 服务器 / 虚拟服务器） */
+  monitors: string[]
+  pools: GslbClusterPool[]
+  inconsistent: boolean
+  conflict_fields: string[]
+}
+
+/** GSLB 集群过滤下拉项（GET /api/analysis/gslb-clusters/facets/ 的 clusters） */
+export interface GslbClusterOption {
+  /** 集群键（group-<id> / device-<id>），下拉的选中值 */
+  key: string
+  /** 集群组名 / 单机设备名，下拉的显示文本 */
+  name: string
+  /** 单机集群为 null，可据此区分「集群组」与「单机」 */
+  group_id: number | null
+  /** 该集群的全部设备 hostname */
+  devices: string[]
+}
+
+/** GSLB 集群接口的过滤下拉选项：rtypes/monitors 与旧接口同口径，clusters 为集群专有 */
+export interface GslbClusterFacets {
+  rtypes: string[]
+  monitors: string[]
+  clusters: GslbClusterOption[]
 }

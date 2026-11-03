@@ -6,7 +6,6 @@
 """
 
 import pytest
-from rest_framework.test import APIClient
 
 from assets.models import Device, LtmPoolMember
 
@@ -18,11 +17,11 @@ def _device(hostname: str) -> Device:
 
 
 @pytest.mark.django_db
-def test_list_returns_device_hostname_and_port():
+def test_list_returns_device_hostname_and_port(api_client):
     device = _device("api-ltm-a")
     LtmPoolMember.objects.create(device=device, pool_name="pool_web", name="node_a", address="10.0.0.1", port="8080")
 
-    payload = APIClient().get(URL).json()
+    payload = api_client.get(URL).json()
 
     assert payload["count"] == 1
     row = payload["results"][0]
@@ -36,25 +35,25 @@ def test_list_returns_device_hostname_and_port():
 
 
 @pytest.mark.django_db
-def test_list_can_filter_by_device():
+def test_list_can_filter_by_device(api_client):
     """两台设备各有同名池的成员，按 device 过滤要能分开"""
     dev_a = _device("api-ltm-a")
     dev_b = _device("api-ltm-b")
     LtmPoolMember.objects.create(device=dev_a, pool_name="shared", name="from_a", address="10.0.0.1", port="80")
     LtmPoolMember.objects.create(device=dev_b, pool_name="shared", name="from_b", address="10.0.0.2", port="80")
 
-    payload = APIClient().get(URL, {"device": dev_a.pk}).json()
+    payload = api_client.get(URL, {"device": dev_a.pk}).json()
 
     assert payload["count"] == 1
     assert payload["results"][0]["name"] == "from_a"
 
 
 @pytest.mark.django_db
-def test_deleting_device_removes_member_from_api():
+def test_deleting_device_removes_member_from_api(api_client):
     """级联删设备后列表里不应再有它的成员"""
     device = _device("api-ltm-gone")
     LtmPoolMember.objects.create(device=device, pool_name="p", name="n", address="10.0.0.1", port="80")
 
     device.delete()
 
-    assert APIClient().get(URL).json()["count"] == 0
+    assert api_client.get(URL).json()["count"] == 0

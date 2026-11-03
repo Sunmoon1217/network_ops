@@ -7,8 +7,10 @@ import DataPagination from '@/components/DataPagination.vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import { statusTagType } from '@/composables/useTagType'
 import { getIpAddresses, deleteIpAddress } from '@/api/ipam'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const {
   data: ipList,
   loading,
@@ -47,7 +49,7 @@ onMounted(fetchAll)
         <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
       </el-select>
       <el-input v-model="search" placeholder="搜索 IP/描述" clearable style="width: 200px" />
-      <el-button type="primary" @click="router.push('/ipam/ip-addresses/create')">新增 IP</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/ipam/ip-addresses/create')">新增 IP</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.ipamAddresses" :data="ipList" :loading="loading">
@@ -60,7 +62,7 @@ onMounted(fetchAll)
         <DataColumn prop="interface" label="接口" width="120" />
         <DataColumn prop="security_zone_name" label="安全区" width="100" />
         <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
-        <DataColumn label="操作" width="120" fixed="right" align="center">
+        <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="router.push(`/ipam/ip-addresses/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>

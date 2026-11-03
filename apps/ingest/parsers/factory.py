@@ -61,6 +61,10 @@ class ParserFactory:
         "a10": "A10",
         "F5": "F5",
         "f5": "F5",
+        "天融信": "TopSec",
+        "topsec": "TopSec",
+        "TopSec": "TopSec",
+        "TS": "TopSec",
     }
 
     @classmethod
@@ -140,7 +144,7 @@ class CiscoFWParser(BaseParser):
     """思科 ASA 防火墙配置解析器。"""
 
     template_name = "cisco_fw.ttp"
-    provides_keys = ["hostname", "version", "interfaces", "static_routes", "acl", "nat", "object_groups"]
+    provides_keys = ["hostname", "version", "interfaces", "static_routes", "acl", "nat", "object_groups", "usernames"]
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析思科 ASA 防火墙配置文本。
@@ -244,6 +248,42 @@ class H3CRouterParser(BaseParser):
         return _extract_ttp_result(self._run_ttp(raw_text))
 
 
+@ParserFactory.register("H3C", "wirelessac")
+class H3CWireLessACParser(BaseParser):
+    """H3C Comware 无线AC控制器配置解析器。"""
+
+    template_name = "h3c_wirelessac.ttp"
+    # 与模板顶层键逐一对齐（契约测试要求完全一致）：无线 AC 同为 Comware，模板复用交换机语法
+    provides_keys = [
+        "hostname",
+        "version",
+        "vpn_instances",
+        "irf",
+        "dhcp",
+        "lldp",
+        "vlans",
+        "stp",
+        "dhcp_pools",
+        "interfaces",
+        "static_routes",
+        "snmp",
+        "ssh",
+        "radius",
+        "domains",
+        "domain_default",
+        "roles",
+        "local_users",
+    ]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析 H3C 无线AC控制器配置文本。
+
+        Returns:
+            包含 interfaces, vpn_instances, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))
+
+
 @ParserFactory.register("Hillstone", "firewall")
 class HillstoneFWParser(BaseParser):
     """山石防火墙配置解析器。"""
@@ -301,6 +341,24 @@ class RuijieSwitchParser(BaseParser):
 
     def parse(self, raw_text: str) -> dict[str, Any]:
         """解析锐捷交换机配置文本。
+
+        Returns:
+            包含 interfaces, vlans, static_routes 等键的字典
+        """
+        return _extract_ttp_result(self._run_ttp(raw_text))
+
+
+# device_type 必须小写 firewall：Device.DEVICE_TYPE_CHOICES 只有该值，pipeline 按
+# device.device_type 查解析器、分发 Saver，写 "Firewall" 永远匹配不上任何设备
+@ParserFactory.register("TopSec", "firewall")
+class TopSecFWParser(BaseParser):
+    """天融信防火墙配置解析器。"""
+
+    template_name = "topsec_fw.ttp"
+    provides_keys = ["hostname", "version", "vlans", "interfaces", "static_routes", "snmp", "ssh"]
+
+    def parse(self, raw_text: str) -> dict[str, Any]:
+        """解析天融信防火墙配置文本。
 
         Returns:
             包含 interfaces, vlans, static_routes 等键的字典

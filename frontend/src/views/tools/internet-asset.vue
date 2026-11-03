@@ -6,10 +6,14 @@ import DataColumn from '@/components/DataColumn.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'
 import api from '@/api/index'
 
+import { useAuthStore } from '@/stores/auth'
+
 import type {
   GslbDeviceOption, LtmMemberNode, LtmNode, GtmVServerNode, MemberStatus,
   GtmMemberNode, GtmPoolNode, WideIpNode, AnalysisResult, PathRow, LtmStep,
 } from '@/types'
+
+const authStore = useAuthStore()
 
 /** 一个空行骨架，避免每处都写全所有字段 */
 const blankRow = (wideip: string, rtype: string): Omit<PathRow, 'key'> => ({
@@ -333,7 +337,7 @@ onMounted(() => {
       >
         <el-option v-for="device in devices" :key="device.id" :label="deviceLabel(device)" :value="device.id" />
       </el-select>
-      <el-button type="primary" :disabled="!selectedDevice" :loading="analysisLoading" @click="runAnalysis">
+      <el-button v-if="authStore.canWrite" type="primary" :disabled="!selectedDevice" :loading="analysisLoading" @click="runAnalysis">
         立即分析
       </el-button>
       <el-button :disabled="!result" :loading="exportLoading" @click="handleExport">导出 xlsx</el-button>
@@ -342,7 +346,7 @@ onMounted(() => {
 
     <div v-loading="analysisLoading" class="analysis-body">
       <el-empty v-if="!selectedDevice" description="请选择一个 GSLB 设备，查看域名到最终后端的解析链路" />
-      <el-empty v-else-if="!result" description="该设备尚未分析，点击右上角「立即分析」生成结果" />
+      <el-empty v-else-if="!result" :description="authStore.canWrite ? '该设备尚未分析，点击右上角「立即分析」生成结果' : '该设备尚未分析'" />
       <el-empty v-else-if="!result.wideips.length" description="该设备没有配置 WideIP" />
 
       <template v-else-if="result">

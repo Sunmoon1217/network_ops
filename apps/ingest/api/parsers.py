@@ -1,8 +1,8 @@
-import json
 from pathlib import Path
 
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET, require_http_methods
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 
 from ingest.parsers.factory import ParserFactory
 
@@ -18,7 +18,7 @@ def _find_template(name: str) -> Path | None:
     return None
 
 
-@require_GET
+@api_view(["GET"])
 def parser_list(request):
     """获取所有已注册的解析器列表"""
     parsers = []
@@ -32,10 +32,10 @@ def parser_list(request):
                 "description": parser_cls.__doc__ or "",
             }
         )
-    return JsonResponse({"parsers": parsers})
+    return Response({"parsers": parsers})
 
 
-@require_GET
+@api_view(["GET"])
 def parser_mapping(request):
     """映射清单：解析器 → 模板 → 产出键 →（归一）→ Saver → 模型，并暴露契约缺口
 
@@ -136,7 +136,7 @@ def parser_mapping(request):
         "missing_producer_count": len(missing_producers),
         "unconsumed_count": sum(len(p["unconsumed_keys"]) for p in parsers_payload),
     }
-    return JsonResponse(
+    return Response(
         {
             "summary": summary,
             "parsers": parsers_payload,
@@ -148,23 +148,23 @@ def parser_mapping(request):
     )
 
 
-@require_GET
+@api_view(["GET"])
 def parser_template_list(request):
     """获取所有模板文件列表"""
     templates = []
     for subdir in ("configs", "running"):
         for f in (_TMPLS_DIR / subdir).glob("*.ttp"):
             templates.append({"name": f.name, "group": subdir, "size": f.stat().st_size})
-    return JsonResponse({"templates": templates})
+    return Response({"templates": templates})
 
 
-@require_GET
+@api_view(["GET"])
 def parser_template_detail(request, name):
     """获取模板文件内容"""
     path = _find_template(name)
     if not path:
-        return JsonResponse({"error": f"模板不存在: {name}"}, status=404)
-    return JsonResponse(
+        return Response({"error": f"模板不存在: {name}"}, status=status.HTTP_404_NOT_FOUND)
+    return Response(
         {
             "name": name,
             "content": path.read_text(encoding="utf-8"),
@@ -173,16 +173,16 @@ def parser_template_detail(request, name):
     )
 
 
-@require_http_methods(["PUT"])
+@api_view(["PUT"])
 def parser_template_update(request, name):
     """更新模板文件内容"""
     path = _find_template(name)
     if not path:
-        return JsonResponse({"error": f"模板不存在: {name}"}, status=404)
+        return Response({"error": f"模板不存在: {name}"}, status=status.HTTP_404_NOT_FOUND)
     try:
-        data = json.loads(request.body)
+        data = request.data
         content = data.get("content", "")
         path.write_text(content, encoding="utf-8")
-        return JsonResponse({"name": name, "size": path.stat().st_size, "message": "保存成功"})
+        return Response({"name": name, "size": path.stat().st_size, "message": "保存成功"})
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
