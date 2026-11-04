@@ -154,7 +154,9 @@ class Command(BaseCommand):
         from analysis.access_stream import GROUP, STREAM, as_str
 
         try:
-            entries = client.xpending_range(STREAM, GROUP, min=message_id, max=message_id) or []
+            # count 是 redis-py xpending_range 的**必填位置参数**（漏传直接 TypeError，
+            # 2026-11 实测踩过——fail-open 会把判死检查整个短路成警告刷屏）；只查这一条，1 即可
+            entries = client.xpending_range(STREAM, GROUP, min=message_id, max=message_id, count=1) or []
         except Exception:
             logger.warning("XPENDING 查询投递次数失败（按首次投递处理）: %s", as_str(message_id), exc_info=True)
             return None

@@ -4,7 +4,10 @@
 ``handle_message``；消费者命令的 ACK 行为用假 client 验证（成功才 ack、失败留 PEL）。
 """
 
+import inspect
+
 import pytest
+import redis
 from django.conf import settings
 
 from analysis.access_stream import decode_message, encode_message, handle_message
@@ -165,7 +168,10 @@ class _FakeClient:
     def xdel(self, stream: str, *message_ids: str) -> None:
         self.deleted.extend(message_ids)
 
-    def xpending_range(self, stream, group, min=None, max=None, count=None):
+    # 签名**同形 redis-py**（含 count 必填）——fake 给了默认值就会把「漏传 count」这类
+    # bug 藏到生产（2026-11 实测：xpending_range() 缺少 1 个必要的位置参数），
+    # 同形性由 test_fake_pending_signature_matches_redis_py 锁住。
+    def xpending_range(self, name, groupname, min, max, count, consumername=None, idle=None):
         if min in self.deliveries:
             return [{"message_id": min, "times_delivered": self.deliveries[min]}]
         return []
@@ -250,3 +256,17 @@ def test_consumer_count_default_bounds_fetch_memory():
     （2026-10 / 2026-11 两次重启循环的元凶）。吞吐不是瓶颈，调大前先想内存。"""
     parser = ConsumerCommand().create_parser("manage.py", "access_flow_consumer")
     assert parser.parse_args([]).count == 10
+
+
+def test_fake_pending_signature_matches_redis_py():
+    """_FakeClient.xpending_range 必须与 redis-py 真签名**同形**（参数名 + 哪些必填）。
+
+    fake 曾给 count 默认值，把「调用侧漏传 count」的 bug 藏到生产才炸
+    （`xpending_range() 缺少 1 个必要的位置参数`，fail-open 还把判死检查短路成警告刷屏）；
+    同形后这类漏传在测试里就是 TypeError，跑不过去。
+    """
+
+    def shape(fn):
+        return [(p.name, p.default is inspect.Parameter.empty) for p in inspect.signature(fn).parameters.values()]
+
+    assert shape(_FakeClient.xpending_range) == shape(redis.Redis.xpending_range)
