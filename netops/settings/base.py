@@ -337,3 +337,31 @@ CELERY_TASK_ROUTES = {
     # 任务名变更 → Redis 里未消费的旧消息会 Unknown task，升级前停 worker 清队列）
     "analysis.rebuild_access_flows": {"queue": "access_flow"},
 }
+
+# 日志：项目 logger 统一走 console（stderr），INFO 起可见。
+# 为什么必须显式配（2026-11 消费者 docker logs 全黑的根因之一）：项目此前没有任何
+# LOGGING 配置，`getLogger(__name__)` 的记录传播到 root——root 没有 handler 时 Python
+# 走 lastResort 兜底、级别 **WARNING**，INFO 记录被静默丢弃（消费者的「已入库 …」整段
+# 消失）。stderr 用 `ext://sys.stderr` 显式写死：Python 3.9+ 的 stderr 是行缓冲，
+# docker logs 能实时看到；stdout 是块缓冲（长驻进程要用 `python -u` / PYTHONUNBUFFERED，
+# 见 entrypoint/consumer.sh 顶部注释）。契约由 tests/deploy/test_logging_config.py 守。
+LOGGING = {
+    "version": 1,
+    # 不动 django.* / celery / 第三方 logger 的既有配置（它们有自己的 handler 与语义）
+    "disable_existing_loggers": False,
+    "formatters": {
+        "console": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "stream": "ext://sys.stderr", "formatter": "console"},
+    },
+    "loggers": {
+        # apps/ 是顶层包，logger 名即 `getLogger(__name__)` 的应用名前缀（analysis / ingest 的
+        # 全部模块都用它）；core / assets 已有 API 层日志，cloud / docs 先占位以免将来漏配。
+        # propagate 刻意保持 True（别改成 False）：pytest 的 caplog 靠记录传播到 root 才抓得到
+        # （tests/assets/test_device_group.py 的「跳过解析」断言即依赖它）；root 没有自有
+        # handler，所以传播上去不会重复打印。
+        name: {"handlers": ["console"], "level": "INFO", "propagate": True}
+        for name in ("analysis", "assets", "cloud", "core", "docs", "ingest", "netops")
+    },
+}

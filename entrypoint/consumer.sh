@@ -25,5 +25,13 @@
 
 set -e
 
-# 启动访问流消费者（心跳键 access_flow:heartbeat 由消费循环每轮盖章，TTL 300s）
-exec python manage.py access_flow_consumer "$@"
+# 启动访问流消费者（心跳键 access_flow:heartbeat 由消费循环每轮盖章，TTL 300s）。
+#
+# `-u` 不能省：stdout 接 docker logs 的管道时 Python 是**块缓冲**（约 8KB），进程活着
+# 期间 self.stdout.write 的「访问流消费启动」短行一直卡在缓冲区里、docker logs 全黑，
+# 只有进程退出冲刷才突然冒出来（2026-11 实测排障结论）。应急（不重建 code 镜像）可在
+# env/app.env 加 PYTHONUNBUFFERED=1 等效。
+# 另一半根因与这里无关：logger.info「已入库 …」走 settings.LOGGING 给项目 logger 挂的
+# console handler（stderr 行缓冲）——root 无 handler 时 lastResort 只放行 WARNING，INFO
+# 会被整段丢掉，日志配置见 netops/settings/base.py 的 LOGGING。
+exec python -u manage.py access_flow_consumer "$@"
