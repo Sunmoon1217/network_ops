@@ -5,6 +5,7 @@
 """
 
 import pytest
+from django.conf import settings
 
 from analysis.access_stream import decode_message, encode_message, handle_message
 from analysis.management.commands.access_flow_consumer import Command as ConsumerCommand
@@ -155,9 +156,19 @@ def test_handle_message_clears_device_when_no_policies_left():
 class _FakeClient:
     def __init__(self):
         self.acked: list[str] = []
+        self.deleted: list[str] = []
+        self.deliveries: dict[str, int] = {}  # message_id → times_delivered（模拟 XPENDING 明细）
 
     def xack(self, stream: str, group: str, message_id: str) -> None:
         self.acked.append(message_id)
+
+    def xdel(self, stream: str, *message_ids: str) -> None:
+        self.deleted.extend(message_ids)
+
+    def xpending_range(self, stream, group, min=None, max=None, count=None):
+        if min in self.deliveries:
+            return [{"message_id": min, "times_delivered": self.deliveries[min]}]
+        return []
 
 
 def test_consumer_acks_after_successful_handle(monkeypatch):
@@ -181,3 +192,61 @@ def test_consumer_keeps_message_on_failure(monkeypatch):
     ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})
 
     assert client.acked == []
+
+
+# ---------------------------------------------------------------------------
+# 毒消息判死（投递前检查——OOM 是 SIGKILL，处理中的失败根本进不了 except）
+# ---------------------------------------------------------------------------
+
+
+def test_consumer_dead_letters_at_threshold_before_processing(monkeypatch):
+    """已投递 ≥ 阈值的毒消息在**处理之前**判死：XACK+XDEL、不碰载荷。
+
+    检查必须在 handle_message 之前：毒消息能把进程直接打挂（超大载荷 OOM），
+    只有投递前检查能断掉「重投 → 打挂 → 重启 → 再重投」死循环。
+    """
+    handled: list = []
+    monkeypatch.setattr("analysis.access_stream.handle_message", lambda fields: handled.append(fields) or (1, 0))
+    client = _FakeClient()
+    client.deliveries["100-0"] = settings.ACCESS_FLOW_MAX_DELIVERIES
+
+    ConsumerCommand()._process(client, "100-0", {"flows": b"[]", "hostname": b"fw-1", "device_id": b"7"})
+
+    assert handled == [], "判死的消息不应被处理"
+    assert client.acked == ["100-0"], "XACK 出 PEL，停止重投"
+    assert client.deleted == ["100-0"], "XDEL 释放 redis 里的大载荷"
+
+
+def test_consumer_processes_below_dead_letter_threshold(monkeypatch):
+    """阈值以下照常处理：判死只针对反复失败的毒消息，不误伤正常重投。"""
+    monkeypatch.setattr("analysis.access_stream.handle_message", lambda fields: (1, 0))
+    client = _FakeClient()
+    client.deliveries["100-0"] = settings.ACCESS_FLOW_MAX_DELIVERIES - 1
+
+    ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})
+
+    assert client.acked == ["100-0"]
+    assert client.deleted == []
+
+
+def test_consumer_fails_open_when_pending_lookup_fails(monkeypatch):
+    """XPENDING 查询失败按首次投递处理：宁可多试一次，也不能把正常消息误判死。"""
+
+    class _BrokenPending(_FakeClient):
+        def xpending_range(self, *args, **kwargs):
+            raise RuntimeError("redis hiccup")
+
+    monkeypatch.setattr("analysis.access_stream.handle_message", lambda fields: (1, 0))
+    client = _BrokenPending()
+
+    ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})
+
+    assert client.acked == ["100-0"]
+    assert client.deleted == []
+
+
+def test_consumer_count_default_bounds_fetch_memory():
+    """--count 默认是内存上界：一条消息最坏几十 MB，一次物化几百条是 OOM 放大器
+    （2026-10 / 2026-11 两次重启循环的元凶）。吞吐不是瓶颈，调大前先想内存。"""
+    parser = ConsumerCommand().create_parser("manage.py", "access_flow_consumer")
+    assert parser.parse_args([]).count == 10

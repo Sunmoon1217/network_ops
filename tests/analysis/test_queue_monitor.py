@@ -9,6 +9,7 @@ import json
 import time
 
 import pytest
+from django.conf import settings
 from django.core.management import call_command
 from rest_framework.authtoken.models import Token as DRFToken
 from rest_framework.test import APIClient
@@ -315,3 +316,10 @@ def test_queue_status_api_surfaces_redis_outage(api_client, monkeypatch):
     body = resp.json()
     assert body["redis_ok"] is False
     assert body["alerts"][0]["code"] == "redis_unreachable"
+
+
+def test_dead_letter_threshold_exceeds_alert_threshold():
+    """consumer 的自动判死阈值必须 **大于** 毒消息告警线（max_deliveries）：先报警留
+    人工处置窗口，再到点自动判死。两者相等或倒挂时 consumer 抢先把消息判死，
+    「已重投 N 次（疑似毒消息）」告警几乎永远不触发，就失去意义了。"""
+    assert settings.ACCESS_FLOW_MAX_DELIVERIES > DEFAULT_THRESHOLDS["max_deliveries"]

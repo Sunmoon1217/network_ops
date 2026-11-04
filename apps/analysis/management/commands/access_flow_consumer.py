@@ -8,7 +8,13 @@
 - 每条消息 = 一台设备的完整重建，事务内「摘旧上下文 + 写新展开」；
 - **入库成功才 XACK**——崩溃时消息留在 PEL，重启后由 XAUTOCLAIM 接管重投，
   而 handle_message 幂等，重放不脏数据；
-- 处理失败**不 ack**：留在 PEL 等下一轮收尸，失败会在日志里持续可见。
+- 处理失败**不 ack**：留在 PEL 等下一轮收尸，失败会在日志里持续可见；
+- **重投到阈值自动判死**（``ACCESS_FLOW_MAX_DELIVERIES``，投递前检查）：毒消息能把进程
+  直接打挂（超大载荷 OOM 是 SIGKILL，连 except 都进不来），只有**处理之前**的检查断得掉
+  「重投 → 打挂 → 重启 → 再重投」死循环（2026-10 事故 + 2026-11 复发的形态）。判死 =
+  XACK + XDEL + ``critical`` 点名——丢的只是派生缓存快照，需要就
+  ``manage.py rebuild_access_flows --device <H>`` 重建。阈值（20）刻意**大于**
+  queue_monitor 的告警线（10）：先报警留人工处置窗口，再到点自动判死。
 
 心跳：每轮循环给 ``access_flow:heartbeat`` 盖章（TTL 300s），compose 的 healthcheck
 据死活判断进程是否还活着（光看 PID 不够：死循环卡住时进程还在）。
@@ -18,6 +24,7 @@ import signal
 from logging import getLogger
 from typing import cast
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 logger = getLogger(__name__)
@@ -27,7 +34,10 @@ class Command(BaseCommand):
     help = "访问流单写者消费进程（只能跑一个实例）：XREADGROUP → 重建入库 → XACK"
 
     def add_arguments(self, parser):
-        parser.add_argument("--count", type=int, default=500, help="每轮最多取多少条消息（默认 500）")
+        # count 是**内存上界**：一条消息 = 一台设备整机展开快照（最坏十几万组合、几十 MB），
+        # xreadgroup/xautoclaim 一次物化 count 条进内存——2026-10 / 2026-11 两次 OOM 重启
+        # 循环都放大在这里（500 条一起拉 = 最坏十几 GB）。吞吐不是瓶颈（低频链路），调大前先想内存。
+        parser.add_argument("--count", type=int, default=10, help="每轮最多取多少条消息（默认 10）")
         parser.add_argument("--block", type=int, default=5000, help="XREADGROUP 阻塞毫秒数（默认 5000）")
         parser.add_argument(
             "--once",
@@ -81,14 +91,18 @@ class Command(BaseCommand):
                 continue
 
             for _stream_name, messages in responses or []:
-                for message_id, fields in messages:
+                # 弹出即释放引用：整轮的载荷（每条最坏几十 MB）不该压到整轮结束
+                while messages:
+                    message_id, fields = messages.pop(0)  # FIFO：同设备多条消息按序生效
                     self._process(client, message_id, fields)
 
             # 收尸：上次没来得及 ack 就退出的成员留下的消息。空闲超 60s 才接管，
             # 避免抢还在正常处理中的批次。
             try:
                 claimed = client.xautoclaim(STREAM, GROUP, name, min_idle_time=60_000, start_id="0-0", count=count)
-                for message_id, fields in claimed[1] if len(claimed) >= 2 else []:
+                pending = list(claimed[1]) if len(claimed) >= 2 else []
+                while pending:
+                    message_id, fields = pending.pop(0)
                     self._process(client, message_id, fields)
             except Exception:
                 logger.warning("XAUTOCLAIM 失败（忽略，下一轮再试）", exc_info=True)
@@ -99,12 +113,52 @@ class Command(BaseCommand):
         self.stdout.write("访问流消费已退出")
 
     def _process(self, client, message_id, fields) -> None:
-        from analysis.access_stream import GROUP, STREAM, handle_message
+        from analysis.access_stream import GROUP, STREAM, as_str, handle_message
+
+        # 判死检查必须在**处理之前**：毒消息能把进程直接打挂（超大载荷 OOM 是 SIGKILL，
+        # 连 except 都进不来），只有投递前检查能断掉「重投 → 打挂 → 重启 → 再重投」的死循环
+        # （2026-10 事故 + 2026-11 复发的形态）。查询失败 fail-open：按首次投递照常处理。
+        deliveries = self._deliveries(client, message_id)
+        max_deliveries = settings.ACCESS_FLOW_MAX_DELIVERIES
+        if deliveries is not None and deliveries >= max_deliveries:
+            client.xack(STREAM, GROUP, message_id)
+            client.xdel(STREAM, message_id)
+            raw_host = fields.get(b"hostname", fields.get("hostname"))
+            hostname = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
+            raw_device = fields.get(b"device_id", fields.get("device_id"))
+            logger.critical(
+                "访问流消息判死（已投递 %s 次 ≥ 阈值 %s），丢弃并停止重投: message=%s device=%s(%s)。丢的只是派生缓存快照——如需重建：manage.py rebuild_access_flows --device %s",
+                deliveries,
+                max_deliveries,
+                as_str(message_id),
+                as_str(raw_device),
+                hostname,
+                hostname,
+            )
+            return
 
         try:
             created, updated = handle_message(fields)
             client.xack(STREAM, GROUP, message_id)
-            logger.info("已入库 %s: +%s ~%s", message_id, created, updated)
+            logger.info("已入库 %s: +%s ~%s", as_str(message_id), created, updated)
         except Exception:
-            # 不 ack：消息留在 PEL，等 XAUTOCLAIM 重投；持续失败靠日志暴露
-            logger.exception("处理访问流消息失败（不 ack，等待重投）: %s", message_id)
+            # 不 ack：消息留在 PEL，等 XAUTOCLAIM 重投；持续失败靠日志暴露，
+            # 重投到阈值由上面的判死检查收口
+            logger.exception("处理访问流消息失败（不 ack，等待重投）: %s", as_str(message_id))
+
+    def _deliveries(self, client, message_id) -> int | None:
+        """这条消息已投递多少次（XPENDING 单条查询）；查不到 / 查询失败返回 None。
+
+        返回 None 时 fail-open（照常处理）：宁可多试一次，也不能把正常消息误判死。
+        """
+        from analysis.access_stream import GROUP, STREAM, as_str
+
+        try:
+            entries = client.xpending_range(STREAM, GROUP, min=message_id, max=message_id) or []
+        except Exception:
+            logger.warning("XPENDING 查询投递次数失败（按首次投递处理）: %s", as_str(message_id), exc_info=True)
+            return None
+        for entry in entries:
+            if as_str(entry.get("message_id")) == as_str(message_id):
+                return int(entry.get("times_delivered") or 0)
+        return None

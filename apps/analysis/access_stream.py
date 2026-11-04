@@ -130,6 +130,12 @@ def encode_message(device, flows: list[dict]) -> dict[str, str]:
     }
 
 
+#: 载荷告警线：消费端把每条消息**整条物化进内存**，超大载荷是 consumer OOM 的直接来源
+#: （2026-10 / 2026-11 两次 OOM 重启循环的元凶都是大设备的整机展开快照）。超过就在
+#: 生产侧留记号，让「哪台设备是内存大户」在投递时就能看见。
+_WARN_PAYLOAD_BYTES = 5 * 1024 * 1024
+
+
 def publish(device, flows: list[dict], client=None) -> None:
     client = client or get_redis()
     # redis 8.1 的 xadd 形如 ``fields: Dict[FieldT, EncodableT]``：FieldT/EncodableT 是
@@ -138,6 +144,15 @@ def publish(device, flows: list[dict], client=None) -> None:
     # 运行期签名完全兼容，cast 掉这个推断限制（与 workflow.py 处理 celery-stubs 同一手法，
     # 优于 ``# type: ignore``）。
     fields = cast("Any", encode_message(device, flows))
+    size = sum(len(v.encode()) for v in fields.values())
+    if size >= _WARN_PAYLOAD_BYTES:
+        logger.warning(
+            "访问流消息载荷 %s 字节（device=%s %s，%s 条组合）——消费端整条物化进内存，这台设备是内存大户",
+            size,
+            device.pk,
+            device.hostname,
+            len(flows),
+        )
     client.xadd(STREAM, fields, maxlen=stream_maxlen(), approximate=True)
 
 

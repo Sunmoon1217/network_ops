@@ -125,6 +125,13 @@ CELERY_RESULT_BACKEND = REDIS_URL
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
+# - 毒消息判死阈值：consumer 发现消息已投递 ≥ 该次数仍未成功（含把进程打挂的 OOM——
+#   SIGKILL 进不了 except，只有**投递前**检查断得掉「重投 → 打挂 → 重启 → 再重投」死循环），
+#   就 XACK + XDEL 判死并打 critical 点名设备——丢的只是派生缓存快照，可
+#   manage.py rebuild_access_flows --device <H> 重建。**必须大于** queue_monitor 的告警线
+#   DEFAULT_THRESHOLDS["max_deliveries"]（10，只报警不干预）：先报警留人工处置窗口，
+#   再到点自动判死（两者对账：tests/analysis/test_queue_monitor.py）。
+ACCESS_FLOW_MAX_DELIVERIES = int(os.environ.get("ACCESS_FLOW_MAX_DELIVERIES", "20"))
 
 # 阿里云配置：一朵云、两个资源集（生产/测试），两套账号，共用 region；
 # 各产品 endpoint 不同，分别由环境变量传递。

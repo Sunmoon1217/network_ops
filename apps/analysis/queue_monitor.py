@@ -50,7 +50,9 @@ DEFAULT_THRESHOLDS: dict[str, int] = {
     "max_unacked": 100,  # 执行中未确认任务数
     "max_stream_lag": 200,  # Stream 未投递积压
     "max_pending": 50,  # PEL 待确认（消费者卡死 / 反复失败的先行指标）
-    "max_deliveries": 10,  # 单条消息重投次数（≥ 即判毒消息）
+    # 重投 ≥ 即判毒消息；consumer 的自动判死阈值 ACCESS_FLOW_MAX_DELIVERIES 必须大于它
+    # （先报警、后判死，tests/analysis/test_queue_monitor.py 对账）
+    "max_deliveries": 10,
     "heartbeat_stale": 600,  # 心跳过期秒数（beat 每轮 ~5s 盖章，TTL 300s）
 }
 
