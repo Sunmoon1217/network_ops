@@ -460,6 +460,7 @@ tags, subnets, ip-addresses
 | `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
 | `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤（2026-09 由 ingest 迁入，URL 不变） |
 | `/api/analysis/queue-status/` | 队列积压巡检（只读）：celery 队列 / 访问流 Stream lag / PEL / 消费者心跳 + 告警列表，Home 页卡片 30s 轮询 |
+| `/api/analysis/queue-messages/<id>/` | Stream 消息摘要（只读）：按消息 ID 看设备 / 载荷大小 / 组合数 / 前 N 条 key（`?sample=`，上限 50），运行监控「重投最多的消息」点开查看；**不整条回传载荷**（最坏几十 MB），载荷过大只报大小（`truncated`） |
 | `/api/analysis/redis-status/` | Redis 服务状态（只读，INFO 口径）：内存/连接/命中率/键空间/运行时长，「任务中心 → 运行监控」页轮询 |
 | `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，「任务中心 → 运行监控」页轮询 |
 | `/api/analysis/lb-chain/slb/`、`/api/analysis/lb-chain/gslb/` 等 | SLB/GSLB 链路查询与导出（含 `facets/`、`export/`） |

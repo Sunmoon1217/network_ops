@@ -3,10 +3,50 @@
 /** PEL 里重投最多的消息（毒消息预警） */
 export interface QueuePendingEntry {
   id: string
+  /** 消息归属设备（XRANGE 单条回填；已被 trim 时为 null） */
+  device_id: number | null
+  hostname: string | null
   /** 距上次投递的空闲毫秒数 */
   idle_ms: number
   /** 已投递次数（高 = 反复失败不 ack 的毒消息） */
   deliveries: number
+}
+
+/** 访问流消息的十元组 key（展开组合的唯一键，与 AccessFlow 唯一约束同序） */
+export interface QueueMessageKey {
+  src_ip: string
+  src_prefix: number
+  src_range_end: string
+  dst_ip: string
+  dst_prefix: number
+  dst_range_end: string
+  protocol: string
+  port: string
+  port2: string
+  action: string
+}
+
+/** 消息的 PEL 状态；不在 PEL（已确认 / 从未投递）为 null */
+export interface QueueMessagePending {
+  deliveries: number
+  idle_ms: number
+  consumer: string
+}
+
+/** Stream 消息摘要（/api/analysis/queue-messages/<id>/，只读；不整条回传载荷） */
+export interface QueueMessageDetail {
+  id: string
+  exists: boolean
+  device_id: number | null
+  hostname: string | null
+  size_bytes: number
+  /** 展开组合数；载荷过大 / 解不开未解析时为 null */
+  flow_count: number | null
+  /** 载荷过大 / 解不开，未列组合明细（原文走 redis-cli XRANGE） */
+  truncated: boolean
+  /** 前 N 条组合的 key（?sample= 控制，默认 10，上限 50） */
+  sample_keys: QueueMessageKey[]
+  pending: QueueMessagePending | null
 }
 
 /** 访问流 Stream 的积压画像 */

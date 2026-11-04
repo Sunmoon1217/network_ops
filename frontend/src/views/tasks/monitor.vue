@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getCeleryStatus, getQueueStatus, getRedisStatus } from '@/api/monitor'
+import { getCeleryStatus, getQueueMessage, getQueueStatus, getRedisStatus } from '@/api/monitor'
 import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import DataColumn from '@/components/DataColumn.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'
-import type { CeleryStatus, QueueStatus, RedisStatus } from '@/types'
+import type { CeleryStatus, QueueMessageDetail, QueueStatus, RedisStatus } from '@/types'
 
 // ---------------------------------------------------------------------------
 // 运行监控：Celery worker/任务（inspect）+ Redis 服务状态（INFO）+ 队列积压
@@ -159,6 +159,40 @@ const queueCards = computed(() => {
 
 const queueAlerts = computed(() => queueStatus.value?.alerts ?? [])
 const topPending = computed(() => queueStatus.value?.stream?.top_pending ?? [])
+
+// ------------------------------ 消息内容查看 ------------------------------
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref<QueueMessageDetail | null>(null)
+const detailError = ref('')
+
+/** 点开「重投最多的消息」看内容：只拉摘要（组合数 / 前 N 条 key），不拉整条载荷（最坏几十 MB）。
+ * slot 的 row 是 el-table 的 DefaultRow（宽松类型），接参沿用各视图的 `row: any` 惯例；
+ * 结构化数据本身（detail / sample_keys）仍走 types/ 的具名类型。 */
+const openDetail = async (row: any) => {
+  detailVisible.value = true
+  detailLoading.value = true
+  detail.value = null
+  detailError.value = ''
+  try {
+    detail.value = (await getQueueMessage(row.id)).data
+  } catch (reason) {
+    detailError.value = describeError(reason, '消息详情')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const formatBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+
+const formatEndpoint = (key: any, side: 'src' | 'dst') => {
+  const ip = side === 'src' ? key.src_ip : key.dst_ip
+  const prefix = side === 'src' ? key.src_prefix : key.dst_prefix
+  const rangeEnd = side === 'src' ? key.src_range_end : key.dst_range_end
+  return rangeEnd ? `${ip}-${rangeEnd}` : `${ip}/${prefix}`
+}
+
+const formatPort = (key: any) => (key.port2 ? `${key.port}-${key.port2}` : key.port || '--')
 </script>
 
 <template>
@@ -272,15 +306,67 @@ const topPending = computed(() => queueStatus.value?.stream?.top_pending ?? [])
             <h4 class="section-title">重投最多的消息（疑似毒消息）</h4>
             <DataTable :table-key="TABLE_KEYS.monitorTopPending" :data="topPending">
               <DataColumn prop="id" label="消息 ID" :min-width="220" />
+              <DataColumn prop="hostname" label="设备" :min-width="140">
+                <template #default="{ row }">{{ row.hostname ?? '--' }}</template>
+              </DataColumn>
               <DataColumn prop="deliveries" label="重投次数" :width="110" anchor />
               <DataColumn prop="idle_ms" label="空闲" :width="110">
                 <template #default="{ row }">{{ Math.round(row.idle_ms / 1000) }}s</template>
+              </DataColumn>
+              <DataColumn label="操作" :width="90" anchor>
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="openDetail(row)">查看</el-button>
+                </template>
               </DataColumn>
             </DataTable>
           </template>
         </template>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 消息内容弹窗：只读摘要（不整条回传载荷——一条消息最坏几十 MB） -->
+    <el-dialog v-model="detailVisible" title="访问流消息内容" width="760px">
+      <div v-if="detailLoading" v-loading="detailLoading" style="min-height: 120px;" />
+      <el-alert v-else-if="detailError" :title="detailError" type="warning" :closable="false" show-icon />
+      <template v-else-if="detail">
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="消息 ID">{{ detail.id }}</el-descriptions-item>
+          <el-descriptions-item label="设备">{{ detail.hostname ?? '--' }}（id {{ detail.device_id ?? '--' }}）</el-descriptions-item>
+          <el-descriptions-item label="载荷大小">{{ formatBytes(detail.size_bytes) }}</el-descriptions-item>
+          <el-descriptions-item label="组合数">{{ detail.flow_count ?? '未解析（载荷过大/解不开）' }}</el-descriptions-item>
+          <el-descriptions-item label="重投次数">{{ detail.pending ? `${detail.pending.deliveries} 次` : '不在 PEL（已确认）' }}</el-descriptions-item>
+          <el-descriptions-item label="空闲">{{ detail.pending ? `${Math.round(detail.pending.idle_ms / 1000)}s` : '--' }}</el-descriptions-item>
+        </el-descriptions>
+        <template v-if="detail.sample_keys.length">
+          <h4 class="section-title">前 {{ detail.sample_keys.length }} 条组合</h4>
+          <DataTable :data="detail.sample_keys">
+            <DataColumn label="源" :min-width="170">
+              <template #default="{ row }">{{ formatEndpoint(row, 'src') }}</template>
+            </DataColumn>
+            <DataColumn label="目的" :min-width="170">
+              <template #default="{ row }">{{ formatEndpoint(row, 'dst') }}</template>
+            </DataColumn>
+            <DataColumn prop="protocol" label="协议" :width="80" />
+            <DataColumn label="端口" :width="110">
+              <template #default="{ row }">{{ formatPort(row) }}</template>
+            </DataColumn>
+            <DataColumn label="动作" :width="90" anchor>
+              <template #default="{ row }">
+                <el-tag :type="row.action === 'deny' ? 'danger' : 'success'" size="small">{{ row.action }}</el-tag>
+              </template>
+            </DataColumn>
+          </DataTable>
+        </template>
+        <el-alert
+          v-else-if="detail.truncated"
+          title="载荷过大或无法解析，未列组合明细；原文请在服务器执行：redis-cli XRANGE access_flow_stream <消息ID> <消息ID>"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-top: 8px;"
+        />
+      </template>
+    </el-dialog>
   </div>
 </template>
 

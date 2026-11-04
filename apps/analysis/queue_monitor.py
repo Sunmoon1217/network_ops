@@ -96,6 +96,9 @@ def _stream_stats(client) -> dict:
                     "id": as_str(e.get("message_id")),
                     "idle_ms": int(e.get("time_since_delivered") or 0),
                     "deliveries": int(e.get("times_delivered") or 0),
+                    # 补设备身份（XRANGE 单条）：告警表里直接能看到是哪台设备的消息，
+                    # 不用再回 queue_backlog 对号
+                    **_stream_entry(client, as_str(e.get("message_id"))),
                 }
                 for e in top
             ]
@@ -285,3 +288,82 @@ def collect_backlog(client=None, limit: int = 20) -> dict:
         stats["redis_ok"] = False
         stats["error"] = str(exc)
     return stats
+
+
+#: 消息详情解析的载荷上限：json.loads 会把整条载荷物化成 Python 对象（30MB JSON ≈ 数百 MB
+#: 内存），app 容器不该为看一眼消息被拖垮；超过就只报大小不做解析，原文走 redis-cli。
+_DETAIL_PARSE_LIMIT = 10 * 1024 * 1024
+
+
+def _key_dict(key) -> dict:
+    """wire 的十元组 key → 具名字段；旧 wire 九元组补 action=allow（与 decode_message 同口径）。"""
+    names = ("src_ip", "src_prefix", "src_range_end", "dst_ip", "dst_prefix", "dst_range_end", "protocol", "port", "port2", "action")
+    values = list(key)
+    if len(values) == 9:
+        values.append("allow")
+    return dict(zip(names, values, strict=False))
+
+
+def _pending_entry(client, message_id: str) -> dict | None:
+    """这条消息的 PEL 状态（投递次数 / 空闲 / 归属消费者）；不在 PEL 返回 None。"""
+    # count 是 redis-py xpending_range 的**必填**位置参数（漏传 TypeError，2026-11 实测）
+    entries = client.xpending_range(STREAM, GROUP, min=message_id, max=message_id, count=1) or []
+    for entry in entries:
+        if as_str(entry.get("message_id")) == as_str(message_id):
+            return {
+                "deliveries": int(entry.get("times_delivered") or 0),
+                "idle_ms": int(entry.get("time_since_delivered") or 0),
+                "consumer": as_str(entry.get("consumer")),
+            }
+    return None
+
+
+def message_detail(message_id: str, sample: int = 10, client=None) -> dict:
+    """按消息 ID 取 Stream 条目的**可读摘要**（只读）：设备 / 载荷大小 / 组合数 / 前 N 条 key。
+
+    消息是一台设备的整机展开快照（wire：``[[十元组 key, contexts], ...]``）。只解 keys、
+    不展开 contexts，也**不整条回传载荷**（最坏几十 MB）；载荷超过 ``_DETAIL_PARSE_LIMIT``
+    时只报大小（``truncated=True``）不做 json.loads——物化大 JSON 是数百 MB 内存，app
+    容器不该为看一眼消息被拖垮。原文走 ``redis-cli XRANGE access_flow_stream <ID> <ID>``。
+    """
+    client = client or get_redis()
+    detail: dict = {
+        "id": as_str(message_id),
+        "exists": False,
+        "device_id": None,
+        "hostname": None,
+        "size_bytes": 0,
+        "flow_count": None,
+        "truncated": False,
+        "sample_keys": [],
+        "pending": None,
+    }
+    rows = client.xrange(STREAM, min=message_id, max=message_id) or []
+    if not rows:
+        return detail  # 已被 maxlen trim / XDEL，或 ID 不对
+    _entry_id, fields = rows[0]
+    detail["exists"] = True
+    raw_device = fields.get(b"device_id", fields.get("device_id"))
+    raw_host = fields.get(b"hostname", fields.get("hostname"))
+    detail["device_id"] = int(as_str(raw_device)) if raw_device is not None else None
+    detail["hostname"] = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
+    detail["size_bytes"] = sum(len(v) for v in fields.values())
+    try:
+        detail["pending"] = _pending_entry(client, message_id)
+    except Exception:
+        logger.warning("XPENDING 明细读取失败（忽略）: %s", as_str(message_id), exc_info=True)
+
+    raw_flows = fields.get(b"flows", fields.get("flows"))
+    payload = raw_flows.decode() if isinstance(raw_flows, bytes) else raw_flows
+    if not payload or len(payload) > _DETAIL_PARSE_LIMIT:
+        detail["truncated"] = True
+        return detail
+    try:
+        wire = json.loads(payload)
+    except Exception:
+        logger.warning("消息载荷 JSON 解不开（只报大小）: %s", as_str(message_id), exc_info=True)
+        detail["truncated"] = True
+        return detail
+    detail["flow_count"] = len(wire)
+    detail["sample_keys"] = [_key_dict(key) for key, _contexts in wire[: max(1, min(sample, 50))]]
+    return detail

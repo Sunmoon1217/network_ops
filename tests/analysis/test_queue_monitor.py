@@ -14,7 +14,7 @@ from rest_framework.authtoken.models import Token as DRFToken
 from rest_framework.test import APIClient
 
 from analysis.access_stream import GROUP, backlog
-from analysis.queue_monitor import DEFAULT_THRESHOLDS, collect, evaluate
+from analysis.queue_monitor import DEFAULT_THRESHOLDS, collect, evaluate, message_detail
 from core.models import User
 
 API_URL = "/api/analysis/queue-status/"
@@ -32,6 +32,7 @@ class FakeRedis:
         groups=None,
         pending_entries=None,
         heartbeat=None,
+        stream_entries=None,
     ):
         self.queues = queues or {}
         self.unacked = unacked
@@ -39,6 +40,7 @@ class FakeRedis:
         self.groups = groups  # None → xinfo_groups 抛错（键不存在）
         self.pending_entries = pending_entries or []
         self.heartbeat = heartbeat  # bytes 时间戳 / None / Exception
+        self.stream_entries = stream_entries or {}  # message_id(str) → fields（bytes 键值，同 decode_responses=False）
 
     def llen(self, name):
         return self.queues.get(name, 0)
@@ -58,6 +60,10 @@ class FakeRedis:
 
     def xpending_range(self, stream, group, min, max, count):
         return [{**e, "message_id": str(e.get("message_id", "")).encode()} for e in self.pending_entries]
+
+    def xrange(self, stream, min, max, count=None):
+        """按 ID 区间过滤（fake 够用）：_stream_entry / message_detail 都是 min=max=单条 ID。"""
+        return [(entry_id.encode(), fields) for entry_id, fields in self.stream_entries.items() if min <= entry_id <= max]
 
     def get(self, key):
         if isinstance(self.heartbeat, Exception):
@@ -315,3 +321,98 @@ def test_queue_status_api_surfaces_redis_outage(api_client, monkeypatch):
     body = resp.json()
     assert body["redis_ok"] is False
     assert body["alerts"][0]["code"] == "redis_unreachable"
+
+
+# ---------------------------------------------------------------------------
+# 消息详情（按消息 ID 查内容：top_pending 补设备身份 + message_detail 摘要）
+# ---------------------------------------------------------------------------
+
+MESSAGE_API = "/api/analysis/queue-messages/"
+_KEY = ("10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", "", "allow")
+
+
+def _wire(*keys) -> bytes:
+    """生产者 wire 格式：[[十元组 key, contexts], ...]（encode_message 的形态）。"""
+    return json.dumps([[list(k), []] for k in keys], separators=(",", ":")).encode()
+
+
+def _message_fields(flows=None) -> dict:
+    return {"device_id": b"7", "hostname": b"fw-1", "flows": flows if flows is not None else _wire(_KEY)}
+
+
+def test_collect_top_pending_includes_device_identity():
+    entries = [{"message_id": "2-0", "consumer": "a", "time_since_delivered": 2000, "times_delivered": 13}]
+    client = _healthy_client(groups=[_group_info(lag=0, pending=1)], pending_entries=entries, stream_entries={"2-0": _message_fields()})
+
+    top = collect(client=client)["stream"]["top_pending"][0]
+
+    assert top["hostname"] == "fw-1" and top["device_id"] == 7, "告警表要直接看到是哪台设备的消息"
+
+
+def test_message_detail_returns_summary_and_pending():
+    fields = _message_fields()
+    client = FakeRedis(
+        stream_entries={"100-0": fields},
+        pending_entries=[{"message_id": "100-0", "consumer": "consumer-a", "time_since_delivered": 61000, "times_delivered": 12}],
+    )
+
+    detail = message_detail("100-0", client=client)
+
+    assert detail["exists"] is True
+    assert detail["hostname"] == "fw-1" and detail["device_id"] == 7
+    assert detail["size_bytes"] == sum(len(v) for v in fields.values())
+    assert detail["flow_count"] == 1
+    key = detail["sample_keys"][0]
+    assert (key["src_ip"], key["dst_ip"], key["protocol"], key["port"], key["action"]) == ("10.0.0.1", "10.0.0.2", "tcp", "80", "allow")
+    assert detail["pending"] == {"deliveries": 12, "idle_ms": 61000, "consumer": "consumer-a"}
+
+
+def test_message_detail_missing_message_not_found():
+    detail = message_detail("404-0", client=FakeRedis())
+
+    assert detail["exists"] is False and detail["sample_keys"] == []
+
+
+def test_message_detail_skips_parsing_oversized_payload(monkeypatch):
+    """载荷超上限只报大小不解析：json.loads 物化大 JSON 会把 app 容器拖垮。"""
+    monkeypatch.setattr("analysis.queue_monitor._DETAIL_PARSE_LIMIT", 10)
+
+    detail = message_detail("100-0", client=FakeRedis(stream_entries={"100-0": _message_fields()}))
+
+    assert detail["exists"] is True and detail["truncated"] is True
+    assert detail["flow_count"] is None and detail["sample_keys"] == []
+
+
+def test_message_detail_pads_legacy_nine_tuple_key():
+    legacy = json.dumps([[["10.0.0.1", 32, "", "10.0.0.2", 32, "", "tcp", "80", ""], []]]).encode()
+
+    detail = message_detail("100-0", client=FakeRedis(stream_entries={"100-0": _message_fields(flows=legacy)}))
+
+    assert detail["sample_keys"][0]["action"] == "allow", "旧 wire 九元组按 allow 兜底（与 decode_message 同口径）"
+
+
+@pytest.mark.django_db
+def test_queue_message_api_returns_summary(api_client, monkeypatch):
+    client = FakeRedis(
+        stream_entries={"100-0": _message_fields()},
+        pending_entries=[{"message_id": "100-0", "consumer": "consumer-a", "time_since_delivered": 61000, "times_delivered": 12}],
+    )
+    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: client)
+
+    resp = api_client.get(f"{MESSAGE_API}100-0/")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["hostname"] == "fw-1" and body["flow_count"] == 1
+    assert body["pending"]["deliveries"] == 12
+    assert body["sample_keys"][0]["src_ip"] == "10.0.0.1"
+
+
+@pytest.mark.django_db
+def test_queue_message_api_404_when_missing(api_client, monkeypatch):
+    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: FakeRedis())
+
+    resp = api_client.get(f"{MESSAGE_API}nope-0/")
+
+    assert resp.status_code == 404
+    assert "不存在" in resp.json()["detail"]
