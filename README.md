@@ -20,7 +20,7 @@
 - PostgreSQL（TimescaleDB）+ Redis
 - Celery 异步任务（采集→解析→存储；访问流重建）
 - TTP 模板解析（设备配置 → 结构化数据入库）
-- MCP Server（官方 Python SDK，LLM 工具接口，建设中）
+- MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；实体注册表 + 六工具，见下文）
 
 **前端**
 - Vue 3 + TypeScript + Vite
@@ -35,7 +35,7 @@ network_ops/
 ├── netops/          # Django 项目配置与基建（settings / urls / asgi / celery / pagination / mcp_server）
 ├── apps/
 │   ├── core/        # 用户认证、Token、Task/Stage、前端偏好、运维命令
-│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）+ MCP 设备库工具
+│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）+ MCP 工具出口（实体注册表 + 六工具）
 │   ├── ingest/      # 配置采集解析入库（每设备 Git 仓库 → TTP 解析 → Saver 写库）
 │   ├── analysis/    # 分析与观测（路径追踪/访问流/互联网分析/队列与 Redis 巡检）
 │   └── cloud/       # 云平台接入（阿里云 API 客户端 + 云资源缓存）
@@ -62,6 +62,17 @@ cd frontend && pnpm install && pnpm dev
 ```
 
 宿主机直跑需要自行导出数据库/Redis 环境变量（`POSTGRES_*`、`REDIS_HOST`），凭据见 `env/secrets/`；完整说明在 `env/README.md`。
+
+### MCP 工具接口（LLM 出口）
+
+- **端点**：`/mcp`（Streamable HTTP，官方 Python SDK 2.x，由 `netops/asgi.py` 的路径分发器挂载；`/mcp*` 走 MCP，其余走 Django）
+- **工具**：`apps/assets/mcp/` 实体注册表（`entities.py` 的 `EntitySpec` / `EDGES`）+ 六个薄壳工具（`find` / `list_records` / `get_record` / `bundle` / `relations` / `locate`），字段口径复用 `assets/serializers`——新增表 = 注册表加一行，工具层零改动
+- **本地运行与验证**（`manage.py runserver` 走 WSGI，没有 `/mcp`）：
+
+```bash
+uv run uvicorn netops.asgi:application --reload   # ASGI 入口，与生产 gunicorn+UvicornWorker 同构
+uv run pytest tests/mcp/                          # 工具测试：mcp.Client 内存传输整链
+```
 
 ## 部署
 
