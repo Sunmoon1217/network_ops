@@ -20,13 +20,35 @@ netops.asgi / manage.py stdio）属于传输层接线。
 
 from functools import wraps
 
+from django.conf import settings
 from django.db import close_old_connections
 from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 mcp = MCPServer(
     "netops",
     instructions="网络运维管理平台的 MCP Server。当前提供设备库查询工具（设备、设备组）；所有工具返回结构化 JSON，字符串查询条件留空即不过滤，主机名匹配大小写不敏感。",
 )
+
+
+def build_transport_security() -> TransportSecuritySettings:
+    """MCP 传输层白名单跟随 ``ALLOWED_HOSTS``——不跟随就会 421 ``Invalid Host header``。
+
+    ``streamable_http_app()`` 的 ``host`` 默认 ``127.0.0.1``，SDK 便自动把白名单写死成
+    localhost 三件套，用 IP / 域名访问的请求在到达工具之前就被挡掉，而 Django 侧因为
+    ``ALLOWED_HOSTS`` 放开却是通的（两套口径不一致，很难排查）。
+
+    ``*`` 等价于 Django 的「不校验」，直接关防护；否则放行这些域名的任意端口。裸 host
+    也要给一份：SDK 只认 ``host:*`` 通配，而默认端口下 Host 头不带端口（nginx 的
+    ``$http_host`` 就是这样）。IPv6 请写成 ``[::1]``。
+    """
+    hosts = [h for h in settings.ALLOWED_HOSTS if h and h != "*"]
+    if not hosts:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    return TransportSecuritySettings(
+        allowed_hosts=hosts + [f"{h}:*" for h in hosts],
+        allowed_origins=[f"{scheme}://{h}{port}" for h in hosts for scheme in ("http", "https") for port in ("", ":*")],
+    )
 
 
 def with_db_lifecycle(fn):

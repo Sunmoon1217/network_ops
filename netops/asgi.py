@@ -17,11 +17,12 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'netops.settings')
 django_asgi_app = get_asgi_application()
 
 import assets.mcp.tools  # noqa: E402,F401 — import 即注册（工具挂到 netops.mcp_server.mcp）
-from netops.mcp_server import mcp  # noqa: E402
+from netops.mcp_server import build_transport_security, mcp  # noqa: E402
 
 # Streamable HTTP 子应用：内部自带 /mcp 路由与 lifespan（进入 mcp.session_manager.run()）。
 # 构建之后 mcp.session_manager 才存在；本模块导入即完成全部接线，不额外监听端口。
-mcp_asgi_app = mcp.streamable_http_app()
+# transport_security 必须显式传——默认值只信任 localhost，用 IP/域名访问会 421。
+mcp_asgi_app = mcp.streamable_http_app(transport_security=build_transport_security())
 
 
 async def _dispatch(scope, receive, send):
