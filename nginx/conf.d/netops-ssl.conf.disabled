@@ -64,6 +64,28 @@ server {
 
         proxy_buffering off;
     }
+
+    # MCP 端点：SSE 长连接需要小时级超时，继承 location / 的 300s 会被中途掐断。
+    # 注意 location 里只要出现任一 proxy_set_header，就不再继承 server/location 级的
+    # 全部 header 设置，所以下面必须整套重复（Host 仍用 $http_host，理由同上）。
+    location /mcp {
+        proxy_pass http://$netops_upstream;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $http_host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $http_host;
+        proxy_set_header Connection        "";
+
+        proxy_connect_timeout 10s;
+        proxy_send_timeout    3600s;
+        proxy_read_timeout    3600s;
+
+        proxy_buffering off;
+        gzip off;
+    }
 }
 
 # 如需将 HTTP 强制跳转到 HTTPS，在 netops.conf 的 80 端口 server 块中
