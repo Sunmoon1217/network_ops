@@ -8,11 +8,26 @@ __pycache__/
 dist/
 build/
 
-# Virtual environments
+# Virtual environments（.venv2 等临时环境一并覆盖）
 .venv/
+.venv*/
 # 本机解释器版本由各人自己定，不入库：uv 会按它选解释器，
 # 写死一个小版本号会让别的机器找不到解释器（且 UV_PYTHON_DOWNLOADS=never 时无法回退下载）
 .python-version
+
+# Linter / Type checkers
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pyrefly/
+.django-stub-gen/
+
+# Coverage / Testing
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.tox/
 
 # IDE
 .idea/
@@ -20,6 +35,13 @@ build/
 *.swp
 *.swo
 *~
+
+# AI 会话工作区 / 知识库
+# .workbuddy：AI 助手的项目级记忆（工作日志），与人无关，不入库
+# .dsh：跨会话知识库的入口软链，真身在用户级 ~/.dsh/skills（见 AGENTS.md「知识库」）
+.workbuddy/
+.mimocode/
+.dsh/
 
 # Environment
 .env
@@ -36,6 +58,9 @@ env/secrets/*
 env/*.env
 !env/example/
 
+# 分支数据库配置（由 scripts/switch-branch*.sh 生成）
+.env.db
+
 # Django
 *.log
 logs/
@@ -46,62 +71,35 @@ media/
 staticfiles/
 www/
 
-# Coverage / Testing
-htmlcov/
-.coverage
-.coverage.*
-.pytest_cache/
-.tox/
+# 运行期数据（Git 配置仓库、Excel 的 config_dir 源目录），见 AGENTS.md「项目结构」
+data/*
 
-# Type checkers
-.mypy_cache/
-.pyright/
-.pyrefly/
-
-# uv / pip
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker
-docker-compose.override.yml
-
-# Archive
-*.tar
-*.tar.gz
-*.tar.bz2
-*.tar.xz
+# Frontend 自动生成（unplugin auto-import / components，dev server 启动时重建）
+frontend/auto-imports.d.ts
+frontend/components.d.ts
 
 # Node (frontend)
 node_modules/
 .pnpm-store/
 
-# Misc
-nohup.out
-.service.pid
-
-# Reference archive
-network_ops-archive-*
-
-# AI / Compose
-.mimocode/
-/docs/
-
-# Database init scripts (keep in repo)
-
-# Auto-generated types
-.django-stub-gen/
-data/*
-www/*
+# Docker
+docker-compose.override.yml
 
 # nginx TLS 证书（配置文件提交，证书与私钥不提交）
 nginx/ssl/*.crt
 nginx/ssl/*.key
 nginx/ssl/*.pem
 
-# 分支数据库配置（由 scripts/switch-branch*.sh 生成）
-.env.db
+# OS
+.DS_Store
+Thumbs.db
 
-# 跨会话知识库的入口软链（真身在用户级 ~/.dsh/skills，见 AGENTS.md「知识库」）
-.dsh/
+# Archive / Misc
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+nohup.out
+.service.pid
+network_ops-archive-*
+/docs/
