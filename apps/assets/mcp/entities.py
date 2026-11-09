@@ -151,9 +151,12 @@ class EntitySpec:
     select_related: tuple[str, ...] = ()
     prefetch: tuple[str, ...] = ()
     order: tuple[str, ...] = ()
+    #: 权限钩子：接上用户身份后由这里返回「按 request 过滤」的 queryset；
+    #: 内网可信部署保持 None，编译器退回全库（权限永远不来自调用方输入）。
+    base_queryset: Callable[[Any], QuerySet] | None = None
 
-    def queryset(self) -> QuerySet:
-        qs = self.model.objects.all()
+    def queryset(self, base: QuerySet | None = None) -> QuerySet:
+        qs = base if base is not None else self.model.objects.all()
         if self.select_related:
             qs = qs.select_related(*self.select_related)
         if self.prefetch:

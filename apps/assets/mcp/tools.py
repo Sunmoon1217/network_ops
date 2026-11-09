@@ -5,16 +5,19 @@
 组合方（``netops/asgi.py`` 或测试）``import assets.mcp.tools`` 即完成接入；
 ``netops.mcp_server`` 严禁反向 import 本模块（防循环，硬规矩）。
 
-## 为什么只有六个工具
+## 为什么只有七个工具
 
-实体表有 40+ 张，工具却压在 6 个，靠的是把「实体」下沉成数据（``assets.mcp.entities``）：
-``find`` / ``list_records`` / ``get_record`` 覆盖全部登记类型，新增一张表只加一条
-``EntitySpec``。真正需要独立工具的只有两类：
+实体表有 40+ 张，工具却压在 7 个，靠的是把「实体」下沉成数据（``assets.mcp.entities``）：
+``find`` / ``list_records`` / ``query`` / ``get_record`` 覆盖全部登记类型，新增一张表只加一条
+``EntitySpec``。真正需要独立工具的只有三类：
 
 - **一次合成多份真值并做一致性判断**（``locate``）——查三次会让 LLM 拼错，比如把
   另一台交换机上同名口（``Gi1/0/5`` 每台都有）的 ARP 观测当成这台机器的端口。
 - **多步查库 + 算法**（``relations`` 的变深遍历、``bundle`` 的横切拼装）——参数化的
   多跳查询不是 ``filters`` 能表达的。
+- **结构化查询**（``query``）——``list_records`` 的 filters 只支持「别名 → 单值」，
+  表达不了 AND/OR、多字段排序、字段投影与 offset；``query`` 走 ``assets.mcp.query``
+  的受控编译层，字段路径与操作符仍走白名单。
 
 判断标准就这一条：**能用 spec 的 ``filters`` / ``include`` 表达的，一律不新开工具**。
 
@@ -57,6 +60,7 @@ from assets.mcp.entities import (
     resolve_one,
     to_dict,
 )
+from assets.mcp.query import compile_plan, parse_plan, plan_summary, project
 from netops.mcp_server import mcp, with_db_lifecycle
 
 #: 单次关系展开 / 片段的返回条数上限：再多 LLM 也读不完，只是烧 token
@@ -270,6 +274,52 @@ def list_records(
         "page_size": page_size,
         "returned": len(rows),
         "truncated": start + len(rows) < total,
+        "rows": rows,
+    }
+
+
+# ---------------------------------------------------------------------------
+# query：结构化查询计划
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+@with_db_lifecycle
+def query(plan: dict[str, Any]) -> dict[str, Any]:
+    """结构化查询：用 QueryPlan 表达 AND/OR、多字段排序、字段投影与 offset。
+
+    与 ``list_records`` 的分工：单条件、按别名过滤用 ``list_records``；需要组合条件、
+    多字段排序或只取几列时用本工具。``plan`` 里的字段路径与操作符都在白名单内，
+    未声明的键会报错而不是被静默忽略。
+
+    plan 结构：
+    - entity_type：实体类型（同 list_records）
+    - filters：[{field, op, value}]，field 用**真实字段路径**（如 device_model__vendor__name、
+      device__hostname），op 取 exact / iexact / icontains / istartswith / gte / lte / in / isnull
+    - logic：and / or（filters 之间的组合方式，默认 and）
+    - order_by：[{field, direction}]，direction 取 asc / desc
+    - fields：只返回这些列（默认摘要字段）；``["*"]`` 返回序列化器全字段
+    - limit：1~100（默认 20）；offset：>= 0
+
+    返回：{entity_type, total, offset, limit, returned, truncated, plan, rows}。
+    和 list_records 一样，**total 才是匹配总数**，rows 只是当前窗口；``plan`` 是
+    编译器归一化后的回显，用来确认条件真的生效了。
+    """
+    if not isinstance(plan, dict):
+        raise ToolError("plan 必须是对象，字段见本工具说明")
+    spec = get_spec(str(plan.get("entity_type") or "").strip())
+    parsed = parse_plan(spec, plan)
+    qs = compile_plan(parsed, spec=spec)
+    total = qs.count()
+    rows = [project(spec, obj, parsed.fields) for obj in qs[parsed.offset : parsed.offset + parsed.limit]]
+    return {
+        "entity_type": spec.node_type,
+        "total": total,
+        "offset": parsed.offset,
+        "limit": parsed.limit,
+        "returned": len(rows),
+        "truncated": parsed.offset + len(rows) < total,
+        "plan": plan_summary(parsed),
         "rows": rows,
     }
 
