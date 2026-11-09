@@ -38,4 +38,12 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        netops: fileURLToPath(new URL('./index.html', import.meta.url)),
+        dashboard: fileURLToPath(new URL('./dashboard.html', import.meta.url)),
+      },
+    },
+  },
 })
