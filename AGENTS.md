@@ -4,7 +4,7 @@
 
 网络运维管理平台：Django REST 后端 + Vue 3 前端。
 
-后端提供数据模型与 REST API，负责设备配置的解析与入库。前端构建产物默认可由 Django 直接托管（便于开发调试）；生产/集成环境使用 `docker compose` 起 db / redis / app / worker / nginx，由 `nginx/` 作为统一入口（静态资源直出，`/api` 反向代理到 app 容器）。
+后端提供资产模型、配置解析入库、分析域与 REST API，并通过 `ingest/collectors/` 接入外部数据源（Zabbix / Autotask / ITSM）做总览大屏采集。前端由 Vite 打两个入口（`index.html` 主站 / `dashboard.html` 大屏），构建产物可由 Django 直接托管（开发调试）。生产/集成环境用 `compose.yml` 起 db / redis / `code-init`（一次性）/ app / worker / consumer / nginx：`code-init` 把代码镜像里的源码与静态成品铺进命名卷，app / worker / consumer 挂 `code` 卷只读运行，由 `nginx/` 作为统一入口（静态资源直出，`/api` 反向代理到 app）。宿主直跑用 `scripts/deploy-host.sh`（app / worker / consumer 三进程），与 compose 共用 `envs/*.env` 同一套配置。
 
 ## 项目拓扑
 
@@ -22,16 +22,20 @@
 network_ops/
 ├── manage.py            # Django 入口
 ├── main.py
-├── netops/              # 项目配置
+├── netops/              # 项目配置与基建
 │   ├── settings/        # env 动态项在 base 只写一遍；环境文件只放硬差异与守卫
 │   │   ├── __init__.py  # 白名单分发（DJANGO_ENV，未知即拒）+ 助手导出 + apps/ 进 sys.path
-│   │   ├── base.py      # 全部 env 动态配置（*_FILE > env > 默认 链）+ 静态（_env_list/_env_or_file）
+│   │   ├── base.py      # 全部 env 动态配置（*_FILE > env > 默认 链）+ load_dotenv(envs/) + LOGGING / OpenAPI / 各域 CONFIG
 │   │   ├── dev.py       # 空壳：base 即 dev 语义 ← 不设 DJANGO_ENV 的默认
-│   │   ├── container.py # 守卫：POSTGRES_HOST / REDIS_HOST 必须由 env/app.env 注入
+│   │   ├── container.py # 守卫：POSTGRES_HOST / REDIS_HOST 必须由 envs/container.env 注入
 │   │   └── prod.py      # DEBUG=False 硬覆盖 + 5 个关键 env 必填守卫（fail loud）
-│   ├── urls.py          # /admin/、/api/、前端 SPA 兜底
+│   ├── urls.py          # /admin/、/api/schema/*（OpenAPI 3 三路由）、5 个应用的 /api/、SPA 兜底（SPA_EXCLUDE_PREFIXES）
 │   ├── views.py         # 托管 frontend/dist（index.html、assets、favicon）
+│   ├── celery.py        # Celery("netops") + config_from_object(namespace="CELERY") + autodiscover_tasks
+│   ├── pagination.py    # StandardPagination（全局 50 条/页）
+│   ├── schema.py        # ExtraModel：外部数据源 pydantic DTO 基类（extra="allow"，透传原字段）
 │   ├── mcp_server.py    # MCP 基建：根 server 单例 + with_db_lifecycle（见「关键约定」MCP 条）
+│   ├── lifespan.py      # ASGI lifespan 钩子基建（LIFESPAN_HOOKS 仍为空，MCP 未挂 /mcp）
 │   ├── asgi.py
 │   └── wsgi.py
 ├── apps/
@@ -46,15 +50,21 @@ network_ops/
 │   │   ├── mcp/                 # MCP 工具（LLM 出口）：tools.py 设备库三工具（import 即注册）
 │   │   └── api/{serializers.py, urls.py, views.py}
 │   ├── ingest/             # 数据采集与解析入库（配置管道：Git 仓库 → TTP 解析 → Saver 写库）
+│   │   ├── collectors/      # 外部数据源（按源分子包：只采集、不落库、不 import analysis）
+│   │   │   ├── dashboard.py # 大屏采集编排：collect(source) → 纯 dict payload（3 分钟对齐、失败隔离）
+│   │   │   ├── zabbix/{zabbix,queries,schemas}.py    # 异步 API 单例 / 业务查询层 / JSON-RPC DTO
+│   │   │   └── autotask/{autotask,schemas}.py        # 工单 / SLB / 巡检 HTTP 客户端 + DTO
 │   │   ├── api/{configs.py, parsers.py, urls.py}
 │   │   ├── mapping.py        # 解析产出归一（键/字段别名）+ Saver→模型关联声明
 │   │   ├── parsers/{factory.py, template_keys.py, contract.py} + tmpls/{configs,running}/
 │   │   ├── savers/{base,registry,interface,lb,firewall,routing}.py
 │   │   ├── config_owner.py      # 配置属主解析（堆叠组备机归属主设备）
-│   │   ├── config_repo.py       # Git 配置仓库管理
+│   │   ├── config_repo.py       # Git 配置仓库管理（CONFIG_REPO_PATH，容器是 /configs 卷）
 │   │   ├── signals.py           # DeviceConfig 保存后触发解析与入库（薄壳，实现见 pipeline.py）
 │   │   ├── pipeline.py          # 配置处理流水线：读 Git → 解析 → 分发 Saver
 │   │   ├── workflow.py          # 任务工作流入口：start_task / dispatch_stage / cancel_task / submit_config_job
+│   │   ├── access_flow_trigger.py  # 访问流重建的投递触点（按任务名字符串 send_task）
+│   │   ├── tasks.py          # 三阶段工作流 + 配置导入链 + ingest.collect_dashboard（采集，不写库）
 │   │   ├── management/commands/reparse.py  # 重跑已入库配置的解析与入库
 │   │   ├── management/commands/purge_configs.py  # 清理配置解析产物（默认 dry-run，含 analysis 的缓存）
 │   ├── cloud/             # 云平台接入（阿里云）：API 客户端 + 云资源缓存（暂无对外 API）
@@ -68,53 +78,67 @@ network_ops/
 │   │   ├── dify.py              # Dify 知识库 API 客户端（create-by-file / indexing-status）
 │   │   ├── schema.py / diff.py / xlsx_io.py   # 表格数据格式归一 / 单元格 diff / xlsx 读写
 │   │   └── api/{views.py, documents.py, urls.py}  # /api/docs/spreadsheets/*、/api/docs/documents/*
-│   └── analysis/        # 分析域（只读消费 ingest 与 assets，不许被它们反向依赖）
-│       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, firewall_groups.py, gslb_clusters.py, ltm_groups.py, group_merge.py, monitor.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*、/api/analysis/*（URL 前缀沿用拆分前）
+│   └── analysis/        # 分析域（消费 ingest 与 assets，只写自己的派生表；不许被它们反向依赖）
+│       ├── api/{trace.py, analysis.py, lb_chain.py, accessflows.py, firewall_groups.py, gslb_clusters.py, ltm_groups.py, group_merge.py, monitor.py, dashboard.py, urls.py}   # /api/trace/*、/api/internet-analysis/*、/api/access-flows/*、/api/analysis/*、/api/dashboard/*（URL 前缀沿用拆分前）
 │       ├── path_tracer.py       # 路径追踪算法（模拟报文逐跳转发）
 │       ├── policy_expand.py     # 访问流：策略 M2M 笛卡尔积展开 + 合并入库（单写者路径）
 │       ├── access_stream.py     # 访问流：Redis Stream 编解码 / 背压 / 设备锁 / 心跳
-│       ├── tasks.py             # 访问流重建任务 analysis.rebuild_access_flows（独立队列）
+│       ├── tasks.py             # analysis.rebuild_access_flows（独立队列）+ analysis.write_dashboard（大屏唯一写库入口）
 │       ├── queue_monitor.py     # 队列积压巡检（celery 队列 / Stream lag / PEL / 心跳，只读）
 │       ├── redis_monitor.py     # Redis 服务状态巡检（INFO：内存/连接/命中率/键空间，只读）
 │       ├── celery_monitor.py    # Celery worker/任务巡检（inspect：名单/执行中/排队/延迟，只读）
 │       ├── management/commands/{access_flow_consumer, rebuild_access_flows}.py  # 单写者消费者 / 手工重建
-│       ├── models.py            # InternetAnalysis（分析结果缓存）+ AccessFlow（访问流，2026-09 由 ingest 迁入）
-│       └── migrations/{0001_initial,0002_accessflow}.py  # 从 operator 迁入：state 删除 + RunSQL RENAME，数据随表走
-├── data/                 # 运行期数据（不入库）：configs 是 bind 进 app 的输入，config_repo 只是宿主机直跑用的那份
-│   ├── config_repo/     # 宿主机直跑时的 Git 配置仓库；**Docker 部署用的是命名卷 config_repo_data**，两者互不影响
-│   └── configs/         # Excel「配置文件」sheet 的 config_dir 源目录；→ app 的 /app/data/configs（只读 bind）
+│       ├── models/              # **模型包**（原 models.py 已删；__init__.py 统一 re-export，导入路径不变）
+│       │   ├── access_flow.py / internet_analysis.py   # AccessFlow / InternetAnalysis（2026-09 由 ingest 迁入）
+│       │   └── dashboard.py     # DashboardMetric / MetricSample / ItsmCase / CollectionRun / LinkTarget
+│       └── migrations/{0001_initial,0002_accessflow,0003_dashboard}.py  # 前两个从 operator 迁入（state 删除 + RunSQL RENAME），0003 建 5 张大屏表
+├── data/                 # 运行期数据（不入库）：宿主直跑的配置仓库、配置源、PID 与日志
+│   ├── config_repo/     # 宿主直跑的 Git 配置仓库；容器由 CONFIG_REPO_PATH=/configs 指向命名卷 repo（另一份）
+│   ├── configs/         # Excel「配置文件」sheet 的 config_dir 源目录；compose 的 data 卷 bind ${PWD}/data → /data
+│   ├── run/             # deploy-host.sh 的 app / worker / consumer PID 文件
+│   └── logs/            # deploy-host.sh 三个进程的日志（业务 LOGGING 走 stderr，也落到这里）
 ├── .dsh/skills/         # 跨会话知识库的**入口软链**（已被 .gitignore/.dockerignore 忽略）：
 │                        # 真身在用户级 `~/.dsh/skills`（独立 git 仓库），那里放第三方软件的实测行为，
 │                        # 目录清单自动进每个会话、正文按需加载（skill 工具或 /name）。见「知识库」一节
 ├── tests/               # 测试（按应用分目录，pytest testpaths 指向此处）
-│   ├── analysis/        # 资产分析 / 缓存 / 导出 / 路由采集 / 访问流（policy_expand / stream / 任务 / API）
-│   ├── assets/          # device_group / serializer_migration / service_unique
-│   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）与部署契约
-│   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF 可信来源）
-│   ├── ingest/             # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger
+│   ├── analysis/        # 资产分析 / 缓存 / 导出 / 路由采集 / 访问流（policy_expand / stream / 任务 / API）/ 大屏写库
+│   ├── assets/          # device_group / serializer_migration / service_unique / 导入与接口
+│   ├── core/            # 认证（登录 CSRF / 注册 / 任务接口）/ 运维命令 / 权限
+│   ├── deploy/          # 反向代理与 Django 的接口契约（nginx Host 透传 / CSRF / settings 环境 / OpenAPI / lifespan）
+│   ├── ingest/          # parsers / parser_contract / pipeline / reparse / saver / workflow / access_flow_trigger / 大屏采集
 │   ├── docs/            # 表格（schema / diff / xlsx_io / API）+ 文档转换 / Dify 客户端 / 文档 API
-│   └── mcp/               # MCP 工具：mcp.Client(server) 内存传输整链 + django_db(transaction=True)
-├── frontend/            # Vue 3 + TypeScript + Vite
-│   ├── dist/            # 构建产物（不入库，由 nginx 直接托管）
-│   └── src/{api,assets,components,composables,constants,layout,router,stores,types,utils,views}
+│   └── mcp/             # MCP 工具：mcp.Client(server) 内存传输整链 + django_db(transaction=True)
+├── frontend/            # Vue 3 + TypeScript + Vite（多页面构建）
+│   ├── index.html / dashboard.html   # 双入口（vite.config.ts 的 rollupOptions.input：netops / dashboard）
+│   ├── dist/            # 构建产物（不入库，由 nginx 经 static 卷直出）
+│   └── src/             # main.ts + {api,assets,components,composables,constants,layout,stores,types,utils,views}
+│       ├── netops/      # 主站应用（App.vue / router / layout / stores）；与 dashboard/ 是待合并的两套代码
+│       └── dashboard/   # 大屏独立代码（App.vue / views / ui / api / types / utils）
 ├── nginx/               # 反向代理（静态直出 + API 代理）
 │   ├── conf.d/          # netops.conf(80)、netops-ssl.conf.disabled(443)
 │   ├── docker-entrypoint.d/  # 05-netops-resolver.sh：启动时把 runtime 的 DNS 写成 resolver.conf
 │   ├── ssl/             # TLS 证书（不入库）
 │   └── gen-self-signed-cert.sh
-├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
-├── env/                 # 给容器的配置：按服务分的 env 文件（app/db/gunicorn/celery.env）+ secrets/（密钥，不入库）
+├── www/                 # collectstatic 产物（不入库，代码镜像里作为 http/static）
+├── envs/                # 配置三层：common.env（共享）/ container.env / host.env（差异）/ gunicorn.env / celery.env
+│   ├── example/         # 入库的模板：首次部署 cp envs/example/*.env envs/
+│   └── secrets/         # 密钥（db 凭据 + 阿里云 4 个 AK，不入库；generate.sh 生成 db 那份）
+├── entrypoint/          # 容器入口
+│   ├── code_init.sh     # 一次性：把代码镜像的 /opt/netops/code、/opt/netops/http 权威铺进 code / static 卷
+│   ├── app.sh           # 按需迁移 → 零配置建管理员 → 拼出整条 gunicorn 命令
+│   ├── worker.sh / consumer.sh  # celery worker -Q celery,access_flow / 访问流单写者消费者
+│   └── README.md        # **镜像构建手册**：分层取舍、构建顺序与命令、`uv sync` 参数、冒烟清单
+├── scripts/             # 宿主直接部署（deploy-host.sh：build/migrate/start/stop/status/deploy）与分支/数据库脚本
+├── typings/             # 第三方库类型存根（pyrefly site-packages-path）
 ├── tmp/
-├── docker/
-│   ├── entrypoint.sh    # 应用容器入口：静态成品复制进命名卷 → 按需迁移 → 零配置建管理员 → 拼出整条 gunicorn 命令启动
-│   └── README.md        # **容器化构建手册**：构建顺序与命令、两个镜像的分层取舍、`uv sync` 参数、冒烟清单
-│                        # 契约、compose 里"看不出来"的约束（本文档只放指针，三个指令文件头部也只留一行）
-├── Dockerfile.base      # 环境镜像（只装依赖，不含源码）
-├── Dockerfile.app       # 项目镜像（源码 + 宿主机构建好的静态成品）
+├── dockerfile.base      # OS 运行时镜像（git / libpq5，不含 Python 依赖）
+├── dockerfile.venv      # Python venv 镜像（uv sync --frozen --no-dev）
+├── dockerfile.code      # 代码镜像（busybox + 源码 + 静态成品，跨沙箱传输用）
+├── dockerfile           # 传统项目镜像（venv + 源码 + 静态成品，备选方案）
 ├── .dockerignore
-├── docker-compose.yml   # db(TimescaleDB) / redis / app / worker / nginx
-├── .env.example         # **compose 自己**的变量模板（宿主端口 / 镜像 / secrets 路径）：cp 成 .env
-├── pyproject.toml       # Python 依赖、pytest、ruff 配置
+├── compose.yml          # code-init / db(TimescaleDB) / redis / app / worker / consumer / nginx
+├── .env.example         # **compose 自己**的变量模板（宿主端口 / CODE_IMAGE / VENV_IMAGE / secrets 路径）：cp 成 .env
+├── pyproject.toml       # Python 依赖、pytest / ruff / pyright / pyrefly 配置
 └── uv.lock
 ```
 
@@ -153,31 +177,34 @@ network_ops/
 
 ## 环境搭建
 
-需要 Python >= 3.12，使用 `uv` 管理包。
+需要 Python >= 3.12，使用 `uv` 管理包。配置实例不入库，首次克隆从模板复制：
 
 ```bash
-# 创建虚拟环境
 uv venv --python 3.12
-
-# 安装所有依赖（主依赖 + dev + test）
 uv sync --all-groups
-
-# 前端
+cp envs/example/*.env envs/      # 然后按现场修改 envs/common.env（唯一需要日常维护的配置）
 cd frontend && pnpm install
 ```
 
-数据库为 **PostgreSQL**，通过进程环境变量配置（见 `netops/settings/`）：
+数据库为 **PostgreSQL**，凭据链统一在 `netops/settings/base.py`（`*_FILE > 同名环境变量 > 默认值`）。宿主直跑时 base 会 `load_dotenv(envs/common.env)`，非 container 再加载 `envs/host.env`；**真实进程环境变量优先**（`override=False`），`NETOPS_SKIP_DOTENV=1` 全部跳过（`tests/deploy` 用它拿纯净默认值）。容器由 compose `env_file` 依次注入 `envs/common.env` + 服务层 + `envs/container.env`（排最后、差异一定生效）。
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `POSTGRES_DB` | `netops` | 数据库名（容器部署时在 `env/app.env` 与 `env/db.env` 里） |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | **走 docker secrets**：`env/secrets/postgres_user`、`env/secrets/postgres_password` → 容器内 `/run/secrets/*`；`settings/base.py` 的 `_env_or_file()` 读 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE`（没有 `*_FILE` 时回退同名环境变量，供宿主机直跑）。见 `env/secrets/README.md` |
-| `POSTGRES_HOST` | `localhost` | 数据库主机（容器里由 `env/app.env` 给 `db`） |
-| `POSTGRES_PORT` | `5432` | 数据库端口（容器内固定 5432；根 `.env` 里那个是**宿主映射**端口） |
-| `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔，映射到 `ALLOWED_HOSTS`；无域名阶段默认放开 |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 逗号分隔，映射到 `CSRF_TRUSTED_ORIGINS`（Django 4+ 的 Origin 校验）；**正常拓扑留空即可** |
+| `POSTGRES_DB` / `POSTGRES_PORT` | `netops` / `5432` | `envs/common.env`；根 `.env` 里的 `POSTGRES_PORT` 是**宿主映射端口**，两码事 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | 容器走 docker secrets（`envs/secrets/*` → `/run/secrets/*`，`container.env` 给 `*_FILE`）；宿主默认走同名环境变量，也可在 `host.env` 里给**相对** `*_FILE`（按 `BASE_DIR` 解析）与容器共用同一份密钥。见 `envs/secrets/README.md` |
+| `POSTGRES_HOST` / `REDIS_HOST` | `localhost` | 差异层：`host.env` 给 `localhost`，`container.env` 给 `db` / `redis`；`container.py` 有必填守卫 |
+| `REDIS_PORT` / `REDIS_DB` / `REDIS_PASSWORD` | `6379` / `0` / 空 | `envs/common.env`；redis 官方镜像没有 `*_FILE` 机制，密码只走环境变量 |
+| `DJANGO_ENV` | `dev` | 唯一环境旋钮，白名单 `dev / container / prod`，未知值拒绝启动；容器由 `envs/container.env` 注入 `container` |
+| `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔 → `ALLOWED_HOSTS`；上线收紧为具体域名/IP |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 正常拓扑（nginx 用 `$http_host` 透传）**留空即可** |
+| `DJANGO_LOG_LEVEL` | `INFO` | `LOGGING` 里 7 个业务命名空间（`core/ingest/assets/analysis/cloud/docs/netops`）的级别 |
+| `DJANGO_API_DOCS_REQUIRE_LOGIN` | 空 | 给 1 才把 `/api/schema/*` 收紧成 `IsAuthenticated`；内网默认放开 |
+| `ALIYUN_CONFIG` / `DIFY_CONFIG` / `ZABBIX_CONFIG` | 见 `base.py` | 阿里云双账号 + 5 endpoint；Dify 8 项（含 `process_mode` / `segment_*`）；Zabbix `url/token/user/password/timeout`。非密钥项在 `envs/common.env` |
+| `ACCESS_FLOW_*` | 队列 500 / 开 | `ACCESS_FLOW_MAX_QUEUE` / `ACCESS_FLOW_DISPATCH` / `ACCESS_FLOW_TASK`（任务名唯一定义处） |
+| `DASHBOARD_*` | 见「Dashboard 链路」条 | `DASHBOARD_WRITE_TASK` / `DASHBOARD_PAYLOAD_VIA_REDIS`（默认 0）/ `DASHBOARD_PAYLOAD_TTL`（600s） |
+| `CONFIG_REPO_PATH` | `<项目根>/data/config_repo` | 容器由 `envs/container.env` 给 `/configs`（命名卷 `repo`）；宿主不设即走默认那份 |
 
-> 配置按「谁读」分三处（完整表格见 `env/README.md`）：**`.env`（根）** 只给 compose 自己插值（`cp .env.example .env`；已被 `.gitignore` 忽略）；**`env/*.env`** 按服务注入容器（`app.env` 给 app+worker、`db.env` 给 db、`gunicorn.env` 给 app、`celery.env` 给 worker）；**`env/secrets/*`** 只读挂载给凭据。Django 自己不读任何 `.env`——宿主机直跑时要 `set -a; . ./.env; set +a`，再 `export POSTGRES_HOST=localhost REDIS_HOST=localhost POSTGRES_USER=netops POSTGRES_PASSWORD=<值>`（**凭据只走环境变量**；`*_FILE` / secrets 文件机制**只在容器里使用**——链路统一在 `settings/base.py`：`*_FILE > 同名环境变量 > 默认值`，宿主不设 `_FILE` 即走环境变量层）。
+> 配置按「谁读」分三处（完整表格见 `envs/README.md`）：**根 `.env`** 只给 compose 自己插值（`cp .env.example .env`；`CODE_IMAGE` / `VENV_IMAGE` / 宿主端口 / secrets 路径）；**`envs/*.env`** 是容器与宿主**共用的一套**（`common` 共享层 + `container`/`host` 差异层 + `gunicorn`/`celery` 服务层）；**`envs/secrets/*`** 只读挂载给凭据。三条规则：compose 的 `${VAR}` **只读根 `.env`**、`environment:` 优先于 `env_file`、多个 `env_file` **后面的覆盖前面的**。根 `.env` 与 `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号。
 
 ## 常用命令
 
@@ -185,18 +212,30 @@ cd frontend && pnpm install
 
 ```bash
 uv run python manage.py migrate
-uv run python manage.py createsuperuser
+uv run python manage.py migrate_if_needed   # 容器入口用的按需迁移（数据库命名锁串行化）
+uv run python manage.py ensure_superuser    # 零配置建初始管理员（密码打印在日志）
 uv run python manage.py runserver
-uv run python manage.py queue_status   # 队列积压巡检（--json 机器可读；超阈值退出码 1，可接 cron）
-uv run python manage.py queue_backlog  # 积压明细（--json / --limit）：队列排队消息 + Stream 待确认/未投递的点名清单
+uv run python manage.py queue_status        # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
+uv run python manage.py queue_backlog       # 积压明细（--json / --limit）
+uv run python manage.py rebuild_access_flows --device <H> [--sync]
+uv run python manage.py purge_configs --all --yes   # 默认只报告，--yes 才删
+./scripts/deploy-host.sh deploy | status    # 宿主直接部署：app / worker / consumer 三进程
 ```
 
 **前端（`frontend/` 目录）：**
 
 ```bash
-pnpm dev          # Vite 开发服务器
-pnpm build        # vue-tsc 类型检查 + vite build（输出 frontend/dist）
+pnpm dev          # Vite 开发服务器（/api 代理到 localhost:8000）
+pnpm build        # vue-tsc 类型检查 + vite build（双入口，输出 frontend/dist）
 pnpm type-check   # 仅 TypeScript 检查
+```
+
+**容器（项目根目录，`compose.yml`）：**
+
+```bash
+docker compose up -d code-init   # 换代码镜像后必须重跑：app 挂的是 code 卷，不是镜像里的 /app
+docker compose up -d
+docker compose logs app          # 初始管理员随机密码在这里
 ```
 
 **测试与代码检查（项目根目录）：**

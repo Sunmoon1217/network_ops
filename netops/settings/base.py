@@ -152,6 +152,16 @@ ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
+# Dashboard 采集 / 写库两段链路（采集在 ingest、存储在 analysis，两者只认任务名字符串）：
+# - DASHBOARD_WRITE_TASK 是唯一定义处：ingest.tasks.collect_dashboard 按它 send_task
+#   （不 import analysis，依赖方向 analysis → ingest 单向），analysis.tasks 的 name=
+#   与 tests 的对账断言必须一致。
+# - DASHBOARD_PAYLOAD_VIA_REDIS：默认 False = A（payload 随消息直接投递）；True = C
+#   （payload 暂存 Redis，只把 key 投递，避免大 payload 塞进 broker 消息）。
+DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
+DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
+DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
+
 # 阿里云配置：一朵云、两个资源集（生产/测试），两套账号，共用 region；
 # 各产品 endpoint 不同，分别由环境变量传递。
 # 凭据链路 *_FILE > 同名环境变量 > 默认值（空），与项目其他凭据一致。

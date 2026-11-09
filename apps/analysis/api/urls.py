@@ -10,7 +10,7 @@ URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analys
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, trace
+from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
@@ -49,6 +49,8 @@ urlpatterns = [
     # 运行监控（只读）：Redis 服务状态（INFO）/ Celery worker 与任务（inspect），运行监控页轮询
     path("analysis/redis-status/", monitor.redis_status, name="redis-status"),
     path("analysis/celery-status/", monitor.celery_status, name="celery-status"),
+    # Dashboard 供数（只读）：/api/dashboard/，模型与采集任务都在 analysis 域
+    path("dashboard/", dashboard.dashboard, name="dashboard"),
 ]
 
 urlpatterns += router.urls
