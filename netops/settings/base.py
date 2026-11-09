@@ -260,8 +260,8 @@ ZABBIX_CONFIG = {
 # propagate 保持默认 True，pytest 的 caplog（挂在 root）仍能捕获这些记录。
 # 输出选 stderr：StreamHandler 每次 emit 都 flush，宿主脚本重定向的 data/logs/*.log 与
 # 容器的 docker logs 都能实时收到。命令自身给操作者看的输出**不属于这里**——由
-# BaseCommand 的 self.stdout / self.stderr 负责（见 access_flow_consumer：显式 flush
-# 对抗 stdout 的块缓冲），不受日志级别配置影响。
+# BaseCommand 的 self.stdout / self.stderr 负责（见 access_flow_consumer：自己写 stdout
+# 并 flush），不受日志级别配置影响。
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

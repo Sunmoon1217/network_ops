@@ -55,7 +55,8 @@ class Command(BaseCommand):
 
         # 启动/退出是给操作者看的，走 BaseCommand 的输出通道而不是 logger：手动执行时
         # 终端直接可见、call_command(stdout=...) 可捕获，也不受 DJANGO_LOG_LEVEL 摆布。
-        # 显式 flush：stdout 重定向到文件后是块缓冲，常驻进程不退出就永远不落盘。
+        # 显式 flush：宿主脚本经 uv run 启动时它已注入 PYTHONUNBUFFERED=1，但容器入口
+        # / 手工 python 直跑不保证；统一 flush，保证重定向到文件时这一行立即落盘。
         self.stdout.write(f"访问流消费启动: stream={STREAM} group={GROUP} consumer={name}")
         self.stdout.flush()
         beat(client)
