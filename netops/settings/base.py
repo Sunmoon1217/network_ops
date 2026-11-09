@@ -212,7 +212,7 @@ DIFY_CONFIG = {
 # ---------------------------------------------------------------------------
 # Zabbix API（ingest 采集器的数据源）
 #
-# 单例与登录逻辑在 apps/ingest/collectors/zabbix.py（get_zapi / close_zapi），
+# 单例与登录逻辑在 apps/ingest/collectors/zabbix/zabbix.py（get_zapi / close_zapi），
 # 这里只放连接配置。环境变量清单（凭据走链路 *_FILE > 同名环境变量 > 默认值）：
 #   ZABBIX_URL       Zabbix 前端地址（API JSON-RPC 入口由库推导），未配置则 get_zapi 拒绝创建
 #   ZABBIX_TOKEN     API Token（Zabbix >= 5.4）；与 USER/PASSWORD 二选一，token 优先
