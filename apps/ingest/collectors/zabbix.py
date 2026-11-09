@@ -6,11 +6,19 @@
     - `AsyncZabbixAPI.__init__` 内部会创建 session 并做版本探测，同样要求 running loop；
     - Celery worker / ASGI / 测试各自有独立进程与循环，import 即建的实例无法跨循环复用。
 
-用法：
+用法（`await` 只能在 async 函数里用，模块顶层没有事件循环，不能写
+`zapi = await get_zapi()`）：
     from apps.ingest.collectors.zabbix import get_zapi
 
-    zapi = await get_zapi()
-    hosts = await zapi.host.get({"output": ["hostid", "name"]})
+    async def collect_hosts():
+        zapi = await get_zapi()
+        return await zapi.host.get({"output": ["hostid", "name"]})
+
+同步上下文（Celery 任务 / management command）用 asyncio.run 把「取实例 + 业务调用」
+包在**同一个** loop 里；单例绑定创建它的 loop，分两次 asyncio.run 会导致第二次重建：
+    import asyncio
+
+    hosts = asyncio.run(collect_hosts())
 
 生命周期：
     - `get_zapi()`：懒创建 + 登录（token 优先，其次 user/password），缓存在模块级；
