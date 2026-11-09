@@ -6,7 +6,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import echarts from './utils/echarts'
 import type { TooltipComponentFormatterCallbackParams as LineParams } from 'echarts'
-import type { LineChartsProps } from '@/types'
+import type { LineChartsProps } from '@dashboard/types'
 
 // 默认值
 const props = withDefaults(defineProps<LineChartsProps>(), {

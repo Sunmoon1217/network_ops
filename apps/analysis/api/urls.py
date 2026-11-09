@@ -49,8 +49,9 @@ urlpatterns = [
     # 运行监控（只读）：Redis 服务状态（INFO）/ Celery worker 与任务（inspect），运行监控页轮询
     path("analysis/redis-status/", monitor.redis_status, name="redis-status"),
     path("analysis/celery-status/", monitor.celery_status, name="celery-status"),
-    # Dashboard 供数（只读）：/api/dashboard/，模型与采集任务都在 analysis 域
+    # Dashboard 供数（只读、免认证）：大屏是无人值守展示页，不依赖登录态
     path("dashboard/", dashboard.dashboard, name="dashboard"),
+    path("dashboard/cabinets/", dashboard.dashboard_cabinets, name="dashboard-cabinets"),
 ]
 
 urlpatterns += router.urls

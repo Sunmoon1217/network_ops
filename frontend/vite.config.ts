@@ -25,8 +25,11 @@ export default defineConfig({
     }),
   ],
   resolve: {
+    // '@' 指向共享层；两个应用各自用语义化别名，避免共享层反向依赖 app
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@': fileURLToPath(new URL('./src/shared', import.meta.url)),
+      '@netops': fileURLToPath(new URL('./src/netops', import.meta.url)),
+      '@dashboard': fileURLToPath(new URL('./src/dashboard', import.meta.url)),
     },
   },
   server: {

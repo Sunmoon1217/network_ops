@@ -1,14 +1,9 @@
 <script setup lang="ts">
-import { NConfigProvider, NMessageProvider } from 'naive-ui'
 import Dashboard from './views/dashboard/Dashboard.vue'
 </script>
 
 <template>
-  <NConfigProvider>
-    <NMessageProvider>
-      <Dashboard />
-    </NMessageProvider>
-  </NConfigProvider>
+  <Dashboard />
 </template>
 
 <style>
@@ -18,12 +13,15 @@ import Dashboard from './views/dashboard/Dashboard.vue'
   box-sizing: border-box;
 }
 
-body {
-  font-family: Arial, sans-serif;
-  overscroll-behavior: none;
+html,
+body,
+#dashboard {
+  width: 100%;
+  height: 100%;
 }
 
-.app {
-  height: 100vh;
+body {
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  overscroll-behavior: none;
 }
 </style>

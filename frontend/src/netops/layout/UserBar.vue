@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { useThemeStore } from '@/stores/theme'
+import { useAuthStore } from '@netops/stores/auth'
+import { useThemeStore } from '@netops/stores/theme'
 import { IconSun, IconMoon } from '@/assets/menu-icons'
 
 const authStore = useAuthStore()

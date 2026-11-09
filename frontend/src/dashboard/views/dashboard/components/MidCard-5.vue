@@ -1,386 +1,202 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { getidc, getrack, getracklist } from '@/api/dashboard_api'
-import type { DeviceInfo, PositionInfo, RackInfo } from '@/types'
-import type { SelectProps, TooltipProps } from 'naive-ui'
-import axios from 'axios'
+import { computed, onMounted, ref, watch } from 'vue'
+import { getDashboardCabinets } from '@/api/dashboard'
+import type { DashboardCabinet, DashboardCabinetDevice } from '@dashboard/types'
+import { useInterval } from '@dashboard/utils/timer'
 
-interface Option {
-  label: string
-  value: string
-}
-const uCount = ref(45) // 常见机柜高度
+const cabinets = ref<DashboardCabinet[]>([])
+const devices = ref<DashboardCabinetDevice[]>([])
+const selectedDC = ref('')
+const selectedCabinet = ref<number | null>(null)
+const hoverDevice = ref<DashboardCabinetDevice | null>(null)
+const loadError = ref('')
 
-const deviceData = ref<PositionInfo[]>([])
-const options = ref<Option[]>([])
-const idclist = ref<Option[]>([])
-const rowlist = ref<Option[]>([])
-const racklist = ref<Option[]>([])
-const curr_idc = ref('')
-const curr_rack = ref<RackInfo>({ name: '', uCount: 0, detail: deviceData.value })
-const curr_device = ref<DeviceInfo | null>(null)
+const dcOptions = computed(() =>
+  Array.from(new Set(cabinets.value.map((c) => c.datacenter_name).filter(Boolean))),
+)
+const cabinetOptions = computed(() =>
+  cabinets.value.filter((c) => !selectedDC.value || c.datacenter_name === selectedDC.value),
+)
+const current = computed(() => cabinets.value.find((c) => c.id === selectedCabinet.value) ?? null)
+const uCount = computed(() => current.value?.total_u || 42)
+const cabinetDevices = computed(() =>
+  devices.value.filter((d) => d.cabinet === selectedCabinet.value && d.u_position),
+)
+const usedU = computed(() => cabinetDevices.value.reduce((sum, d) => sum + (d.height || 1), 0))
+const utilization = computed(() =>
+  uCount.value ? Math.round((usedU.value / uCount.value) * 100) : 0,
+)
+const uRows = computed(() => Array.from({ length: uCount.value }, (_, i) => uCount.value - i))
+const rackStyle = computed(() => ({ gridTemplateRows: `repeat(${uCount.value}, 16px)` }))
 
-const fetch_idc = async () => {
-  const response = await getidc()
-  console.log('API返回option信息:', response)
-  idclist.value = response.map((item: string) => ({ label: item, value: item }))
-  curr_idc.value = idclist.value[0].value
-}
-
-const fetch_racklist = async (idc?: string) => {
-  const response = await getracklist(idc)
-  console.log('API返回option信息:', response)
-  racklist.value = response.map((item: string) => ({ label: item, value: item }))
-}
-
-const fetch_rack = async (idc: string, rack_id: string) => {
-  const response = await getrack(idc, rack_id)
-  console.log('API返回rack信息:', response)
-  curr_rack.value = response[0]
-  uCount.value = curr_rack.value.uCount
-  console.log('uCount:', uCount.value)
+const deviceStyle = (device: DashboardCabinetDevice) => {
+  const height = device.height || 1
+  const start = uCount.value - Number(device.u_position) - height + 2
+  return {
+    gridColumn: '2',
+    gridRow: `${Math.max(1, start)} / span ${height}`,
+  }
 }
 
-const handleIDC = (value: string) => {
-  console.log('选择机房:', value)
-  curr_idc.value = value
-  fetch_racklist(curr_idc.value)
+const loadCabinets = async () => {
+  try {
+    const previous = selectedCabinet.value
+    // 大屏专用只读接口（免认证）：一次返回机柜与设备上架位置，不需要登录态
+    const data = await getDashboardCabinets()
+    cabinets.value = data.cabinets
+    devices.value = data.devices
+    if (!selectedDC.value) selectedDC.value = dcOptions.value[0] ?? ''
+    if (!cabinets.value.some((c) => c.id === previous)) {
+      selectedCabinet.value = cabinetOptions.value[0]?.id ?? null
+    }
+    loadError.value = ''
+  } catch (error) {
+    console.error('[dashboard] 机柜数据获取失败:', error)
+    loadError.value = '机柜数据获取失败'
+  }
 }
 
-const handleSelect = (value: string) => {
-  console.log('选择机柜:', value)
-  fetch_rack(curr_idc.value, value)
-}
+watch(selectedDC, () => {
+  if (!cabinetOptions.value.some((c) => c.id === selectedCabinet.value)) {
+    selectedCabinet.value = cabinetOptions.value[0]?.id ?? null
+  }
+})
 
-const rackRepeat = computed(() => ({
-  gridTemplateRows: `repeat(${uCount.value}, 16px)`,
-}))
+const { start } = useInterval(loadCabinets, 5 * 60 * 1000, true)
 
-type SelectThemeOverrides = NonNullable<SelectProps['themeOverrides']>
-const selectOverrides: SelectThemeOverrides = {
-  peers: {
-    InternalSelection: {
-      color: '#263740', // 背景颜色
-      textColor: 'var(--text-color)', // 字体颜色
-      colorActive: '#263740', // 点开后背景颜色
-      // placeholderColor: '#ff0', // 占位符字体颜色
-    },
-    InternalSelectMenu: {
-      color: '#203040', // 展开背景色
-      // actionTextColor: '#000', // 展开字体颜色
-      optionColorActive: 'var(--text-color)', // 展开活动选项背景色
-      optionTextColor: '#60f0ff', //
-      // optionTextColorActive: '#6688aa',
-      optionColorPending: '#305060', // 选项 hover 背景
-      optionColorActivePending: '#101010',
-      optionTextColorPressed: '#101010',
-    },
-  },
-}
-
-onMounted(async () => {
-  await fetch_idc()
-  await fetch_racklist(curr_idc.value)
-  await fetch_rack(curr_idc.value, racklist.value[0].value)
+onMounted(() => {
+  start()
 })
 </script>
 
 <template>
   <div class="container">
-    <div class="rackcontainer">
-      <div class="rack">
-        <!-- 左侧：U 位刻度（偶数） -->
-        <div class="rackpositionl" :style="rackRepeat">
-          <template v-for="n in uCount" :key="n">
-            <div
-              v-if="n % 2 === 0"
-              :class="['cell cellrepeat', n === uCount ? 'last-cell' : '']"
-              :style="{ '--row-height': -n - 1 }"
-            >
-              <p class="side">{{ n }}U</p>
-            </div>
-          </template>
+    <div v-if="loadError" class="empty-state">{{ loadError }}</div>
+    <div v-else-if="!cabinets.length" class="empty-state">资产库暂无机柜数据</div>
+    <template v-else>
+      <div class="rack-wrap">
+        <div class="select">
+          <select v-model="selectedDC" aria-label="数据中心">
+            <option value="">全部数据中心</option>
+            <option v-for="dc in dcOptions" :key="dc" :value="dc">{{ dc }}</option>
+          </select>
+          <select v-model.number="selectedCabinet" aria-label="机柜">
+            <option v-for="cabinet in cabinetOptions" :key="cabinet.id" :value="cabinet.id">
+              {{ cabinet.name }}
+            </option>
+          </select>
         </div>
-
-        <!-- 中间：设备区域 -->
-        <div class="rackmain" :style="rackRepeat">
-          <template v-for="(position, index) of curr_rack.detail" :key="index">
-            <template v-if="position.device.name !== ''">
-              <div
-                class="cell celldevice"
-                @mouseenter="curr_device = position.device"
-                :style="{
-                  '--row-start': -Number(position.position),
-                  '--row-end': -Number(position.position) - position.device.height,
-                }"
-              >
-                <div class="device-label">
-                  <n-ellipsis style="max-width: 120px">
-                    {{ position.device.name }}
-                  </n-ellipsis>
-                  <!-- <span class="height-badge">{{ device.device.height }}U</span> -->
-                </div>
-              </div>
-            </template>
-            <template v-else>
-              <div class="cell cellempty" :style="{ '--row-start': -position.position - 1 }">
-                {{ position.position }}U
-              </div>
-            </template>
-          </template>
+        <div class="usage">
+          机柜 {{ current?.name || '--' }} · {{ uCount }}U · 已用 {{ usedU }}U · 利用率 {{ utilization }}%
         </div>
-
-        <!-- 右侧：U 位刻度（奇数） -->
-        <div class="rackpositionr" :style="rackRepeat">
-          <template v-for="n in uCount" :key="n">
-            <div
-              v-if="n % 2 === 1"
-              :class="['cell cellrepeat', n === uCount ? 'last-cell' : '']"
-              :style="{ '--row-height': -n - 1 }"
-            >
-              <p class="side">{{ n }}U</p>
-            </div>
-          </template>
+        <div v-if="current" class="rack" :style="rackStyle">
+          <div
+            v-for="u in uRows"
+            :key="`label-${u}`"
+            class="u-label"
+            :style="{ gridRow: uCount - u + 1, gridColumn: 1 }"
+          >{{ u }}</div>
+          <div
+            v-for="u in uRows"
+            :key="`cell-${u}`"
+            class="u-cell"
+            :style="{ gridRow: uCount - u + 1, gridColumn: 2 }"
+          ></div>
+          <div
+            v-for="device in cabinetDevices"
+            :key="device.id"
+            class="device"
+            :style="deviceStyle(device)"
+            :title="`${device.hostname} · ${device.u_position}U · ${device.height || 1}U`"
+            @mouseenter="hoverDevice = device"
+          >{{ device.hostname }}</div>
         </div>
+        <div v-else class="empty-state">请选择机柜</div>
       </div>
-    </div>
-    <div class="displaycontainer">
-      <div class="select">
-        <n-select
-          filterable
-          :options="idclist"
-          placeholder="请选择机房"
-          @update:value="handleIDC"
-          :theme-overrides="selectOverrides"
-        />
-        <n-select
-          filterable
-          :options="racklist"
-          placeholder="请选择机柜"
-          @update:value="handleSelect"
-          :theme-overrides="selectOverrides"
-        />
+      <div class="detail">
+        <h4>设备信息</h4>
+        <template v-if="hoverDevice">
+          <p>名称：{{ hoverDevice.hostname }}</p>
+          <p>IP：{{ hoverDevice.ip_address || '未分配' }}</p>
+          <p>类型：{{ hoverDevice.device_type_display || '未设置' }}</p>
+          <p>U 位：{{ hoverDevice.u_position }}（{{ hoverDevice.height || 1 }}U）</p>
+        </template>
+        <p v-else class="hint">鼠标移到机柜设备上查看详情</p>
       </div>
-      <div class="display">
-        <n-space vertical>
-          <h3>设备信息:</h3>
-          <p>名称: {{ curr_device?.name }}</p>
-          <p>IP: {{ curr_device?.ip }}</p>
-          <p>厂商: {{ curr_device?.vendor }}</p>
-          <p>型号: {{ curr_device?.model }}</p>
-          <p>高度: {{ curr_device?.height }}</p>
-        </n-space>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
 
-<style lang="css" scoped>
-.container {
-  height: 100%;
-  overflow-y: scroll;
-  position: relative;
-  gap: 4px;
-  display: flex;
-  flex-direction: row;
-}
+<style scoped>
+.container { height: 100%; display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; overflow: hidden; }
+.empty-state { padding: 12px; font-size: 12px; color: #88a9c8; }
 
-.container::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+.rack-wrap { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.rack-wrap::-webkit-scrollbar { width: 0; }
 
-.rackcontainer {
+.select { display: flex; gap: 6px; }
+.select select {
   flex: 1;
-  display: flex;
-  /* flex-direction: column-reverse; */
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(111, 244, 255, 0.25);
+  background: #10263b;
+  color: #d7ecfb;
+  font-size: 11px;
 }
-/* 主容器：科技风背景 */
+
+.usage { font-size: 11px; color: #9fd7ff; }
+
 .rack {
-  /* width: 220px; */
-  flex: 1;
-  height: fit-content;
-  min-height: 0;
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 1px;
+  padding: 2px;
   border: 1px solid #455f87;
   border-radius: 4px;
-  background: #0a0a1a;
-  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
-  background-size:
-    20px 20px,
-    20px 20px,
-    1px 1px,
-    1px 1px;
-  background-position:
-    0 0,
-    10px 10px,
-    0 0,
-    0 0;
-  padding: 4px;
-  display: grid;
-  grid-template-columns: 30px 1fr 30px;
+  background: rgba(10, 20, 40, 0.6);
 }
 
-.displaycontainer {
-  flex: 1;
-  display: grid;
-  grid-template-rows: 100px 1fr;
-  position: sticky;
-  top: 0px;
-}
-.select {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 6px;
-}
-.display {
-  color: var(--text);
-  padding: 12px 6px;
-}
-
-/* 左右侧刻度 */
-.rackpositionl {
-  display: grid;
-  text-align: center;
-  background-color: rgba(47, 47, 106, 0.5);
-}
-
-.rackpositionr {
-  display: grid;
-  text-align: center;
-  background-color: rgba(47, 47, 106, 0.5);
-}
-
-.cell {
+.u-label {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* background-color: rgba(10, 10, 30, 0.5); */
-  border-right: 1px solid #404060;
-  /* height: 12px; */
-}
-
-.cellrepeat {
+  font-size: 9px;
   color: #40c0ff;
-  font-weight: 500;
-  grid-row: var(--row-height);
-  background-color: transparent;
+  background: rgba(47, 47, 106, 0.5);
 }
 
-.last-cell {
-  border-bottom: 1px solid #404060;
+.u-cell {
+  border: 1px solid rgba(111, 244, 255, 0.08);
+  background: rgba(20, 20, 40, 0.3);
 }
 
-.side {
-  margin: 0;
-  padding: 0;
-  text-align: center;
-  white-space: nowrap;
-  font-size: 10px;
-  color: #40c0ff;
-  text-shadow: 0 0 5px rgba(0, 200, 255, 0.8);
-}
-
-.rackmain {
-  display: grid;
-  border: 1px solid #455f87;
-}
-
-.celldevice {
-  grid-row: var(--row-start) / var(--row-end);
-  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
-  border: 1px solid #8fba2b;
-  border-radius: 4px;
-  margin: 0 1px;
-  font-weight: 500;
-  color: #a0f0ff;
-  text-align: center;
-}
-
-.devicedetail {
-  padding: 0;
-  background:
-    radial-gradient(circle at top left, rgba(58, 140, 202, 0.16), transparent 80%),
-    linear-gradient(180deg, rgba(18, 40, 61, 0.96), rgba(12, 28, 44, 0.96));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(3, 12, 20, 0.28);
-}
-
-@keyframes glow {
-  from {
-    box-shadow: 0 0 8px rgba(0, 200, 255, 0.5);
-  }
-  to {
-    box-shadow: 0 0 12px rgba(0, 200, 255, 0.8);
-  }
-}
-
-.cellempty {
-  grid-row: var(--row-start) / span 1;
-  background-color: rgba(20, 20, 40, 0.3);
-  font-size: 10px;
-  color: #6688aa;
-  border: 0;
-  text-align: center;
-}
-
-.device-label {
-  font-size: 10px;
-  font-weight: 500;
-  text-align: center;
-  /* border-radius: 4px; */
-  /* background-color: rgba(0, 0, 0, 0.6); */
-  /* box-shadow: 0 0 5px rgba(0, 200, 255, 0.5); */
-  overflow: hidden;
-  /* text-overflow: ellipsis; */
-  /* white-space: nowrap; */
-}
-
-.height-badge {
-  margin-left: 4px;
-  font-weight: normal;
-  color: #40c0ff;
-  background-color: rgba(0, 20, 40, 0.7);
-  padding: 1px 3px;
+.device {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid #60ffcc;
   border-radius: 3px;
-  border: 1px solid #40c0ff;
-}
-
-/* 颜色区分（柔和的霓虹风格） */
-/* .celldevice:nth-child(2n + 1) {
-  background: rgba(10, 20, 40, 0.7);
-  border-color: #40c0ff;
-  color: #a0f0ff;
-} */
-
-/* .celldevice:nth-child(n) {
-  background: rgba(10, 20, 40, 0.7);
-  border-color: #7d5dff;
-  color: #b0a0ff;
-} */
-
-/* .celldevice:nth-child(4n + 1) {
-  background: rgba(10, 20, 40, 0.7);
-  border-color: #ff4080;
-  color: #ff90b0;
-} */
-
-.celldevice:nth-child(n) {
-  background: rgba(10, 20, 40, 0.7);
-  border-color: #60ffcc;
+  background: rgba(10, 20, 40, 0.92);
   color: #a0ffdd;
+  font-size: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-/* .celldevice:nth-child(6n + 1) {
-  background: rgba(10, 20, 40, 0.7);
-  border-color: #ff8040;
-  color: #ff9060;
-} */
+.detail {
+  border: 1px solid rgba(111, 244, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 12px;
+  color: #d7ecfb;
+  overflow: hidden;
+}
 
-/* body {
-  margin: 0;
-  background: #0a0a1a;
-  font-family: 'Courier New', 'Segoe UI', monospace;
-} */
+.detail h4 { margin: 0 0 8px; font-size: 13px; color: #ecf7ff; }
+.detail p { margin: 6px 0; word-break: break-all; }
+.detail .hint { color: #88a9c8; }
 </style>

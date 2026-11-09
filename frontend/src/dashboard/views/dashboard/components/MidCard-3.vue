@@ -1,85 +1,66 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useInterval } from '@/utils/timer'
-import { getdashboard } from '@/api/dashboard_api'
+import { computed, onMounted, ref } from 'vue'
+import { getDashboard } from '@/api/dashboard'
+import { useInterval } from '@dashboard/utils/timer'
 
-const instance = ref(200)
-const slb_trend = ref(0)
-instance.value = Math.floor(Math.random() * 200) + 300
-const monitor = ref(300)
-const monitor_trend = ref(0)
-monitor.value = Math.floor((Math.random() + 1) * instance.value)
-const node = ref(500)
-const node_trend = ref(0)
-node.value = Math.floor((Math.random() + 1) * monitor.value)
+const EMPTY = '--'
+const instance = ref<number | null>(null)
+const listener = ref<number | null>(null)
+const collected = ref(false)
+const loadError = ref('')
 
-const fetchData = async () => {
-  const resp = await getdashboard('slb', 'slb')
-  const data = resp.filter((item) => item.name === 'slb')?.[0].list_value?.[0]
-  if (!data) return
-
-  const new_instance = Number(data.instance)
-  const new_monitor = Number(data.listener)
-
-  slb_trend.value = new_instance - instance.value
-  instance.value = new_instance
-  monitor_trend.value = new_monitor - instance.value
-  monitor.value = new_monitor
+const num = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value)
+  return null
 }
 
-const slbSummary = computed(() => [
-  {
-    label: 'SLB 实例总数',
-    value: instance,
-    unit: '个',
-    detail: '云-生产环境负载均衡',
-    trend: `${slb_trend.value}%`,
-    trendClass: slb_trend.value >= 0 ? 'up' : 'down',
-  },
-  {
-    label: 'SLB 监听总数',
-    value: monitor,
-    unit: '个',
-    detail: 'TCP/HTTP/HTTPS 监听项',
-    trend: `${monitor_trend.value}%`,
-    trendClass: slb_trend.value >= 0 ? 'up' : 'down',
-  },
-  // {
-  //   label: '后端节点总数',
-  //   value: node,
-  //   unit: '个',
-  //   detail: '已接入后端服务节点',
-  //   trend: `${node_trend.value}%`,
-  //   trendClass: slb_trend.value >= 0 ? 'up' : 'down',
-  // },
+const cards = computed(() => [
+  { label: 'SLB 实例总数', value: instance.value, detail: 'Autotask 接口采集' },
+  { label: 'SLB 监听总数', value: listener.value, detail: 'TCP / HTTP / HTTPS 监听' },
 ])
 
-const { start } = useInterval(fetchData, 3600 * 1000, true)
+const fetchData = async () => {
+  try {
+    // 采集器写 slb/slb/slb，list_value[0] = {instance, listener}
+    const rows = await getDashboard({ panel: 'slb', group: 'slb' })
+    const data = rows.find((row) => row.name === 'slb')?.list_value?.[0]
+    instance.value = num(data?.instance)
+    listener.value = num(data?.listener)
+    collected.value = Boolean(data)
+    loadError.value = ''
+  } catch (error) {
+    console.error('[dashboard] SLB 数据获取失败:', error)
+    loadError.value = 'SLB 数据获取失败'
+  }
+}
+
+const { start } = useInterval(fetchData, 5 * 60 * 1000, true)
 
 onMounted(() => {
   start()
 })
 </script>
+
 <template>
   <div class="cloud-slb">
     <div class="slb-header">
       <h4>云平台负载均衡状态</h4>
-      <span class="health">总体健康</span>
+      <span class="health" :class="collected ? 'ok' : 'muted'">
+        {{ loadError || (collected ? '已采集' : '暂无数据') }}
+      </span>
     </div>
     <div class="slb-grid">
-      <article class="slb-card" v-for="item in slbSummary" :key="item.label">
+      <article v-for="item in cards" :key="item.label" class="slb-card">
         <p class="label">{{ item.label }}</p>
-        <p class="value">
-          {{ item.value }} <small>{{ item.unit }}</small>
-        </p>
+        <p class="value">{{ item.value ?? EMPTY }} <small>个</small></p>
         <p class="detail">{{ item.detail }}</p>
-        <p class="trend" :class="item.trendClass">较昨日 {{ item.trend }}</p>
       </article>
     </div>
   </div>
 </template>
 
-<style lang="css" scoped>
+<style scoped>
 .cloud-slb {
   height: 100%;
   box-sizing: border-box;
@@ -92,33 +73,20 @@ onMounted(() => {
   padding: 10px;
 }
 
-.slb-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.slb-header h4 {
-  margin: 0;
-  font-size: 14px;
-  color: #ecf7ff;
-}
+.slb-header { display: flex; justify-content: space-between; align-items: center; }
+.slb-header h4 { margin: 0; font-size: 14px; color: #ecf7ff; }
 
 .health {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
-  color: #9af3cb;
-  border: 1px solid rgba(61, 222, 159, 0.4);
-  background: rgba(61, 222, 159, 0.12);
+  border: 1px solid transparent;
 }
 
-.slb-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  min-height: 0;
-}
+.health.ok { color: #9af3cb; border-color: rgba(61, 222, 159, 0.4); background: rgba(61, 222, 159, 0.12); }
+.health.muted { color: #9fb6cc; border-color: rgba(159, 182, 204, 0.3); background: rgba(159, 182, 204, 0.1); }
+
+.slb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-height: 0; }
 
 .slb-card {
   border: 1px solid rgba(111, 244, 255, 0.16);
@@ -126,46 +94,12 @@ onMounted(() => {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
   padding: 10px;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto 1fr;
   gap: 6px;
 }
 
-.label {
-  margin: 0;
-  font-size: 12px;
-  color: #b6d7ef;
-}
-
-.value {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-  color: #6ff4ff;
-}
-
-.value small {
-  font-size: 12px;
-  color: #9ec5df;
-}
-
-.detail {
-  margin: 0;
-  font-size: 12px;
-  color: #d7edff;
-  line-height: 1.4;
-}
-
-.trend {
-  margin: 0;
-  font-size: 12px;
-}
-
-.trend.up {
-  color: #3dde9f;
-}
-
-.trend.down {
-  color: #ffd35e;
-}
+.label { margin: 0; font-size: 12px; color: #b6d7ef; }
+.value { margin: 0; font-size: 24px; font-weight: 700; line-height: 1; color: #6ff4ff; }
+.value small { font-size: 12px; color: #9ec5df; }
+.detail { margin: 0; font-size: 12px; color: #d7edff; line-height: 1.4; }
 </style>

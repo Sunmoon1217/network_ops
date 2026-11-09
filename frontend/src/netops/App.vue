@@ -3,10 +3,10 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { useAuthStore } from '@/stores/auth'
-import AppNav from '@/layout/AppNav.vue'
-import SideLayout from '@/layout/SideLayout.vue'
-import Login from '@/views/auth/Login.vue'
+import { useAuthStore } from '@netops/stores/auth'
+import AppNav from '@netops/layout/AppNav.vue'
+import SideLayout from '@netops/layout/SideLayout.vue'
+import Login from '@netops/views/auth/Login.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()

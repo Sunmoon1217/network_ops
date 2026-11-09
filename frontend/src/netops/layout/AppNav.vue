@@ -5,7 +5,7 @@ import { ElIcon } from 'element-plus'
 // Element Plus 官方图标（menu-icons 中无对应图标）：互联网资产分析 / 解析映射 / 任务中心 / 电子表格
 import { DataAnalysis, Connection, Timer, Grid } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
-import { useLayoutStore } from '@/stores/layout'
+import { useLayoutStore } from '@netops/stores/layout'
 import {
   IconOverview, IconDevices, IconDeviceList, IconBaseline, IconInterfaces,
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,

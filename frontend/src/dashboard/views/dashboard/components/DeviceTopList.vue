@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 interface TableData {
   label: string
-  value: number
+  value: number | null
 }
 interface Props {
   data: {
@@ -25,7 +25,7 @@ const memory = computed(() => props.data.memory.slice(0, 5))
       <div class="column-body">
         <div v-for="item in cpu" :key="item.label" class="row">
           <span class="name" :title="item.label">{{ item.label }}</span>
-          <strong class="value">{{ item.value }}%</strong>
+          <strong class="value">{{ item.value ?? '--' }}%</strong>
         </div>
       </div>
     </section>
@@ -38,7 +38,7 @@ const memory = computed(() => props.data.memory.slice(0, 5))
       <div class="column-body">
         <div v-for="item in memory" :key="item.label" class="row">
           <span class="name" :title="item.label">{{ item.label }}</span>
-          <strong class="value">{{ item.value }}%</strong>
+          <strong class="value">{{ item.value ?? '--' }}%</strong>
         </div>
       </div>
     </section>

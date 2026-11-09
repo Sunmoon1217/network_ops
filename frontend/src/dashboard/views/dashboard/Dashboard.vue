@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { stylevar } from '@/ui/theme/dashboard_stylevar.ts'
-import ZabbixAPI from '@/api/zabbix_api'
-import MidCard_1 from '@/views/dashboard/components/MidCard-1.vue'
-import MidCard_2 from '@/views/dashboard/components/MidCard-2.vue'
-import MidCard_3 from '@/views/dashboard/components/MidCard-3.vue'
-import MidCard_5 from '@/views/dashboard/components/MidCard-5.vue'
-import ChartsCard_1 from '@/views/dashboard/components/ChartsCard-1.vue'
-import ChartsCard_2 from '@/views/dashboard/components/ChartsCard-2.vue'
-import { getdashboard } from '@/api/dashboard_api'
-import { useInterval } from '@/utils/timer'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { stylevar } from '@dashboard/ui/theme/dashboard_stylevar'
+import { getDashboard, getLinkSeries } from '@/api/dashboard'
+import type { DashboardData, InspectItem, LinkPoint } from '@dashboard/types'
+import { useInterval } from '@dashboard/utils/timer'
+import MidCard_1 from './components/MidCard-1.vue'
+import MidCard_2 from './components/MidCard-2.vue'
+import MidCard_3 from './components/MidCard-3.vue'
+import MidCard_5 from './components/MidCard-5.vue'
+import ChartsCard_1 from './components/ChartsCard-1.vue'
+import ChartsCard_2 from './components/ChartsCard-2.vue'
 
 const StyleVar = stylevar
 
 const DESIGN_WIDTH = 1920
 const DESIGN_HEIGHT = 1080
+const REFRESH_MS = 5 * 60 * 1000
+const EMPTY = '暂无数据'
 const dashboardScale = ref(1)
 const dashboardShellStyle = computed(() => ({
   ...StyleVar,
   '--screen-scale': dashboardScale.value.toString(),
 }))
-
-const zabbixApi = shallowRef<ZabbixAPI | null>(null)
 
 type SummaryCard = {
   label: string
@@ -31,11 +31,13 @@ type SummaryCard = {
 }
 
 const summaryCards = ref<SummaryCard[]>([
-  { label: '设备总量', value: '未采集', detail: 'IDC数据中心主机数', status: 'ok' },
-  { label: '互联网链路健康度', value: '未采集', detail: '使用率超85% 未采集', status: 'accent' },
-  { label: '巡检完成率', value: '未采集', detail: '今日已巡检 未采集', status: 'warn' },
-  { label: '自动化工单', value: '未采集', detail: '成功率 未采集', status: 'ok' },
+  { label: '监控设备总量', value: EMPTY, detail: 'Zabbix 主机组设备数', status: 'ok' },
+  { label: '链路峰值使用率', value: EMPTY, detail: '近 3 小时链路采样', status: 'accent' },
+  { label: '今日巡检设备', value: EMPTY, detail: '巡检采集结果', status: 'ok' },
+  { label: '自动化工单', value: EMPTY, detail: '成功率未采集', status: 'ok' },
 ])
+const updatedAt = ref('--:--:--')
+const loadError = ref('')
 
 const updateDashboardScale = () => {
   const widthScale = window.innerWidth / DESIGN_WIDTH
@@ -44,78 +46,90 @@ const updateDashboardScale = () => {
 }
 
 const headerLeft = ['监控范围：网络设备 / 专线 / 机房']
-const headerRight = ['刷新频率: 5 分钟']
 
-const setSummaryCard = (label: SummaryCard['label'], patch: Partial<SummaryCard>) => {
+const setCard = (label: string, patch: Partial<SummaryCard>) => {
   const card = summaryCards.value.find((item) => item.label === label)
-  if (!card) return
-  Object.assign(card, patch)
+  if (card) Object.assign(card, patch)
 }
 
-const notCollectedValue = '未采集'
-const notCollectedDetail = '数据库未 更新/采集 数据'
-
-const getSummaryValueClass = (card: SummaryCard) => {
-  if (card.label !== '互联网链路健康度') return card.status
-
-  if (card.value === notCollectedValue) return card.status
-
-  const healthValue = Number.parseFloat(card.value)
-  if (Number.isNaN(healthValue)) return card.status
-  if (healthValue >= 99) return 'ok'
-  if (healthValue >= 95) return 'accent'
-  if (healthValue >= 90) return 'warn'
-  return 'danger'
-}
-
-const fetch_device = async () => {
-  const resp = await getdashboard('statusbar', 'devicecount')
-  const data = resp.filter((item) => item.name === 'count')?.[0]?.list_value?.[0]
-  if (!data) return
-  setSummaryCard('设备总量', {
-    value: `${Number(data?.count)}`,
-    detail: `IDC数据中心监控中的主机数`,
-  })
-}
-const fetch_link = async () => {
-  const resp = await getdashboard('statusbar', 'linkhealthy')
-  const data = resp.filter((item) => item.name === 'healthy')?.[0]?.list_value?.[0]
-  if (!data) return
-  setSummaryCard('互联网链路健康度', {
-    value: `${Number(data?.healthy)}%`,
-    detail: `使用率超85% ${data?.count} 次`,
-  })
-}
-const fetch_inspection = async () => {
-  const inspection = await getdashboard('statusbar', 'inspection')
-  const success = inspection.filter((item) => item.name === 'success')
-  const failed = inspection.filter((item) => item.name === 'warning')
-  if (success.length === 0) {
-    setSummaryCard('巡检完成率', { value: notCollectedValue, detail: notCollectedDetail })
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
   }
-  setSummaryCard('巡检完成率', {
-    value: String(success[0]?.value),
-    detail: `今日已巡检 异常项: ${failed[0]?.value}`,
-  })
-}
-const fetch_itsmtask = async () => {
-  const resp = await getdashboard('statusbar', 'itsmtask')
-  const data = resp.filter((item) => item.name === 'count')?.[0]?.list_value?.[0]
-  if (!data) return
-  setSummaryCard('自动化工单', {
-    value: `${data.count}`,
-    detail: `成功率: ${data.success}`,
-  })
+  return null
 }
 
-const fetch_date = async () => {
-  fetch_device()
-  fetch_link()
-  fetch_inspection()
-  fetch_itsmtask()
+const metricRow = (rows: DashboardData[], panel: string, group: string, name: string) =>
+  rows.find((item) => item.panel === panel && item.group === group && item.name === name)
+
+const fetchSummary = async () => {
+  try {
+    // 只取状态栏与巡检两个 panel，避免把工单明细、设备状态全表一起拉回来
+    const [statusbar, inspectionRows, series] = await Promise.all([
+      getDashboard({ panel: 'statusbar' }),
+      getDashboard({ panel: 'inspection' }),
+      getLinkSeries(),
+    ])
+
+    const deviceCount = toNumber(
+      metricRow(statusbar, 'statusbar', 'devicecount', 'count')?.list_value?.[0]?.count,
+    )
+    setCard('监控设备总量', {
+      value: deviceCount === null ? EMPTY : String(deviceCount),
+      detail: 'Zabbix 主机组设备数',
+    })
+
+    const points = series
+      .filter((item) => item.name.startsWith('bandwidth-'))
+      .map((item) => item.list_value?.[0] as LinkPoint | undefined)
+      .filter((point): point is LinkPoint => Boolean(point?.data))
+    const latest = points.length ? points[points.length - 1] : null
+    const values = Object.values(latest?.data ?? {}).flatMap((scope) =>
+      Object.values(scope).filter(
+        (value): value is number => typeof value === 'number' && Number.isFinite(value),
+      ),
+    )
+    const peak = values.length ? Math.max(...values) : null
+    setCard('链路峰值使用率', {
+      value: peak === null ? EMPTY : `${peak.toFixed(1)}%`,
+      detail: points.length
+        ? `近 3 小时 ${points.length} 个采样点 · ${values.length} 条链路`
+        : '近 3 小时暂无链路采样',
+      status: peak === null ? 'accent' : peak >= 85 ? 'danger' : peak >= 70 ? 'warn' : 'ok',
+    })
+
+    const inspect = (metricRow(inspectionRows, 'inspection', 'device', 'list')?.list_value ??
+      []) as InspectItem[]
+    const cpuMax = inspect.length
+      ? Math.max(...inspect.map((item) => toNumber(item.cpu_max) ?? 0))
+      : null
+    const memMax = inspect.length
+      ? Math.max(...inspect.map((item) => toNumber(item.memory_max) ?? 0))
+      : null
+    setCard('今日巡检设备', {
+      value: inspect.length ? String(inspect.length) : EMPTY,
+      detail: cpuMax === null ? '巡检采集未写入' : `CPU 峰值 ${cpuMax}% · 内存峰值 ${memMax}%`,
+    })
+
+    const itsm = metricRow(statusbar, 'statusbar', 'itsmtask', 'count')?.list_value?.[0]
+    const ticketCount = toNumber(itsm?.count)
+    const success = toNumber(itsm?.success)
+    setCard('自动化工单', {
+      value: ticketCount === null ? EMPTY : String(ticketCount),
+      detail: success === null ? '成功率未采集' : `成功率 ${success}%`,
+    })
+
+    updatedAt.value = new Date().toLocaleTimeString()
+    loadError.value = ''
+  } catch (error) {
+    console.error('[dashboard] 概览获取失败:', error)
+    loadError.value = '数据获取失败：/api/dashboard/ 不可达或未登录'
+  }
 }
 
-const { start } = useInterval(fetch_date, 3600 * 1000, true)
+const { start } = useInterval(fetchSummary, REFRESH_MS, true)
 
 onMounted(() => {
   start()
@@ -125,7 +139,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateDashboardScale)
-  zabbixApi.value?.logout()
 })
 </script>
 
@@ -142,14 +155,15 @@ onBeforeUnmount(() => {
             <p>设备状态、链路质量、巡检任务、自动化工单统一可视化</p>
           </div>
           <div class="header-side right">
-            <span v-for="item in headerRight" :key="item" class="header-meta">{{ item }}</span>
+            <span v-if="loadError" class="header-meta error">{{ loadError }}</span>
+            <span class="header-meta">刷新于 {{ updatedAt }} · 每 5 分钟</span>
           </div>
         </header>
 
         <section class="status-bar panel-shell">
           <article v-for="card in summaryCards" :key="card.label" class="status-card">
             <p class="status-label">{{ card.label }}</p>
-            <p class="status-value" :class="getSummaryValueClass(card)">{{ card.value }}</p>
+            <p class="status-value" :class="card.status">{{ card.value }}</p>
             <p class="status-detail">{{ card.detail }}</p>
           </article>
         </section>
@@ -178,7 +192,7 @@ onBeforeUnmount(() => {
           <section class="panel-shell panel slb">
             <div class="panel-title">
               <h2>云平台 SLB 概览</h2>
-              <span class="tag">实例/监听/节点</span>
+              <span class="tag">实例 / 监听</span>
             </div>
             <div class="panel-body">
               <MidCard_3 />
@@ -188,7 +202,7 @@ onBeforeUnmount(() => {
           <section class="panel-shell panel links">
             <div class="panel-title">
               <h2>重要链路概览</h2>
-              <span class="tag">实时使用率</span>
+              <span class="tag">近 3 小时峰值</span>
             </div>
             <div class="panel-body">
               <ChartsCard_1 />
@@ -198,7 +212,7 @@ onBeforeUnmount(() => {
           <section class="panel-shell panel cabinets">
             <div class="panel-title">
               <h2>机柜使用情况</h2>
-              <span class="tag">资源利用率</span>
+              <span class="tag">资产库 U 位</span>
             </div>
             <div class="panel-body">
               <MidCard_5 />
@@ -288,6 +302,12 @@ onBeforeUnmount(() => {
   background: rgba(52, 200, 255, 0.08);
   color: var(--muted);
   font-size: 12px;
+}
+
+.header-meta.error {
+  border-color: rgba(255, 108, 132, 0.4);
+  background: rgba(255, 108, 132, 0.1);
+  color: var(--red);
 }
 
 .screen-btn {

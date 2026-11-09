@@ -1,8 +1,12 @@
 """Dashboard 大屏的只读接口（挂在 ``/api/dashboard/``）。
 
-响应包装是**旧 dashboard 前端 axios 拦截器的硬要求**（``return res.result``，见
-``frontend/src/dashboard/api/dashboard_api.ts``）；本项目其它接口是裸 DRF Response，
-这里是唯一例外，等前端统一后再改回裸数组。
+大屏是无人值守的展示页（``dashboard.html`` 独立入口），**不依赖登录态**：这里两个
+视图都显式 ``AllowAny``，前端不带 Token，也不该被 401 重定向到登录页。机柜数据同样
+走本模块的专用只读接口，而不是需要登录的 assets ModelViewSet。
+
+响应包装是**大屏前端的历史契约**（``{status, message, result}``，见
+``frontend/src/shared/api/dashboard.ts`` 里显式取 ``data.result``）；本项目其它接口是
+裸 DRF Response，这里是唯一例外，等前端统一后再改回裸数组。
 
 查询参数 ``panel`` / ``group`` / ``name`` 对齐旧 ``getdashboard``。当前值直接读
 ``DashboardMetric``；``group=linechart`` 或 ``name=bandwidth-*`` 时，把 ``MetricSample``
@@ -14,16 +18,18 @@
 from datetime import timedelta
 
 from django.utils import timezone
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.models import DashboardMetric, MetricSample
+from assets.models import Cabinet, Device
 
 LINECHART_HOURS = 3
 
 
 def _envelope(result):
-    """包成 ``{status, message, result}``：旧前端拦截器只取 ``res.result``。"""
+    """包成 ``{status, message, result}``：大屏前端显式取 ``data.result``。"""
     return Response({"status": 200, "message": "ok", "result": result})
 
 
@@ -72,6 +78,7 @@ def _linechart_rows():
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def dashboard(request):
     """``GET /api/dashboard/?panel=&group=&name=`` → ``DashboardData[]``（带旧包装）。"""
     panel = request.query_params.get("panel")
@@ -96,3 +103,49 @@ def dashboard(request):
         result.extend(points)
 
     return _envelope(result)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def dashboard_cabinets(request):
+    """``GET /api/dashboard/cabinets/`` → 机柜 U 位视图所需字段（免认证只读）。
+
+    大屏机柜面板原本读 ``/api/assets/cabinets/`` 与 ``/api/assets/devices/``，这两个
+    ModelViewSet 走全局权限（GET 也要登录）。这里只投影画 U 位和标签必需的字段，
+    不返回账号、SNMP/口令、备注等数据，让大屏在无人登录时也能完整展示。
+    """
+    cabinet_rows = Cabinet.objects.values(
+        "id", "name", "row", "total_u", "status", "room__name", "room__datacenter__name"
+    ).order_by("room__datacenter__name", "room__name", "name")
+    cabinets = [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "row": row["row"],
+            "total_u": row["total_u"],
+            "status": row["status"],
+            "room_name": row["room__name"],
+            "datacenter_name": row["room__datacenter__name"],
+        }
+        for row in cabinet_rows
+    ]
+
+    type_labels = dict(Device.DEVICE_TYPE_CHOICES)
+    device_rows = Device.objects.filter(cabinet__isnull=False, u_position__isnull=False).values(
+        "id", "hostname", "cabinet_id", "u_position", "height", "ip_address", "device_type"
+    ).order_by("hostname")
+    devices = [
+        {
+            "id": row["id"],
+            "hostname": row["hostname"],
+            "cabinet": row["cabinet_id"],
+            "u_position": row["u_position"],
+            "height": row["height"],
+            "ip_address": row["ip_address"],
+            "device_type": row["device_type"],
+            "device_type_display": type_labels.get(row["device_type"], row["device_type"]),
+        }
+        for row in device_rows
+    ]
+
+    return _envelope({"cabinets": cabinets, "devices": devices})

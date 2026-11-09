@@ -9,7 +9,7 @@
 | 模块 | 路由 / 入口 | 功能 |
 |------|------|------|
 | **运维主站** | `/`（`index.html`） | 设备管理、配置管理、IPAM、工具、任务中心、文档 |
-| **总览大屏** | `dashboard.html` → `/api/dashboard/` | 设备状态 / CPU / 内存、链路带宽折线、SLB、巡检、ITSM 工单；数据源 Zabbix + Autotask，异步采集后落库供数 |
+| **总览大屏** | `dashboard.html` → `/api/dashboard/` | 设备状态 / CPU / 内存、链路带宽折线、SLB、巡检、ITSM 工单、机柜 U 位；数据源 Zabbix + Autotask + 资产库，全部由后端采集/投影，**免认证、前端不带 Token** |
 | **设备管理** | `/devices` | 设备列表、接口管理、基线管理（SNMP/NTP/Syslog）、解析器模板、配置对比 |
 | **配置管理** | `/config` | 负载均衡（SLB/GSLB）、域名解析、NAT 管理、路由表、ARP/MAC、访问策略 |
 | **IP 管理** | `/ipam` | 子网、IP 地址、标签管理 |
@@ -56,9 +56,10 @@ network_ops/
 ├── frontend/
 │   ├── index.html / dashboard.html   # Vite 双入口（vite.config.ts 的 rollupOptions.input）
 │   ├── dist/        # 构建产物（不入库，由 nginx 直出）
-│   └── src/         # main.ts + {api,components,composables,constants,types,utils,views,layout,stores,assets}
-│       ├── netops/     # 主站应用入口（App.vue / router / layout / stores）
-│       └── dashboard/  # 大屏独立代码（App.vue / views / ui / api / types / utils）
+│   └── src/         # main.ts（双入口启动）+ vite-env.d.ts
+│       ├── shared/     # 通用能力层：api（含大屏接口 dashboard.ts）/ components（含 PageLayout）/ composables / constants / types（含 dashboard.ts）/ utils / assets
+│       ├── netops/     # 主站专属：App.vue / router / views / layout / stores / components（CodeDiffView）
+│       └── dashboard/  # 大屏独立代码（App.vue / views / ui / types / utils）
 ├── tests/           # pytest：core / assets / ingest / analysis / docs / deploy / mcp
 ├── envs/            # 配置分层：common / container / host / gunicorn / celery.env + example/ + secrets/
 ├── entrypoint/      # 容器入口 app / worker / consumer / code_init.sh + README（镜像构建手册）
@@ -73,7 +74,9 @@ network_ops/
 └── pyproject.toml / uv.lock
 ```
 
-> 前端正在合并两套代码：`src/netops/` 与 `src/dashboard/` 已就位，但 `src/main.ts` 目前仍按顶层 `./App.vue` / `./router` 引入，双入口构建前需先对齐这两处引用。
+> 目录按三层划分：`src/shared/` 是通用能力层，`src/netops/` 是主站专属（页面、路由、导航骨架、store、依赖主站主题的 `CodeDiffView`），`src/dashboard/` 是大屏应用。别名在 `vite.config.ts` 与 `tsconfig.json` 同步：`@ → src/shared`、`@netops → src/netops`、`@dashboard → src/dashboard`；**shared 不反向依赖两个 app**。`src/shared/api/index.ts` 是带 Token / 401 跳转的主站认证客户端；大屏接口集中在 `src/shared/api/dashboard.ts`，用独立免认证实例，业务类型在 `src/shared/types/dashboard.ts`（由 `dashboard/types/index.d.ts` 转发，大屏组件仍只认 `@dashboard/types`）。
+>
+> 两套前端共用 `src/main.ts`，按 `#app` / `#dashboard` 两个挂载点分别启动，双入口由 `vite.config.ts` 注册，两个 app 各自 `createPinia()`（状态不共享）。大屏只消费免认证的 `/api/dashboard/` 与 `/api/dashboard/cabinets/`（带 `{status,message,result}` 包装），前端不带 Token、不做登录跳转；Zabbix / Autotask 的采集落库与资产数据的投影全部在后端完成。
 
 ## 快速开始
 
@@ -126,7 +129,8 @@ docker compose up -d
   → ingest/collectors/dashboard.py            # asyncio 采集，返回纯 dict，不碰数据库
   → send_task("analysis.write_dashboard")     # 按任务名字符串投递，不 import analysis
   → analysis/tasks.py::write_dashboard       # 唯一写库入口：事务内 upsert 大屏表
-  → GET /api/dashboard/                      # 只读，折线由最近 3 小时样本聚合
+  → GET /api/dashboard/                      # 只读免认证，折线由最近 3 小时样本聚合
+  → GET /api/dashboard/cabinets/             # 只读免认证，机柜 U 位最小字段投影（不读需登录的 assets 列表）
 ```
 
 采集 payload 默认随消息直投（A 方案），`DASHBOARD_PAYLOAD_VIA_REDIS=1` 时暂存 Redis、只投 `__redis_key__`（C 方案）。任务名只在 `settings.DASHBOARD_WRITE_TASK` 定义一次，由测试对账。
