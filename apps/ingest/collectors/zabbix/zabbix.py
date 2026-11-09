@@ -66,9 +66,7 @@ async def get_zapi() -> AsyncZabbixAPI:
             await _zapi.login(token=cfg["token"])
         else:
             if not cfg["user"] or not cfg["password"]:
-                raise ImproperlyConfigured(
-                    "Zabbix 凭据缺失：ZABBIX_TOKEN 或 ZABBIX_USER/ZABBIX_PASSWORD 至少一组"
-                )
+                raise ImproperlyConfigured("Zabbix 凭据缺失：ZABBIX_TOKEN 或 ZABBIX_USER/ZABBIX_PASSWORD 至少一组")
             await _zapi.login(user=cfg["user"], password=cfg["password"])
 
         _zapi_loop = loop
