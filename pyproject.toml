@@ -74,12 +74,14 @@ testpaths = ["tests"]
 
 [tool.pyright]
 typeCheckingMode = "standard"
+stubPath = "typings"
 extraPaths = ["apps"]
 include = ["apps"]
 exclude = ["**/.*"]
 reportIncompatibleVariableOverride = "none"
 
 [tool.pyrefly]
+site-packages-path = ["typings"]
 search-path = ["apps"]
 project-includes = ["apps"]
 project-excludes = ["**/.*"]

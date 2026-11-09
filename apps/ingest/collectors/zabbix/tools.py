@@ -1,11 +1,17 @@
+"""Zabbix 采集工具：统一走 zabbix_utils 的动态方法。
+
+``await zapi.<object>.get(**params)``（hostgroup / host / item / history / trigger /
+problem），返回的是 JSON-RPC ``result`` 的**裸 dict / list**，不是带属性的对象；
+"""
+
 from asyncio import create_task, gather
 from datetime import datetime
 from logging import getLogger
 
 from core.tools import create_dict_combinations
 
-from .models import ZAPIHost, ZAPIItem, ZAPIProblem
-from .zabbix import AsyncZabbixAPI, get_zapi
+from .models import ZAPIHistory, ZAPIHost, ZAPIItem, ZAPIProblem, ZAPITrigger
+from .zabbix import get_zapi
 
 logger = getLogger(__name__)
 
@@ -27,9 +33,8 @@ async def fetch_groupids(group: str) -> list:
     """
     try:
         zapi = await get_zapi()
-        result = await zapi.get_groups(search={"name": group}, output=["groupid"])
-        groupids = [item.groupid for item in result]
-        return groupids
+        result = await zapi.hostgroup.get(search={"name": group}, output=["groupid"])
+        return [item["groupid"] for item in result]
     except Exception as e:
         logger.error(f"获取主机组ID失败: {e}")
         raise
@@ -46,9 +51,8 @@ async def fetch_hostids(host: str) -> list:
     """
     try:
         zapi = await get_zapi()
-        result = await zapi.get_hosts(search={"name": host}, output=["hostid"])
-        hostids = [item.hostid for item in result]
-        return hostids
+        result = await zapi.host.get(search={"name": host}, output=["hostid"])
+        return [item["hostid"] for item in result]
     except Exception as e:
         logger.error(f"获取主机ID失败: {e}")
         raise
@@ -71,11 +75,9 @@ async def fetch_devicecount(group: str | None = None, groupids: list | None = No
 
     try:
         zapi = await get_zapi()
-        result = await zapi.get_hosts(groupids=groupids, countOutput=1)
-        if not isinstance(result, int):
-            logger.error(f"获取设备总数失败: 期望整数类型，得到 {type(result)}")
-            return 0
-        return result
+        # countOutput 在 Zabbix 5+ 返回字符串，库原样透传 result，需显式转 int
+        result = await zapi.host.get(groupids=groupids, countOutput=1)
+        return int(result)
     except Exception as e:
         logger.error(f"获取设备总数失败: {e}")
         return 0
@@ -93,18 +95,17 @@ async def fetch_items(
         list[ZAPIItem]: _description_
     """
     kwargs.pop("output", None)
+    kwargs.pop("selectHosts", None)
     kwargs.pop("selectHost", None)
 
     try:
         zapi = await get_zapi()
-        result = []
-        result = await zapi.get_items(
-            output=["name", "key_", "lastvalue", "lastclock"],
-            selectHost=["host", "name"],
+        result = await zapi.item.get(
+            output=["itemid", "name", "key_", "lastvalue", "lastclock"],
+            selectHosts=["hostid", "host", "name"],
             **kwargs,
         )
-        result = [ZAPIItem.model_validate(item) for item in result]
-        return result
+        return [ZAPIItem.model_validate(item) for item in result]
     except Exception as e:
         logger.error(f"获取性能数据项失败: {e}")
         raise
@@ -153,7 +154,7 @@ async def fetch_history_data(
     limit: int = 180,
     time_from: str | int | None = None,
     time_till: str | int | None = None,
-):
+) -> list[ZAPIHistory]:
     """
     获取历史数据
 
@@ -165,16 +166,16 @@ async def fetch_history_data(
     Returns:
         历史数据列表
     """
-    params = {}
+    params: dict = {"itemids": itemid, "history": history_type, "output": "extend", "limit": limit}
     if time_from:
         params["time_from"] = time_from
     if time_till:
-        params["time_from"] = time_till
+        params["time_till"] = time_till
 
     try:
         zapi = await get_zapi()
-        result = await zapi.get_histories(itemids=itemid, history=history_type, output="extend", limit=limit)
-        return result
+        result = await zapi.history.get(**params)
+        return [ZAPIHistory.model_validate(history) for history in result]
     except Exception as e:
         logger.error(f"获取历史数据失败: {e}")
         raise
@@ -189,17 +190,17 @@ async def fetch_triggers(triggerid: str | int):
     """
     try:
         zapi = await get_zapi()
-        result = await zapi.get_triggers(
+        result = await zapi.trigger.get(
             triggerids=triggerid,
-            selectHosts=["host", "name"],
-            output=["name", "opdata", "priority"],
+            selectHosts=["hostid", "host", "name"],
+            output=["triggerid", "name", "opdata", "priority"],
         )
         if not result:
             logger.warning(f"未找到触发器ID {triggerid} 的信息")
             raise ValueError(f"未找到触发器ID {triggerid} 的信息")
         trigger = result[0]
-        host = getattr(trigger, "hosts", [])[0]
-        return trigger, ZAPIHost.model_validate(host)
+        host = trigger["hosts"][0]
+        return ZAPITrigger.model_validate(trigger), ZAPIHost.model_validate(host)
     except Exception as e:
         logger.error(f"获取触发器列表失败: {e}")
         raise
@@ -231,31 +232,23 @@ async def fetch_problems(
         elif kwargs.get("hostids"):
             params["hostids"] = kwargs["hostids"]
 
-        result: list[ZAPIProblem] = await zapi.get_problems(**params)
-
+        result = await zapi.problem.get(**params)
+        problems: list[ZAPIProblem] = []
         for problem in result:
             try:
-                triggerid = problem.objectid
-                trigger, host = await fetch_triggers(triggerid)
-                problem.trigger = trigger
-                # setattr(problem, "trigger", trigger)
-                problem.host = host
-                problem = ZAPIProblem.model_validate(problem)
-            except (ValueError, TypeError, AttributeError) as e:
-                logger.warning(f"获取触发器信息失败, 问题为: {problem}, 原因为: {e}")
-                continue
+                trigger, host = await fetch_triggers(problem["objectid"])
+                problems.append(ZAPIProblem.model_validate({**problem, "trigger": trigger, "host": host}))
             except Exception as e:
                 logger.warning(f"获取触发器信息失败, 问题为: {problem}, 原因为: {e}")
                 continue
 
-        return result
+        return problems
     except Exception as e:
         logger.error(f"获取问题列表失败: {e}")
         raise
 
 
 async def fetch_linkpoint(
-    zapi: AsyncZabbixAPI,
     host: str,
     ifname: str,
     itemids: list | None = None,
@@ -285,7 +278,6 @@ async def fetch_linkpoint(
 
 
 async def fetch_linkhistory(
-    zapi: AsyncZabbixAPI,
     host: str,
     ifname: str,
     time_from: int,
