@@ -74,7 +74,6 @@ testpaths = ["tests"]
 
 [tool.pyright]
 typeCheckingMode = "standard"
-stubPath = "typings"
 extraPaths = ["apps"]
 include = ["apps"]
 exclude = ["**/.*"]
