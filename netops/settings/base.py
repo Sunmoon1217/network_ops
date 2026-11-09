@@ -279,10 +279,7 @@ LOGGING = {
             "level": LOG_LEVEL,
         },
     },
-    "loggers": {
-        name: {"handlers": ["netops_console"], "level": LOG_LEVEL}
-        for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "netops")
-    },
+    "loggers": {name: {"handlers": ["netops_console"], "level": LOG_LEVEL} for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "netops")},
 }
 
 # 反向代理：信任 nginx 传递的原始协议
@@ -439,7 +436,14 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
-    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "deepLinking": True, "displayRequestDuration": True},
+    "SWAGGER_UI_SETTINGS": {
+        "persistAuthorization": True,
+        "deepLinking": True,
+        "displayRequestDuration": True,
+        "docExpansion": "list",
+        "defaultModelsExpandDepth": -1,
+        "filter": True,
+    },
 }
 
 # Celery 行为（与环境无关；broker / result backend 的连接串见上方 Redis 段）
