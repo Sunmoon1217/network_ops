@@ -1,71 +1,100 @@
-# env/ —— 全部「给容器的配置」都在这里
+# envs/ —— 全部「环境配置」都在这里：**一套文件，两种部署共用**
 
-本目录两类东西，都只进容器、不进镜像：
+直接部署（宿主直跑 `uv run manage.py …`）与 compose 部署读**同一套**文件：
+共享值只写一份（`common.env`），部署差异各留一个几乎恒定的小文件。改常规配置只动
+`common.env`，两边同时生效，不存在「宿主一份、容器一份」的漂移。
 
-| 路径 | 怎么进容器 | 内容 |
-|------|-----------|------|
-| `*.env` | compose 的 `env_file`（环境变量） | 按服务分：`app.env` / `db.env` / `gunicorn.env` / `celery.env` |
-| `secrets/*` | compose 的 `secrets`（只读文件挂到 `/run/secrets/*`） | 数据库用户名/密码 + 初始管理员用户名/密码；只有密钥文件被 `.gitignore` 排除，见 `secrets/README.md` |
+## 分层
 
-`env_file` 一个服务只拿自己需要的：
+| 文件 | 层 | 谁加载 | 放什么 |
+|------|----|--------|--------|
+| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（库名、端口、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——**唯一需要日常维护的文件** |
+| `container.env` | 容器差异层 | compose `env_file`（排在**最后**） | 只在容器成立的东西：`POSTGRES_HOST=db` / `REDIS_HOST=redis`、`*_FILE=/run/secrets/*`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START`、`PGDATA` |
+| `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`POSTGRES_HOST=localhost` / `REDIS_HOST=localhost`；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
+| `gunicorn.env` / `celery.env` | 服务层 | compose `env_file`（只给对应服务） | 每个服务自己的旋钮，与部署方式无关 |
+| `secrets/*` | 密钥 | 容器：`secrets` 挂载 `/run/secrets/*`；宿主：经 `host.env` 的相对 `*_FILE` | 数据库/阿里云凭据；只有密钥被 `.gitignore` 排除，见 `secrets/README.md` |
 
-| 文件 | 注入到 | 内容 |
-|------|--------|------|
-| `app.env` | app、worker | Django 运行时：数据库、Redis、`DJANGO_*`、`MIGRATE_ON_START`（只有 app 的 entrypoint 读它，worker 不读） |
-| `db.env` | db | `POSTGRES_DB` / `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` / `PGDATA` |
-| `gunicorn.env` | app | `GUNICORN_*`（`docker/entrypoint.sh` 拼启动命令用） |
-| `celery.env` | worker | `CELERY_LOGLEVEL` |
+`common.env` / `container.env` / `host.env` 的注入组合（compose.yml）：
 
-`app.env` 里的 `MIGRATE_ON_START=1`（默认）让 app 容器启动时**按需**跑数据库迁移：只在确实有
-未应用的迁移时才执行 `migrate --noinput`，且整段「检查 + 迁移」由**数据库自带的命名锁**串行化
-（PostgreSQL 用 `pg_advisory_lock`、MySQL 用 `GET_LOCK`，Django 自己不给 migrate 加锁），所以多
-副本同时启动不会互相竞争；其它后端直接报错，不做「静默不加锁」的降级。设成 0 就跳过、交给外部
-发布流水线或人工：`docker compose run --rm app python manage.py migrate`。实现见
+```yaml
+db:
+  env_file: [envs/common.env, envs/container.env]
+app:
+  env_file: [envs/common.env, envs/gunicorn.env, envs/container.env]
+worker:
+  env_file: [envs/common.env, envs/celery.env, envs/container.env]
+consumer:
+  env_file: [envs/common.env, envs/container.env]
+```
+
+## 加载与优先级（宿主侧）
+
+`netops/settings/base.py` import 时：
+
+1. `NETOPS_SKIP_DOTENV=1` → 全部跳过（tests/deploy 用它拿到纯净默认值，不吃本机 envs/ 实例）；
+2. `load_dotenv(envs/common.env)`；
+3. `DJANGO_ENV ≠ container` 时再 `load_dotenv(envs/host.env)`——容器里代码卷也带着
+   `envs/`，不区分会把宿主值（`POSTGRES_HOST=localhost` 等）泄进容器。
+
+`load_dotenv` 全程 `override=False`：**真实进程环境永远优先**（compose 注入的值、手工
+`export` 的值都赢过文件），文件只是兜底——想临时覆盖某个值，直接 export 即可，不用改文件。
+
+## 密钥：一份文件，两种部署
+
+凭据链 `*_FILE > 同名环境变量 > 默认值` 统一在 `settings/base.py`：
+
+- 容器：`container.env` 给绝对路径 `/run/secrets/*`（compose 挂载）；
+- 宿主：默认不设 `*_FILE`、走同名环境变量或 base 默认值（开发语义）；取消 `host.env`
+  里对应注释行即可与容器**共用同一份** `envs/secrets/*`——相对路径（如
+  `envs/secrets/postgres_user`）由 `base.py` 按 `BASE_DIR` 解析。
+
+## `MIGRATE_ON_START` 与初始管理员
+
+`container.env` 里的 `MIGRATE_ON_START=1`（默认）让 app 容器启动时**按需**跑数据库迁移：
+只在确实有未应用的迁移时才执行 `migrate --noinput`，且整段「检查 + 迁移」由**数据库自带的
+命名锁**串行化（PostgreSQL 用 `pg_advisory_lock`、MySQL 用 `GET_LOCK`，Django 自己不给
+migrate 加锁），所以多副本同时启动不会互相竞争；其它后端直接报错，不做「静默不加锁」的
+降级。设成 0 就跳过、交给外部发布流水线或人工：
+`docker compose run --rm app python manage.py migrate`。实现见
 `apps/core/management/commands/migrate_if_needed.py`。
 
 **初始管理员不需要任何配置**（不占环境变量、不进 compose、不用 secret）：app 启动时调
 `manage.py ensure_superuser`，只在「库里一个超级用户都没有」时创建 `admin`，把随机初始密码
-**打印在启动日志里**（`docker compose logs app`），已经有超管就是空操作——不覆盖已有密码、也不把
-同名普通账号静默提权。登录后请立即改密码。实现见 `apps/core/management/commands/ensure_superuser.py`。
-
-```yaml
-app:
-  env_file: [env/app.env, env/gunicorn.env]
-worker:
-  env_file: [env/app.env, env/celery.env]
-db:
-  env_file: [env/db.env]
-```
+**打印在启动日志里**（`docker compose logs app`），已经有超管就是空操作——不覆盖已有密码、
+也不把同名普通账号静默提权。登录后请立即改密码。实现见
+`apps/core/management/commands/ensure_superuser.py`。
 
 ## 与另外两类配置的分工
 
 | 位置 | 谁读 | 放什么 |
 |------|------|--------|
-| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `REDIS_PORT`）、`BASE_IMAGE`、secrets 文件路径 |
-| `env/*.env`（本目录） | **容器进程**（`env_file`） | 服务运行时读的变量（本目录各文件） |
-| `env/secrets/*` | 容器进程（只读挂载 `/run/secrets/*`） | 密钥：数据库用户名/密码、初始管理员用户名/密码（只有密钥被 `.gitignore` 排除） |
+| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `REDIS_PORT`）、镜像 tag、secrets 文件路径 |
+| `envs/*.env`（本目录） | **容器进程**（env_file）与**宿主进程**（load_dotenv） | 上表各层 |
+| `envs/secrets/*` | 容器进程（`/run/secrets/*`）与宿主进程（相对 `*_FILE`） | 密钥 |
 
 三条容易踩的规则：
 
-1. **compose 的 `${VAR}` 只读根目录的 `.env`**，不会读 `env/*.env`。所以要在 compose 文件里
-   插值的变量必须留在根 `.env`；反过来，只想给容器用的变量放这里就够了。
+1. **compose 的 `${VAR}` 只读根目录的 `.env`**，不会读 `envs/*.env`。要在 compose 文件里
+   插值的变量（宿主映射端口等）必须留在根 `.env`；反过来，给进程用的变量放这里就够了。
+   注意根 `.env` 的 `POSTGRES_PORT` 是**宿主映射端口**，与 `common.env` 的容器端口是两码事。
 2. 同一个变量同时出现在 `environment:` 与 `env_file` 时 **`environment` 优先**。
-3. 多个 `env_file` 按顺序合并，**后面的覆盖前面的**（本目录里的文件都是互补的，正常不会撞）。
+3. 多个 `env_file` 按顺序合并，**后面的覆盖前面的**（本目录里各层互补，正常不会撞；
+   `container.env` 排最后就是利用这条保证容器差异一定生效）。
 
 ## 这些文件入库吗？
 
-`env/*.env` **不入库**（已被 `.gitignore` 排除）——这些是部署本地的运行配置，不同环境/部署的值不同。
-入库的是 `env/example/*.env` 模板，它们列出了**全部所需变量**及注释说明。
-
-首次部署/克隆后，从模板复制：
+`envs/*.env`（`example/` 除外）**不入库**（已被 `.gitignore` 排除）——部署本地的运行配置，
+不同环境/部署的值不同。入库的是 `envs/example/*.env` 模板（与实际文件同构，列全部所需变量
+及注释说明）。首次部署/克隆后：
 
 ```bash
-cp env/example/*.env env/
+cp envs/example/*.env envs/
 ```
 
-然后按实际环境修改 `env/*.env` 里的值。compose 的 `env_file` 指向的是 `.env` 文件（无 `.example` 后缀）。
+然后按实际环境修改 `envs/common.env` 的值（差异层通常不用动）；compose 的 `env_file`
+与 `base.py` 指向的都是无 `.example` 后缀的实例。
 
 ## 语法提醒
 
-这些文件与根 `.env` 用的是同一套 compose dotenv 解析规则：`$` 会做变量插值（要字面量 `$` 写
-`$$`）、`#` 前面有空格就是行内注释、行尾空格会被去掉、含特殊字符的值用单引号。
+这些文件与根 `.env` 用的是同一套 compose dotenv 解析规则：`$` 会做变量插值（要字面量 `$`
+写 `$$`）、`#` 前面有空格就是行内注释、行尾空格会被去掉、含特殊字符的值用单引号。

@@ -43,7 +43,12 @@ def _purge():
 
 
 def _dispatch(monkeypatch, django_env=None, **env):
-    """清场 → 设 DJANGO_ENV 与配套变量 → 重新 import netops.settings（触发分发）。"""
+    """清场 → 设 DJANGO_ENV 与配套变量 → 重新 import netops.settings（触发分发）。
+
+    NETOPS_SKIP_DOTENV=1：跳过 base 对 envs/*.env 的加载——测试断言的是「纯净默认值 +
+    注入」，不能吃本机 envs/ 实例文件（部署本地值与用例期望互不相关）。
+    """
+    monkeypatch.setenv("NETOPS_SKIP_DOTENV", "1")
     for key in _MANAGED_KEYS:
         monkeypatch.delenv(key, raising=False)
     if django_env is not None:

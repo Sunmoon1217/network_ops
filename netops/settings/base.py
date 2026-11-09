@@ -5,13 +5,13 @@
       靠各环境注入不同的值即可，**不需要每个环境文件重写一遍读取逻辑**；
     - 环境文件只放**不走环境变量、但必须按环境硬改**的东西（守卫、写死值）：
         dev.py       空（base 即 dev 语义）
-        container.py 两条 host 必填守卫（防 env/app.env 被误删一行）
+        container.py 两条 host 必填守卫（防 envs/container.env 被误删一行）
         prod.py      DEBUG=False 硬覆盖 + 5 个关键 env 必填守卫（fail loud）
     - 分发与覆盖顺序见 __init__.py（DJANGO_ENV 白名单）。
 
-凭据链路统一：`*_FILE > 同名环境变量 > 默认值`（_env_or_file）。`*_FILE` secrets
-机制**只在容器里使用**（env/app.env 指向 /run/secrets/*）；宿主直跑按 .env.example
-指南只 export 环境变量，不设 *_FILE 即走中间层。
+凭据链路统一：`*_FILE > 同名环境变量 > 默认值`（_env_or_file）。`*_FILE` 在容器里
+指向 /run/secrets/*（envs/container.env 注入）；宿主直跑默认走同名环境变量层，
+想共用同一份密钥文件时在 envs/host.env 里给相对路径（按 BASE_DIR 解析）。
 
 硬规矩（防循环导入）：本文件与三个环境文件只允许 `from .base import ...`、标准库与
 Django 的 import；**禁止** `from netops.settings import ...` / `from . import ...`——
@@ -30,8 +30,18 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 ENVS_DIR = BASE_DIR / "envs"
 
-for envfile in ENVS_DIR.glob("*.env"):
-    load_dotenv(envfile)
+# 环境文件三层（谁维护什么见 envs/README.md）——直接部署与 compose 部署读同一份配置：
+#   common.env    共享值，唯一需要日常维护；容器经 compose env_file 注入为真实环境
+#                 变量，宿主由下面的 load_dotenv 补进进程环境，殊途同归
+#   container.env 容器差异（HOST=db/redis、*_FILE=/run/secrets/*、DJANGO_ENV=container）
+#   host.env      宿主差异（HOST=localhost 等）；容器里代码卷也带着 envs/，必须按
+#                 DJANGO_ENV 区分，否则宿主值会泄进容器
+# override=False：真实进程环境（compose 注入 / 手工 export）永远优先，文件只是兜底。
+# NETOPS_SKIP_DOTENV=1：全部跳过（tests/deploy 用它拿到纯净默认值，不吃本地 envs/ 的值）。
+if os.environ.get("NETOPS_SKIP_DOTENV") != "1":
+    load_dotenv(ENVS_DIR / "common.env")
+    if os.environ.get("DJANGO_ENV", "dev") != "container":
+        load_dotenv(ENVS_DIR / "host.env")
 
 
 def _env_list(name: str, default: str = "") -> list[str]:
@@ -50,15 +60,21 @@ def _env_or_file(name: str, default: str = "") -> str:
     伪装成「数据库连不上」。内容 strip() 与 postgres 官方 entrypoint 的 `$(cat file)`
     行为一致（去掉结尾换行），否则末尾换行会变成密码的一部分。
 
-    使用约定：*_FILE secrets 只在容器里设置（env/app.env）；宿主直跑不设 *_FILE，
-    自然走同名环境变量层——链路三个环境统一，不分叉。
+    使用约定：*_FILE 在容器里由 envs/container.env 指向 /run/secrets/*；宿主直跑默认
+    不设 *_FILE、自然走同名环境变量层，想共用同一份密钥文件时在 envs/host.env 里给
+    **相对路径**（相对本文件的 BASE_DIR 解析）——链路统一，不分叉。
     """
     from django.core.exceptions import ImproperlyConfigured
 
     path = os.environ.get(f"{name}_FILE")
     if path:
+        file = Path(path)
+        if not file.is_absolute():
+            # 相对路径按 BASE_DIR 解析：host.env 里可写 envs/secrets/*，宿主与容器
+            # 共用同一份密钥文件；容器内是绝对路径 /run/secrets/*，不受影响。
+            file = BASE_DIR / file
         try:
-            return Path(path).read_text(encoding="utf-8").strip()
+            return file.read_text(encoding="utf-8").strip()
         except OSError as exc:
             raise ImproperlyConfigured(f"{name}_FILE={path} 读取失败：{exc}") from exc
     return os.environ.get(name, default)
@@ -88,7 +104,7 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 # Database —— env 动态；默认值是宿主 localhost 语义（dev 无 env 即此值）。
-# 容器由 env/app.env 注入 HOST=db 与 *_FILE=/run/secrets/*；prod.py 守卫要求 HOST 必填。
+# 容器由 envs/container.env 注入 HOST=db 与 *_FILE=/run/secrets/*；prod.py 守卫要求 HOST 必填。
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 DATABASES = {
     "default": {
@@ -171,7 +187,7 @@ ALIYUN_CONFIG = {
 # Dify 知识库（docs 文档转换的推送目标）
 #
 # 文档转换产物（md / 自包含 html，pdf 直传）经「知识库 API」推入自托管 Dify 的固定知识库。
-# 环境变量清单（容器注入 env/app.env；API Key 走凭据链 *_FILE > 同名环境变量）：
+# 环境变量清单（容器由 envs/container.env + envs/common.env 注入；API Key 走凭据链 *_FILE > 同名环境变量）：
 #   DIFY_API_BASE_URL       知识库 API 地址（含 /v1），如 https://dify.example.com/v1
 #   DIFY_API_KEY(_FILE)     知识库 API Key（Bearer 认证）
 #   DIFY_DATASET_ID         目标知识库（dataset）ID
@@ -190,6 +206,26 @@ DIFY_CONFIG = {
     "process_mode": os.environ.get("DIFY_PROCESS_MODE", "automatic"),
     "segment_separator": os.environ.get("DIFY_SEGMENT_SEPARATOR", "\n"),
     "segment_max_tokens": int(os.environ.get("DIFY_SEGMENT_MAX_TOKENS", "500")),
+}
+
+
+# ---------------------------------------------------------------------------
+# Zabbix API（ingest 采集器的数据源）
+#
+# 单例与登录逻辑在 apps/ingest/collectors/zabbix.py（get_zapi / close_zapi），
+# 这里只放连接配置。环境变量清单（凭据走链路 *_FILE > 同名环境变量 > 默认值）：
+#   ZABBIX_URL       Zabbix 前端地址（API JSON-RPC 入口由库推导），未配置则 get_zapi 拒绝创建
+#   ZABBIX_TOKEN     API Token（Zabbix >= 5.4）；与 USER/PASSWORD 二选一，token 优先
+#   ZABBIX_USER      用户名登录（Zabbix < 7.2 走 API user.login）
+#   ZABBIX_PASSWORD  用户名登录的密码
+#   ZABBIX_TIMEOUT   HTTP 超时秒数（默认 30）
+# 注意：zabbix_utils 自身也会读同名 env 兜底，这里显式传参以 settings 为准，行为可预期。
+ZABBIX_CONFIG = {
+    "url": os.environ.get("ZABBIX_URL", ""),
+    "token": _env_or_file("ZABBIX_TOKEN"),
+    "user": _env_or_file("ZABBIX_USER"),
+    "password": _env_or_file("ZABBIX_PASSWORD"),
+    "timeout": int(os.environ.get("ZABBIX_TIMEOUT", "30")),
 }
 
 

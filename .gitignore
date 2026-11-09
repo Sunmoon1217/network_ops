@@ -28,13 +28,13 @@ build/
 
 # Docker secrets（数据库凭据等）。放在 env/ 下与 env/*.env 作伴，但只有密钥被忽略：
 # README 与生成脚本入库，postgres_user / postgres_password 不入库
-env/secrets/*
-!env/secrets/README.md
-!env/secrets/generate.sh
+envs/secrets/*
+!envs/secrets/README.md
+!envs/secrets/generate.sh
 
 # env/*.env 是部署本地配置，不入库；env/example/ 里的模板入库
-env/*.env
-!env/example/
+envs/*.env
+!envs/example/
 
 # Django
 *.log
@@ -86,6 +86,7 @@ network_ops-archive-*
 
 # AI / Compose
 .mimocode/
+.workbuddy/
 /docs/
 
 # Database init scripts (keep in repo)

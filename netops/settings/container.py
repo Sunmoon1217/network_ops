@@ -1,6 +1,6 @@
-"""容器环境（docker compose 的 app / worker）：DJANGO_ENV=container（env/app.env 注入）。
+"""容器环境（docker compose 的 app / worker）：DJANGO_ENV=container（envs/container.env 注入）。
 
-容器与宿主的差异**全部由 env/app.env 的注入表达**（POSTGRES_HOST=db、REDIS_HOST=redis、
+容器与宿主的差异**全部由 envs/container.env 的注入表达**（POSTGRES_HOST=db、REDIS_HOST=redis、
 *_FILE=/run/secrets/* …），配置读取统一在 base——本文件只留两条守卫：
 
     POSTGRES_HOST / REDIS_HOST 必须已注入。
@@ -19,5 +19,5 @@ from django.core.exceptions import ImproperlyConfigured
 _missing = [key for key in ("POSTGRES_HOST", "REDIS_HOST") if not os.environ.get(key)]
 if _missing:
     raise ImproperlyConfigured(
-        f"容器环境缺少必须由 env/app.env 注入的变量（共 {len(_missing)} 个）：{', '.join(_missing)}"
+        f"容器环境缺少必须由 envs/container.env 注入的变量（共 {len(_missing)} 个）：{', '.join(_missing)}"
     )

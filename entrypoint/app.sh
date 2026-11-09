@@ -14,8 +14,8 @@
 #     docker compose run --rm app python manage.py migrate    # 换整条命令
 #     docker compose run --rm app gunicorn netops.asgi:application -w 4
 #
-#   变量由 compose 的 env_file 注入（app 服务把 env/app.env + env/gunicorn.env 注入），
-#   所以在 env/gunicorn.env 里改 GUNICORN_* 即可，不必碰 compose。
+#   变量由 compose 的 env_file 注入（app 服务把 envs/common.env + envs/gunicorn.env +
+#   envs/container.env 注入），所以在 envs/gunicorn.env 里改 GUNICORN_* 即可，不必碰 compose。
 #
 # 迁移在下面第 1 步**自动跑**：只在确实有未应用的迁移时才执行，且整段「检查 + 迁移」由
 # migrate_if_needed 用数据库自带的命名锁（PG advisory / MySQL GET_LOCK）串行化，所以多副本同时启动不会互相竞争
