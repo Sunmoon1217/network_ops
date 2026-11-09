@@ -2,11 +2,17 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 from . import views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # OpenAPI 3 文档：三个路由都在 /api/ 下，nginx 的 /api/ 代理与 SPA_EXCLUDE_PREFIXES 不用改。
+    # 不叫 /api/docs/——那是 docs 业务域（表格编辑 / 文档转换）的前缀。
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/swagger-ui/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/schema/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("api/", include("core.api.urls")),
     path("api/", include("assets.api.urls")),
     path("api/", include("ingest.api.urls")),

@@ -254,6 +254,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
+    # OpenAPI 3 文档：sidecar 把 Swagger UI / ReDoc 静态资源带进 collectstatic
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # GinIndex（analysis.AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
     "django.contrib.postgres",
     "core.apps.CoreConfig",
@@ -345,6 +348,8 @@ AUTH_USER_MODEL = "core.User"
 
 # DRF
 REST_FRAMEWORK = {
+    # OpenAPI 3 schema 生成器（drf-spectacular）
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -362,6 +367,27 @@ REST_FRAMEWORK = {
     # 列表接口统一数字分页：默认每页 50 条，客户端可用 ?page_size= 覆盖（上限 500）
     "DEFAULT_PAGINATION_CLASS": "netops.pagination.StandardPagination",
     "PAGE_SIZE": 50,
+}
+
+# API 文档（OpenAPI 3）：env 动态项按约定只在 base 定义一遍，三个环境文件不重复接线。
+# 内网默认放开：schema 只暴露接口元数据、不含业务数据；要收紧就给容器注入
+# DJANGO_API_DOCS_REQUIRE_LOGIN=1（IsAuthenticated，可用 /admin/ 登录后的 session 或 Token）。
+API_DOCS_PERMISSION = (
+    "rest_framework.permissions.IsAuthenticated" if os.environ.get("DJANGO_API_DOCS_REQUIRE_LOGIN", "").lower() in ("1", "true", "yes") else "rest_framework.permissions.AllowAny"
+)
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "网络运维管理平台 API",
+    "DESCRIPTION": "认证：Authorization: Token <key>（/api/auth/login/ 获取）；写操作限 operator 或超管。",
+    "VERSION": "2.0.0",
+    # schema 端点自身不出现在文档里
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_PERMISSIONS": [API_DOCS_PERMISSION],
+    # 内网不通外网：UI 资源一律走本地 sidecar，collectstatic 后进 /static/ 由 nginx 直出
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "deepLinking": True, "displayRequestDuration": True},
 }
 
 # Celery 行为（与环境无关；broker / result backend 的连接串见上方 Redis 段）
