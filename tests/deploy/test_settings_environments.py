@@ -25,6 +25,7 @@ PROD_REQUIRED = {
 _MANAGED_KEYS = (
     "DJANGO_ENV",
     "DJANGO_DEBUG",
+    "DJANGO_LOG_LEVEL",
     *PROD_REQUIRED,
     "POSTGRES_PASSWORD_FILE",
     "POSTGRES_USER",
@@ -184,3 +185,27 @@ def test_credential_chain_file_env_default(monkeypatch, tmp_path):
 
     m = _dispatch(monkeypatch)  # 都不设 → base 默认值
     assert m.DATABASES["default"]["PASSWORD"] == "netops_password"
+
+
+# ---------------------------------------------------------------------------
+# 业务日志：INFO 必须有 handler，且输出到 stderr（宿主日志重定向 / docker logs 收这条流）
+# ---------------------------------------------------------------------------
+
+
+def test_logging_covers_business_namespaces(monkeypatch):
+    """Django 默认只给 django.* 配 handler；业务模块的 INFO 得有自己的出口。"""
+    m = _dispatch(monkeypatch)
+    handler = m.LOGGING["handlers"]["netops_console"]
+    assert handler["stream"] == "ext://sys.stderr"
+    assert handler["level"] == "INFO"
+    assert m.LOGGING["disable_existing_loggers"] is False
+    for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "netops"):
+        assert m.LOGGING["loggers"][name]["handlers"] == ["netops_console"]
+
+
+def test_log_level_env_dynamic(monkeypatch):
+    """DJANGO_LOG_LEVEL 是 base 的 env 动态项：handler 与 logger 同时收紧。"""
+    m = _dispatch(monkeypatch, DJANGO_LOG_LEVEL="warning")
+    assert m.LOG_LEVEL == "WARNING"
+    assert m.LOGGING["handlers"]["netops_console"]["level"] == "WARNING"
+    assert m.LOGGING["loggers"]["analysis"]["level"] == "WARNING"

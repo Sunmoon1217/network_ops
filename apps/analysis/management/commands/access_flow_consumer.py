@@ -53,7 +53,11 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, _stop)
         signal.signal(signal.SIGINT, _stop)
 
+        # 启动/退出是给操作者看的，走 BaseCommand 的输出通道而不是 logger：手动执行时
+        # 终端直接可见、call_command(stdout=...) 可捕获，也不受 DJANGO_LOG_LEVEL 摆布。
+        # 显式 flush：stdout 重定向到文件后是块缓冲，常驻进程不退出就永远不落盘。
         self.stdout.write(f"访问流消费启动: stream={STREAM} group={GROUP} consumer={name}")
+        self.stdout.flush()
         beat(client)
 
         while not stopping:
@@ -97,6 +101,7 @@ class Command(BaseCommand):
                 break
 
         self.stdout.write("访问流消费已退出")
+        self.stdout.flush()
 
     def _process(self, client, message_id, fields) -> None:
         from analysis.access_stream import GROUP, STREAM, handle_message

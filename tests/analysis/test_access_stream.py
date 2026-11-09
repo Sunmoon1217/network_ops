@@ -181,3 +181,39 @@ def test_consumer_keeps_message_on_failure(monkeypatch):
     ConsumerCommand()._process(client, "100-0", {"flows": b"[]"})
 
     assert client.acked == []
+
+
+def test_consumer_startup_message_uses_command_output(monkeypatch):
+    """启动/退出是给操作者看的：必须走 self.stdout，不能依赖 LOGGING 配置/级别。
+
+    手动执行 manage.py access_flow_consumer 时终端要能立刻看到这两行；若改成
+    logger.info，DJANGO_LOG_LEVEL=WARNING 或日志配置被接管时就静默了，且
+    call_command(stdout=...) 也捕获不到。
+    """
+    import io
+    import signal
+
+    from django.core.management import call_command
+
+    class _IdleClient:
+        def xreadgroup(self, *args, **kwargs):
+            return None
+
+        def xautoclaim(self, *args, **kwargs):
+            return (b"0-0", [])
+
+    monkeypatch.setattr("analysis.access_stream.get_redis", lambda: _IdleClient())
+    monkeypatch.setattr("analysis.access_stream.ensure_group", lambda client: None)
+    monkeypatch.setattr("analysis.access_stream.beat", lambda client=None: None)
+    monkeypatch.setattr("analysis.access_stream.consumer_name", lambda: "test:1")
+
+    out = io.StringIO()
+    prev = (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT))
+    try:
+        call_command("access_flow_consumer", once=True, stdout=out, stderr=io.StringIO(), skip_checks=True)
+    finally:
+        signal.signal(signal.SIGTERM, prev[0])
+        signal.signal(signal.SIGINT, prev[1])
+
+    assert "访问流消费启动" in out.getvalue()
+    assert "访问流消费已退出" in out.getvalue()

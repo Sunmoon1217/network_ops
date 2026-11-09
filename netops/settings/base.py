@@ -92,6 +92,10 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or "django-insecure-bua49zfleex
 # prod.py 会硬覆盖为 False——生产的 DEBUG 不吃环境变量后门。
 DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes")
 
+# 业务日志级别（见下方 LOGGING）：默认 INFO——consumer 这类常驻进程正常运行时只有
+# INFO 级输出，调高就又回到「日志文件是空的」。生产嫌吵可设 WARNING。
+LOG_LEVEL = os.environ.get("DJANGO_LOG_LEVEL", "INFO").upper()
+
 # 允许的 Host：默认放开（无域名阶段），上线用 DJANGO_ALLOWED_HOSTS 收紧为具体域名/IP。
 # nginx 用 `proxy_set_header Host $http_host` 透传原样 Host（含端口），Django 必须放行；
 # 校验时 Django 会剥掉端口再比对（localhost:8000 匹配 localhost）。prod.py 有必填守卫。
@@ -232,6 +236,44 @@ ZABBIX_CONFIG = {
 # ---------------------------------------------------------------------------
 # 以下为环境无关的静态配置
 # ---------------------------------------------------------------------------
+
+# Logging：业务模块的日志统一走 stderr
+#
+# Django 的 DEFAULT_LOGGING 只给 ``django`` / ``django.server`` 装了 handler；业务模块的
+# ``getLogger(__name__)``（如 ``analysis.management.commands.access_flow_consumer``）
+# 一路传播到 root 都没有 handler，于是只剩 logging.lastResort —— 它只放行 WARNING 以上，
+# INFO 全部静默丢弃。常驻的 consumer 运行期输出全是 INFO（启动行走命令自己的 stdout），
+# 于是除了报错什么都不进日志文件，看起来就是「没有日志」。
+#
+# 只给项目自己的命名空间加 handler：不动 root（celery worker 会 hijack root，第三方库的
+# INFO 也不该跟着喷进日志），不动 Django 默认配置（django.request / mail_admins 保持原样）；
+# propagate 保持默认 True，pytest 的 caplog（挂在 root）仍能捕获这些记录。
+# 输出选 stderr：StreamHandler 每次 emit 都 flush，宿主脚本重定向的 data/logs/*.log 与
+# 容器的 docker logs 都能实时收到。命令自身给操作者看的输出**不属于这里**——由
+# BaseCommand 的 self.stdout / self.stderr 负责（见 access_flow_consumer：显式 flush
+# 对抗 stdout 的块缓冲），不受日志级别配置影响。
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "netops_console": {
+            "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "netops_console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "netops_console",
+            "level": LOG_LEVEL,
+        },
+    },
+    "loggers": {
+        name: {"handlers": ["netops_console"], "level": LOG_LEVEL}
+        for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "netops")
+    },
+}
 
 # 反向代理：信任 nginx 传递的原始协议
 #
