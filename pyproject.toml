@@ -24,18 +24,20 @@ dependencies = [
     "openpyxl>=3.1.5",
     "psycopg2-binary>=2.9.12",
     "python-docx>=1.2.0",
+    "python-dotenv>=1.2.4",
     "redis>=8.1.0",
     "requests>=2.34.2",
     "ttp>=0.10.1",
     "uvicorn>=0.53.0",
     "uvicorn-worker>=0.4.0",
+    "zabbix-utils[async]==2.0.2",
 ]
 
 [tool.uv]
 exclude-dependencies = ["aliyun-python-sdk-core-v3"]
 
-[tool.pyrefly.errors]
-bad-override = "ignore"
+# [tool.pyrefly.errors]
+# bad-override = "ignore"
 
 [tool.django-stubs]
 django_settings_module = "netops.settings"
@@ -49,7 +51,15 @@ select = ["E", "F", "I", "N", "W"]
 ignore = ["F405", "F403", "E402"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["aliyun", "analysis", "assets", "core", "docs", "ingest", "netops"]
+known-first-party = [
+    "aliyun",
+    "analysis",
+    "assets",
+    "core",
+    "docs",
+    "ingest",
+    "netops",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "**/migrations/*" = ["E501"]
@@ -64,6 +74,7 @@ testpaths = ["tests"]
 
 [tool.pyright]
 typeCheckingMode = "standard"
+extraPaths = ["apps"]
 include = ["apps"]
 exclude = ["**/.*"]
 reportIncompatibleVariableOverride = "none"
@@ -80,11 +91,14 @@ dev = [
     "celery-stubs>=0.1.3",
     "django-stubs>=6.1.0",
     "djangorestframework-stubs>=3.18.1",
+    "inflection>=0.5.1",
     "ipykernel>=7.3.0",
     "openpyxl-stubs>=0.1.25",
     "pyrefly>=1.4.0",
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
+    "pyyaml>=6.0.3",
     "ruff>=0.16.5",
     "types-markdown>=3.11.2.20261029",
+    "uritemplate>=4.2.0",
 ]

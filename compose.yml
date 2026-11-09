@@ -34,6 +34,8 @@ services:
       - code:/app
       - static:/static
     restart: "no"
+    networks:
+      - internal
 
   db:
     image: timescale/timescaledb:2.27.1-pg16
@@ -41,7 +43,7 @@ services:
     restart: unless-stopped
     init: true
     env_file:
-      - env/db.env
+      - envs/db.env
     secrets: *db-secrets
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -79,8 +81,8 @@ services:
     restart: unless-stopped
     entrypoint: ["/app/entrypoint/app.sh"]
     env_file:
-      - env/app.env
-      - env/gunicorn.env
+      - envs/app.env
+      - envs/gunicorn.env
     secrets: *app-secrets
     volumes:
       - code:/app:ro
@@ -102,8 +104,8 @@ services:
     restart: unless-stopped
     entrypoint: ["/app/entrypoint/worker.sh"]
     env_file:
-      - env/app.env
-      - env/celery.env
+      - envs/app.env
+      - envs/celery.env
     secrets: *app-secrets
     volumes_from:
       - app:ro
@@ -122,7 +124,7 @@ services:
     restart: unless-stopped
     entrypoint: ["/app/entrypoint/consumer.sh"]
     env_file:
-      - env/app.env
+      - envs/app.env
     secrets: *db-secrets
     volumes_from:
       - app:ro
