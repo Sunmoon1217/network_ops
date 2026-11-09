@@ -107,7 +107,7 @@ do_migrate() {
 
 # ---- 进程管理 ----------------------------------------------------------------
 
-# start_service <name> <pidfile> <command...>
+# start_service <name> <pidfile> <shell-function>
 start_service() {
     local name="$1" pidfile="$2"
     shift 2
@@ -119,7 +119,12 @@ start_service() {
     # 残留的陈旧 PID 文件（进程已死）清掉再启动
     rm -f "$pidfile"
 
-    nohup "$@" >>"$LOG_DIR/$name.log" 2>&1 &
+    # nohup 是外部命令，只会 exec 可执行文件，接 shell 函数（cmd_*）会直接报
+    # "nohup: failed to run command 'cmd_app': No such file or directory"。
+    # 这里在 fork 出的子 shell 里手动做 nohup 的两件事：忽略 SIGHUP、断开 stdin；
+    # 函数与变量随 fork 继承，cmd_* 内部用 exec 顶替子 shell，于是 $! 就是服务进程
+    # 本身（stop 的 kill 能命中），而 SIG_IGN 经 exec 仍保留，效果等同 nohup。
+    ( trap '' HUP; "$@" ) </dev/null >>"$LOG_DIR/$name.log" 2>&1 &
     echo $! >"$pidfile"
     sleep 1
     if kill -0 "$(cat "$pidfile")" 2>/dev/null; then
@@ -161,9 +166,12 @@ status_service() {
     fi
 }
 
+# 三个命令封装成函数，与容器入口一一对应；函数体用 exec 顶替 fork 出的子 shell，
+# 让 start_service 记录的 $! 就是服务进程，stop 时 kill 能直接命中（见 start_service）。
+
 cmd_app() {
     # 命令与 entrypoint/app.sh 一致：硬要求（worker-class / bind）写死，旋钮取 envs/gunicorn.env
-    uv run gunicorn netops.asgi:application \
+    exec uv run gunicorn netops.asgi:application \
         --worker-class uvicorn_worker.UvicornWorker \
         --bind "$GUNICORN_BIND" \
         --workers "$GUNICORN_WORKERS" \
@@ -177,7 +185,7 @@ cmd_app() {
 
 cmd_worker() {
     # 命令与 entrypoint/worker.sh 一致：两个队列一起消费，并发默认 2
-    uv run celery -A netops worker \
+    exec uv run celery -A netops worker \
         -Q celery,access_flow \
         --concurrency="$CELERY_CONCURRENCY" \
         --loglevel="$CELERY_LOGLEVEL"
@@ -185,7 +193,7 @@ cmd_worker() {
 
 cmd_consumer() {
     # 命令与 entrypoint/consumer.sh 一致：单写者，只跑一个实例
-    uv run python manage.py access_flow_consumer
+    exec uv run python manage.py access_flow_consumer
 }
 
 do_start() {
