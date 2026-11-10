@@ -249,10 +249,7 @@ def resolve_one(spec: EntitySpec, key: str, device: str = "") -> Any:
     hit = qs.filter(**{f"{spec.key}__iexact": text}).first()
     if hit is None:
         options = " / ".join(sorted(spec.filters)) or "(无)"
-        raise ToolError(
-            f"{spec.label}不存在：{text}；{spec.key} 需精确匹配，"
-            f"可先用 find 定位，或用 list_records(entity_type='{spec.node_type}') 按 {options} 过滤"
-        )
+        raise ToolError(f"{spec.label}不存在：{text}；{spec.key} 需精确匹配，可先用 find 定位，或用 list_records(entity_type='{spec.node_type}') 按 {options} 过滤")
     return hit
 
 

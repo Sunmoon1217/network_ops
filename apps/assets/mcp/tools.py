@@ -133,10 +133,7 @@ def locate(target: str, limit: int = 20) -> dict[str, Any]:
         "registry": registry,
         "observations": obs_rows,
         "observed_total": observations.count(),
-        "devices": [
-            {"id": item.pk, "hostname": item.hostname, "device_type": item.device_type, "ip_address": item.ip_address}
-            for item in devices[:limit]
-        ],
+        "devices": [{"id": item.pk, "hostname": item.hostname, "device_type": item.device_type, "ip_address": item.ip_address} for item in devices[:limit]],
         "interfaces": [
             {
                 "device": item.device.hostname,

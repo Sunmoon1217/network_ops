@@ -113,9 +113,7 @@ def test_query_default_is_summary_and_star_returns_full():
 def test_query_rejects_unknown_field_and_operator():
     _make_device("NET-SW01", "switch")
 
-    message = _error(
-        _call_tool("query", {"plan": {"entity_type": "device", "filters": [{"field": "os_version", "value": "9"}]}})
-    )
+    message = _error(_call_tool("query", {"plan": {"entity_type": "device", "filters": [{"field": "os_version", "value": "9"}]}}))
     assert "不支持按" in message
     assert "device_type" in message  # 错误里要带可用路径
 

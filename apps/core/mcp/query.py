@@ -119,10 +119,7 @@ def _check_projection(spec: EntitySpec, fields: tuple[str, ...] | None) -> None:
     allowed = set(summary_fields(spec))
     unknown = [name for name in fields if name not in allowed]
     if unknown:
-        raise ToolError(
-            f"{spec.node_type} 不能投影字段 {', '.join(unknown)}；可选字段 {_options(allowed)}，"
-            '要全字段请传 fields=["*"]'
-        )
+        raise ToolError(f'{spec.node_type} 不能投影字段 {", ".join(unknown)}；可选字段 {_options(allowed)}，要全字段请传 fields=["*"]')
 
 
 # ---------------------------------------------------------------------------

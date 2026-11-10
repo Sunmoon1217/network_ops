@@ -445,9 +445,7 @@ def relations(
     obj = resolve_one(spec, key, device)
     allowed = set(_parse_types(types)) if types else None
 
-    nodes: list[dict[str, Any]] = [
-        {"entity_type": entity_type, "id": obj.pk, "key": key_value(spec, obj), "label": spec.label, "depth": 0}
-    ]
+    nodes: list[dict[str, Any]] = [{"entity_type": entity_type, "id": obj.pk, "key": key_value(spec, obj), "label": spec.label, "depth": 0}]
     edges: list[dict[str, str]] = []
     seen: set[tuple[str, int]] = {(entity_type, obj.pk)}
     truncated = False

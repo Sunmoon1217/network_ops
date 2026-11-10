@@ -11,7 +11,7 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'netops.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "netops.settings")
 
 # 先完成 Django 初始化，域工具模块才能安全 import models。
 django_asgi_app = get_asgi_application()
