@@ -5,7 +5,7 @@
 2. Stage：阶段成功后触发下一阶段（collection → parsing → storage，storage 完成即收尾 Task）；
    任务已取消时不再推进——这是「取消」能真正停住链条的保证。
 
-推进表、取消语义与防重入的细节见 docs/ingest.md
+推进表、取消语义与防重入的细节见 handbook/ingest.md
 """
 
 import logging

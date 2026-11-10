@@ -6,7 +6,7 @@
 三个出口共用；生产者背压用的是独立的 ``access_stream.backlog()``。
 
 采集全是 O(1) 的 Redis 命令，不碰 worker、不碰数据库。**指标口径与阈值见
-docs/analysis.md**（lag 不是 XLEN、unacked 是执行中、top_pending 是毒消息信号）。
+handbook/analysis.md**（lag 不是 XLEN、unacked 是执行中、top_pending 是毒消息信号）。
 
 Redis 不可达时不抛异常：返回 ``redis_ok=False`` + critical 告警——监控自身炸掉比被监控
 对象炸掉更没意义。

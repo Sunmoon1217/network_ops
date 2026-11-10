@@ -1,7 +1,7 @@
 """文档转换：上传的文本文件 → md 或自包含 html（含图时），pdf 直传。
 
 ``convert()`` 是唯一入口；每种输入对应什么产物、为什么「有图就转 html」、表格为什么
-双写、本地图片引用怎么处理，见 docs/docs-domain.md
+双写、本地图片引用怎么处理，见 handbook/docs-domain.md
 """
 
 import base64
@@ -144,7 +144,7 @@ def _csv_to_md(text: str) -> str:
 def _xlsx_to_md(content: bytes) -> str:
     from docs import xlsx_io  # 本地导入：openpyxl 启动慢，仅 xlsx 路径需要
 
-    # 走 parse_xlsx 而不是裸调 openpyxl：它有样式表损坏免疫与合并单元格填充（见 docs/docs-domain.md）
+    # 走 parse_xlsx 而不是裸调 openpyxl：它有样式表损坏免疫与合并单元格填充（见 handbook/docs-domain.md）
     try:
         data = xlsx_io.parse_xlsx(io.BytesIO(content))
     except Exception as e:

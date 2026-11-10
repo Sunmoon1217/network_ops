@@ -1,8 +1,8 @@
 # AGENTS.md
 
-> 本文件是**约定与入口**：能一眼看完的规则写在这里，细节一律放 `docs/`（索引见
-> [`docs/README.md`](docs/README.md)）。第三方软件的实测行为放 `.dsh/skills`（见「知识库」）。
-> 写代码或改注释前，先看「关键约定」与对应域的那份 docs。
+> 本文件是**约定与入口**：能一眼看完的规则写在这里，细节一律放 `handbook/`（索引见
+> [`handbook/README.md`](handbook/README.md)）。第三方软件的实测行为放 `.dsh/skills`（见「知识库」）。
+> 写代码或改注释前，先看「关键约定」与对应域的那份 handbook。
 
 ## 项目概述
 
@@ -33,13 +33,13 @@ network_ops/
 │   ├── ingest/          # 采集与解析入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo
 │   ├── analysis/        # 只读消费侧：路径追踪、策略展开与访问流、互联网资产分析、运行监控
 │   ├── cloud/           # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
-│   └── docs/            # **功能域**：表格编辑 + 文档转换 + Dify 推送（与根 docs/ 说明目录无关）
+│   └── docs/            # **功能域**：表格编辑 + 文档转换 + Dify 推送（app label 就是 docs，与 handbook/ 无关）
 ├── llmtools/            # MCP 工具子系统（根目录包、非 app）：server / registry / query / entity_tools / tools / domains
 ├── frontend/            # Vue 3 + TS + Vite；dist/ 由 nginx 直出
 ├── nginx/               # 反向代理（静态直出 + API 代理 + 启动时的 resolver 推导）
 ├── entrypoint/          # 容器入口脚本（app / worker / consumer）+ README（**容器化构建手册**）
 ├── env/                 # 给容器的配置：app/db/gunicorn/celery.env + secrets/（凭据，不入库）
-├── docs/                # 设计说明（长解释的家，见 docs/README.md）；不入镜像
+├── handbook/            # 设计说明（长解释的家，见 handbook/README.md）；不入镜像
 ├── tests/               # 按应用分目录，pytest testpaths 指向此处
 ├── data/                # 运行期数据（不入库）：config_repo（宿主直跑那份）、configs（Excel 源目录，只读 bind 进 app）
 ├── dockerfile*          # .base（只装依赖）/ .app（源码 + 静态成品）
@@ -55,15 +55,15 @@ network_ops/
 
 | 想知道 | 看 |
 |--------|-----|
-| 全是 HTTP 接口 / 认证与注册约定 / 分页搜索 | [`docs/api.md`](docs/api.md) |
-| 部署、容器、nginx、卷、健康检查、凭据、镜像 | [`docs/deploy.md`](docs/deploy.md) |
-| settings 分层、环境变量全表、守卫矩阵 | [`docs/settings.md`](docs/settings.md) |
-| 采集/解析/入库链路、阶段推进、Saver 契约、并发与性能 | [`docs/ingest.md`](docs/ingest.md) |
-| 路径追踪、访问流、资产分析、队列监控 | [`docs/analysis.md`](docs/analysis.md) |
-| 资产模型与导入、admin 约定 | [`docs/assets.md`](docs/assets.md) |
-| 文档转换规则与 Dify 推送 | [`docs/docs-domain.md`](docs/docs-domain.md) |
-| MCP 工具子系统 | [`docs/llmtools.md`](docs/llmtools.md) |
-| 阿里云接入 | [`docs/cloud.md`](docs/cloud.md) |
+| 全是 HTTP 接口 / 认证与注册约定 / 分页搜索 | [`handbook/api.md`](handbook/api.md) |
+| 部署、容器、nginx、卷、健康检查、凭据、镜像 | [`handbook/deploy.md`](handbook/deploy.md) |
+| settings 分层、环境变量全表、守卫矩阵 | [`handbook/settings.md`](handbook/settings.md) |
+| 采集/解析/入库链路、阶段推进、Saver 契约、并发与性能 | [`handbook/ingest.md`](handbook/ingest.md) |
+| 路径追踪、访问流、资产分析、队列监控 | [`handbook/analysis.md`](handbook/analysis.md) |
+| 资产模型与导入、admin 约定 | [`handbook/assets.md`](handbook/assets.md) |
+| 文档转换规则与 Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
+| MCP 工具子系统 | [`handbook/llmtools.md`](handbook/llmtools.md) |
+| 阿里云接入 | [`handbook/cloud.md`](handbook/cloud.md) |
 
 ## 知识库（跨会话共享的实测结论）
 
@@ -104,7 +104,7 @@ uv sync --all-groups          # 主依赖 + dev + test
 cd frontend && pnpm install
 ```
 
-数据库是 **PostgreSQL**，配置走进程环境变量（全表见 [`docs/settings.md`](docs/settings.md)）。
+数据库是 **PostgreSQL**，配置走进程环境变量（全表见 [`handbook/settings.md`](handbook/settings.md)）。
 容器侧：根 `.env` 只给 compose 插值（`cp .env.example .env`）；`env/*.env` 按服务注入；
 `env/secrets/*` 只读挂载给凭据（见 `env/README.md`）。Django 自己不读任何 `.env`——宿主机直跑要
 `set -a; . ./.env; set +a`，再 export 数据库/Redis 的 host 与凭据（**凭据只走环境变量**；`*_FILE`
@@ -117,7 +117,7 @@ cd frontend && pnpm install
 uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status   # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog  # 积压明细（--json / --limit）
-uv run python manage.py reparse | purge_configs | import_server_owners   # 见 docs/ingest.md
+uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
 
 # 前端（frontend/）
 pnpm dev | build | type-check
@@ -129,14 +129,14 @@ uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
 ## 关键约定
 
 > 只写本项目自己的约定（路径、服务、旋钮、契约）。第三方软件的实测行为在 `.dsh/skills`，
-> 部署侧的硬要求与代价在 [`docs/deploy.md`](docs/deploy.md)，这里只留「会被踩坏的那一句」。
+> 部署侧的硬要求与代价在 [`handbook/deploy.md`](handbook/deploy.md)，这里只留「会被踩坏的那一句」。
 
 - **settings 分层**：可被环境变量影响的配置**只在 `base.py` 定义一遍**（靠注入不同的值区分环境）；
   三个环境文件只放硬差异——`dev.py` 空壳、`container.py` 两条 host 必填守卫（env_file 误删一行时
   启动即拒，而不是等首个请求 connection refused）、`prod.py` `DEBUG=False` 硬覆盖 + 5 项守卫。
   环境旋钮唯一 `DJANGO_ENV`（不设 → dev，白名单，拼错拒启动），`DJANGO_SETTINGS_MODULE` 恒为
   `netops.settings`。`base.py` 与三个环境文件**禁止** `from netops.settings import ...` /
-  `from . import ...`（半初始化时会炸）。细节：[`docs/settings.md`](docs/settings.md)。
+  `from . import ...`（半初始化时会炸）。细节：[`handbook/settings.md`](handbook/settings.md)。
 - **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型在单文件 `apps/assets/models.py`（没有 models 子目录）。
@@ -147,18 +147,18 @@ uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
   状态回写推进）；② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；
   ③ 访问流重建（`ACCESS_FLOW_TASK` 字符串投递 → 独立队列 → 单写者 consumer）。
   broker/backend 都是 Redis，**必须有 worker 消费**。链路细节与坑：
-  [`docs/ingest.md`](docs/ingest.md)、[`docs/analysis.md`](docs/analysis.md)。
+  [`handbook/ingest.md`](handbook/ingest.md)、[`handbook/analysis.md`](handbook/analysis.md)。
 - **DeviceConfig 解析入库默认同步**（`pipeline.run_config_pipeline` 在 post_save 调用栈里跑完）；
   **例外是批量导入**（挂 `_defer_pipeline` 后投 celery 链）。两套链路并存，别混。
 - **部署**：nginx 是统一入口；静态资源走「宿主机构建 → 镜像 COPY → entrypoint 复制进命名卷 →
   nginx 只读挂载」；`data/config_repo` 是**命名卷**、`data/configs` 是**只读 bind**
   （首次部署先 `mkdir -p data/configs`）。两条硬要求：nginx 用**变量式** upstream + 启动时推导
   `resolver`、conf.d 必须 `$http_host` 透传 Host（否则后台登录 403）。
-  容器启动四步、健康检查、凭据、镜像重建时机：[`docs/deploy.md`](docs/deploy.md)。
+  容器启动四步、健康检查、凭据、镜像重建时机：[`handbook/deploy.md`](handbook/deploy.md)。
 - **代理感知**：`SECURE_PROXY_SSL_HEADER` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS`
   默认 `*`；`DJANGO_CSRF_TRUSTED_ORIGINS` 正常拓扑**留空即可**。
 - **「账号密码换 token」的接口必须 `@authentication_classes([])`**（login / register），否则带
-  `sessionid` 打过来会被 DRF 拦成 403；注册只创建普通账号。见 [`docs/api.md`](docs/api.md)。
+  `sessionid` 打过来会被 DRF 拦成 403；注册只创建普通账号。见 [`handbook/api.md`](handbook/api.md)。
 - **前端**：请求路径以 `/api/` 开头；自动导入用 `unplugin-auto-import` + `unplugin-vue-components`；
   图表用 `@antv/g6` 5.x。
 - **前端函数风格**：`.vue` / `.ts` 一律箭头函数，不用 `function` 声明。自检（应无输出）：
@@ -194,13 +194,13 @@ uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
 
 | 层 | 职责 | 细节 |
 |----|------|------|
-| `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检命令也在这里，跨域 import 采集） | [`docs/api.md`](docs/api.md) |
-| `assets/` | 网络域数据模型（`ConfigBase` 基类）+ 序列化器 + API + Excel 导入 | [`docs/assets.md`](docs/assets.md) |
-| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流投递触点 | [`docs/ingest.md`](docs/ingest.md) |
-| `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控（只读消费，写自己的派生缓存） | [`docs/analysis.md`](docs/analysis.md) |
-| `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`docs/cloud.md`](docs/cloud.md) |
-| `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`docs/docs-domain.md`](docs/docs-domain.md) |
-| `llmtools/` | MCP 工具出口（根目录包，与 `api/` 平行） | [`docs/llmtools.md`](docs/llmtools.md) |
+| `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检命令也在这里，跨域 import 采集） | [`handbook/api.md`](handbook/api.md) |
+| `assets/` | 网络域数据模型（`ConfigBase` 基类）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
+| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流投递触点 | [`handbook/ingest.md`](handbook/ingest.md) |
+| `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控（只读消费，写自己的派生缓存） | [`handbook/analysis.md`](handbook/analysis.md) |
+| `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
+| `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
+| `llmtools/` | MCP 工具出口（根目录包，与 `api/` 平行） | [`handbook/llmtools.md`](handbook/llmtools.md) |
 
 ## 注意事项
 
@@ -209,7 +209,7 @@ uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `(device_type, key)` 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`（模板
   方法），值语义与结构级差异留 Saver——声明表只做纯改名。契约测试
   `tests/ingest/test_parser_contract.py` + `test_mapping.py`；清单接口 `/api/parsers/mapping/`。
-  细节：[`docs/ingest.md`](docs/ingest.md)。
+  细节：[`handbook/ingest.md`](handbook/ingest.md)。
 - **解析器模板管理页面**（`views/devices/parsers.vue`）以**模板文件**为中心单表展示，解析器降级为
   「关联解析器」列。
 - **`parsers/tmpls/running/` 的模板不在 `ParserFactory` 注册表内**（`route.ttp` / `arp.ttp` /
@@ -223,14 +223,14 @@ uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
   否则冒号那条会把 IPv6 成员贪婪切开、永远轮不到回退行。
 - **互联网资产分析走缓存**：只有 `POST /api/internet-analysis/analyze/` 才计算，查询与导出只读
   `InternetAnalysis`（未分析过 404）。表格列、`#` 分隔符与负责人回退顺序：
-  [`docs/analysis.md`](docs/analysis.md)。
+  [`handbook/analysis.md`](handbook/analysis.md)。
 - **`ingest` 的 app label 是 `operator`**（`OperatorConfig.label`）：migrate 时用 `operator`；拆分只
   动 Python 路径、**不动 label**（迁移历史挂在它上面，改 label 会让 `django_migrations` 对不上）。
 - **改 celery 任务名要按部署步骤走**：Redis 里未消费的旧名消息会 `Unknown task`——升级前停 worker、
   清空对应队列再滚动。
 - **清理配置数据用 `manage.py purge_configs`**（默认 dry-run）：配置原文在 Git 仓库、解析结果在
   资产表，两者与 `DeviceConfig` 无外键，手工清必漏；`--purge-repo` 只删当前环境的仓库
-  （容器 vs 宿主机各一份）。边界与坑：[`docs/ingest.md`](docs/ingest.md)。
+  （容器 vs 宿主机各一份）。边界与坑：[`handbook/ingest.md`](handbook/ingest.md)。
 - **导入服务器负责人**：`manage.py import_server_owners --file x.xlsx`（sheet `servers`，**按列名取**
   而不是按位置，缺列直接报错；`ip` 是唯一键、导入时规范化；更新只覆盖 hostname / owner，不动
   `status`；有非法行则整批不导入并非零退出）。

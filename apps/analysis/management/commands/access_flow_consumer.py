@@ -4,7 +4,7 @@
 「先查后合并」的前提就没了）——docker-compose 里的 access-flow-consumer 就是这一个。
 
 每条消息 = 一台设备的完整重建；**入库成功才 XACK**，失败不 ack（留在 PEL 等收尸）。
-心跳语义、XAUTOCLAIM 时机与 cast 的理由见 docs/analysis.md
+心跳语义、XAUTOCLAIM 时机与 cast 的理由见 handbook/analysis.md
 """
 
 import signal

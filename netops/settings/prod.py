@@ -2,7 +2,7 @@
 
 与 dev/container 的区别不是「读不读环境变量」，而是缺了会怎样：那两个缺配置有可用默认值，
 prod 没有——配错就在 import 本文件时炸。守卫查 os.environ 原始值（base 的读取带默认值兜底），
-否则「没设置」会被兜底掩盖。守卫清单见 docs/settings.md。
+否则「没设置」会被兜底掩盖。守卫清单见 handbook/settings.md。
 """
 
 import os

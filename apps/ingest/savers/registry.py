@@ -23,7 +23,7 @@ def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[lis
 
     **按 Saver 聚合、不按 key 逐个返回**：一个 Saver 可能注册多个 key（PolicySaver 覆盖
     policies / acl / rules），逐个返回会让调用方只传第一个键，Saver 内部 `a or b or c`
-    的短路链把其余键的数据静默丢弃。理由与 payload 规则见 docs/ingest.md
+    的短路链把其余键的数据静默丢弃。理由与 payload 规则见 handbook/ingest.md
     """
     grouped: dict[type[BaseSaver], list[str]] = {}
     for key in config_json:

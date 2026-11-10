@@ -2,7 +2,7 @@
 
 任务名的唯一定义处是 ``settings.ACCESS_FLOW_TASK``；ingest 侧的投递触点按字符串
 send_task，不 import 本模块（依赖方向 analysis → ingest 单向）。
-参数取舍与背压理由见 docs/analysis.md
+参数取舍与背压理由见 handbook/analysis.md
 """
 
 import logging

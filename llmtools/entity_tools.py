@@ -3,7 +3,7 @@
 本模块只认 ``llmtools.registry``，不 import 任何域模块。工具函数是**纯函数**、不加
 ``@mcp.tool()``：注册在 ``llmtools/tools.py``（名单 + 包装 + 重名校验），所以能被单测直调。
 
-「什么情况下才新开一个工具」与列表/详情/错误串的三条返回纪律见 docs/llmtools.md
+「什么情况下才新开一个工具」与列表/详情/错误串的三条返回纪律见 handbook/llmtools.md
 """
 
 import ipaddress

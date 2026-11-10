@@ -1,7 +1,7 @@
 """文档转换与 Dify 推送接口：上传转换 → 编辑/重转（落版本快照）→ 推送（create 或原地 update）。
 
-接口清单见 AGENTS.md 的 docs 表；三步管道、pdf 的特殊性与推送失败的处理见
-docs/docs-domain.md
+接口清单见 handbook/api.md 的 docs 段；三步管道、pdf 的特殊性与推送失败的处理见
+handbook/docs-domain.md
 """
 
 from pathlib import Path

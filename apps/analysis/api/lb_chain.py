@@ -421,7 +421,7 @@ def gtm_facets(request):
 
 
 # 导出：扁平宽表 xlsx（openpyxl 后端生成、前端只下载 Blob）。
-# 列序与前端 slb.vue / gslb.vue 的扁平列组手工保持一致——改列时两边一起改（见 docs/analysis.md）
+# 列序与前端 slb.vue / gslb.vue 的扁平列组手工保持一致——改列时两边一起改（见 handbook/analysis.md）
 SLB_EXPORT_HEADERS = [
     "设备",
     "VS地址#端口",

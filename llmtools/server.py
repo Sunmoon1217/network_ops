@@ -5,7 +5,7 @@
 本模块导入即建 server，不做任何网络监听——传输层接线在 ``netops.asgi``。
 
 两条防循环硬规矩（禁止 import 域模块与 core 业务模块）、``with_db_lifecycle`` 的必要性
-与 ``functools.wraps`` 的约束见 docs/llmtools.md
+与 ``functools.wraps`` 的约束见 handbook/llmtools.md
 """
 
 from functools import wraps

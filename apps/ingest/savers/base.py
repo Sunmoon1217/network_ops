@@ -35,7 +35,7 @@ def status_enabled(item: dict, *legacy_keys: str, default: bool = True) -> bool:
 
     新形态是模板统一后的 ``enabled`` int 0/1；旧/手工形态是 legacy 键
     （``status`` / ``rule_status`` / ``pool_status`` / ``member_status``）的 str。
-    都没有时用 ``default``，给手工 payload 兜底。详见 docs/ingest.md
+    都没有时用 ``default``，给手工 payload 兜底。详见 handbook/ingest.md
     """
     val = item.get("enabled")
     if val is None:
@@ -55,7 +55,7 @@ class BaseSaver(ABC):
     """基类：子类定义 device_types、keys 与 model_paths 即自动注册。
 
     ``save()`` 是模板方法，先经 ``ingest.mapping.normalize_config`` 归一键与字段，
-    子类 ``_save`` 只读规范字段。三个类属性的契约见 docs/ingest.md
+    子类 ``_save`` 只读规范字段。三个类属性的契约见 handbook/ingest.md
     """
 
     device_types: list[str] = []
@@ -110,7 +110,7 @@ class BaseSaver(ABC):
         """取 F5 路径名字的末段：``/Common/pool_web`` → ``pool_web``。
 
         库里名称字段存末段，关联（池成员按 server_name 找 GtmServer）依赖两边一致。
-        为什么在 Python 侧清理而不是模板里：见 docs/ingest.md
+        为什么在 Python 侧清理而不是模板里：见 handbook/ingest.md
         """
         return str(value or "").strip().strip('"').rstrip("/").rsplit("/", 1)[-1]
 
@@ -148,7 +148,7 @@ class BaseSaver(ABC):
 
         语义同 ``upsert``（按 ``key_fields`` 定位、只覆盖 payload 里出现的字段），但把
         逐行的 SELECT + INSERT/UPDATE 压成一次 SELECT + 一次 bulk。性能口径、
-        ``serializer_cls`` 的作用与「不支持 M2M」的约定见 docs/ingest.md
+        ``serializer_cls`` 的作用与「不支持 M2M」的约定见 handbook/ingest.md
         """
         if not rows:
             return (0, 0)

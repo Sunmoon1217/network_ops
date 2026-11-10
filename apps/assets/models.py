@@ -789,7 +789,7 @@ class Service(ConfigBase):
         verbose_name = "服务"
         verbose_name_plural = verbose_name
         # 行级自然键唯一：一个服务名允许多行端口定义（tcp 22 与 udp 53 各一行），
-        # ServiceSaver 按这组键做差量。为什么不再按 (device, name) 唯一见 docs/assets.md
+        # ServiceSaver 按这组键做差量。为什么不再按 (device, name) 唯一见 handbook/assets.md
         constraints = (
             models.UniqueConstraint(
                 fields=["device", "name", "protocol", "port", "port2"],

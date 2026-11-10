@@ -5,7 +5,7 @@
 ``(device_id, policy_pk)`` 聚进同一行的 ``contexts``。
 
 写库是**先查后合并 + bulk**，**只给单写者用**（只有 access_flow_consumer 写 AccessFlow），
-所以不需要 ON CONFLICT / 行锁。键语义、归一规则与同步语义见 docs/analysis.md
+所以不需要 ON CONFLICT / 行锁。键语义、归一规则与同步语义见 handbook/analysis.md
 """
 
 from __future__ import annotations
@@ -300,7 +300,7 @@ def remove_device_context(device_id: int, keep_flow_keys: set[ComboKey] | None =
 
     策略变更/删除后旧 context 必须先清，否则「遗漏 / 多开」审计会残留过期数据。
     ``keep_flow_keys`` 给了就保留行键在其中（十元组）的该设备上下文，这是 sync 幂等的
-    关键——判据为什么必须是行键而不是 context 键，见 docs/analysis.md。``None`` 表示全摘。
+    关键——判据为什么必须是行键而不是 context 键，见 handbook/analysis.md。``None`` 表示全摘。
     """
     prefix = f"{device_id}:"
     to_update: list[AccessFlow] = []

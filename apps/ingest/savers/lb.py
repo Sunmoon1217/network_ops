@@ -102,7 +102,7 @@ class LBVirtualServerSaver(BaseSaver):
         """把 profiles / rules / persist 的多种产出形态拉平成名字列表。
 
         实测三种形态（`profiles` 是带 name 的 dict 列表、`rules` 是 name→list、
-        `persist` 是 name→str）——TTP 单条命中会给 dict 而不是 list。样例见 docs/ingest.md
+        `persist` 是 name→str）——TTP 单条命中会给 dict 而不是 list。样例见 handbook/ingest.md
         """
         names: list[str] = []
         for item in as_list(value):

@@ -1,7 +1,7 @@
 """settings 包入口：base 定义（env 动态项唯一一处）→ 按 DJANGO_ENV 白名单选环境文件。
 
 环境旋钮唯一：DJANGO_ENV（dev 默认 / container / prod），未知值直接拒绝启动；覆盖顺序与
-守卫矩阵见 docs/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
+守卫矩阵见 handbook/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
 """
 
 import os

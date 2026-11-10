@@ -98,7 +98,7 @@ tags, subnets, ip-addresses
 | `/api/analysis/lb-chain/slb/`、`/api/analysis/lb-chain/gslb/` 等 | SLB/GSLB 链路查询与导出（含 `facets/`、`export/`） |
 | `/api/analysis/gslb-clusters/`、`/api/analysis/ltm-groups/`、`/api/analysis/firewall-groups/` | 分组聚合查询（列表 / `facets/` / `export/`；防火墙分 `policies/` 与 `nat-rules/`） |
 
-## docs（`docs/api/urls.py`）
+## docs 业务域（`apps/docs/api/urls.py`，前缀 `/api/docs/`）
 
 | 路径 | 说明 |
 |------|------|

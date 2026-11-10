@@ -380,7 +380,7 @@ def _import_configs(ws):
 
         # 用「先查后建」而不是 update_or_create：重复导入同一版本时不该动已解析好的
         # config_json（created=False 又不会重新解析，结果就永久丢了）。
-        # 批量导入挂 `_defer_pipeline` 跳过同步流水线、改投 celery 链——理由见 docs/assets.md
+        # 批量导入挂 `_defer_pipeline` 跳过同步流水线、改投 celery 链——理由见 handbook/assets.md
         if DeviceConfig.objects.filter(device=device, git_commit_hash=commit_hash).exists():
             skipped += 1
             continue

@@ -26,7 +26,7 @@ class AddressBookSaver(BaseSaver):
 
     hillstone 用动态组名 ``addresses.{{ address_name }}``，**地址簿名在字典的键上、
     不在记录体里**：父记录按字典键建（``address_type="addressbook"``），各地址条目作为
-    ``parent`` 指向它。产出形态与尚未落库的内容见 docs/ingest.md
+    ``parent`` 指向它。产出形态与尚未落库的内容见 handbook/ingest.md
     """
 
     device_types = ["firewall"]
@@ -145,7 +145,7 @@ class NatRuleSaver(BaseSaver):
 
     ``cisco_fw.ttp`` 的 nat group 产出 ASA 的「object network + nat static」结构，
     与 NatRule 不是一一对应；字段映射表、以及「配置里没写的维度在库里就为空」
-    这条后果，见 docs/ingest.md
+    这条后果，见 handbook/ingest.md
     """
 
     device_types = ["firewall"]
@@ -221,7 +221,7 @@ class ServiceSaver(BaseSaver):
 
         # 按服务名分组后做**自然键差量**：一个 service 块的多行是同一个名字下的多个端口
         # 定义，逐行落库不合并；在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
-        # 只建缺失、删多余。细节见 docs/ingest.md
+        # 只建缺失、删多余。细节见 handbook/ingest.md
         by_name: dict[str, list[dict]] = {}
         for svc in entries:
             name = str(svc.get("name") or "").strip()
@@ -271,7 +271,7 @@ class ServiceSaver(BaseSaver):
     def _entries(self, raw) -> list[dict]:
         """把产出归一成 ``[{name, protocol, port, ...}]``，兼容平铺 / 动态字典 / 带星列表三种形态。
 
-        结构级差异按分层约定留在 Saver；三种形态的样例见 docs/ingest.md
+        结构级差异按分层约定留在 Saver；三种形态的样例见 handbook/ingest.md
         """
         if isinstance(raw, dict):
             return [raw] if "name" in raw else self._expand(raw)
@@ -286,7 +286,7 @@ class ServiceSaver(BaseSaver):
     def _expand(cls, body: dict) -> list[dict]:
         """``{服务名: 内容}`` → ``[{name: 服务名, **该行字段}, ...]``，每行一条。
 
-        为什么逐行不合并、src 行为什么单独成行：见 docs/ingest.md
+        为什么逐行不合并、src 行为什么单独成行：见 handbook/ingest.md
         """
         records = []
         for name, content in body.items():
@@ -305,7 +305,7 @@ class PolicySaver(BaseSaver):
 
     三类原始键与字段差异已在 ``BaseSaver.save`` 入口由 ``ingest.mapping`` 归一；
     这里只处理**值语义**（permit→allow、enable/disable→bool）与 hillstone 的
-    分列地址（``-ip`` / ``-addr`` / ``-range`` / ``-host``，约定见 docs/ingest.md）
+    分列地址（``-ip`` / ``-addr`` / ``-range`` / ``-host``，约定见 handbook/ingest.md）
     """
 
     device_types = ["firewall"]
@@ -416,7 +416,7 @@ class PolicySaver(BaseSaver):
         self._replace_m2m(Policy, "services", service_map)
 
         # 策略落库后重建该设备的访问流：投递即返回，展开与入库走独立队列 + 单写者
-        # consumer（见 docs/analysis.md）。broker 不可达只告警不抛——入库已成功，可手工补。
+        # consumer（见 handbook/analysis.md）。broker 不可达只告警不抛——入库已成功，可手工补。
         from ingest.access_flow_trigger import request_rebuild
 
         request_rebuild(device.pk)

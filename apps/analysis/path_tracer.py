@@ -1,6 +1,6 @@
 """路径追踪：模拟报文从源到目的逐跳转发（LB 匹配 → 策略 → NAT → 路由 → 下一跳）。
 
-VRF 判定优先级、路由链终点判定与几个会导致接口 500 的坑，见 docs/analysis.md
+VRF 判定优先级、路由链终点判定与几个会导致接口 500 的坑，见 handbook/analysis.md
 """
 
 import ipaddress
@@ -181,7 +181,7 @@ def _find_vrf_for_ip(ip_str: str) -> str:
     """通过IP查找所属VRF（从 Subnet 表查；表里有 0.0.0.0/0 兜底，无需 Interface 回退）。
 
     优先级：device → 专线 tag → 0.0.0.0/0（internet）→ datacenter+securityzone
-    （路由链跟踪）→ gateway → default。详见 docs/analysis.md
+    （路由链跟踪）→ gateway → default。详见 handbook/analysis.md
     """
     subnet = _find_subnet_for_ip(ip_str)
     if not subnet:
@@ -225,7 +225,7 @@ def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
     """通过设备路由表查找VRF（datacenter + securityzone 场景）。
 
     沿「包含该网段且前缀相同」的路由逐跳跟踪，**终点 = 没有该网段特定路由的设备**。
-    追踪例与判据见 docs/analysis.md
+    追踪例与判据见 handbook/analysis.md
     """
     visited: set[int] = set()  # 设备ID环路检测
 

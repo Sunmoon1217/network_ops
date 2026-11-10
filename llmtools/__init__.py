@@ -8,7 +8,7 @@
 ``mcpserver.streamable_http_app()`` 由 ``netops.asgi`` 调用。
 
 必须在 ``django.setup()`` 之后 import（本包会拉各域 models / serializers）。
-⚠ 目录名**绝不能**叫 ``mcp/``：会遮蔽 PyPI 的 mcp SDK。模块分工与两条防循环规矩见 docs/llmtools.md
+⚠ 目录名**绝不能**叫 ``mcp/``：会遮蔽 PyPI 的 mcp SDK。模块分工与两条防循环规矩见 handbook/llmtools.md
 """
 
 from llmtools.domains import assets

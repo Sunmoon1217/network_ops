@@ -2,7 +2,7 @@
 
 ``signals.py`` 的 post_save 接收器与管理命令 ``reparse`` 共用这一份逻辑：
 重跑不必伪造 ``created`` 标志，失败原因也能作为返回值带出来（信号里只打日志）。
-为什么单独成文件：见 docs/ingest.md
+为什么单独成文件：见 handbook/ingest.md
 """
 
 from __future__ import annotations

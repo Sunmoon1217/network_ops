@@ -1,7 +1,7 @@
 """结构化查询计划（MCP 的「受控 ORM」编译入口）：QueryPlan（纯数据）→ 白名单校验的 QuerySet。
 
 **不接受任何 ORM 字符串或任意 ``__`` 查找**。字段/排序/投影白名单与权限钩子的口径见
-docs/llmtools.md
+handbook/llmtools.md
 """
 
 from collections.abc import Iterable

@@ -1,6 +1,6 @@
 """互联网资产分析：从 GSLB 的 WideIP 逐层解析到最终后端地址，结果写缓存表。
 
-链路图、成员三种形态、IPv6 规范化与分隔符的取舍见 docs/analysis.md
+链路图、成员三种形态、IPv6 规范化与分隔符的取舍见 handbook/analysis.md
 """
 
 import ipaddress
@@ -24,7 +24,7 @@ from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPo
 MAX_NESTED_DEPTH = 3
 
 # 一行 = 一条从域名到最终后端的完整链路；为什么合并成 LLB_VS / SLB_VS / 服务器 三段，
-# 见 docs/analysis.md。字段来源见每列注释。
+# 见 handbook/analysis.md。字段来源见每列注释。
 EXPORT_HEADERS = [
     "域名",  # GtmWideip.name
     "LLB_VS地址#端口",  # LtmVirtualServer.vs_address#vs_port

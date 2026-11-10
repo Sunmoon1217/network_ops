@@ -7,7 +7,7 @@
 硬规矩（防循环导入）：本文件与三个环境文件禁止 `from netops.settings import ...` /
 `from . import ...`——反向依赖父包执行结果会在 `__init__` 半初始化时炸。
 
-环境变量全表、守卫矩阵与分层理由：docs/settings.md
+环境变量全表、守卫矩阵与分层理由：handbook/settings.md
 """
 
 import os
@@ -78,13 +78,13 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
-# 访问流（AccessFlow）重建链路的旋钮：阈值口径、取值理由与任务名三处对账见 docs/analysis.md
+# 访问流（AccessFlow）重建链路的旋钮：阈值口径、取值理由与任务名三处对账见 handbook/analysis.md
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
 # 阿里云：一朵云、两个资源集（生产/测试），两套账号共用 region，各产品 endpoint 分别传参。
-# 变量清单见 docs/settings.md；凭据链路同为 *_FILE > 环境变量 > 空。
+# 变量清单见 handbook/settings.md；凭据链路同为 *_FILE > 环境变量 > 空。
 ALIYUN_CONFIG = {
     "region": os.environ.get("ALIYUN_REGION", ""),
     "endpoints": {
@@ -107,7 +107,7 @@ ALIYUN_CONFIG = {
 }
 
 # Dify 知识库（文档转换产物的推送目标）：前三项（base_url / api_key / dataset_id）齐备才启用，
-# 缺失时推送接口返 503，转换与留档不受影响。变量清单见 docs/settings.md。
+# 缺失时推送接口返 503，转换与留档不受影响。变量清单见 handbook/settings.md。
 DIFY_CONFIG = {
     "api_base_url": os.environ.get("DIFY_API_BASE_URL", "").rstrip("/"),
     "api_key": _env_or_file("DIFY_API_KEY"),
