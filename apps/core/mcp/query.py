@@ -20,6 +20,7 @@
 会以它为起点——权限条件永远不来自调用方输入。
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -81,7 +82,7 @@ def _order_fields(spec: EntitySpec) -> set[str]:
     return {spec.key, "id", *spec.order}
 
 
-def _options(values: set[str] | tuple[str, ...]) -> str:
+def _options(values: Iterable[str]) -> str:
     return " / ".join(sorted(values)) or "(无)"
 
 
