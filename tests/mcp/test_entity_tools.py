@@ -1,4 +1,4 @@
-"""资产域 MCP 工具测试（实体注册表 + 六个工具）。
+"""资产域 MCP 工具测试（实体注册表 + 七个工具）。
 
 四处约定：
 
@@ -7,8 +7,8 @@
   fixture 会让工具查不到夹具数据。
 - 调用走 ``mcp.Client(server)`` 的内存传输，把「schema → 分发 → 工具 → 序列化」
   整条链跑通，而不是绕过 MCP 直调函数。
-- 工具靠 ``import assets.mcp.tools`` 的副作用注册到根 server（与 asgi 的组合方式一致）
-  ——只 import netops.mcp_server 拿到的是空 server。
+- 工具靠 ``import llmtools`` 完成接线（包初始化里显式调 ``register_all()``，与 asgi 同一路径）
+  ——只 import llmtools.server 拿到的是空 server。
 - 断言打在**返回结构**上而不是内部函数上：实体注册表会持续加类型，工具签名必须稳定，
   测试盯着契约才不会一改 spec 就全红。
 """
@@ -18,7 +18,7 @@ import asyncio
 import pytest
 from mcp import Client
 
-import assets.mcp.tools  # noqa: F401 — import 即注册（工具挂到 netops.mcp_server.mcp 上）
+import llmtools  # noqa: F401 — 包初始化即接线：工具挂到 llmtools.mcpserver 上
 from assets.models import (
     ArpMac,
     Device,
@@ -30,7 +30,7 @@ from assets.models import (
     Vendor,
     Vlan,
 )
-from netops.mcp_server import mcp as netops_mcp
+from llmtools import mcpserver as netops_mcp
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

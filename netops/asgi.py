@@ -13,16 +13,15 @@ from django.core.asgi import get_asgi_application
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "netops.settings")
 
-# 先完成 Django 初始化，域工具模块才能安全 import models。
+# 先完成 Django 初始化，出口层才能安全 import 各域 models / serializers。
 django_asgi_app = get_asgi_application()
 
-import assets.mcp.tools  # noqa: E402,F401 — import 即注册（通用工具 + 资产实体 + locate）
-from core.mcp.server import build_transport_security, mcp  # noqa: E402
+from llmtools import build_transport_security, mcpserver  # noqa: E402 — import 即接线（实体 + 工具）
 
-# Streamable HTTP 子应用：内部自带 /mcp 路由与 lifespan（进入 mcp.session_manager.run()）。
-# 构建之后 mcp.session_manager 才存在；本模块导入即完成全部接线，不额外监听端口。
+# Streamable HTTP 子应用：内部自带 /mcp 路由与 lifespan（进入 mcpserver.session_manager.run()）。
+# 构建之后 mcpserver.session_manager 才存在；本模块导入即完成全部接线，不额外监听端口。
 # transport_security 必须显式传——默认值只信任 localhost，用 IP/域名访问会 421。
-mcp_asgi_app = mcp.streamable_http_app(transport_security=build_transport_security())
+mcp_asgi_app = mcpserver.streamable_http_app(transport_security=build_transport_security())
 
 
 async def _dispatch(scope, receive, send):

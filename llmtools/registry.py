@@ -1,6 +1,6 @@
 """MCP 实体注册表（通用层，不属于任何业务域）。
 
-各域把「可被 MCP 查询的模型或视图」登记到这里，通用工具（``core.mcp.tools``）
+各域把「可被 MCP 查询的模型或视图」登记到这里，通用工具（``llmtools.entity_tools``）
 只认注册表，不认具体域：
 
 - ``register_entity(spec)``：登记一个实体类型（模型或视图 + 序列化器 + 业务键 +
@@ -8,8 +8,8 @@
 - ``register_edge(edge)``：登记两个类型之间的有向边（两端必须已登记）。
 
 **本模块不 import 任何域模块**（``assets`` / ``analysis`` / ``docs`` …），也不
-import ``core`` 的业务模块（``core.models`` / ``core.api``）——即使物理上放在
-``apps/core/mcp/``，它只提供查询基建，不读用户、任务等 core 业务数据。
+import ``core`` 的业务模块（``core.models`` / ``core.api``）——MCP 子系统只提供
+查询基建，不读用户、任务等 core 业务数据。
 
 约定：
 

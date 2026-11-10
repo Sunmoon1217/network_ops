@@ -1,8 +1,11 @@
-"""资产域的 MCP 实体声明（import 即注册到 core.mcp.registry）。
+"""资产域的 MCP 实体声明（``llmtools/domains/assets/``，由 ``assets.register()`` 触发）。
 
-通用工具（``core.mcp.tools``）只认注册表，不认具体域；本模块负责把资产的模型
+通用工具（``llmtools.entity_tools``）只认注册表，不认具体域；本模块负责把资产的模型
 翻译成 ``EntitySpec``，并登记类型之间的关系边。新增一张表只加一条 spec，
 工具层零改动。
+
+依赖方向单向：本模块 import 资产域的模型与序列化器，``apps/assets/`` 反过来不认识
+``llmtools``——这正是把声明放在出口层而非资产域内的原因。
 
 三条约束（改本文件前先读）：
 
@@ -19,7 +22,7 @@ from django.db.models import Q
 
 from assets import models
 from assets.serializers import views as s
-from core.mcp.registry import EDGES, SPEC, Edge, EntitySpec, Filter, register_edge, register_entity
+from llmtools.registry import EDGES, SPEC, Edge, EntitySpec, Filter, register_edge, register_entity
 
 
 class NodeType:
@@ -373,7 +376,10 @@ _EDGES: tuple[Edge, ...] = (
 
 
 def register() -> None:
-    """把本域实体与边登记到 core.mcp.registry（模块 import 时自动调用一次）。"""
+    """把本域实体与边登记到 llmtools.registry（由 ``llmtools.domains.assets.register()`` 调用）。
+
+    幂等：已登记的类型与边跳过（``clear_registry()`` 之后重跑也安全）。
+    """
     for spec in _BUNDLE.values():
         if spec.node_type not in SPEC:
             register_entity(spec)
@@ -382,7 +388,8 @@ def register() -> None:
             register_edge(edge)
 
 
-register()
+# 刻意**不在**模块底部自动调用：注册由 llmtools/__init__.py 经 assets.register() 显式触发——
+# import 一个声明模块不应悄悄改写全局注册表，与工具侧「TOOLS 名单 + register_all()」同一套语义。
 
 
 __all__ = [

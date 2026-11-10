@@ -28,7 +28,7 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Q, QuerySet
 from mcp.server.mcpserver.exceptions import ToolError
 
-from core.mcp.registry import MAX_PAGE_SIZE, EntitySpec, get_spec, summary_fields, to_dict
+from llmtools.registry import MAX_PAGE_SIZE, EntitySpec, get_spec, summary_fields, to_dict
 
 #: 过滤操作符白名单（与 ``entities.Filter`` 保持一致，不开放任意 lookup）
 OPERATORS = ("exact", "iexact", "icontains", "istartswith", "gte", "lte", "in", "isnull")

@@ -8,11 +8,11 @@ import asyncio
 import pytest
 from mcp import Client
 
-import assets.mcp.tools  # noqa: F401 — 注册通用工具 + 资产实体 + locate
+import llmtools  # noqa: F401 — 包初始化即接线：注册资产实体 + 全部工具
 from assets import models
 from assets.serializers import views as s
-from core.mcp.registry import SPEC, Edge, EntitySpec, Filter, register_edge, register_entity, unregister_entity
-from core.mcp.server import mcp as netops_mcp
+from llmtools import mcpserver as netops_mcp
+from llmtools.registry import SPEC, Edge, EntitySpec, Filter, register_edge, register_entity, unregister_entity
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

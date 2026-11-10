@@ -10,9 +10,9 @@ import asyncio
 import pytest
 from mcp import Client
 
-import assets.mcp.tools  # noqa: F401 — import 即注册（工具挂到 netops.mcp_server.mcp 上）
+import llmtools  # noqa: F401 — 包初始化即接线：工具挂到 llmtools.mcpserver 上
 from assets.models import Device, DeviceModel, Vendor
-from netops.mcp_server import mcp as netops_mcp
+from llmtools import mcpserver as netops_mcp
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

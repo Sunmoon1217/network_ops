@@ -1,7 +1,10 @@
 """MCP 通用实体工具（LLM 出口）。
 
-本模块只认 ``core.mcp.registry``：实体由各域注册，工具本身不 import 任何域模块。
-``@mcp.tool()`` 直接装饰（**import 即注册**），组合方 import 一次即接入。
+本模块只认 ``llmtools.registry``：实体由各域注册，工具本身不 import 任何域模块。
+
+工具函数是**纯函数**，不加 ``@mcp.tool()``：注册统一由根目录 ``llmtools`` 完成
+（名单在 ``llmtools/tools.py`` 的 ``TOOLS``，包装与重名校验也在那里）。本模块只管实现，
+因此可以直接被单测调用，不需要先建 server。
 
 ## 为什么工具数不随表增长
 
@@ -12,7 +15,7 @@
 - **多步查库 + 算法**（``relations`` 的变深遍历、``bundle`` 的横切拼装）——参数化的
   多跳查询不是 ``filters`` 能表达的。
 - **结构化查询**（``query``）——``list_records`` 的 filters 只支持「别名 → 单值」，
-  表达不了 AND/OR、多字段排序、字段投影与 offset；``query`` 走 ``core.mcp.query``
+  表达不了 AND/OR、多字段排序、字段投影与 offset；``query`` 走 ``llmtools.query``
   的受控编译层，字段路径与操作符仍走白名单。
 
 判断标准就这一条：**能用 spec 的 ``filters`` / ``include`` 表达的，一律不新开工具**。
@@ -32,8 +35,8 @@ from typing import Any
 from django.db.models import Q, QuerySet
 from mcp.server.mcpserver.exceptions import ToolError
 
-from core.mcp.query import compile_plan, parse_plan, plan_summary, project
-from core.mcp.registry import (
+from llmtools.query import compile_plan, parse_plan, plan_summary, project
+from llmtools.registry import (
     MAX_DEPTH,
     MAX_PAGE_SIZE,
     SPEC,
@@ -48,7 +51,6 @@ from core.mcp.registry import (
     resolve_one,
     to_dict,
 )
-from core.mcp.server import mcp, with_db_lifecycle
 
 #: 单次关系展开 / 片段的返回条数上限：再多 LLM 也读不完，只是烧 token
 MAX_ROWS = 50
@@ -142,8 +144,6 @@ def _rows(spec, objs, *, full: bool = False, cap: int = MAX_ROWS) -> tuple[list[
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def find(q: str, types: str = "", limit: int = 10) -> dict[str, Any]:
     """跨实体类型定位：给一个字符串，找出它可能是谁（主机名 / IP / MAC / 域名 / 网段）。
 
@@ -212,8 +212,6 @@ def find(q: str, types: str = "", limit: int = 10) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def list_records(
     entity_type: str,
     filters: dict[str, Any] | None = None,
@@ -265,8 +263,6 @@ def list_records(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def query(plan: dict[str, Any]) -> dict[str, Any]:
     """结构化查询：用 QueryPlan 表达 AND/OR、多字段排序、字段投影与 offset。
 
@@ -311,8 +307,6 @@ def query(plan: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def get_record(entity_type: str, key: str, device: str = "", include: str = "") -> dict[str, Any]:
     """按业务键取单条实体的完整档案，可选展开一跳关系。
 
@@ -356,8 +350,6 @@ def get_record(entity_type: str, key: str, device: str = "", include: str = "") 
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def bundle(entity_type: str = "device", key: str = "", sections: str = "", device: str = "") -> dict[str, Any]:
     """一次性取某个实体的「档案 + 若干段关联数据」，省掉连续多次调用。
 
@@ -411,8 +403,6 @@ def bundle(entity_type: str = "device", key: str = "", sections: str = "", devic
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-@with_db_lifecycle
 def relations(
     entity_type: str,
     key: str,

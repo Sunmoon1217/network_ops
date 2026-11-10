@@ -1,15 +1,18 @@
-"""MCP 基建：根 server 单例 + 工具执行包装（与 Django admin 同构：根注册表，叶子装饰）。
+"""MCP 基建：根 server 单例 + 工具执行包装。
 
-**根单例** ``mcp = MCPServer("netops", ...)``：通用工具模块（``core.mcp.tools``）
-顶层 ``from core.mcp.server import mcp`` + ``@mcp.tool()`` 直接装饰，**import 即注册**。
-组合责任在调用方：``netops/asgi.py``（挂 ``/mcp`` 时）或测试，import 一次域模块即接入。
+本包是**独立的 MCP 子系统**（根目录 ``llmtools``，与 ``apps/`` 下各业务域平级，且位于它们
+之上），不挂在 ``core`` 下：core 只管用户 / 认证 / 任务，MCP 的基建、实体注册表与出口都在这里。
+
+**根单例** ``mcpserver = MCPServer("netops", ...)``：工具**不在本模块自注册**——各域只提供纯
+函数，由 ``llmtools/tools.py`` 汇总名单、统一套 ``with_db_lifecycle`` 后
+``mcpserver.add_tool()``（见 ``TOOLS``）。接线责任在包初始化 ``llmtools/__init__.py``：
+``netops/asgi.py``（挂 ``/mcp`` 时）或测试，import 一次 ``llmtools`` 即接入。
 
 ⚠ 两条防循环硬规矩：
-1. 本模块**禁止 import 任何域模块**（``assets`` / ``analysis`` / ``docs`` …）——
-   叶子 import 本模块，本模块再 import 叶子即成环。
-2. 即使物理上在 ``apps/core/mcp/``，本子包也**禁止 import core 的业务模块**
-   （``core.models`` / ``core.api`` / ``core.permissions`` / ``core.tasks``）：
-   MCP 只提供查询基建，不读用户、权限、任务数据。
+1. 本包**禁止 import 任何域模块**（``assets`` / ``analysis`` / ``docs`` …）——叶子 import
+   本包，本包再 import 叶子即成环。组合责任只在 ``llmtools/__init__.py``。
+2. 本包**禁止 import core 的业务模块**（``core.models`` / ``core.api`` / ``core.permissions``
+   / ``core.tasks``）：MCP 只提供查询基建，不读用户、权限、任务数据。
 
 **执行包装** ``with_db_lifecycle``：MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图
 自带 request_finished 时的 close_old_connections——连接会随线程对象滞留到 GC 才关闭
@@ -19,7 +22,7 @@ Web 请求的生命周期对齐。``functools.wraps`` 必须保留——SDK 沿 
 生成入参 schema，去掉 wraps 工具就没有参数说明书了。
 
 本模块导入即建 server，不做任何网络监听；对外服务（Streamable HTTP 挂进
-netops.asgi / manage.py stdio）属于传输层接线。
+netops.asgi / stdio）属于传输层接线。
 """
 
 from functools import wraps
@@ -29,10 +32,14 @@ from django.db import close_old_connections
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-mcp = MCPServer(
+#: MCP server 单例（角色等同 Django 的 ``admin.site``）。工具与实体由 ``llmtools`` 包初始化时
+#: 注册完毕；HTTP 传输（``session_manager``）由调用方调 ``mcpserver.streamable_http_app()`` 时
+#: **懒创建**——全进程只应调用一次，重复调用会替换 session_manager，使先前那个 ASGI app
+#: 持有失效的 manager（表现是能连上但会话不通）。
+mcpserver = MCPServer(
     "netops",
     instructions=(
-        "网络运维管理平台的 MCP Server。实体由各域注册到 core.mcp.registry，"
+        "网络运维管理平台的 MCP Server。实体由各域注册到 llmtools.registry，"
         "通用工具只认注册表（当前已接入资产域：设备、接口、路由、IP、ARP、负载均衡等）。"
         "所有工具返回结构化 JSON；未声明的字段/操作符会报错而不是被忽略。"
         "需要组合条件、多字段排序或字段投影时用 query（QueryPlan）。"

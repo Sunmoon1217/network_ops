@@ -31,9 +31,16 @@ network_ops/
 │   │   └── prod.py      # DEBUG=False 硬覆盖 + 5 个关键 env 必填守卫（fail loud）
 │   ├── urls.py          # /admin/、/api/、前端 SPA 兜底
 │   ├── views.py         # 托管 frontend/dist（index.html、assets、favicon）
-│   ├── mcp_server.py    # MCP 基建：根 server 单例 + with_db_lifecycle（见「关键约定」MCP 条）
-│   ├── asgi.py
+│   ├── asgi.py          # Django ASGI + /mcp 分发（import llmtools 完成接线，再 streamable_http_app）
 │   └── wsgi.py
+├── llmtools/            # LLM 工具子系统（根目录包，非 app；core 不再承担 MCP）
+│   ├── __init__.py      # 组合根：assets.register() + register_all()；对外只给 mcpserver / build_transport_security
+│   ├── server.py        # 根 server 单例 mcpserver + with_db_lifecycle + build_transport_security
+│   ├── registry.py      # 实体注册表 SPEC / EDGES（各域登记可查的模型或视图）
+│   ├── query.py         # QueryPlan 编译器（受控 AND/OR / 排序 / 投影 / offset）
+│   ├── entity_tools.py  # 通用工具实现：find / list_records / query / get_record / bundle / relations
+│   ├── tools.py         # 工具注册表：汇总各域名单 + 统一 with_db_lifecycle + mcpserver.add_tool()
+│   └── domains/         # 各域接入（唯一 import 业务域的地方）：assets/{specs,tools}.py + 契约 register()/TOOLS
 ├── apps/
 │   ├── core/            # 用户与认证 + 运维命令（ensure_superuser / migrate_if_needed / queue_status / queue_backlog）
 │   │   ├── models.py            # User、Token、Task/Stage、前端偏好（/api/me/preferences/）
@@ -43,7 +50,6 @@ network_ops/
 │   │   ├── models.py
 │   │   ├── serializers/{base.py, views.py}   # 序列化器（API 视图与解析入库共用）
 │   │   ├── management/commands/import_server_owners.py  # xlsx 导入服务器负责人
-│   │   ├── mcp/                 # MCP 工具（LLM 出口）：entities.py 实体注册表 + tools.py 六工具（import 即注册）
 │   │   └── api/{serializers.py, urls.py, views.py}
 │   ├── ingest/             # 数据采集与解析入库（配置管道：Git 仓库 → TTP 解析 → Saver 写库）
 │   │   ├── api/{configs.py, parsers.py, urls.py}
@@ -354,10 +360,10 @@ ingest 拆出（URL 前缀 `/api/trace/`、`/api/internet-analysis/`、`/api/acc
 
 阿里云接入（蓝图「混合云」的雏形）：`client.py`（API 客户端封装）、`products.py`（产品/规格语义映射）、`response.py`（云 API 响应类型）、`models.py`（AliyunVPC 等云资源缓存 8 个模型）。**目前无 `api/`、无 serializers**，尚未对外暴露；云资源将来经统一配置项体系（ci_id）纳入资产与关系。
 
-### MCP 工具出口（跨域，非 app）
+### MCP 工具出口 `llmtools/`（根目录，非 app）
 
-与各域 `api/` 平行的 **LLM 工具出口**：`netops/mcp_server.py` 持根单例与执行包装，各域 `apps/<域>/mcp/tools.py` 顶层装饰、**import 即注册**。完整布局与写法见「关键约定」的 **MCP 工具体系**条；当前已接入 `assets/mcp/`（实体注册表 + 六工具：find / list_records / get_record / bundle / relations / locate），ingest（配置）/ analysis（关系）/ cloud（云资源）等域工具按需生长。
-**工具数量按「意图维度」而不是「模型维度」增长**：实体表 40+ 张，工具压在 6 个，靠 `assets/mcp/entities.py` 的 `EntitySpec` / `EDGES` 注册表把实体下沉成数据——新增一张表加一行 spec，不加工具。只有「一次合成多份真值做一致性判断」（`locate`）和「多步查库 + 算法」（`relations` / `bundle`）才值得新开工具。返回纪律：列表给摘要（`detail=True` 才给全字段）、必须回 `total`、错误里带可用枚举值。
+与各域 `api/` 平行的 **LLM 工具子系统**，**不挂在 `core` 下**（core 只管用户 / 认证 / 任务），也**不在各域内留声明**（依赖单向 `llmtools → apps`）：根目录 `llmtools/` 持根单例（`server.py`）、实体注册表（`registry.py`）、QueryPlan 编译器（`query.py`）、通用工具实现（`entity_tools.py`）、工具注册表（`tools.py`）与各域接入（`domains/<域>/`：`specs.py` 实体声明 + `tools.py` 专属工具 + `__init__.py` 契约 `register()` / `TOOLS`）；**包初始化 `__init__.py` 就是组合根**（`assets.register()` + `register_all()`），对外只暴露 `mcpserver` 与 `build_transport_security`，HTTP 传输由 `netops/asgi.py` 自己 `streamable_http_app()`。域接入契约只有两样：`register()` 登记实体与边、`TOOLS` 贡献工具函数；`llmtools/tools.py` 汇总名单、统一套 `with_db_lifecycle` 后集中 `add_tool`——**域里既没有 `@mcp.tool()`，也不 import MCP 基建**。完整布局与写法见「关键约定」的 **MCP 工具体系**条；当前已接入 `domains/assets/`（12 类实体 + 七工具：find / list_records / query / get_record / bundle / relations / locate），ingest（配置）/ analysis（关系）/ cloud（云资源）等域工具按需生长。
+**工具数量按「意图维度」而不是「模型维度」增长**：实体表 40+ 张，工具压在 7 个，靠 `llmtools/registry.py` 的 `EntitySpec` / `EDGES` 把实体下沉成数据——新增一张表加一行 spec，不加工具。只有「一次合成多份真值做一致性判断」（`locate`）和「多步查库 + 算法」（`relations` / `bundle`）才值得新开工具。返回纪律：列表给摘要（`detail=True` 才给全字段）、必须回 `total`、错误里带可用枚举值。
 
 ## 配置处理流程（信号驱动）
 
@@ -488,7 +494,7 @@ tags, subnets, ip-addresses
 
 - **解析器 / Saver / 模型的关联与归一**：三层关联 = 解析器按 (vendor, device_type) 产出**原始**键 → `ingest.mapping` 归一（`KEY_ALIASES` 键别名、`FIELD_ALIASES` 字段别名；纯函数、幂等、**无厂商维度**——同一规范键下的字段同义性与厂商无关，无型号的 device 也要能归一）→ Saver 按 (device_type, key) 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`（模板方法，子类实现 `_save` 只读规范字段）而不是 pipeline：绕过分发直调 `save` 的调用方拿到同样结构。**分层规矩**：结构改名进声明表；**值语义**（permit→allow、enable/disable、route→layer3）留 Saver；**结构级差异**（SNMP 的 community/target_hosts 两形态、Hillstone 扁平地址拆 AddressBook）留 Saver——声明表只做纯改名，混入值转换会被误读成"字段同义"。契约测试：`tests/ingest/test_parser_contract.py`（产出/消费对账切**归一口径**，`KNOWN_MISSING_PRODUCER` 因此只剩 slb 的 snat 两条）+ `tests/ingest/test_mapping.py`（归一行为 + 声明不许说谎：死别名、未声明模型都会红）。清单接口 `/api/parsers/mapping/` 顶层新增 `key_aliases` / `field_aliases` / `savers`（按 Saver 聚合，带 `model_paths`），`consumers` 条目附 `canonical_key` / `models`——均为**增量字段**，前端旧消费不受影响。
 - **解析器模板管理页面**（`frontend/src/views/devices/parsers.vue`）以**模板文件**为中心：单表展示 `分组(configs/running) | 文件名 | 关联解析器`，解析器对模板的引用降级为该表的「关联解析器」列（未被引用的显示「未关联解析器」，可用「仅看未关联」筛选），点击行在右侧预览/编辑。此前「解析器列表 + 模板文件列表」两张表的写法存在信息重叠——8 个已注册解析器必然出现在文件列表中，故已合并。
-- **MCP 工具体系（LLM 出口，与各域 `api/` 平行）**：**基建两件**都在 `netops/mcp_server.py`——根单例 `mcp = MCPServer("netops")`（admin.site 角色）与 `with_db_lifecycle`（工具执行包装：同步工具跑在 AnyIO 短命工作线程，调用前后 `close_old_connections()` 对齐一次 Web 请求的连接生命周期；`@wraps` 必须保留——SDK 沿 `__wrapped__` 读签名生成入参 schema）。**工具实现按域住 `apps/<域>/mcp/tools.py`**：模块顶层 `@mcp.tool()` + `@with_db_lifecycle` 直接装饰，**import 即注册**（对齐 Django admin「根注册表 + 叶子装饰」惯用法，没有 register 包装函数）；组合方（asgi / 测试）`import assets.mcp.tools` 一行接一域。**防循环硬规矩**：`netops/mcp_server.py` 禁止 import 任何域工具模块（叶子已 import 它，反向即成环）。**工具写法三条**：① 只做「参数校验 → 查库 → 序列化」，字段口径复用 `assets.serializers`；② 同步 `def` 别写 `async def`（事件循环里调 ORM 会 `SynchronousOnlyOperation`）；③ 模型可读的失败抛 `ToolError`（原文达模型、可自我纠正，如「设备不存在：xxx，可先用 find 搜索」），程序 bug 不用管（SDK 泛化为 `Error executing tool …`，traceback 只进服务端日志）。**返回注解用 `dict[str, Any]` 而不是 `TypedDict`**：实体类型由注册表驱动、字段随序列化器走，固定结构已不存在（三工具时代的 `DeviceInfo` 已随重构移除），写假 TypedDict 只会让类型检查放过字段漂移——字段口径的正确性由序列化器 + `tests/mcp/` 保证。工具名是全局平面命名空间，按域前缀（未来 `config_*` / `cloud_*` / `zabbix_*`）防撞名。测试模式：`mcp.Client(server)` 内存传输整链 + `django_db(transaction=True)`。现状：`assets/mcp/` 为**实体注册表形态**——`entities.py` 持 `NodeType` / `EntitySpec`（模型+序列化器+业务键+摘要字段+过滤白名单）与 `EDGES`（正反双向边），`tools.py` 六个薄壳工具（`find` / `list_records` / `get_record` / `bundle` / `relations` / `locate`）只做「spec → queryset → 序列化」，**新增表 = 注册表加一行，工具层零改动**；新增实体类型先进 `NodeType` 占位防拼写分叉。测试 `tests/mcp/test_entity_tools.py`。SDK 依赖 `mcp>=2.3.0`，**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
+- **MCP 工具体系（LLM 出口，与各域 `api/` 平行，住根目录 `llmtools/`）**：`core` 不再承担 MCP，**基建四件**都在 `llmtools/`——`server.py` 的根单例 `mcpserver = MCPServer("netops")`（admin.site 角色）与 `with_db_lifecycle`（工具执行包装：同步工具跑在 AnyIO 短命工作线程，调用前后 `close_old_connections()` 对齐一次 Web 请求的连接生命周期；`@wraps` 必须保留——SDK 沿 `__wrapped__` 读签名生成入参 schema）、`registry.py` 的 `EntitySpec`/`EDGES`、`query.py` 的 QueryPlan 编译器。**注册是集中式**：各域接入在 `llmtools/domains/<域>/`（`specs.py` 实体 + `tools.py` 纯函数，契约 `register()` / `TOOLS`），`llmtools/tools.py` 的 `TOOLS` 汇总名单、统一套 `with_db_lifecycle` 后 `mcpserver.add_tool()`——**工具函数不加 `@mcp.tool()`**（重名在 `register_all()` 启动期即抛错，SDK 默认是静默覆盖）。**没有任何「import 即注册」**：`specs.py` 底部不自动调用 `register()`，声明模块 import 进来是纯的；接线只发生在包初始化 `llmtools/__init__.py`——`assets.register()` + `register_all()` 两句显式调用，asgi / 测试 `import llmtools` 一行接入；对外只给 `mcpserver`（`MCPServer` 实例）与 `build_transport_security`，`mcpserver.streamable_http_app()` 与 lifespan 转发留在 `netops/asgi.py`（本包不认识 Django，也不决定站点装配）。**`__init__` 是组合根、会 import `domains`**：因此 llmtools 的任何子模块导入都必须在 `django.setup()` 之后（`from llmtools.registry import SPEC` 也会连带拉 `assets.models`）；防循环靠导入顺序——基建（`server` / `registry` / `query` / `entity_tools`）先、`domains` 次之、`tools` 最后，而 `domains/*` 只 import `llmtools.registry` / `llmtools.entity_tools`，绝不 import `llmtools.tools` 或包本身。`mcpserver.session_manager` 是懒创建的：`streamable_http_app()` 全进程只调一次，重复调用会替换 manager 使旧 app 失效。**防循环硬规矩**：`server.py` / `registry.py` / `query.py` / `entity_tools.py` 禁止 import 任何业务域与 core 业务模块；`domains/` 是唯一允许 import 业务域的地方（`tools.py` / `__init__.py` 经它聚合）。**工具写法三条**：① 只做「参数校验 → 查库 → 序列化」，字段口径复用 `assets.serializers`；② 同步 `def` 别写 `async def`（事件循环里调 ORM 会 `SynchronousOnlyOperation`）；③ 模型可读的失败抛 `ToolError`（原文达模型、可自我纠正，如「设备不存在：xxx，可先用 find 搜索」），程序 bug 不用管（SDK 泛化为 `Error executing tool …`，traceback 只进服务端日志）。**返回注解用 `dict[str, Any]` 而不是 `TypedDict`**：实体类型由注册表驱动、字段随序列化器走，固定结构已不存在（三工具时代的 `DeviceInfo` 已随重构移除），写假 TypedDict 只会让类型检查放过字段漂移——字段口径的正确性由序列化器 + `tests/mcp/` 保证。工具名是全局平面命名空间，按域前缀（未来 `config_*` / `cloud_*` / `zabbix_*`）防撞名。测试模式：`mcp.Client(server)` 内存传输整链 + `django_db(transaction=True)`。现状：资产域为**实体注册表形态**——`llmtools/domains/assets/specs.py` 持 `NodeType` / `EntitySpec`（模型+序列化器+业务键+摘要字段+过滤白名单）与 `EDGES`（正反双向边），七个工具（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations` / `locate`）只做「spec → queryset → 序列化」，**新增表 = 注册表加一行，工具层零改动**；新增实体类型先进 `NodeType` 占位防拼写分叉。测试 `tests/mcp/test_entity_tools.py`。SDK 依赖 `mcp>=2.3.0`，**`pyproject`/`uv.lock` 变更须重建 `Dockerfile.base`**。
 - **F5 池成员的端口分隔符有两种**：名字是普通串或 IPv4 时用冒号（`/Common/node:80`），名字本身是 IPv6 字面量时 F5 改用一个点号（`/Common/2001:db8::1.80`）。所以 `f5_ltm.ttp` 的 `pools` 里成员有两条备选行（点号那条是回退），**并且端口必须限成纯数字**（`vars` 块里的 `PORT`）——不限的话冒号那条会把 IPv6 成员贪婪切成 `name="/Common/2001:db8:"`、`port="1.80"`，永远轮不到回退行，表现为「端口被相邻成员的值带偏」。
 - **TTP 模板的引擎行为**（细节 + 内置模式表 + 复现脚本：技能 `ttp-template-gotchas`）：① 模板是被当 **XML** 解析的，所以注释是纯文本——注释行里出现尖括号（直接写 `<vars>` / `<group>`）会被当成未闭合标签，整个模板解析失败（`ParseError: mismatched tag`）；② `re()` 的解析顺序是 `vars` → 内置模式表 → **原样当正则**，也就是说**可以内联写正则**（旧笔记里「不能内联写正则」的说法是**错的**，2026-09 实测纠正）；③ **单条命中给 `dict`、多条命中给 `list`**，消费方两种都要兼容（`savers/lb.py` 注释记的正是这个）；④ 内置 `IPV6` 正则只认十六进制与冒号、**不含点号**（`::ffff:192.168.1.1` 匹配不到）。
 - **`parsers/tmpls/running/` 下的模板不在 `ParserFactory` 注册表内**（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、`h3c_route.ttp`），由路径追踪/路由采集接口（`analysis/api/trace.py`）按名称动态调用；它们在页面上显示为「未关联解析器」，但不代表可以删除。

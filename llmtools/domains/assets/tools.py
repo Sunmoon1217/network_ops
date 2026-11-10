@@ -1,6 +1,6 @@
-"""资产域专属 MCP 工具（import 即注册）。
+"""资产域专属 MCP 工具（纯函数，由 ``llmtools.tools`` 统一注册）。
 
-通用工具在 ``core.mcp.tools``（find / list_records / query / get_record / bundle /
+通用工具在 ``llmtools.entity_tools``（find / list_records / query / get_record / bundle /
 relations）；本模块只放必须知道资产域业务语义的工具。当前只有 ``locate``：
 它同时读登记（IPAddress）、观测（ArpMac）与台账（Device / Interface），再做三方
 一致性判断——不是 ``filters`` 能表达的查询。
@@ -13,12 +13,9 @@ from django.db.models import Q
 from django.utils import timezone
 from mcp.server.mcpserver.exceptions import ToolError
 
-import assets.mcp.specs  # noqa: F401 — import 即注册资产域实体
-import core.mcp.tools  # noqa: F401 — 通用工具（find / list_records / query / ...）
 from assets import models
-from assets.mcp.specs import _mac_compact, _mac_variants
-from core.mcp.server import mcp, with_db_lifecycle
-from core.mcp.tools import _detect, _parse_ip
+from llmtools.domains.assets.specs import _mac_compact, _mac_variants
+from llmtools.entity_tools import _detect, _parse_ip
 
 #: 观测数据超过这个时长没刷新就提示「旧数据」，避免拿三个月前的 ARP 下结论
 STALE_HOURS = 24
@@ -33,8 +30,6 @@ def _ip_token_q(ip: str) -> Q:
     return Q(ip_address__iregex=_IP_TOKEN_RE.format(re.escape(ip)))
 
 
-@mcp.tool()
-@with_db_lifecycle
 def locate(target: str, limit: int = 20) -> dict[str, Any]:
     """定位一个 IP / MAC / 主机名「现在在哪」，并把登记与观测的冲突摆出来。
 

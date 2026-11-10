@@ -32,5 +32,10 @@ else:
     raise ImproperlyConfigured(f"未知 DJANGO_ENV={_ENV!r}，可选 dev / container / prod")
 
 APPS_DIR = BASE_DIR / "apps"
+# 根目录也在 sys.path 里：根目录下的 llmtools（LLM 工具出口层）以顶层包出现。
+# 它通常已由 manage.py / 容器 WORKDIR 带进来，但 gunicorn --chdir、从别处跑 pytest
+# 会丢掉它——显式补上，别让出口层的可用性依赖 CWD。
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 if str(APPS_DIR) not in sys.path:
     sys.path.insert(0, str(APPS_DIR))

@@ -12,6 +12,7 @@ WORKDIR /app
 COPY manage.py pyproject.toml uv.lock ./
 COPY netops/ ./netops/
 COPY apps/ ./apps/
+COPY llmtools/ ./llmtools/
 COPY frontend/dist ./frontend/dist
 COPY www ./www
 
