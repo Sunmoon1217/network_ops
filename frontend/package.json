@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "gen-dts": "vite build --mode gen-dts",
+    "prebuild": "pnpm gen-dts",
+    "pretype-check": "pnpm gen-dts",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit"

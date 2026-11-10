@@ -208,6 +208,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **前端三层目录**：`src/shared/`（跨应用公共层，别名 `@`）、`src/netops/`（主站，别名 `@netops`）、
   `src/dashboard/`（大屏，别名 `@dashboard`）。两个入口共用 `src/main.ts`，按页面里的 `#app` /
   `#dashboard` 各自建 app + pinia + router；**共享层不许反向 import 两个应用**。
+- **`auto-imports.d.ts` / `components.d.ts` 不入库，但 `vue-tsc` 必须要它们**：两个文件由 vite
+  插件在 buildEnd 写出，所以 `pnpm build` / `pnpm type-check` 都挂了 `pre*` 钩子先跑
+  `pnpm gen-dts`（= `vite build --mode gen-dts`，产物丢 `node_modules/.cache`、不碰 `dist`）。
+  新 clone 上直接跑 `vue-tsc` 会把 `ref` / `ElMessage` 判成 "Cannot find name"；`.githooks`
+  也在缺文件时自动补一次。**改插件配置（imports / resolvers）后**记得 `pnpm gen-dts`。
 - **前端函数风格**：`.vue` / `.ts` 一律箭头函数，不用 `function` 声明。自检（应无输出）：
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
 - **前端类型集中**：具名 `interface` / `type` / `enum` 全在 `frontend/src/shared/types/`（按域分文件 +
