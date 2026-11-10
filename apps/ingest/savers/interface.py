@@ -57,10 +57,8 @@ class InterfaceSaver(BaseSaver):
                 text = enabled.strip().lower()
                 enabled = None if text == "" else text not in ("0", "false", "disabled", "disable")
             elif isinstance(enabled, (int, float)):
-                # 四家交换机模板（h3c/huawei/maipu/ruijie）统一输出 int：1=启用、
-                # 0=禁用（set(0)/set(1)/default(1)，2026-09 实测三态 1/0/1）。
-                # 旧代码 `enabled == 0` 把方向弄反了：1（启用）→ False、0（禁用）
-                # → True——接口启停状态整体颠倒。
+                # 模板统一输出 int 1=启用 / 0=禁用（保留三态 1/0/1）；
+                # 判反（enabled == 0）会把接口启停整体颠倒。
                 enabled = bool(enabled)
 
             rows.append(

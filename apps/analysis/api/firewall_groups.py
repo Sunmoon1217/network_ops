@@ -34,9 +34,7 @@ _NAT_SCALARS = ("order", "name", "nat_type", "enabled", "description")
 _NAT_TRANSLATED = ("translated_source", "translated_destination", "translated_service")
 
 
-# ---------------------------------------------------------------------------
 # 比较 / 展示助手
-# ---------------------------------------------------------------------------
 
 
 def _address_signature(entry) -> tuple[str, ...]:
@@ -79,9 +77,7 @@ def _translated_name(rule, field: str) -> str:
     return getattr(target, "name", "") or ""
 
 
-# ---------------------------------------------------------------------------
 # 合并：策略 / NAT 规则
-# ---------------------------------------------------------------------------
 
 
 def _merge_policies(group: GroupKey) -> list[dict]:
@@ -187,9 +183,7 @@ def _merge_nat_rules(group: GroupKey) -> list[dict]:
     return rows
 
 
-# ---------------------------------------------------------------------------
 # 过滤 / 搜索 / 排序
-# ---------------------------------------------------------------------------
 
 
 def _policy_haystack(row: dict) -> str:
@@ -256,9 +250,7 @@ def _paginated(rows: list[dict], request):
     return paginator.get_paginated_response(page if page is not None else [])
 
 
-# ---------------------------------------------------------------------------
 # 接口
-# ---------------------------------------------------------------------------
 
 
 @api_view(["GET"])

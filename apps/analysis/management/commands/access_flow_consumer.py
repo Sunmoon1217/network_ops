@@ -3,15 +3,8 @@
 **只能跑一个实例**（消费者组会把消息摊给多个成员，多起一个就变成多写者，
 「先查后合并」的前提就没了）——docker-compose 里的 access-flow-consumer 就是这一个。
 
-处理语义（见 ``analysis/access_stream.py``）：
-
-- 每条消息 = 一台设备的完整重建，事务内「摘旧上下文 + 写新展开」；
-- **入库成功才 XACK**——崩溃时消息留在 PEL，重启后由 XAUTOCLAIM 接管重投，
-  而 handle_message 幂等，重放不脏数据；
-- 处理失败**不 ack**：留在 PEL 等下一轮收尸，失败会在日志里持续可见。
-
-心跳：每轮循环给 ``access_flow:heartbeat`` 盖章（TTL 300s），compose 的 healthcheck
-据死活判断进程是否还活着（光看 PID 不够：死循环卡住时进程还在）。
+每条消息 = 一台设备的完整重建；**入库成功才 XACK**，失败不 ack（留在 PEL 等收尸）。
+心跳语义、XAUTOCLAIM 时机与 cast 的理由见 docs/analysis.md
 """
 
 import signal
@@ -57,16 +50,12 @@ class Command(BaseCommand):
         beat(client)
 
         while not stopping:
-            # 心跳在**每轮开头**盖：语义是「进程还活着」，不能等 xreadgroup 成功——
-            # 读超时走进 except 分支时也得盖章，否则读持续失败会让心跳停更，
-            # healthcheck 把活着的进程判死（反过来心跳新鲜才判死就更拧了）。
+            # 心跳在每轮**开头**盖：语义是「进程还活着」，读超时走 except 也得盖章，
+            # 否则持续失败会让心跳停更、healthcheck 把活着的进程判死。
             beat(client)
             try:
-                # redis 的 xreadgroup 返回类型是宽 Union（XReadGroupResponse 里混着
-                # dict 分支，还叠了 Awaitable）——运行期这里拿到的形状固定是
-                # [(stream, [(msg_id, fields), ...]), ...]，block 超时时是 None。
-                # cast 成真实形状，避免 pyright 对 Union 的每个分支做迭代/解包推断
-                # （会错位报成 "int is not iterable"）。优于 ``# type: ignore``。
+                # xreadgroup 的返回类型是宽 Union（混着 dict / Awaitable 分支）：
+                # 运行期形状固定，cast 成真实形状，免得 pyright 逐分支推断报错。
                 responses = cast(
                     "list[tuple[str, list[tuple[str, dict]]]] | None",
                     client.xreadgroup(GROUP, name, {STREAM: ">"}, count=count, block=block),

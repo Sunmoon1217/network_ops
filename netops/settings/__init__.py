@@ -1,13 +1,7 @@
 """settings 包入口：base 定义（env 动态项唯一一处）→ 按 DJANGO_ENV 白名单选环境文件。
 
-- 环境旋钮唯一：**DJANGO_ENV**（dev = 默认 / container / prod），未知值**直接拒绝启动**
-  ——拼错（如 prd）不许静默落 dev。
-- `DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`：manage/asgi/wsgi/celery 的 setdefault、
-  pytest（pyproject.toml）都指包；容器由 env/app.env 注入 `DJANGO_ENV=container`。
-- 覆盖顺序：`from .base import *` 先、`from .<env> import *` 后 → 环境文件的少数
-  硬差异（prod 的 DEBUG=False、守卫即 import 副作用）胜出；dev 为空壳，无覆盖。
-- 另做两件事：把 base 的两个助手暴露到包上（tests/deploy 直接用
-  netops.settings._env_or_file）、把 apps/ 加进 sys.path（core/ingest/assets/analysis 以顶层包出现）。
+环境旋钮唯一：DJANGO_ENV（dev 默认 / container / prod），未知值直接拒绝启动；覆盖顺序与
+守卫矩阵见 docs/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
 """
 
 import os

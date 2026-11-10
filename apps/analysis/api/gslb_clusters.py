@@ -74,9 +74,7 @@ CLUSTER_EXPORT_HEADERS = [
 CLUSTER_EXPORT_COLUMN_WIDTHS = (28, 24, 10, 14, 10, 10, 16, 22, 24, 20, 8, 24, 12, 12, 14, 14, 10, 12)
 
 
-# ---------------------------------------------------------------------------
 # 集群划分（口径复用 group_merge 的公共层）
-# ---------------------------------------------------------------------------
 
 
 def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = None) -> list[GroupKey]:
@@ -100,9 +98,7 @@ def cluster_options() -> list[dict]:
     ]
 
 
-# ---------------------------------------------------------------------------
 # 合并工具（口径复用 group_merge 的公共层）
-# ---------------------------------------------------------------------------
 
 
 def _uniq_join(values) -> str:
@@ -125,9 +121,7 @@ def _member_scalar(raw: dict, field: str):
     return raw.get(primary, raw.get(fallback))
 
 
-# ---------------------------------------------------------------------------
 # 逐层合并：成员 → 池 → WideIP
-# ---------------------------------------------------------------------------
 
 
 def _merge_members(pool_records, vservers, server_info, hostname, order) -> tuple[list[dict], list[str]]:
@@ -308,9 +302,7 @@ def _merge_cluster(cluster: GroupKey) -> list[dict]:
     return rows
 
 
-# ---------------------------------------------------------------------------
 # 过滤 / 搜索 / 排序（合并后在内存里做：GSLB 数据量小，且合并行的字段跨多表）
-# ---------------------------------------------------------------------------
 
 
 def _row_haystack(row: dict) -> str:
@@ -387,9 +379,7 @@ def _build_rows(request) -> list[dict]:
     return _order_rows(_filter_rows(rows, request), request)
 
 
-# ---------------------------------------------------------------------------
 # 接口
-# ---------------------------------------------------------------------------
 
 
 @api_view(["GET"])

@@ -1,9 +1,8 @@
-"""分析域的 Celery 任务：访问流（AccessFlow）重建——生产者侧。
+"""分析域的 Celery 任务：访问流（AccessFlow）重建——只展开、不写库。
 
-2026-09 由 ingest.tasks 迁入：任务名 ``ingest.rebuild_access_flows`` →
-``analysis.rebuild_access_flows``（settings 的 ``CELERY_TASK_ROUTES`` 同步改）。
-ingest 侧的投递触点 ``ingest.access_flow_trigger`` 按 ``settings.ACCESS_FLOW_TASK``
-字符串 send_task，不 import 本模块——依赖方向 analysis → ingest 单向。
+任务名的唯一定义处是 ``settings.ACCESS_FLOW_TASK``；ingest 侧的投递触点按字符串
+send_task，不 import 本模块（依赖方向 analysis → ingest 单向）。
+参数取舍与背压理由见 docs/analysis.md
 """
 
 import logging
@@ -17,12 +16,11 @@ logger = logging.getLogger(__name__)
 @shared_task(
     bind=True,
     name="analysis.rebuild_access_flows",
-    # 只在本任务上开「执行完才 ack」：worker 崩溃 / 被杀时任务重回队列自动重投。
-    # 展开是幂等投递（消费侧 handle_message 幂等），重投不脏数据。
+    # 执行完才 ack：worker 崩溃/被杀时任务重回队列自动重投（展开是幂等投递）。
     acks_late=True,
     reject_on_worker_lost=True,
-    # 背压与锁竞争都走 countdown=2 的 retry，150 次 ≈ 5 分钟上限——队列持续堵塞时
-    # 必须以可见的 FAILURE 收场，而不是无限重试把问题埋掉。
+    # 背压与锁竞争都走 countdown=2 的 retry，150 次 ≈ 5 分钟上限：持续堵塞必须以可见的
+    # FAILURE 收场，而不是无限重试把问题埋掉。
     max_retries=150,
     default_retry_delay=10,
 )
@@ -36,8 +34,7 @@ def rebuild_access_flows(self, device_id):
     from analysis.access_stream import backlog, device_lock, publish
     from analysis.policy_expand import collect_device_flows
 
-    # 1) 背压：下游积压就退出重试。绝不在任务里 sleep 等待——那会占死这个 worker
-    #    进程，执行队列的进程全被占住就整池瘫痪；self.retry 立即结束任务、释放进程。
+    # 1) 背压：下游积压就退出重试。绝不在任务里 sleep——那会占死 worker 进程。
     try:
         waiting = backlog() > settings.ACCESS_FLOW_MAX_QUEUE
     except Exception as exc:

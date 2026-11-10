@@ -24,17 +24,9 @@ _ACTION_ALIASES = {
 class AddressBookSaver(BaseSaver):
     """地址簿保存器。
 
-    hillstone 模板用动态组名 ``addresses.{{ address_name }}``，产出形如::
-
-        {"addresses": {"office": {"ip": ["10.0.0.0/24"]},
-                       "web": {"host": ["1.1.1.1"],
-                               "range": [["3.3.3.1", "3.3.3.10"]]}}}
-
-    即**地址簿名在字典的键上、不在记录体里**，所以父记录按字典键建
-    （``address_type="addressbook"``），各地址条目作为 ``parent`` 指向它的子记录。
-
-    尚未落库的内容：``address "其他地址簿"`` 这种地址簿引用，模型没有对应字段，
-    只能记进 ``description``。
+    hillstone 用动态组名 ``addresses.{{ address_name }}``，**地址簿名在字典的键上、
+    不在记录体里**：父记录按字典键建（``address_type="addressbook"``），各地址条目作为
+    ``parent`` 指向它。产出形态与尚未落库的内容见 docs/ingest.md
     """
 
     device_types = ["firewall"]
@@ -151,24 +143,9 @@ class AddressBookSaver(BaseSaver):
 class NatRuleSaver(BaseSaver):
     """NAT 规则保存器。
 
-    ``cisco_fw.ttp`` 的 nat group 产出的是 ASA 的 "object network + nat static" 结构::
-
-        {"network_name": "web", "host_ip": "10.0.0.10",
-         "inside_interface": "inside", "outside_interface": "outside",
-         "public_ip": "203.0.113.10"}
-
-    它与 NatRule 模型不是一一对应，映射约定如下：
-
-    - ``name`` ← ``network_name``
-    - ``order`` ← 产出列表序号（模型上是 ``unique(device, order)``，故用它做 upsert 键）
-    - ``nat_type`` 固定 ``dnat``：``nat (inside,outside) static`` 是入向目的地址转换
-    - ``source_addresses`` ← ``host_ip``，先落成 AddressBook 再关联
-    - ``translated_destination`` ← ``public_ip``，同样先落成 AddressBook
-    - ``description`` ← ``nat (inside,outside)`` 的接口对
-    - ``services`` 留空：cisco 的 nat group 给不出任何服务信息
-
-    意味着配置里没写的维度（目标地址、服务）在库里就是空的，这也是这三个
-    M2M 改成 ``blank=True`` 的原因。
+    ``cisco_fw.ttp`` 的 nat group 产出 ASA 的「object network + nat static」结构，
+    与 NatRule 不是一一对应；字段映射表、以及「配置里没写的维度在库里就为空」
+    这条后果，见 docs/ingest.md
     """
 
     device_types = ["firewall"]
@@ -242,11 +219,9 @@ class ServiceSaver(BaseSaver):
         if not entries:
             return (0, 0)
 
-        # 按服务名分组后做**自然键差量**：一个 service 块的多行（tcp 22 / udp 53）
-        # 是同一个名字下的多个端口定义——逐行落库，不再合并进一条 protocol/port。
-        # 差量而不是「先清后建」：在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
-        # 只建缺失、删多余（多余=配置里真删了的端口行，其关联随 PolicySaver 同批
-        # _replace_m2m 全量重建——顺序由 registry.build_saver_payloads 保证本 Saver 先跑）。
+        # 按服务名分组后做**自然键差量**：一个 service 块的多行是同一个名字下的多个端口
+        # 定义，逐行落库不合并；在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
+        # 只建缺失、删多余。细节见 docs/ingest.md
         by_name: dict[str, list[dict]] = {}
         for svc in entries:
             name = str(svc.get("name") or "").strip()
@@ -294,15 +269,9 @@ class ServiceSaver(BaseSaver):
         return (created, updated)
 
     def _entries(self, raw) -> list[dict]:
-        """把产出归一成 ``[{name, protocol, port, ...}]``。
+        """把产出归一成 ``[{name, protocol, port, ...}]``，兼容平铺 / 动态字典 / 带星列表三种形态。
 
-        三种形态（结构级差异，按分层约定留在 Saver，先例 ``AddressBookSaver._entries``）：
-
-        ① 平铺单条 ``{name: ..., protocol: ...}``——手工喂入 / 普通组单条命中；
-        ② 动态字典 ``{服务名: 内容}``——hillstone 模板动态组名
-          ``services.{{ service_name }}`` 的产出，内容单行给 dict、多行给 list
-          （TTP 单/多条规则）；
-        ③ 旧的带星列表 ``[{服务名: 内容}, ...]``——去星前的存量 config_json 兜底。
+        结构级差异按分层约定留在 Saver；三种形态的样例见 docs/ingest.md
         """
         if isinstance(raw, dict):
             return [raw] if "name" in raw else self._expand(raw)
@@ -315,12 +284,9 @@ class ServiceSaver(BaseSaver):
 
     @classmethod
     def _expand(cls, body: dict) -> list[dict]:
-        """``{服务名: 内容}`` → ``[{name: 服务名, **该行字段}, ...]``——**每行一条**。
+        """``{服务名: 内容}`` → ``[{name: 服务名, **该行字段}, ...]``，每行一条。
 
-        多行内容（``tcp dst 22`` + ``udp dst 53``）逐行产出、不合并：合并会把多协议
-        压进一条 protocol/port（udp 语义丢失、port 变成 "22,53" 脏值）——2026-09 修复。
-        src 行单独成行：``port`` 照落端口值、``description`` 标注 ``src: ...`` 保留
-        源端口语义（表里没有独立的源端口字段）。
+        为什么逐行不合并、src 行为什么单独成行：见 docs/ingest.md
         """
         records = []
         for name, content in body.items():
@@ -337,21 +303,9 @@ class ServiceSaver(BaseSaver):
 class PolicySaver(BaseSaver):
     """防火墙策略保存器。
 
-    三种原始产出键（``policies`` / ``acl``（cisco）/ ``rules``（hillstone））与
-    字段差异（``rule_id`` / ``acl_name`` → ``policy_id``、``rule_name`` → ``name``）
-    都已在 ``BaseSaver.save`` 入口由 ``ingest.mapping`` 归一，这里只处理**值语义**
-    与 hillstone 的结构级特征：
-
-    - ``rules``（hillstone）：扁平的分列地址——``src-ip`` / ``src-addr`` / ``src-range`` /
-      ``dst-ip`` / ``dst-addr`` / ``dst-range`` / ``dst-host`` / ``service`` / ``rule_status``
-
-    hillstone 的地址按来源分列，转换约定：
-
-    - ``-ip``：带 ``/`` 是子网（顺带拆出 ``ip_netmask``），不带是主机
-    - ``-addr``：**地址簿引用**，按名字取用；地址簿不存在时先建占位记录，内容留给
-      AddressBookSaver 去填
-    - ``-range``：``"起始 结束"`` 形式，拆成 ``ip_start`` / ``ip_end``
-    - ``-host``：主机地址
+    三类原始键与字段差异已在 ``BaseSaver.save`` 入口由 ``ingest.mapping`` 归一；
+    这里只处理**值语义**（permit→allow、enable/disable→bool）与 hillstone 的
+    分列地址（``-ip`` / ``-addr`` / ``-range`` / ``-host``，约定见 docs/ingest.md）
     """
 
     device_types = ["firewall"]
@@ -367,9 +321,8 @@ class PolicySaver(BaseSaver):
         if not policies:
             return (0, 0)
 
-        # 第一遍只做收集：规则本体，以及它引用到的地址 / 服务。
-        # 同一个地址簿会被大量规则引用，逐条规则各解析一次的话 SELECT + 校验 + 写库
-        # 都要重复付，所以先跨规则去重，再统一批量落库。
+        # 第一遍只收集（规则本体 + 引用到的地址/服务），跨规则去重后统一批量落库：
+        # 同一个地址簿会被大量规则引用，逐条各写一次要重复付 SELECT + 校验 + 写库。
         policy_rows: list[dict] = []
         address_specs: dict[tuple[str, str], dict] = {}
         service_specs: dict[str, None] = {}
@@ -409,9 +362,8 @@ class PolicySaver(BaseSaver):
         if not policy_rows:
             return (0, 0)
 
-        # ---- 地址簿与服务先落库，拿到 pk 供 M2M 使用 ----
-        # 计数只上报策略本身：地址簿 / 服务的账由 AddressBookSaver、ServiceSaver 报，
-        # 这里也计一遍会让流水线汇总重复（与改动前的语义保持一致）
+        # 地址簿与服务先落库，拿到 pk 供 M2M 使用。计数只上报策略本身：
+        # 地址簿/服务的账由各自的 Saver 报，这里再计一遍会让流水线汇总重复。
         self.bulk_upsert(
             AddressBook,
             device,
@@ -420,11 +372,9 @@ class PolicySaver(BaseSaver):
             serializer_cls=AddressBookSerializer,
         )
 
-        # 服务只按名字定位，协议未知时先记 any（等 ServiceSaver 补全）。
-        # 这里不能用 bulk_upsert：它会用 payload 覆盖已有记录，把 ServiceSaver
-        # 填好的 protocol 冲成 any，与原先 get_or_create 的语义不符。
-        # 同名允许多行端口定义（自然键唯一）——dict[name→单pk] 会互相覆盖、策略只挂
-        # 上其中一行，改收集 name→[pks]，引用一个服务名 = 挂它的全部端口行。
+        # 服务只按名字定位，协议未知时先记 any（等 ServiceSaver 补全）；不能用
+        # bulk_upsert——它用 payload 覆盖已有记录，会把 ServiceSaver 填好的 protocol 冲回 any。
+        # 同名可有多行端口定义，所以收集 name→[pks]（挂全部端口行），不能是单 pk。
         ids_by_name: dict[str, list[int]] = {}
         for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
             ids_by_name.setdefault(name, []).append(pk)
@@ -444,7 +394,7 @@ class PolicySaver(BaseSaver):
             )
         }
 
-        # ---- 策略本体批量落库（M2M 不放进 payload，关联表单独批量写）----
+        # 策略本体批量落库；M2M 不放进 payload，关联表单独批量写
         created, updated = self.bulk_upsert(
             Policy, device, policy_rows, key_fields=("policy_id",), serializer_cls=PolicySerializer
         )
@@ -465,12 +415,8 @@ class PolicySaver(BaseSaver):
         self._replace_m2m(Policy, "destination_addresses", destination_map)
         self._replace_m2m(Policy, "services", service_map)
 
-        # 策略落库后重建该设备的访问流（AccessFlow）：投递即返回，真正的展开与入库
-        # 走独立的 access_flow 队列 + 单写者 consumer（见 analysis/access_stream.py）。
-        # broker 不可达只告警不抛出——解析入库已经成功，重建可手工补。
-        # 延迟 import 并走 access_flow_trigger.request_rebuild：它按 settings.ACCESS_FLOW_TASK
-        # 任务名 send_task（不 import analysis，依赖方向单向）；测试靠
-        # ACCESS_FLOW_DISPATCH=0（conftest 统一设置）在这里拦掉真实投递。
+        # 策略落库后重建该设备的访问流：投递即返回，展开与入库走独立队列 + 单写者
+        # consumer（见 docs/analysis.md）。broker 不可达只告警不抛——入库已成功，可手工补。
         from ingest.access_flow_trigger import request_rebuild
 
         request_rebuild(device.pk)

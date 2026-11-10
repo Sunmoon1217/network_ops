@@ -1,12 +1,7 @@
 """清理「配置解析产物」。
 
-背景：配置**原文**只存在一份（Git 仓库），但**解析结果**写进了各资产表，而这些表与
-``DeviceConfig`` 之间**没有任何外键**——所以删 ``DeviceConfig``、删仓库都不会级联清掉
-它们，手工清又容易漏。本命令把「哪些行来自配置解析」集中到一处，并且默认只报告。
-
-「配置解析产物」用 ``ConfigBase.__subclasses__()`` 运行时枚举（当前 24 个模型），
-这个定义是自维护的：新增 Saver 或模型会自动纳入。实测 Saver 代码里写的模型全部都是
-``ConfigBase`` 子类，所以不存在"配了 Saver 但不属于 ConfigBase"的漏网之鱼。
+解析结果落在各资产表里，与 ``DeviceConfig`` 之间没有外键，删记录不会级联清掉，
+所以需要一个显式的清理口。背景、边界与取舍见 docs/ingest.md
 
 用法::
 
@@ -14,15 +9,6 @@
     manage.py purge_configs --device sw-bj-01 --yes            # 真正删除
     manage.py purge_configs --all --yes --with-workflow        # 连 Task/Stage 一起清
     manage.py purge_configs --all --yes --purge-repo           # 连 Git 仓库一起删
-
-边界（报告里也会逐条列出）：
-
-- ``--with-workflow`` 默认关闭：Task/Stage 是工作流历史，但 ``Stage.output_data`` 可能
-  存着配置**全文**（``run_collection_stage`` 会写 ``{"config": ...}``），要清得显式加。
-- ``--purge-repo`` 删的是**整个**仓库，所以强制要求 ``--all``；Git 历史里的原文不做重写。
-- 人工 / Excel / 运行态采集的数据**不会动**。注意 ``Route`` / ``Vrf`` 同时也是运行态采集
-  接口（``/api/trace/route-collect*``）的落点，与配置解析产物共用一张表，按表清无法区分来源。
-- 堆叠组：备机不持有配置，产物记在**主设备**名下，所以 ``--device <备机>`` 会自动折算到主设备。
 """
 
 import logging
@@ -70,10 +56,6 @@ class Command(BaseCommand):
             help="连 Git 配置仓库一起删；会清掉所有设备的原文，因此必须与 --all 同用",
         )
 
-    # ------------------------------------------------------------------
-    # 入口
-    # ------------------------------------------------------------------
-
     def handle(self, *args, **options):
         if options["purge_repo"] and not options["all"]:
             raise CommandError("--purge-repo 会删掉整个仓库（所有设备的原文），只能与 --all 同用")
@@ -109,10 +91,6 @@ class Command(BaseCommand):
             self._purge_repo()
 
         self.stdout.write(self.style.SUCCESS(f"完成：共删除 {deleted_total} 行"))
-
-    # ------------------------------------------------------------------
-    # 目标解析
-    # ------------------------------------------------------------------
 
     def _resolve_owners(self, options) -> list[Device]:
         """把 --device / --all 折算成「配置属主」并按 pk 去重（备机的产物记在主设备名下）。"""
@@ -188,10 +166,6 @@ class Command(BaseCommand):
                 )
             )
         return groups
-
-    # ------------------------------------------------------------------
-    # 报告
-    # ------------------------------------------------------------------
 
     def _print_plan(self, groups) -> list[tuple[str, list[tuple[Any, Any]]]]:
         self.stdout.write("")

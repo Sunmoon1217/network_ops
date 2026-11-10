@@ -1,16 +1,12 @@
 """任务工作流的入口：启动、阶段投递、取消。
 
-阶段之间的推进（collection → parsing → storage）由 ``ingest/signals.py`` 监听 Stage 完成
-事件完成；这里负责**最初的投递**与取消，让「投递」这件事只存在一处。
+阶段之间的推进由 ``ingest/signals.py`` 监听 Stage 完成事件完成；这里负责**最初的投递**
+与取消，让「投递」只存在一处。与 ``tasks.py`` 的分工：那里是纯 celery 任务定义
+（``@shared_task`` 的壳），这里是同步编排 API。
 
-单独成文件而不是塞进 ``ingest/tasks.py``：那里是纯 celery 任务定义（``@shared_task`` 的壳），
-这里是同步的编排 API——建 Task、投下一阶段、把 DeviceConfig 的解析投成链、取消。
-
-导入只按一条线分两处——**运行期是否真的用到这个名字**：``Stage`` / ``Task`` 要调
-``.objects``，所以放模块顶部；``assets.models.Device`` 只出现在类型注解里，放
-``TYPE_CHECKING``（注解因此写成字符串，否则运行期求值时它是未定义的名字）。
-代价是本模块依赖 app registry，只能在 ``django.setup()`` 之后导入；它的四个导入点
-（两个视图、一个信号、一个序列化器）都在运行期，不涉及 app 加载期。
+导入位置按「运行期是否真的用到这个名字」分两处：``Stage`` / ``Task`` 要调 ``.objects``
+放模块顶部，只出现在注解里的 ``Device`` 放 ``TYPE_CHECKING``。代价是本模块只能在
+``django.setup()`` 之后导入（现有导入点都在运行期）。
 """
 
 import logging
@@ -38,9 +34,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # 阶段推进表（collection → parsing → storage）。
-# 值标成 Any 是有意的：celery-stubs 把 ``@shared_task`` 装饰后的函数仍声明为普通函数，
-# 且它的 ``Task`` 上**没有 delay**（只有 si / s / apply_async），所以只有 Any 能让
-# ``.delay()`` 通过类型检查，而不必写 ``# type: ignore``。
+# 值标 Any 是有意的：celery-stubs 把 @shared_task 装饰后的函数仍当普通函数，且它的
+# Task 上没有 delay，只有 Any 能让 .delay() 过检，而不必写 type: ignore。
 _STAGE_TASKS: dict[str, Any] = {
     "collection": run_collection_stage,
     "parsing": run_parsing_stage,
@@ -96,9 +91,8 @@ def submit_config_job(config_id: int) -> None:
     两个任务都要拿到 ``config_id``，所以第二个用 ``.si()``（immutable）：默认的 ``.s()``
     会把上一个任务的返回值当参数传下去，而解析任务的返回值是 None。
     """
-    # celery-stubs 把 @shared_task 装饰后的函数仍声明成普通函数（``Callable[[F], F]``），
-    # 而运行时它其实是 Task 实例（有 .si/.delay）。这里显式 cast 回 Task：既让类型检查通过，
-    # 又保住对 ``.si`` 这个名字的检查（比 ``# type: ignore`` 好）。
+    # 运行时它们是 Task 实例（有 .si/.delay），stubs 只看成普通函数：cast 比 type: ignore
+    # 好，因为保住了对 .si 这个名字的检查。
     parsing = cast("CeleryTask", run_config_parsing)
     storage = cast("CeleryTask", run_config_storage)
 
@@ -115,9 +109,8 @@ def cancel_task(task: Task) -> None:
     """
     if task.celery_task_id:
         try:
-            # celery-stubs 把 ``Celery.control`` 声明成了方法（``def control(self): ...``），
-            # 而它在运行时是 property（返回 Control 实例，**不能调用**）——所以这里 cast 回
-            # 真正的 Control 类型，才能拿到 .revoke 且不写错成 control()。
+            # stubs 把 Celery.control 声明成方法，运行时却是 property（返回 Control，
+            # **不能调用**）：cast 才拿得到 .revoke 又不会写错成 control()。
             control = cast("Control", celery_app.control)
             control.revoke(task.celery_task_id, terminate=True)
         except Exception:

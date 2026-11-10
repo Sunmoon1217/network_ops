@@ -1,28 +1,16 @@
 """访问流（AccessFlow）的生产者-消费者通道：Redis Stream + 单写者入库。
 
-链路（Celery 与本模块各管一段，标识体系互不混用）::
+链路::
 
-    celery worker（analysis.rebuild_access_flows，独立队列 access_flow，多进程并行）
-        展开一台设备的策略 ──XADD──> access_flow_stream
-                                          │
-    access_flow_consumer（独立进程，**唯一**写 AccessFlow 的人）
-        XREADGROUP → 摘旧上下文+合并入库（一个事务）→ 入库成功才 XACK
+    celery worker（analysis.rebuild_access_flows，队列 access_flow，多进程并行展开）
+        ──XADD──> access_flow_stream ──XREADGROUP──> access_flow_consumer（唯一写库者）
+                                                      摘旧上下文 + 合并入库 → 成功才 XACK
 
-为什么单写者：并行**展开**没问题，冲突都在**写库**——同一条访问流可能被多台设备的
-策略命中，多个进程同时「先查后合并」会互相覆盖 contexts。只有一个进程写，就可以
-沿用先查后合并 + bulk，而不需要 ON CONFLICT / 行锁；代价是入库吞吐上限取决于这
-一个进程（本场景单条毫秒级，足够）。
+**单写者**是「先查后合并 + bulk」能成立的前提（并行展开没问题，冲突全在写库），
+也意味着消费者只能跑一个实例。恢复语义、socket_timeout 与积压口径等坑见 docs/analysis.md
 
-恢复语义：XACK 在事务提交**之后**——消费者崩溃时消息留在 PEL，重启后由
-XAUTOCLAIM 接管重投，而 ``handle_message`` 是幂等的（dict 覆盖 + 冗余数组按最终
-状态重算），重放不脏数据。
-
-**消费者只能跑一个实例**：消费者组会把消息分摊给多个成员，多起一个就变成多写者，
-「先查后合并」的前提就没了。
-
-（2026-09 由 ingest 迁入 analysis。任务的**投递触发**不在这里：PolicySaver 在
-ingest 侧经 ``ingest.access_flow_trigger`` 按任务名 send_task——依赖方向
-analysis → ingest 单向，ingest 不许 import analysis。）
+投递触发不在这里：PolicySaver 在 ingest 侧经 ``ingest.access_flow_trigger`` 按任务名
+send_task——依赖方向 analysis → ingest 单向，ingest 不许 import analysis。
 """
 
 from __future__ import annotations
@@ -49,10 +37,9 @@ HEARTBEAT_KEY = "access_flow:heartbeat"
 def as_str(value) -> str:
     """redis 响应值统一转 str。
 
-    本模块的 client 是 ``decode_responses=False``（消息体按 bytes 处理，见 get_redis），
-    于是组名 / 消息 ID / 字段值全是 bytes——直接与 str 常量比较恒为 False（组永远
-    匹配不上），``str(bytes)`` 又会得到 ``"b'...'"`` 伪 ID（喂给 XRANGE 即报
-    Invalid stream ID）。凡读 redis 响应做比较 / 拼接 / 展示的地方，一律过这里。
+    client 是 ``decode_responses=False``，组名/消息 ID/字段值都是 bytes：直接与 str 常量
+    比较恒为 False，``str(bytes)`` 又会得到 ``"b'...'"`` 伪 ID（XRANGE 报 Invalid stream ID）。
+    凡读响应做比较/拼接/展示，一律过这里。
     """
     if value is None:
         return ""
@@ -63,9 +50,8 @@ def as_str(value) -> str:
 def get_redis():
     """进程内共享一个连接池（decode_responses=False：消息体按 bytes 处理）。
 
-    ``socket_timeout`` 必须**大于**消费端 ``XREADGROUP`` 的 ``block``（5s）：两者相等时
-    stream 一空，服务端恰好阻塞满 5s 才回包、客户端 5s 就断读，每轮必抛 TimeoutError
-    （实测消费循环因此空转、心跳停更）。
+    ``socket_timeout`` 必须大于消费端 ``XREADGROUP`` 的 ``block``（5s）：相等时 stream
+    一空就每轮必抛 TimeoutError（消费循环空转、心跳停更）。
     """
     import redis
 
@@ -80,12 +66,9 @@ def stream_maxlen() -> int:
 def backlog() -> int:
     """当前**未投递给消费者**的积压条数——生产者据此做背压判断。
 
-    口径是 XINFO GROUPS 的 ``lag``（从未投递给组内任何成员的条数），**不是 XLEN**：
-    XACK 不删条目，已消费的会一直躺到 XADD 的 maxlen trim 才走——用 XLEN 当积压，
-    「消化完了但条目还躺着」会被误判成积压，背压阈值调低（500）后必然误触发。
-
-    Redis 不可达时返回 0（不背压）：真正的失败会在随后的加锁/投递处暴露并转成重试，
-    这里不该先把任务打断。
+    口径是 XINFO GROUPS 的 ``lag``，**不是 XLEN**：XACK 不删条目，已消费的会躺到 maxlen
+    trim 才走，用 XLEN 会把「消化完了但条目还躺着」误判成积压。Redis 不可达返回 0
+    （不背压）：真正的失败会在随后的加锁/投递处暴露并转成重试。
     """
     try:
         client = get_redis()
@@ -132,11 +115,8 @@ def encode_message(device, flows: list[dict]) -> dict[str, str]:
 
 def publish(device, flows: list[dict], client=None) -> None:
     client = client or get_redis()
-    # redis 8.1 的 xadd 形如 ``fields: Dict[FieldT, EncodableT]``：FieldT/EncodableT 是
-    # **值约束 TypeVar**（只认 str/bytes 等预设项）且嵌在不变（invariant）位置——pyright
-    # 拒绝从具体的 ``dict[str, str]`` 反推约束项（报 "str is not the same as FieldT"）。
-    # 运行期签名完全兼容，cast 掉这个推断限制（与 workflow.py 处理 celery-stubs 同一手法，
-    # 优于 ``# type: ignore``）。
+    # redis 8.1 的 xadd 形如 ``fields: Dict[FieldT, EncodableT]``：FieldT 是值约束 TypeVar
+    # 且嵌在不变位置，pyright 无法从 dict[str, str] 反推——运行期签名兼容，cast 掉即可。
     fields = cast("Any", encode_message(device, flows))
     client.xadd(STREAM, fields, maxlen=stream_maxlen(), approximate=True)
 

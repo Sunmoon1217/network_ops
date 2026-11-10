@@ -1,9 +1,8 @@
 """配置处理流水线：读 Git → 解析 → 分发 Saver。
 
-``signals.py`` 的 post_save 接收器与管理命令 ``reparse`` 共用这一份逻辑。
-抽出来的原因有两个：一是重跑时不必再去伪造 ``created`` 标志骗过信号，
-二是失败原因能作为返回值带出来——信号里只打日志，而批量重跑需要知道
-具体是哪台设备、哪个 key 失败。
+``signals.py`` 的 post_save 接收器与管理命令 ``reparse`` 共用这一份逻辑：
+重跑不必伪造 ``created`` 标志，失败原因也能作为返回值带出来（信号里只打日志）。
+为什么单独成文件：见 docs/ingest.md
 """
 
 from __future__ import annotations

@@ -124,12 +124,9 @@ def route_collect(request):
         logger.error("TTP 解析失败: %s", e)
         return Response({"error": f"TTP 解析失败: {e}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # 保存路由。**整段放进一个事务**：原先 delete 在前、逐条 create 在后，任何一条插入
-    # 失败都会留下「旧路由已删、新路由一条没进」的空表，而异常被吞进 errors，接口还返回
-    # success=true。现在失败会整体回滚并返回非 2xx。
-    #
-    # device 必须显式传：Route.device 自 migration 0023 起是非空外键（与 vrf.device 冗余，
-    # Saver 里也是按 vrf.device 保持一致），漏传会撞 NotNullViolation。
+    # 保存路由。整段放进一个事务：delete 在前、逐条 create 在后时，任何一条插入失败都会
+    # 留下「旧路由已删、新路由一条没进」的空表；现在失败整体回滚并返回非 2xx。
+    # device 必须显式传：Route.device 是非空外键（与 vrf.device 冗余），漏传撞 NotNullViolation。
     vrf, _ = Vrf.objects.get_or_create(device=device, name=vrf_name)
 
     routes_data = parsed[0].get("routes", []) if isinstance(parsed, list) and parsed else []

@@ -321,9 +321,7 @@ class SyslogConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
-# ---------------------------------------------------------------------------
 # SLB (LTM) Serializers
-# ---------------------------------------------------------------------------
 
 
 class LtmVirtualServerSerializer(serializers.ModelSerializer):
@@ -429,9 +427,7 @@ class LtmPersistSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
-# ---------------------------------------------------------------------------
 # GSLB (GTM) Serializers
-# ---------------------------------------------------------------------------
 
 
 class GtmDatacenterSerializer(serializers.ModelSerializer):
@@ -481,9 +477,7 @@ class GtmPoolSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
-# ---------------------------------------------------------------------------
 # Firewall Policy Serializers
-# ---------------------------------------------------------------------------
 
 
 class AddressBookSerializer(serializers.ModelSerializer):
@@ -684,9 +678,7 @@ class NatRuleSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
-# ---------------------------------------------------------------------------
 # IPAM Serializers
-# ---------------------------------------------------------------------------
 
 
 class TagSerializer(serializers.ModelSerializer):

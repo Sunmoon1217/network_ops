@@ -1,13 +1,11 @@
-"""信号处理。
+"""信号处理：DeviceConfig 与 Stage 的 post_save 联动。
 
-1. DeviceConfig post_save：默认走 ``ingest.pipeline.run_config_pipeline`` **同步**处理
-   （从 Git 读原文 → 解析 → 写回 config_json → 分发 Saver 入库）。
-   批量导入（``assets.api.views._import_configs``）会在 save 之前给实例挂上
-   ``_defer_pipeline = True``，这条信号就跳过同步处理，由调用方投递 celery 链。
-2. Stage post_save：阶段成功后触发下一阶段的 Celery 任务
-   （collection → parsing → storage；storage 完成后收尾 Task）。
-   任务已取消（``status == "cancelled"``）时不再推进——这是「取消」能真正停住链条的
-   保证（``ingest.workflow.cancel_task`` 里的 revoke 只是尽力而为）。
+1. DeviceConfig：默认**同步**跑 ``ingest.pipeline.run_config_pipeline``；批量导入会在
+   save 之前挂 ``_defer_pipeline = True`` 跳过，由调用方投递 celery 链。
+2. Stage：阶段成功后触发下一阶段（collection → parsing → storage，storage 完成即收尾 Task）；
+   任务已取消时不再推进——这是「取消」能真正停住链条的保证。
+
+推进表、取消语义与防重入的细节见 docs/ingest.md
 """
 
 import logging
@@ -25,11 +23,6 @@ _processing_stage: set[int] = set()
 
 # 阶段推进表（storage 是最后一个阶段，不在表里）
 _NEXT_STAGE = {"collection": "parsing", "parsing": "storage"}
-
-
-# ---------------------------------------------------------------------------
-# Stage 阶段联动
-# ---------------------------------------------------------------------------
 
 
 @receiver(post_save, sender="core.Stage")
@@ -74,11 +67,6 @@ def on_stage_complete(sender, instance, **kwargs):
         logger.error("Stage %s 联动失败: %s", instance.pk, e, exc_info=True)
     finally:
         _processing_stage.discard(instance.pk)
-
-
-# ---------------------------------------------------------------------------
-# DeviceConfig post_save
-# ---------------------------------------------------------------------------
 
 
 @receiver(post_save, sender="assets.DeviceConfig")

@@ -109,6 +109,8 @@ network_ops/
 │   ├── ssl/             # TLS 证书（不入库）
 │   └── gen-self-signed-cert.sh
 ├── www/                 # collectstatic 产物（不入库，镜像构建时 COPY 进 app）
+├── docs/                # 设计说明：代码里放不下的长解释（环境变量、链路、复盘、映射约定）
+│                        # 索引见 docs/README.md；不进镜像（.dockerignore）
 ├── env/                 # 给容器的配置：按服务分的 env 文件（app/db/gunicorn/celery.env）+ secrets/（密钥，不入库）
 ├── tmp/
 ├── docker/
@@ -479,7 +481,7 @@ tags, subnets, ip-addresses
 |------|------|
 | `/api/docs/spreadsheets/` | 通用表格工作簿列表 / 上传 xlsx 建簿（原 `/api/sheets/`，随 sheets→docs 改名迁到此前缀） |
 | `/api/docs/spreadsheets/<id>/`、`/export/`、`/revisions/…` | 详情 / 保存编辑 / 导出 xlsx / 修改历史与回滚（同前） |
-| `/api/docs/documents/` | 文档列表 / **上传转换**（multipart：`file` 主文档 + `attachments` 图片附件）；转换规则见 `docs/convert.py` 模块注释（无图→md、含图→base64 自包含 html、pdf 直传） |
+| `/api/docs/documents/` | 文档列表 / **上传转换**（multipart：`file` 主文档 + `attachments` 图片附件）；转换规则见 `docs/docs-domain.md`（无图→md、含图→base64 自包含 html、pdf 直传） |
 | `/api/docs/documents/<id>/` | 详情（含转换产物）/ **编辑产物**（PUT，落新版本快照）/ 删除 |
 | `/api/docs/documents/<id>/preview/` | 查看用渲染产物（md 由后端 markdown 库渲染 html，前端沙箱 iframe 展示） |
 | `/api/docs/documents/<id>/download/` | 源文件下载（docx/pdf 等原文件留档） |

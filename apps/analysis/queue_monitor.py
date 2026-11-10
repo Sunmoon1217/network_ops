@@ -1,34 +1,15 @@
 """队列积压巡检：Celery 队列 + 访问流 Stream + 消费者心跳的只读监控。
 
-为什么需要它：访问流链路是「celery 队列 → Redis Stream → 单写者 consumer」三段接力，
-任何一段卡死（worker 挂了 / consumer OOM 循环 / 毒消息反复重投）都表现为**静默积压**——
-2026-10 的实盘事故就是 Stream 里 47 条消息无人消化、consumer 反复 OOM 重启，而外部
-没有任何信号。本模块把三段的关键指标一次性采出来，供三个出口共用：
+访问流链路任何一段卡死都表现为**静默积压**（2026-10 实盘事故：47 条积压 + consumer
+反复 OOM 重启，外部没有任何信号），本模块把三段的关键指标一次采出来，供
+``manage.py queue_status``、``manage.py queue_backlog`` 与 ``/api/analysis/queue-status/``
+三个出口共用；生产者背压用的是独立的 ``access_stream.backlog()``。
 
-- ``manage.py queue_status``：人看表格 / ``--json`` 机器可读，超阈值退出码 1（可接 cron 告警）；
-- ``/api/analysis/queue-status/``：前端 Home 页的积压监控卡片轮询；
-- ``manage.py queue_backlog``：积压**明细**（``collect_backlog``）——数量告警之外
-  回答「积压了哪些」：各队列排队消息（解码任务名/参数）、Stream 待确认与未投递
-  条目（点名设备）；
-- 生产者背压：``access_stream.backlog()``（那是独立函数，本模块只读不干预）。
+采集全是 O(1) 的 Redis 命令，不碰 worker、不碰数据库。**指标口径与阈值见
+docs/analysis.md**（lag 不是 XLEN、unacked 是执行中、top_pending 是毒消息信号）。
 
-采集全部是 O(1) 的 Redis 命令（LLEN / HLEN / XLEN / XINFO GROUPS / XPENDING 明细
-限量 50 条 / GET），不碰 worker、不碰数据库，轮询频率 30s 也无压力。
-
-指标口径（别改坏）：
-
-- ``queues``：celery 各队列的 LLEN——**排队未执行**的任务数；
-- ``unacked``：``unacked`` hash 的 HLEN——已取走未确认的**执行中**任务数（worker
-  死掉会滞留，是 worker 故障的先行指标）；
-- ``stream.lag``：XINFO GROUPS 的 ``lag``——**从未投递给消费者**的积压（真实待消费量；
-  XLEN 含已 ack 未 trim 的条目，不能当积压用，见 ``access_stream.backlog`` 的同款修正）；
-- ``stream.pending``：PEL 条数——已投递未确认（含正在处理的 + 卡住的）；
-- ``stream.top_pending``：按重投次数排序的前 5 条——``deliveries`` 高就是毒消息
-  （consumer 反复失败不 ack、XAUTOCLAIM 反复捞回的形态）；
-- ``heartbeat_age``：``access_flow:heartbeat`` 距今秒数——consumer 活性的唯一外部信号。
-
-Redis 不可达时**不抛异常**：返回 ``redis_ok=False`` + critical 告警——监控自身炸掉
-比被监控对象炸掉更没意义。
+Redis 不可达时不抛异常：返回 ``redis_ok=False`` + critical 告警——监控自身炸掉比被监控
+对象炸掉更没意义。
 """
 
 from __future__ import annotations
@@ -185,11 +166,6 @@ def evaluate(stats: dict, thresholds: dict | None = None) -> list[dict]:
     elif heartbeat > t["heartbeat_stale"]:
         add("warning", "heartbeat_stale", f"访问流消费者心跳已 {int(heartbeat)}s 未更新（阈值 {t['heartbeat_stale']}s）")
     return alerts
-
-
-# ---------------------------------------------------------------------------
-# 积压明细（collect_backlog）：数量告警之外回答「积压了哪些」
-# ---------------------------------------------------------------------------
 
 
 def _celery_brief(raw) -> dict:

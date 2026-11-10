@@ -1,23 +1,7 @@
-"""结构化查询计划（MCP 的「受控 ORM」编译入口）。
+"""结构化查询计划（MCP 的「受控 ORM」编译入口）：QueryPlan（纯数据）→ 白名单校验的 QuerySet。
 
-``list_records`` 的 ``filters`` 是「别名 → 单值」的简单过滤，表达不了 AND/OR、
-多字段排序、字段投影与 offset。本模块补这一层：把调用方给的 ``QueryPlan``（纯数据）
-编译成经过白名单校验的 ``QuerySet``，**不接受任何 ORM 字符串或任意 ``__`` 查找**。
-
-安全口径与 ``entities.Filter`` 一致，只是把「别名」换成真实字段路径：
-
-- 过滤字段：只允许 ``EntitySpec.filters`` 里声明过的路径（含多跳，如
-  ``device_model__vendor__name``）与业务键；
-- 排序字段：只允许 ``EntitySpec.order``、业务键与 ``id``；
-- 投影字段：默认摘要，``fields=["*"]`` 才给全字段；
-- 操作符：``exact/iexact/icontains/istartswith/gte/lte/in/isnull``。
-
-路径仍逐段过 ``_meta.get_field``：spec 写错时在编译期就报错，而不是把
-``FieldError`` 抛给调用方。
-
-**权限钩子**：``EntitySpec.base_queryset`` 为空时按全库查询（当前内网可信部署）。
-将来给 MCP 接上用户身份后，只需在 spec 上挂一个「按 request 过滤」的函数，编译器
-会以它为起点——权限条件永远不来自调用方输入。
+**不接受任何 ORM 字符串或任意 ``__`` 查找**。字段/排序/投影白名单与权限钩子的口径见
+docs/llmtools.md
 """
 
 from collections.abc import Iterable
@@ -65,9 +49,7 @@ class QueryPlan:
     offset: int = 0
 
 
-# ---------------------------------------------------------------------------
 # 白名单
-# ---------------------------------------------------------------------------
 
 
 def _filter_fields(spec: EntitySpec) -> set[str]:
@@ -123,9 +105,7 @@ def _check_projection(spec: EntitySpec, fields: tuple[str, ...] | None) -> None:
         raise ToolError(f'{spec.node_type} 不能投影字段 {", ".join(unknown)}；可选字段 {_options(allowed)}，要全字段请传 fields=["*"]')
 
 
-# ---------------------------------------------------------------------------
 # 解析
-# ---------------------------------------------------------------------------
 
 
 def _filter_spec(raw: Any, index: int) -> FilterSpec:
@@ -211,9 +191,7 @@ def parse_plan(spec: EntitySpec, raw: dict[str, Any]) -> QueryPlan:
     )
 
 
-# ---------------------------------------------------------------------------
 # 编译
-# ---------------------------------------------------------------------------
 
 
 def _lookup_q(item: FilterSpec) -> Q:
@@ -255,9 +233,7 @@ def compile_plan(plan: QueryPlan, *, spec: EntitySpec | None = None, request: An
     return qs
 
 
-# ---------------------------------------------------------------------------
 # 输出
-# ---------------------------------------------------------------------------
 
 
 def project(spec: EntitySpec, obj: Any, fields: tuple[str, ...] | None) -> dict[str, Any]:

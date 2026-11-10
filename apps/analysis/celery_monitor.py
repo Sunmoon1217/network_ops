@@ -34,12 +34,8 @@ from netops.celery import app as celery_app
 
 logger = getLogger(__name__)
 
-#: inspect 广播超时（秒）：应答在健康 broker 上是毫秒级，这只是「多久没动静算没有」。
-#:
-#: 为什么是 0.5 而不是更长：kombu 的收包循环在**没有 limit** 时，收满现有应答后还要把
-#: 整个 timeout 等满才返回（见 collect docstring）——ping 这一步省不掉这一次等待，而
-#: 前端 axios 是 10s。0.5s × (1 次 ping + 其余段) 远在预算内；worker 从 ping 到
-#: pong 的 RTT 是局域网毫秒级，0.5s 对健康集群绰绰有余。
+#: inspect 广播超时（秒）。kombu 在没有 limit 时会等满整个 timeout 才返回，而前端 axios
+#: 是 10s——0.5s 既在预算内（局域网 RTT 是毫秒级），又不至于把慢应答误判成没应答。
 INSPECT_TIMEOUT = 0.5
 
 #: active 任务的 args/kwargs 展示上限（字符），防整份配置原文进响应

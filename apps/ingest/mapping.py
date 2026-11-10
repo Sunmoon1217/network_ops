@@ -1,29 +1,9 @@
-"""解析器产出 → Saver → 模型 的关联映射层。
+"""解析器产出 → Saver → 模型 的关联映射层：把厂商间的键级/字段级差异收敛成声明表。
 
-不同厂商 / 类型的解析器解析出的**同一语义关键字**，内部结构并不一致：
+由 :meth:`ingest.savers.base.BaseSaver.save` 在入口统一归一（键先归一、记录字段再归一），
+子类 ``_save`` 只读规范字段。
 
-- **键级差异**：H3C 产出 ``vpn_instances``、Cisco 产出 ``acl``、Hillstone 产出
-  ``rules`` / ``addresses``——语义上分别是 vrfs / policies / address_books。
-- **字段级差异**：Maipu / Ruijie 的静态路由用 ``subnet_mask``，其余厂商用 ``mask``；
-  Hillstone 规则的 ``rule_id`` / ``rule_name``、Cisco ACL 的 ``acl_name``
-  对不上 PolicySaver 期望的 ``policy_id`` / ``name``。
-
-本模块把这两类差异收敛成**声明式字典**，由 :meth:`ingest.savers.base.BaseSaver.save`
-在入口统一归一（键先归一、记录字段再归一），子类 ``_save`` 只读规范字段——
-即「相同关键字的不同内部接口，经 Saver 归一后映射到统一模型」。
-
-分层约定（越界即混层）：
-
-1. **键级 / 字段级结构归一** → 本模块的声明表；
-2. **值语义转换**（permit→allow、enable/disable→bool、route→layer3）→ 留在
-   Saver 内部——那是业务规则，不是结构改名，混进声明表会被误读成"字段同义"；
-3. **结构级差异**（SNMP 的 community / target_hosts 两种形态、Hillstone 扁平
-   地址拆 AddressBook）→ 留在 Saver——需要遍历 / 拼接，声明表表达不了。
-
-声明表**不带厂商维度**：同一规范键下的字段同义性是"键的字段字典"级别的事实
-（``static_routes`` 下 ``subnet_mask`` 恒等于 ``mask``，无论谁产出），按厂商拆
-反而会让无型号的 device（测试里常见）归一失败。未来若真出现"同名字段在不同
-厂商下含义不同"，再给 :data:`FIELD_ALIASES` 加厂商维度。
+分层约定（哪些差异该留在 Saver）、为什么声明表不带厂商维度：见 docs/ingest.md
 """
 
 from __future__ import annotations
@@ -31,10 +11,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# 键级归一：解析器产出的原始顶层键 → 规范键（Saver / 模型侧的统一关键字）
-# ---------------------------------------------------------------------------
-# 源键必须有真实生产者（模板顶层 group），目标键必须有 Saver 消费，
+# 键级归一：原始顶层键 → 规范键。源键必须有真实生产者、目标键必须有 Saver 消费，
 # 否则就是死别名——由 tests/ingest/test_mapping.py 守。
 KEY_ALIASES: dict[str, str] = {
     # H3C 模板的顶层 group 叫 vpn_instances，模型侧统一叫 vrfs
@@ -46,11 +23,7 @@ KEY_ALIASES: dict[str, str] = {
     "addresses": "address_books",
 }
 
-# ---------------------------------------------------------------------------
-# 字段级归一：规范键 → {原始字段名: 规范字段名}
-# ---------------------------------------------------------------------------
-# 规范字段 = 模型 / Saver 侧的统一字段名（多数模板的产出形态）。
-# 只做**纯改名**：值语义转换不进这张表（见模块 docstring 的分层约定）。
+# 字段级归一：规范键 → {原始字段名: 规范字段名}。只做纯改名，值语义转换不进这张表。
 FIELD_ALIASES: dict[str, dict[str, str]] = {
     "static_routes": {
         # Maipu / Ruijie：ip route {{ network }} {{ subnet_mask }} {{ next_hop }}
@@ -92,11 +65,10 @@ def _as_list(value: Any) -> list:
 
 
 def _merge(left: Any, right: Any) -> Any:
-    """同一语义键的两份产出按**记录拼接**（如 config 同时出现 policies 与 acl）。
+    """同一语义键的两份产出按记录拼接（如 config 同时出现 policies 与 acl）。
 
-    拼接而不是字段合并：别名键的两份产出是**两条独立记录**（TTP 单条命中给
-    dict，若 dict 与 dict 合并字段会把两条规则揉成一条）。消费方（Saver）
-    本就要兼容 dict / list 两种形态，拉平成列表是安全的。
+    拼接而不是字段合并：两份产出是两条独立记录，字段合并会把两条规则揉成一条；
+    消费方本就要兼容 dict / list，拉平成列表是安全的。
     """
     if not left:
         return right
@@ -134,11 +106,6 @@ def normalize_config(config_json: dict) -> dict:
         merged[target] = _merge(merged.get(target), value)
 
     return {key: _rename_fields(value, FIELD_ALIASES.get(key, {})) for key, value in merged.items()}
-
-
-# ---------------------------------------------------------------------------
-# Saver → 模型 关联
-# ---------------------------------------------------------------------------
 
 
 def resolve_models(model_paths: list[str]) -> list[type]:
