@@ -23,7 +23,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models import IntegerField, Q, QuerySet
 from mcp.server.mcpserver.exceptions import ToolError
 
 #: 单页上限；超过这个数 LLM 也读不完，只是烧 token
@@ -227,8 +228,29 @@ def key_value(spec: EntitySpec, obj: Any) -> str:
     return "" if value is None else str(value)
 
 
+def business_key_q(spec: EntitySpec, text: str) -> Q | None:
+    """业务键的查询条件：数字键（VLAN 的 ``vid``）必须走 exact 交给字段转 int。
+
+    ``vid__iexact`` 在 PostgreSQL 上会变成对整数列做 ``UPPER()``，直接报 SQL 错误；
+    而纯数字又可能是主键，所以键的类型必须由模型字段决定，不能一律按文本比。
+    """
+    if spec.model is not None:
+        try:
+            field = spec.model._meta.get_field(spec.key)
+        except FieldDoesNotExist:  # pragma: no cover - spec 写错时由 query 层的路径校验兜住
+            field = None
+        if isinstance(field, IntegerField):
+            return Q(**{spec.key: text}) if text.isdigit() else None
+    return Q(**{f"{spec.key}__iexact": text})
+
+
 def resolve_one(spec: EntitySpec, key: str, device: str = "") -> Any:
-    """按业务键取单条（scoped 类型必须给 device）。"""
+    """按业务键取单条（scoped 类型必须给 device）。
+
+    **业务键优先于主键**：数字业务键（VLAN 的 vid）不能被同号主键抢走——``key="1"``
+    曾经在「vid=7 的记录恰好 pk=1」时返回错的那条。只有业务键查不到时才把纯数字
+    当 id 兜底（方便从其它工具返回的 id 直接跳过来）。
+    """
     text = (key or "").strip()
     if not text:
         raise ToolError(f"{spec.node_type} 的 key 不能为空（业务键是 {spec.key}）")
@@ -237,6 +259,12 @@ def resolve_one(spec: EntitySpec, key: str, device: str = "") -> Any:
         if not device:
             raise ToolError(f"{spec.node_type} 需要 device 参数（主机名）限定：{spec.key} 只在单台设备内唯一")
         qs = qs.filter(device__hostname__iexact=device.strip())
+    # gettable=False 的实体业务键不唯一（arp_mac 是 设备+IP+MAC），按 key 取只能随便给一条
+    cond = business_key_q(spec, text) if spec.gettable else None
+    if cond is not None:
+        hit = qs.filter(cond).first()
+        if hit is not None:
+            return hit
     if text.isdigit():
         hit = qs.filter(pk=int(text)).first()
         if hit is not None:
@@ -246,11 +274,8 @@ def resolve_one(spec: EntitySpec, key: str, device: str = "") -> Any:
             f"{spec.label}不能按 {spec.key} 直接取：它不唯一（真实键是 设备+{spec.key}+更多字段）。"
             f"请用 list_records(entity_type='{spec.node_type}', filters=...)、locate，或传数字主键 id"
         )
-    hit = qs.filter(**{f"{spec.key}__iexact": text}).first()
-    if hit is None:
-        options = " / ".join(sorted(spec.filters)) or "(无)"
-        raise ToolError(f"{spec.label}不存在：{text}；{spec.key} 需精确匹配，可先用 find 定位，或用 list_records(entity_type='{spec.node_type}') 按 {options} 过滤")
-    return hit
+    options = " / ".join(sorted(spec.filters)) or "(无)"
+    raise ToolError(f"{spec.label}不存在：{text}；{spec.key} 需精确匹配，可先用 find 定位，或用 list_records(entity_type='{spec.node_type}') 按 {options} 过滤")
 
 
 def edges_from(node_type: str) -> list[Edge]:
@@ -283,6 +308,7 @@ __all__ = [
     "EntitySpec",
     "Filter",
     "apply_filters",
+    "business_key_q",
     "clear_registry",
     "edge_named",
     "edge_options",

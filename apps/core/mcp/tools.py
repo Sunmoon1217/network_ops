@@ -242,6 +242,10 @@ def list_records(
         raise ToolError(f"{entity_type} 不支持按 {order} 排序；可选值 {options}")
 
     qs = spec.queryset()
+    # spec.queryset() 贴的是声明里的默认排序；调用方指定的 order 必须显式覆盖，
+    # 否则「校验通过但没生效」——静默给出错误顺序比报错更坑
+    if order:
+        qs = qs.order_by(order)
     qs, _ = apply_filters(spec, qs, parse_filters(spec, filters))
     total = qs.count()
     rows = [to_dict(spec, obj, full=detail) for obj in qs[start:stop]]

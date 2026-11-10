@@ -6,6 +6,7 @@ relations）；本模块只放必须知道资产域业务语义的工具。当�
 一致性判断——不是 ``filters`` 能表达的查询。
 """
 
+import re
 from typing import Any
 
 from django.db.models import Q
@@ -21,6 +22,15 @@ from core.mcp.tools import _detect, _parse_ip
 
 #: 观测数据超过这个时长没刷新就提示「旧数据」，避免拿三个月前的 ARP 下结论
 STALE_HOURS = 24
+
+#: 接口 IP 按「独立地址 token」匹配：前后不能紧邻十六进制字符或点/冒号。
+#: 用 icontains 时查 10.0.1.5 会把 10.0.1.50 / 10.0.1.55 一起捞回来（假阳性台账），
+#: 而接口字段里常是 ``10.0.1.5/24`` 这种带前缀的写法，所以不能退化成等值比较。
+_IP_TOKEN_RE = r"(^|[^0-9A-Fa-f:.])({})([^0-9A-Fa-f:.]|$)"
+
+
+def _ip_token_q(ip: str) -> Q:
+    return Q(ip_address__iregex=_IP_TOKEN_RE.format(re.escape(ip)))
 
 
 @mcp.tool()
@@ -44,7 +54,8 @@ def locate(target: str, limit: int = 20) -> dict[str, Any]:
 
     返回：{target, kind, registry, observations, observed_total, devices, interfaces,
     conflicts, stale}。``registry`` 为 null 表示地址没登记；``stale=true`` 表示观测
-    超过 24 小时没刷新，结论要打折。
+    超过 24 小时没刷新，结论要打折。``interfaces`` 按**地址 token** 匹配：
+    ``10.0.1.5/24`` 算命中，``10.0.1.50`` 不算（不做子串匹配）。
     """
     text = (target or "").strip()
     if not text:
@@ -84,7 +95,7 @@ def locate(target: str, limit: int = 20) -> dict[str, Any]:
             }
         observations = models.ArpMac.objects.filter(ip_address=ip).select_related("device").order_by("-updated_at")
         devices = models.Device.objects.filter(ip_address=ip)
-        interfaces = models.Interface.objects.filter(ip_address__icontains=ip)
+        interfaces = models.Interface.objects.filter(_ip_token_q(ip))
     else:
         devices = models.Device.objects.filter(Q(hostname__icontains=text) | Q(remark__icontains=text))
 

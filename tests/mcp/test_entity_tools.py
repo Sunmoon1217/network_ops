@@ -28,6 +28,7 @@ from assets.models import (
     Interface,
     IPAddress,
     Vendor,
+    Vlan,
 )
 from netops.mcp_server import mcp as netops_mcp
 
@@ -139,6 +140,20 @@ def test_list_records_rejects_bad_pagination_and_order():
     assert "不支持按" in _error(_call_tool("list_records", {"entity_type": "device", "order": "remark"}))
 
 
+def test_list_records_applies_requested_order():
+    """order 必须真正覆盖 spec 的默认排序，不能只校验不生效（静默给错顺序最坑）。"""
+    first = _make_device("NET-A01", "switch")
+    second = _make_device("NET-B01", "switch")
+    Interface.objects.create(device=first, interface="Zif", mode="access")
+    Interface.objects.create(device=second, interface="Aif", mode="access")
+
+    default = _data(_call_tool("list_records", {"entity_type": "interface", "filters": {"mode": "access"}}))
+    assert [row["interface"] for row in default["rows"]] == ["Zif", "Aif"]  # device__hostname, interface
+
+    ordered = _data(_call_tool("list_records", {"entity_type": "interface", "filters": {"mode": "access"}, "order": "interface"}))
+    assert [row["interface"] for row in ordered["rows"]] == ["Aif", "Zif"]
+
+
 # ---------------------------------------------------------------------------
 # get_record / bundle
 # ---------------------------------------------------------------------------
@@ -169,6 +184,23 @@ def test_get_record_scoped_types_require_device():
     data = _data(_call_tool("get_record", {"entity_type": "interface", "key": "Gi1/0/1", "device": "NET-SW01"}))
     assert data["record"]["interface"] == "Gi1/0/1"
     assert data["record"]["device_hostname"] == "NET-SW01"
+
+
+def test_get_record_numeric_key_beats_primary_key():
+    """VLAN 的 vid 是数字业务键：key=<数字> 必须命中 vid，而不是同号主键那条。
+
+    构造方式不依赖自增序列：先建一条「主键 = X、vid 是别的值」的记录，再把另一条的
+    vid 设成 X，于是同一个数字既是主键又是业务键，两者指向不同记录。
+    """
+    device = _make_device("NET-SW01", "switch")
+    wrong = Vlan.objects.create(device=device, vid=999999)  # 主键 X，业务键不是 X
+    wanted = Vlan.objects.create(device=device, vid=1)
+    wanted.vid = wrong.pk
+    wanted.save(update_fields=["vid"])
+
+    data = _data(_call_tool("get_record", {"entity_type": "vlan", "key": str(wrong.pk), "device": "NET-SW01"}))
+
+    assert data["record"]["vid"] == wrong.pk  # 命中 wanted；按主键取会拿到 vid=999999 那条
 
 
 def test_get_record_missing_and_bad_include():
@@ -269,3 +301,15 @@ def test_locate_flags_mac_mismatch_across_devices():
 
 def test_locate_rejects_network_input():
     assert "只接受单个地址" in _error(_call_tool("locate", {"target": "10.0.0.0/24"}))
+
+
+def test_locate_matches_interface_ip_by_token():
+    """查 10.0.1.5 不能把 10.0.1.50 的接口台账一起捞回来（子串匹配会假阳性）。"""
+    device = _make_device("NET-SW01", "switch")
+    Interface.objects.create(device=device, interface="Gi1/0/1", ip_address="10.0.1.5/24")
+    Interface.objects.create(device=device, interface="Gi1/0/2", ip_address="10.0.1.50")
+    ArpMac.objects.create(device=device, ip_address="10.0.1.5", mac_address="aa:bb:cc:dd:ee:07")
+
+    data = _data(_call_tool("locate", {"target": "10.0.1.5"}))
+
+    assert [row["interface"] for row in data["interfaces"]] == ["Gi1/0/1"]
