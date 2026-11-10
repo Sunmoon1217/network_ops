@@ -2,6 +2,7 @@
 
 import logging
 import time
+from functools import lru_cache
 
 from celery import shared_task
 from django.utils import timezone
@@ -190,3 +191,84 @@ def run_config_storage(self, config_id):
     except Exception:
         logger.exception("Config storage failed: %s", config_id)
         raise
+
+
+# ---------------------------------------------------------------------------
+# Dashboard 采集任务：采集与存储分离（采集编排见 ingest/collectors/dashboard.py）
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def _dashboard_redis():
+    """C 方案下中转 payload 的连接池；A 方案不会调用到。"""
+    import redis
+    from django.conf import settings
+
+    return redis.from_url(settings.REDIS_URL, socket_timeout=10, socket_connect_timeout=5)
+
+
+def _deliver(payload):
+    """A：payload 随消息直接投递；C：payload 写 Redis，只把 key 交给写库任务。"""
+    import json
+    from uuid import uuid4
+
+    from django.conf import settings
+
+    if not settings.DASHBOARD_PAYLOAD_VIA_REDIS:
+        return payload
+    key = f"dashboard:batch:{uuid4().hex}"
+    _dashboard_redis().set(key, json.dumps(payload), ex=settings.DASHBOARD_PAYLOAD_TTL)
+    return {"__redis_key__": key}
+
+
+@shared_task(name="ingest.collect_dashboard")
+def collect_dashboard(source):
+    """采集一个数据源 → 按任务名投递给 analysis 的写库任务；**本任务不写数据库**。
+
+    ingest 侧只认 ``settings.DASHBOARD_WRITE_TASK`` 这个字符串（与 access_flow_trigger
+    同一套接缝），绝不 import analysis；async 采集与同步投递分开，ORM 不会进 event loop。
+    采集失败仍投递一条 failed 记录让大屏可见数据新鲜度，随后向上抛让 Celery 记 FAILURE。
+    """
+    import asyncio
+
+    from celery import current_app
+    from django.conf import settings
+    from django.utils import timezone
+
+    from ingest.collectors.dashboard import DashboardPayload, collect
+
+    failed: Exception | None = None
+    payload: DashboardPayload
+    try:
+        payload = asyncio.run(collect(source))
+    except Exception as exc:
+        logger.exception("Dashboard 采集任务异常: source=%s", source)
+        failed = exc
+        now = timezone.now().isoformat()
+        payload = {
+            "source": source,
+            "batch_at": now,
+            "metrics": [],
+            "samples": [],
+            "cases": [],
+            "run": {"status": "failed", "item_count": 0, "started_at": now, "finished_at": now, "error": str(exc)},
+        }
+
+    current_app.send_task(settings.DASHBOARD_WRITE_TASK, args=[_deliver(payload)])
+    if failed is not None:
+        raise failed
+
+    logger.info(
+        "Dashboard 采集已投递: source=%s, metrics=%d, samples=%d, run=%s",
+        source,
+        len(payload["metrics"]),
+        len(payload["samples"]),
+        payload["run"]["status"],
+    )
+    return {
+        "source": source,
+        "run": payload["run"],
+        "metrics": len(payload["metrics"]),
+        "samples": len(payload["samples"]),
+        "cases": len(payload["cases"]),
+    }

@@ -114,4 +114,27 @@ tags, subnets, ip-addresses
 | `/api/docs/documents/<id>/status/` | 从 Dify 同步索引进度（waiting / indexing / completed / error） |
 
 Dify 推送配置在 `settings/base.py` 的 `DIFY_CONFIG`，变量清单见 [`settings.md`](settings.md)；
-容器注入 `env/app.env`（模板 `env/example/app.env`）。
+非密钥项在 `envs/common.env`（模板 `envs/example/common.env`），API Key 按部署方式在
+`envs/container.env` / `envs/host.env` 给 `*_FILE` 或环境变量。
+
+## API 文档（OpenAPI 3，drf-spectacular）
+
+| 路径 | 说明 |
+|------|------|
+| `/api/schema/` | OpenAPI 3 schema（YAML） |
+| `/api/schema/swagger-ui/` | Swagger UI |
+| `/api/schema/redoc/` | ReDoc |
+
+**不叫 `/api/docs/`**——那是 docs 业务域前缀。UI 资源走本地 sidecar（内网不通外网，随
+`collectstatic` 进 `/static/` 由 nginx 直出）；权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制
+（默认放开）。三条路由按 `/api/` 前缀天然不会被 SPA 兜底吃掉，`tests/deploy/test_api_docs.py` 守。
+
+## 大屏供数（`analysis/api/dashboard.py`）
+
+| 路径 | 说明 |
+|------|------|
+| `GET /api/dashboard/` | **只读**供数：`?panel=` / `?group=` / `?name=` 过滤当前值；`group=linechart` 或 `name=bandwidth-*` 时把最近 3 小时的 `MetricSample` 聚合回 EAV 行视图 |
+
+这是全项目**唯一**用 `{status, message, result}` 包装的响应（旧大屏前端的 axios 拦截器只取
+`res.result`），别按 `{count, next, previous, results}` 的口径去改。写入口只有
+`analysis.write_dashboard` 这个 celery 任务，没有写接口。

@@ -2,6 +2,8 @@
 
 环境旋钮唯一：DJANGO_ENV（dev 默认 / container / prod），未知值直接拒绝启动；覆盖顺序与
 守卫矩阵见 handbook/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
+容器由 envs/container.env 注入 DJANGO_ENV=container；把 apps/ 与根目录加进 sys.path
+（core/ingest/assets/analysis 与 llmtools 以顶层包出现）。
 """
 
 import os

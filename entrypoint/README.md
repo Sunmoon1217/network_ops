@@ -1,41 +1,48 @@
 # 容器化说明（构建手册）
 
 > 这份文档只讲**怎么构建、每个镜像层为什么这么写、哪些改动会踩坑**——也就是原先散在
-> `Dockerfile.base` / `Dockerfile.app` / `docker-compose.yml` 注释里的内容。
+> `dockerfile.base` / `dockerfile` / `compose.yml` 注释里的内容。
 >
 > 别处的既有说明（**不在这里复述**）：
 > `AGENTS.md`「关键约定」= 项目自身的挂载点语义 / 静态卷 / env 分工 / healthcheck / gunicorn 旋钮 / 启动流程；
-> `env/README.md`、`env/secrets/README.md` = 变量与密钥；`nginx/README.md` = 反向代理；
+> `envs/README.md`、`envs/secrets/README.md` = 变量与密钥；`nginx/README.md` = 反向代理；
 > 第三方软件的实测行为 = 技能（见 §6）。
+>
+> ⚠️ **当前镜像布局（以 `compose.yml` 与 `entrypoint/*.sh` 为准）**：`dockerfile.base` →
+> `dockerfile.venv` → `dockerfile.code`（busybox + 源码 + 静态成品），由一次性容器 `code-init`
+> 把 `code` / `static` 两个命名卷铺满，app / worker / consumer 挂 `code:/app:ro` 运行；**换代码镜像
+> 或改源码后必须重跑 `code-init`**。下面 §1–§4 讲的 `dockerfile.base / dockerfile.venv / dockerfile`
+> 是**传统方案**（代码打进镜像），对应现在的 `dockerfile.base` / `dockerfile.venv` / `dockerfile`，
+> 仍可构建但不再是默认部署路径。
 
 ## 1. 三个文件的职责
 
 | 文件 | 职责 | 变它意味着 |
 |------|------|-----------|
-| `Dockerfile.base` | OS 运行时镜像：只装 `git` / `libpq5`、清系统 pip，**不含 Python 依赖** | 重建一次、长期复用；换 Python 版本 / OS / 镜像源时重建 |
-| `Dockerfile.venv` | Python venv 镜像：`FROM ${BASE_IMAGE}` + `/opt/venv` + 冒烟清单 | `pyproject.toml` / `uv.lock` 变了必须重建 |
-| `Dockerfile.app` | 项目镜像：`FROM ${VENV_IMAGE}` + 源码 + **宿主机构建好的静态成品** | 每次改源码 / 入口脚本都要重建 |
-| `docker-compose.yml` | db / redis / app / worker / nginx 的编排 | 只改 env 文件的话不必重建镜像 |
+| `dockerfile.base` | OS 运行时镜像：只装 `git` / `libpq5`、清系统 pip，**不含 Python 依赖** | 重建一次、长期复用；换 Python 版本 / OS / 镜像源时重建 |
+| `dockerfile.venv` | Python venv 镜像：`FROM ${BASE_IMAGE}` + `/opt/venv` + 冒烟清单 | `pyproject.toml` / `uv.lock` 变了必须重建 |
+| `dockerfile` | 项目镜像：`FROM ${VENV_IMAGE}` + 源码 + **宿主机构建好的静态成品** | 每次改源码 / 入口脚本都要重建 |
+| `compose.yml` | db / redis / app / worker / nginx 的编排 | 只改 env 文件的话不必重建镜像 |
 
 **三层链式继承**：
 
 ```
 python:3.12-slim
-  └── Dockerfile.base  →  network-ops-base:py312   （OS：git / libpq5）
-        └── Dockerfile.venv  →  network-ops-venv:latest   （Python：/opt/venv）
-              └── Dockerfile.app  →  network-ops:latest   （项目：源码 + 静态成品）
+  └── dockerfile.base  →  network-ops-base:py312   （OS：git / libpq5）
+        └── dockerfile.venv  →  network-ops-venv:latest   （Python：/opt/venv）
+              └── dockerfile  →  network-ops:latest   （项目：源码 + 静态成品）
 ```
 
-**为什么拆三层**（而不是 base 一个镜像装全部）：改 `pyproject.toml` 只重建 `Dockerfile.venv`，不碰 OS 层；改 OS 包（`git` / `libpq5`）只重建 `Dockerfile.base`，venv 层复用缓存。两层的失效条件完全不同，合并成一个镜像会让"改依赖 = 重装 OS 包"或"改 OS 包 = 重装依赖"白跑一遍。
+**为什么拆三层**（而不是 base 一个镜像装全部）：改 `pyproject.toml` 只重建 `dockerfile.venv`，不碰 OS 层；改 OS 包（`git` / `libpq5`）只重建 `dockerfile.base`，venv 层复用缓存。两层的失效条件完全不同，合并成一个镜像会让"改依赖 = 重装 OS 包"或"改 OS 包 = 重装依赖"白跑一遍。
 
 ## 2. 构建顺序与命令
 
 ```bash
 # ① OS 运行时镜像（改了 Python 版本 / OS / APT_MIRROR 就要重跑）
-docker build --network=host -f Dockerfile.base -t network-ops-base:py312 .
+docker build --network=host -f dockerfile.base -t network-ops-base:py312 .
 
 # ② venv 镜像（改了 pyproject.toml / uv.lock 就要重跑）
-docker build --network=host -f Dockerfile.venv -t network-ops-venv:latest \
+docker build --network=host -f dockerfile.venv -t network-ops-venv:latest \
     --build-arg BASE_IMAGE=network-ops-base:py312 .
 
 # ③ 静态成品：必须在**宿主机**做，镜像里不跑 pnpm / collectstatic
@@ -43,7 +50,7 @@ cd frontend && pnpm build && cd ..
 uv run python manage.py collectstatic --noinput
 
 # ④ 项目镜像
-docker build -f Dockerfile.app -t network-ops:latest \
+docker build -f dockerfile -t network-ops:latest \
     --build-arg VENV_IMAGE=network-ops-venv:latest .
 #    换 venv 镜像（app 与 worker 一起，用同一个 build arg）：
 VENV_IMAGE=registry.example.com/netops-venv:latest docker compose build app worker
@@ -55,7 +62,7 @@ docker compose up -d app worker
 - `--network=host`：构建容器默认走 Docker 自己的网络栈（`daemon.json` 的 `proxies` 只作用于拉基础镜像）。受限网络下拉 APT / PyPI 慢就加它；**加了就别再传** `--build-arg http_proxy=...`——此时容器不再有 `172.17.0.1` 这个网关，代理地址要换成宿主真实地址。
 - 三条命令都不带 `--build`：`docker compose up -d --build` 只构建、**不换容器**（坑与正确做法：技能 `docker-compose-behavior` 第 3 节）。
 
-## 3. `Dockerfile.base`（OS 运行时镜像）
+## 3. `dockerfile.base`（OS 运行时镜像）
 
 ### 3.1 分层与取舍
 
@@ -66,7 +73,7 @@ docker compose up -d app worker
 | `apt-get update` 与 `install` 同一层，并加 `--no-install-recommends` | 分开会用到过期索引；不装 recommends 可避免把 git 的 `ssh-client` / `less` / `patch` 等拖进来 |
 | 运行期必须有 `git` 可执行文件 | `apps/ingest/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
 | 运行期 `libpq5` | psycopg2 用的是 `psycopg2-binary`（自带 libpq），系统库只是兜底；不需要 `libpq-dev` |
-| 删系统 pip / site-packages（路径用 `site.getsitepackages()` 取） | 基础镜像自带的那份约 7MB，依赖都将在 `Dockerfile.venv` 里装进 `/opt/venv`；不写死 `python3.12`，换小版本不会删错 |
+| 删系统 pip / site-packages（路径用 `site.getsitepackages()` 取） | 基础镜像自带的那份约 7MB，依赖都将在 `dockerfile.venv` 里装进 `/opt/venv`；不写死 `python3.12`，换小版本不会删错 |
 
 **为什么是 slim 而不是 alpine**：alpine 基础层小一半（55MB vs 119MB），但 musl 与 glibc 的差异会以「某个依赖没有 musllinux 轮子 → 构建期现场编译」「musl 的解析器 / 本地化行为与开发机不一致」的形式出现；本项目依赖里有 `lz4`、`protobuf`、`cryptography` 这类带 C 扩展的包，slim 的 manylinux 轮子覆盖最全、与开发机（glibc）同构。用 64MB 换掉一类构建 / 运行期不确定性，划算。
 
@@ -80,7 +87,7 @@ docker compose up -d app worker
 
 大头是 **Debian 的 git 硬依赖 `perl` / `perl-modules` / `git-man`（约 58MB）**——`--no-install-recommends` 省不掉（它们是 `Depends`），alpine 的 git 则不拖 perl。这是选 slim 的固定成本，不是可以再「优化」掉的浪费。
 
-## 3.5 `Dockerfile.venv`（Python venv 镜像）
+## 3.5 `dockerfile.venv`（Python venv 镜像）
 
 ### 3.5.2 `uv sync` 的参数
 
@@ -100,26 +107,26 @@ docker compose up -d app worker
 RUN python -c "import importlib.metadata as m; [__import__(n) for n in (...)]; print('deps ok:', {...})"
 ```
 
-- **清单必须与 `pyproject.toml` 的 `dependencies` 一致**：漏检的包会让这里"看起来构建成功"，到 `Dockerfile.app` 运行期（甚至只在某个功能被调用时）才 `ModuleNotFoundError`。**加依赖要改两处**。
+- **清单必须与 `pyproject.toml` 的 `dependencies` 一致**：漏检的包会让这里"看起来构建成功"，到 `dockerfile` 运行期（甚至只在某个功能被调用时）才 `ModuleNotFoundError`。**加依赖要改两处**。
 - 版本号只能走 `importlib.metadata`——`ttp` 这类包没有 `__version__`。
 
 ### 3.5.4 镜像源
 
-- `UV_DEFAULT_INDEX`（继承自 `Dockerfile.base`）：⚠️ Python 包**只能**用 uv 自己的变量（uv 不读 `pip.conf` / `PIP_*`）；且 `uv.lock` 固化了 registry 与 wheel URL → **换源后必须 `uv lock` 重解析**。细节与实测：技能 `uv-package-and-lockfile`。
+- `UV_DEFAULT_INDEX`（继承自 `dockerfile.base`）：⚠️ Python 包**只能**用 uv 自己的变量（uv 不读 `pip.conf` / `PIP_*`）；且 `uv.lock` 固化了 registry 与 wheel URL → **换源后必须 `uv lock` 重解析**。细节与实测：技能 `uv-package-and-lockfile`。
 
 ### 3.5.5 刻意不定义 `CMD` / `ENTRYPOINT`
 
-本镜像只有环境、单独 `docker run` 跑不起来。一旦写了会被项目镜像**继承**，等于把 gunicorn 参数钉回镜像、`env/gunicorn.env` 的 `GUNICORN_*` 就调不动了（命令整条在 `docker/entrypoint.sh` 里拼）。
+本镜像只有环境、单独 `docker run` 跑不起来。一旦写了会被项目镜像**继承**，等于把 gunicorn 参数钉回镜像、`envs/gunicorn.env` 的 `GUNICORN_*` 就调不动了（命令整条在 `entrypoint/app.sh` 里拼）。
 
-### 3.6 `Dockerfile.base` 的镜像源（APT_MIRROR）
+### 3.6 `dockerfile.base` 的镜像源（APT_MIRROR）
 
 - `APT_MIRROR`：`sed` 替换 `/etc/apt/sources.list.d/debian.sources` 里的 `deb.debian.org`（deb822 格式；只换主机名，`/debian` 与 `/debian-security` 两个路径保持不变）。
 
-## 4. `Dockerfile.app`（项目镜像）
+## 4. `dockerfile`（项目镜像）
 
 ### 4.0 FROM ${VENV_IMAGE}
 
-`Dockerfile.app` 从 `Dockerfile.venv` 产出的镜像继承（不再是 `Dockerfile.base`）。compose 的 `x-app-build` 锚点给 app / worker / consumer 传同一个 `VENV_IMAGE`，默认值 `network-ops-venv:latest`（`.env` 可覆盖）。
+`dockerfile` 从 `dockerfile.venv` 产出的镜像继承（不再是 `dockerfile.base`）。compose 的 `x-app-build` 锚点给 app / worker / consumer 传同一个 `VENV_IMAGE`，默认值 `network-ops-venv:latest`（`.env` 可覆盖）。
 
 ### 4.1 构建前置（镜像里不做）
 
@@ -163,14 +170,14 @@ RUN git config --system --add safe.directory '*'
 
 基础镜像也没有。同一镜像还要当 celery worker 用，worker 在 compose 里被整条 `command` 换掉、走不到 gunicorn；且 `CMD` 的 exec 形式不展开 `${...}`。
 
-## 5. `docker-compose.yml` 里"看不出来"的约束
+## 5. `compose.yml` 里"看不出来"的约束
 
 - **app 不映射端口、也不写 `expose`**：容器之间能不能通只取决于进程有没有在监听；对外统一走 nginx 入口。调试用 `docker compose exec app python manage.py shell`。
 - **nginx 的 resolver 脚本只挂单个文件**（`./nginx/docker-entrypoint.d/05-netops-resolver.sh`）：挂整个目录会**遮住 nginx 镜像自带**的 entrypoint 脚本。
 - nginx 探活用的 `curl` 是 `nginx:alpine` **自带**的（实测 8.22.0）；换基础镜像若不带 curl，healthcheck 会直接失败（`-f` 让 4xx/5xx 也算失败，负向验证要用「空目录 / 死端口」，别用一个随便的 404 路径——SPA 有 `try_files` 兜底）。
 - `static_data` 是**可丢弃**数据：入口脚本每次启动权威重铺，删了也能由重建镜像恢复。
 - 卷名 `config_repo_data` **刻意不复用**旧的 `network_ops_app_data`——那里面是上个方案的另一份历史，复用等于把两份不相干的历史静默合并。旧卷不会自动删除，确认空了再 `docker volume rm network_ops_app_data`。
-- **访问流的 Celery 队列与消费者**：策略展开走独立的 `access_flow` Celery 队列（`settings.CELERY_TASK_ROUTES`），由 `worker` 一并消费（command 里的 `-Q celery,access_flow` + `--concurrency=2`）。任务本体 2026-09 随域拆分迁为 `analysis.rebuild_access_flows`（原 `ingest.rebuild_access_flows`）——**队列名、stream 名、心跳键、命令名全部没变**，只有 celery 任务名变了；升级时 Redis 里未消费的旧名消息会 `Unknown task`，**停 worker、清空 access_flow 队列再滚动**。曾为它单开 `worker-access` 服务做故障域隔离，**已合并**：两条链皆低频，共享 2 个并发槽的最坏代价是秒级排队，而独占服务是 +677MB/+16 进程的常驻保费；队列本身保持独立，出现主链被饿死的实测证据时，把独占服务加回来即可。`access-flow-consumer` 是 AccessFlow 的**唯一写者**：只能跑一个实例（`scale` 起多份 = 多写者，先查后合并的前提就没了），它不挂任何卷、只连 db 与 redis；探活看 redis 里的 `access_flow:heartbeat` 键（消费循环**每轮开头**盖章、TTL 300s，healthcheck 阈值 120s；心跳必须在 `XREADGROUP` **之前**盖——读超时走进 except 分支时也得盖，否则读持续失败会让心跳停更、把活着的进程判死），光看 PID 判断不了死循环卡住。**`get_redis()` 的 `socket_timeout=10` 必须 > 消费端的 `block=5000`**：两者相等时 stream 一空，服务端恰好阻塞满 5s 才回包、客户端 5s 就断读，每轮必抛 TimeoutError（实测消费循环空转 32 次/6 分钟）。背压阈值是 `ACCESS_FLOW_MAX_QUEUE`（env/app.env 可覆盖，默认 500，2026-10 由 50000 调低）：生产者投递前查 Stream **未投递积压**（`XINFO GROUPS` 的 `lag`，不是 XLEN——XACK 不删条目，已消费的会躺到 maxlen trim 才走，用 XLEN 会把「消化完了但条目还躺着」误判成积压），超了就 `self.retry` 让路——绝不在任务里 sleep 等待（会占死 worker 进程）。**积压监控**：`manage.py queue_status`（人看表格 / `--json`，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）——采集口径与告警阈值见 `analysis/queue_monitor.py` 模块注释；毒消息（PEL 里重投次数高的条目）会直接点名消息 ID。
+- **访问流的 Celery 队列与消费者**：策略展开走独立的 `access_flow` Celery 队列（`settings.CELERY_TASK_ROUTES`），由 `worker` 一并消费（command 里的 `-Q celery,access_flow` + `--concurrency=2`）。任务本体 2026-09 随域拆分迁为 `analysis.rebuild_access_flows`（原 `ingest.rebuild_access_flows`）——**队列名、stream 名、心跳键、命令名全部没变**，只有 celery 任务名变了；升级时 Redis 里未消费的旧名消息会 `Unknown task`，**停 worker、清空 access_flow 队列再滚动**。曾为它单开 `worker-access` 服务做故障域隔离，**已合并**：两条链皆低频，共享 2 个并发槽的最坏代价是秒级排队，而独占服务是 +677MB/+16 进程的常驻保费；队列本身保持独立，出现主链被饿死的实测证据时，把独占服务加回来即可。`access-flow-consumer` 是 AccessFlow 的**唯一写者**：只能跑一个实例（`scale` 起多份 = 多写者，先查后合并的前提就没了），它不挂任何卷、只连 db 与 redis；探活看 redis 里的 `access_flow:heartbeat` 键（消费循环**每轮开头**盖章、TTL 300s，healthcheck 阈值 120s；心跳必须在 `XREADGROUP` **之前**盖——读超时走进 except 分支时也得盖，否则读持续失败会让心跳停更、把活着的进程判死），光看 PID 判断不了死循环卡住。**`get_redis()` 的 `socket_timeout=10` 必须 > 消费端的 `block=5000`**：两者相等时 stream 一空，服务端恰好阻塞满 5s 才回包、客户端 5s 就断读，每轮必抛 TimeoutError（实测消费循环空转 32 次/6 分钟）。背压阈值是 `ACCESS_FLOW_MAX_QUEUE`（envs/common.env 可覆盖，默认 500，2026-10 由 50000 调低）：生产者投递前查 Stream **未投递积压**（`XINFO GROUPS` 的 `lag`，不是 XLEN——XACK 不删条目，已消费的会躺到 maxlen trim 才走，用 XLEN 会把「消化完了但条目还躺着」误判成积压），超了就 `self.retry` 让路——绝不在任务里 sleep 等待（会占死 worker 进程）。**积压监控**：`manage.py queue_status`（人看表格 / `--json`，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）——采集口径与告警阈值见 `analysis/queue_monitor.py` 模块注释；毒消息（PEL 里重投次数高的条目）会直接点名消息 ID。
 
 ## 6. 其余主题去哪儿看
 
@@ -182,5 +189,5 @@ RUN git config --system --add safe.directory '*'
 | 容器里的 git | 技能 `git-in-containers` |
 | uv 换源与 lock 固化 | 技能 `uv-package-and-lockfile` |
 | nginx resolver / 变量式 upstream / 静态卷布局 | 技能 `nginx-container-proxy`、`nginx/README.md` |
-| 变量与密钥的生成、轮换 | `env/README.md`、`env/secrets/README.md` |
+| 变量与密钥的生成、轮换 | `envs/README.md`、`envs/secrets/README.md` |
 | 迁移 / 初始管理员 / gunicorn 旋钮 / 挂载点语义 | `AGENTS.md`「关键约定」 |

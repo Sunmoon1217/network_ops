@@ -8,9 +8,12 @@
 
 网络运维管理平台：Django REST 后端 + Vue 3 前端。
 
-后端提供数据模型与 REST API，负责设备配置的解析与入库。前端构建产物默认可由 Django 直接托管
-（便于开发调试）；生产/集成环境用 `docker compose` 起 db / redis / app / worker / nginx，
-由 `nginx/` 作为统一入口（静态资源直出，`/api` 反向代理到 app 容器）。
+后端提供数据模型与 REST API，负责设备配置的解析与入库，并经 `ingest/collectors/` 接入外部数据
+源（Zabbix / Autotask）给总览大屏供数。前端构建产物默认可由 Django 直接托管（便于开发调试），
+Vite 另打一个**大屏入口**（`index.html` 主站 / `dashboard.html` 大屏）。生产/集成环境用
+`docker compose` 起 db / redis / code-init（一次性，把代码与静态成品铺进命名卷）/ app / worker /
+consumer / nginx，由 `nginx/` 作为统一入口（静态资源直出，`/api`、`/mcp` 反向代理到 app 容器）。
+宿主直跑用 `scripts/deploy-host.sh`（app / worker / consumer 三进程），与容器共用 `envs/*.env`。
 
 ## 项目拓扑
 
@@ -26,24 +29,26 @@
 
 ```
 network_ops/
-├── netops/              # 项目配置：settings/（base 集中 env 动态项 + dev/container/prod 三个环境文件）、urls、asgi、views
+├── netops/              # 项目配置：settings/（base 集中 env 动态项 + dev/container/prod 三个环境文件）、urls、asgi、lifespan（ASGI 握手）、views、schema（外部 DTO 基类）
 ├── apps/
 │   ├── core/            # 用户与认证、Task/Stage 模型、运维命令（ensure_superuser / migrate_if_needed / queue_*）
 │   ├── assets/          # 网络域数据模型（单文件 models.py）+ 序列化器 + API + Excel 导入
-│   ├── ingest/          # 采集与解析入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo
-│   ├── analysis/        # 只读消费侧：路径追踪、策略展开与访问流、互联网资产分析、运行监控
+│   ├── ingest/          # 采集与解析入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo + collectors/（外部数据源：zabbix / autotask / 大屏编排）
+│   ├── analysis/        # 只读消费侧：路径追踪、策略展开与访问流、互联网资产分析、运行监控、大屏供数；**models/ 是包**（不是单文件）
 │   ├── cloud/           # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
 │   └── docs/            # **功能域**：表格编辑 + 文档转换 + Dify 推送（app label 就是 docs，与 handbook/ 无关）
 ├── llmtools/            # MCP 工具子系统（根目录包、非 app）：server / registry / query / entity_tools / tools / domains
-├── frontend/            # Vue 3 + TS + Vite；dist/ 由 nginx 直出
-├── nginx/               # 反向代理（静态直出 + API 代理 + 启动时的 resolver 推导）
-├── entrypoint/          # 容器入口脚本（app / worker / consumer）+ README（**容器化构建手册**）
-├── env/                 # 给容器的配置：app/db/gunicorn/celery.env + secrets/（凭据，不入库）
+├── frontend/            # Vue 3 + TS + Vite，双入口（index.html / dashboard.html）；src/{shared,netops,dashboard} 三层，dist/ 由 nginx 直出
+├── nginx/               # 反向代理（静态直出 + API/MCP 代理 + 启动时的 resolver 推导）
+├── entrypoint/          # 容器入口脚本（code_init / app / worker / consumer）+ README（**容器化构建手册**）
+├── envs/                # 容器与宿主共用的一套配置：common.env 共享 + container/host.env 差异 + gunicorn/celery.env + secrets/（凭据，不入库）
 ├── handbook/            # 设计说明（长解释的家，见 handbook/README.md）；不入镜像
+├── scripts/             # deploy-host.sh（宿主 app/worker/consumer 三进程）+ switch-branch / setup-git-hooks
 ├── tests/               # 按应用分目录，pytest testpaths 指向此处
-├── data/                # 运行期数据（不入库）：config_repo（宿主直跑那份）、configs（Excel 源目录，只读 bind 进 app）
-├── dockerfile*          # .base（只装依赖）/ .app（源码 + 静态成品）
-├── compose.yml          # db(TimescaleDB) / redis / app / worker / nginx
+├── typings/             # 第三方库存根（zabbix_utils 等；pyrefly 的 site-packages-path）
+├── data/                # 运行期数据（不入库）：config_repo（宿主直跑那份）、configs（Excel 源目录，只读 bind 进 app）、run/logs
+├── dockerfile*          # .base（只装系统依赖）/ .venv（uv sync）/ .code（源码 + 静态成品）/ 传统 dockerfile（备选）
+├── compose.yml          # db(TimescaleDB) / redis / code-init / app / worker / consumer / nginx
 └── pyproject.toml       # 依赖、pytest、ruff、pyrefly 配置
 ```
 
@@ -86,7 +91,7 @@ network_ops/
 | `nginx-container-proxy` | `resolver` 推导、变量式 upstream、envsubst 静默失效、`$http_host`、静态卷布局 |
 | `uv-package-and-lockfile` | uv 不读 pip 配置（只有 `UV_DEFAULT_INDEX` 有效）、`uv.lock` 固化 registry、依赖层镜像的重建时机 |
 | `ttp-template-gotchas` | 模板按 **XML** 解析（注释里的尖括号会炸）、`re()` 可内联正则、**单条命中给 dict / 多条给 list**、内置 `IPV6` 不含点号 |
-| `frontend-types` | 具名类型进 `src/types/` + barrel、撞名语义化改名、`.ts` / `.d.ts` 分工 |
+| `frontend-types` | 具名类型进 `src/shared/types/` + barrel、撞名语义化改名、`.ts` / `.d.ts` 分工 |
 | `git-branch-flow` | **本仓分支模型**：feature 从 `develop` 切、一需求一分支、**新分支用 worktree 建在 `.worktrees/`**、每个改动及时 commit、**除非用户要求不合并** |
 | `product-roadmap` | **项目本地**技能：产品功能开发列表（四阶段 18 项 + MCP 路线 + 硬约束） |
 
@@ -101,14 +106,17 @@ network_ops/
 ```bash
 uv venv --python 3.12
 uv sync --all-groups          # 主依赖 + dev + test
+cp envs/example/*.env envs/   # 首次：配置实例不入库，模板入库（日常只改 envs/common.env）
 cd frontend && pnpm install
 ```
 
-数据库是 **PostgreSQL**，配置走进程环境变量（全表见 [`handbook/settings.md`](handbook/settings.md)）。
-容器侧：根 `.env` 只给 compose 插值（`cp .env.example .env`）；`env/*.env` 按服务注入；
-`env/secrets/*` 只读挂载给凭据（见 `env/README.md`）。Django 自己不读任何 `.env`——宿主机直跑要
-`set -a; . ./.env; set +a`，再 export 数据库/Redis 的 host 与凭据（**凭据只走环境变量**；`*_FILE`
-机制只在容器里用）。
+数据库是 **PostgreSQL**，配置走环境变量（全表见 [`handbook/settings.md`](handbook/settings.md)）。
+配置分三处：根 `.env` 只给 compose 插值（`cp .env.example .env`）；`envs/*.env` 是容器与宿主
+**共用的一套**（`common` 共享 + `container`/`host` 差异 + `gunicorn`/`celery` 服务旋钮）；
+`envs/secrets/*` 只读挂载给凭据（见 `envs/README.md`）。宿主直跑时 `base.py` 自己
+`load_dotenv(envs/common.env)`，非 container 再叠 `envs/host.env`（`override=False`，真实进程
+环境变量永远优先；`NETOPS_SKIP_DOTENV=1` 全跳过，`tests/deploy` 用它拿纯净默认值）。
+凭据链 `*_FILE > 同名环境变量 > 默认值`，`*_FILE` 在容器里指向 `/run/secrets/*`。
 
 ## 常用命令
 
@@ -118,9 +126,14 @@ uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status   # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog  # 积压明细（--json / --limit）
 uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
+uv run python manage.py rebuild_access_flows --device <H> [--sync]
+./scripts/deploy-host.sh deploy | status   # 宿主直接部署：app / worker / consumer 三进程
 
 # 前端（frontend/）
 pnpm dev | build | type-check
+
+# 容器（换代码镜像后必须先重跑 code-init：app 挂的是 code 卷，不是镜像里的 /app）
+docker compose up -d code-init && docker compose up -d
 
 # 质量
 uv run pytest                                   # 单进程；排查单个文件时用它
@@ -154,40 +167,57 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   环境旋钮唯一 `DJANGO_ENV`（不设 → dev，白名单，拼错拒启动），`DJANGO_SETTINGS_MODULE` 恒为
   `netops.settings`。`base.py` 与三个环境文件**禁止** `from netops.settings import ...` /
   `from . import ...`（半初始化时会炸）。细节：[`handbook/settings.md`](handbook/settings.md)。
-- **`.env` / `env/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
+- **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 的所有模型在单文件 `apps/assets/models.py`（没有 models 子目录）。
+  `analysis` 相反，**是 `models/` 包**（`access_flow` / `internet_analysis` / `dashboard` +
+  `__init__.py` re-export）——不能同时留 `models.py` 与 `models/`（包优先，单文件被静默忽略）。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
-  `docs.apps.DocsConfig`。
-- **三条 Celery 链**：① 阶段式工作流（`/api/tasks/` 是唯一入口，采集→解析→存储由 `Stage`
+  `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`（OpenAPI 文档）。
+- **四条 Celery 链**：① 阶段式工作流（`/api/tasks/` 是唯一入口，采集→解析→存储由 `Stage`
   状态回写推进）；② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；
-  ③ 访问流重建（`ACCESS_FLOW_TASK` 字符串投递 → 独立队列 → 单写者 consumer）。
+  ③ 访问流重建（`ACCESS_FLOW_TASK` 字符串投递 → 独立队列 → 单写者 consumer）；
+  ④ 大屏供数（`ingest.collect_dashboard` 采集 → `DASHBOARD_WRITE_TASK` 投递 →
+  `analysis.write_dashboard` 唯一写库；仓库内没有 beat/定时配置，调度在外部）。
   broker/backend 都是 Redis，**必须有 worker 消费**。链路细节与坑：
   [`handbook/ingest.md`](handbook/ingest.md)、[`handbook/analysis.md`](handbook/analysis.md)。
+- **采集器边界**：`ingest/collectors/` 只做「调外部接口 → 归一成可 JSON 序列化的 dict」
+  （Zabbix / Autotask，DTO 用 pydantic + `netops.schema.ExtraModel`），**不碰数据库、不 import
+  `analysis`**；连接配置在 `settings.ZABBIX_CONFIG`（Token 优先于用户名密码）。
+- **OpenAPI 3 文档**：`netops/urls.py` 挂 `/api/schema/`、`/api/schema/swagger-ui/`、
+  `/api/schema/redoc/`（**不叫 `/api/docs/`**，那是 docs 业务域）；UI 资源走 sidecar（内网不通外网），
+  权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制（默认放开）。见 [`handbook/api.md`](handbook/api.md)。
+- **业务日志**：`settings/base.py` 的 `LOGGING` 只给项目命名空间（`core/ingest/assets/analysis/
+  cloud/docs/llmtools/netops`）装 stderr handler，级别 `DJANGO_LOG_LEVEL`（默认 INFO）；**不动
+  root**（celery 会 hijack）、`propagate` 保持 True（`caplog` 仍可捕获）。
 - **DeviceConfig 解析入库默认同步**（`pipeline.run_config_pipeline` 在 post_save 调用栈里跑完）；
   **例外是批量导入**（挂 `_defer_pipeline` 后投 celery 链）。两套链路并存，别混。
-- **部署**：nginx 是统一入口；静态资源走「宿主机构建 → 镜像 COPY → entrypoint 复制进命名卷 →
-  nginx 只读挂载」；`data/config_repo` 是**命名卷**、`data/configs` 是**只读 bind**
-  （首次部署先 `mkdir -p data/configs`）。两条硬要求：nginx 用**变量式** upstream + 启动时推导
-  `resolver`、conf.d 必须 `$http_host` 透传 Host（否则后台登录 403）。
-  容器启动四步、健康检查、凭据、镜像重建时机：[`handbook/deploy.md`](handbook/deploy.md)。
+- **部署**：nginx 是统一入口；静态资源走「宿主机构建 → 镜像 COPY → `code-init` 铺进命名卷 →
+  nginx 只读挂载」（**换代码镜像或改源码后必须重跑 `code-init`**：app 挂的是 `code` 卷，不是镜像里的
+  `/app`）；仓库卷 `repo` 是**命名卷**、`data` 是**只读 bind**（首次部署先 `mkdir -p data`）。两条硬
+  要求：nginx 用**变量式** upstream + 启动时推导 `resolver`、conf.d 必须 `$http_host` 透传 Host
+  （否则后台登录 403）。容器启动四步、健康检查、凭据、镜像重建时机：
+  [`handbook/deploy.md`](handbook/deploy.md)。
 - **代理感知**：`SECURE_PROXY_SSL_HEADER` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS`
   默认 `*`；`DJANGO_CSRF_TRUSTED_ORIGINS` 正常拓扑**留空即可**。
 - **「账号密码换 token」的接口必须 `@authentication_classes([])`**（login / register），否则带
   `sessionid` 打过来会被 DRF 拦成 403；注册只创建普通账号。见 [`handbook/api.md`](handbook/api.md)。
 - **前端**：请求路径以 `/api/` 开头；自动导入用 `unplugin-auto-import` + `unplugin-vue-components`；
   图表用 `@antv/g6` 5.x。
+- **前端三层目录**：`src/shared/`（跨应用公共层，别名 `@`）、`src/netops/`（主站，别名 `@netops`）、
+  `src/dashboard/`（大屏，别名 `@dashboard`）。两个入口共用 `src/main.ts`，按页面里的 `#app` /
+  `#dashboard` 各自建 app + pinia + router；**共享层不许反向 import 两个应用**。
 - **前端函数风格**：`.vue` / `.ts` 一律箭头函数，不用 `function` 声明。自检（应无输出）：
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
-- **前端类型集中**：具名 `interface` / `type` / `enum` 全在 `frontend/src/types/`（按域分文件 +
+- **前端类型集中**：具名 `interface` / `type` / `enum` 全在 `frontend/src/shared/types/`（按域分文件 +
   `index.ts` barrel），一律 `import type { ... } from '@/types'`；业务文件不落具名类型定义、不做中转
   导出；barrel 撞名**语义化改名**（别用下划线避让）；`types/index.ts` 用 `.ts` 不是 `.d.ts`。
-  细节与坑：技能 `frontend-types`。
+  大屏自有类型在 `src/dashboard/types/`。细节与坑：技能 `frontend-types`。
 - **前端颜色禁用硬编码**：UI 颜色只用 `var(--el-*)`（否则暗色主题不跟随）。三类例外保留字面量：
   图表/数据系列色（echarts / G6 canvas 不读 CSS 变量）、品牌主色 `#34c8ff`、主题变量定义源头
-  （`stores/theme.ts`）。`var(--el-bg-color, #fafafa)` 的 fallback 不算硬编码。
-- **表格列宽偏好只认注册表**：key 集中在 `frontend/src/constants/tableKeys.ts`（`TABLE_KEYS`），
+  （`netops/stores/theme.ts`）。`var(--el-bg-color, #fafafa)` 的 fallback 不算硬编码。
+- **表格列宽偏好只认注册表**：key 集中在 `frontend/src/shared/constants/tableKeys.ts`（`TABLE_KEYS`），
   页面只传 `<DataTable :table-key="TABLE_KEYS.xxx">`，不自己调 `useTablePrefs` / `widthFor`；
   后端 `/api/me/preferences/` 只是按用户存取的不透明 JSON KV。改 key 走 `TABLE_KEY_RENAMES`。
 - **表格列一律 `<DataColumn>`**，不裸写 `el-table-column`：列 key 解析偏好宽度、内容列走
@@ -213,8 +243,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 |----|------|------|
 | `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检命令也在这里，跨域 import 采集） | [`handbook/api.md`](handbook/api.md) |
 | `assets/` | 网络域数据模型（`ConfigBase` 基类）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
-| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流投递触点 | [`handbook/ingest.md`](handbook/ingest.md) |
-| `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控（只读消费，写自己的派生缓存） | [`handbook/analysis.md`](handbook/analysis.md) |
+| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
+| `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控、大屏供数（只读消费，写自己的派生缓存） | [`handbook/analysis.md`](handbook/analysis.md) |
 | `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
 | `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
 | `llmtools/` | MCP 工具出口（根目录包，与 `api/` 平行） | [`handbook/llmtools.md`](handbook/llmtools.md) |
@@ -227,8 +257,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   方法），值语义与结构级差异留 Saver——声明表只做纯改名。契约测试
   `tests/ingest/test_parser_contract.py` + `test_mapping.py`；清单接口 `/api/parsers/mapping/`。
   细节：[`handbook/ingest.md`](handbook/ingest.md)。
-- **解析器模板管理页面**（`views/devices/parsers.vue`）以**模板文件**为中心单表展示，解析器降级为
-  「关联解析器」列。
+- **解析器模板管理页面**（`frontend/src/netops/views/devices/parsers.vue`）以**模板文件**为中心单表
+  展示，解析器降级为「关联解析器」列。
 - **`parsers/tmpls/running/` 的模板不在 `ParserFactory` 注册表内**（`route.ttp` / `arp.ttp` /
   `mac.ttp` / `lldp.ttp` / `h3c_route.ttp`），由路径追踪 / 路由采集接口按名称动态调用——页面上
   「未关联解析器」不代表可删。
@@ -253,6 +283,16 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `status`；有非法行则整批不导入并非零退出）。
 - `Topology` 是单模型（图数据存 `graph_data` JSON，没有节点/边表）；`Device` 没有 `address` 字段
   （地址在 `DeviceConnection`）。
+- **大屏供数（Dashboard）读写分离**：采集在 `ingest`（`collect_dashboard` / `collectors/`）、写库
+  只在 `analysis.write_dashboard` 一个事务里 upsert，`GET /api/dashboard/` 只读。这是全项目**唯一**
+  用 `{status, message, result}` 包装的接口（旧大屏前端拦截器只取 `res.result`）。`DASHBOARD_WRITE_TASK`
+  / `DASHBOARD_PAYLOAD_VIA_REDIS` / `DASHBOARD_PAYLOAD_TTL` 三处定义在 `base.py`；任务名由
+  `tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` 对账。
+  细节：[`handbook/analysis.md`](handbook/analysis.md)。
+- **`asgi.py` 三层**：`django_application` → `_dispatch`（`/mcp*` 交 MCP，其余交 Django）→
+  `LifespanApp`（握手 + `LIFESPAN_HOOKS`，当前是 MCP 的 `session_manager.run`）。钩子清单只在
+  `asgi.py` 组合，基建不自己注册；换掉 `--worker-class uvicorn_worker.UvicornWorker` 就没有
+  lifespan（`LifespanApp` 会在首个请求上告警一次）。见 [`handbook/llmtools.md`](handbook/llmtools.md)。
 
 ## 语言约定
 

@@ -31,7 +31,7 @@ Django 自己并不对 migrate 加锁（翻遍 6.1.1 源码，``advisory`` 零�
 
 ⚠️ 两个边界：
   * 锁只覆盖**走同一个数据库服务器**的进程。多副本各自连同一个库，所以安全；迁移若由外部
-    发布流水线负责、或要求人工放行，把 ``MIGRATE_ON_START`` 设为 0 即可（见 ``env/app.env``）。
+    发布流水线负责、或要求人工放行，把 ``MIGRATE_ON_START`` 设为 0 即可（见 ``envs/container.env``）。
   * **PG 前面不要挂 PgBouncer 的 transaction pooling**：官方特性表明确写着 ``Session-level
     advisory locks`` 在 transaction pooling 下是 *Never*——事务一结束连接就被回收，
     ``pg_advisory_unlock`` 可能发到另一个后端上。现在 app 是直连 db、没有 pooler，不受影响。

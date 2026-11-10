@@ -2,7 +2,10 @@
 
 环境区分靠注入不同的值，不靠各环境重写读取逻辑；三个环境文件只放环境变量表达不了的
 硬差异（dev 空壳 / container 两条 host 守卫 / prod 的 DEBUG 与 5 项守卫）。
-凭据链 `*_FILE > 同名环境变量 > 默认值`（_env_or_file），`*_FILE` 只在容器里设置。
+凭据链 `*_FILE > 同名环境变量 > 默认值`（_env_or_file）：`*_FILE` 在容器里指向
+/run/secrets/*，宿主可用 envs/host.env 给相对路径（按 BASE_DIR 解析）。
+
+宿主直跑时下面的 load_dotenv 把 envs/*.env 兜底补进进程环境（容器由 compose 注入）。
 
 硬规矩（防循环导入）：本文件与三个环境文件禁止 `from netops.settings import ...` /
 `from . import ...`——反向依赖父包执行结果会在 `__init__` 半初始化时炸。
@@ -13,9 +16,23 @@
 import os
 from pathlib import Path
 
-from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent.parent.parent.resolve()
+ENVS_DIR = BASE_DIR / "envs"
+
+# 环境文件三层（谁维护什么见 envs/README.md）——直接部署与 compose 部署读同一份配置：
+#   common.env    共享值，唯一需要日常维护；容器经 compose env_file 注入为真实环境
+#                 变量，宿主由下面的 load_dotenv 补进进程环境，殊途同归
+#   container.env 容器差异（HOST=db/redis、*_FILE=/run/secrets/*、DJANGO_ENV=container）
+#   host.env      宿主差异（HOST=localhost 等）；容器里代码卷也带着 envs/，必须按
+#                 DJANGO_ENV 区分，否则宿主值会泄进容器
+# override=False：真实进程环境（compose 注入 / 手工 export）永远优先，文件只是兜底。
+# NETOPS_SKIP_DOTENV=1：全部跳过（tests/deploy 用它拿到纯净默认值，不吃本地 envs/ 的值）。
+if os.environ.get("NETOPS_SKIP_DOTENV") != "1":
+    load_dotenv(ENVS_DIR / "common.env")
+    if os.environ.get("DJANGO_ENV", "dev") != "container":
+        load_dotenv(ENVS_DIR / "host.env")
 
 
 def _env_list(name: str, default: str = "") -> list[str]:
@@ -29,11 +46,22 @@ def _env_or_file(name: str, default: str = "") -> str:
     文件存在但读不出来时直接报错（ImproperlyConfigured）：静默回退默认值只会把
     「密钥配错了」伪装成「数据库连不上」。内容 strip()，与 postgres 官方 entrypoint
     的 `$(cat file)` 行为一致，否则结尾换行会变成密码的一部分。
+
+    使用约定：*_FILE 在容器里由 envs/container.env 指向 /run/secrets/*；宿主直跑默认
+    不设 *_FILE、自然走同名环境变量层，想共用同一份密钥文件时在 envs/host.env 里给
+    **相对路径**（相对本文件的 BASE_DIR 解析）——链路统一，不分叉。
     """
+    from django.core.exceptions import ImproperlyConfigured
+
     path = os.environ.get(f"{name}_FILE")
     if path:
+        file = Path(path)
+        if not file.is_absolute():
+            # 相对路径按 BASE_DIR 解析：host.env 里可写 envs/secrets/*，宿主与容器
+            # 共用同一份密钥文件；容器内是绝对路径 /run/secrets/*，不受影响。
+            file = BASE_DIR / file
         try:
-            return Path(path).read_text(encoding="utf-8").strip()
+            return file.read_text(encoding="utf-8").strip()
         except OSError as exc:
             raise ImproperlyConfigured(f"{name}_FILE={path} 读取失败：{exc}") from exc
     return os.environ.get(name, default)
@@ -45,6 +73,10 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or "django-insecure-bua49zfleex
 # 默认开；prod.py 硬覆盖为 False——生产的 DEBUG 不吃环境变量后门。
 DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes")
 
+# 业务日志级别（见下方 LOGGING）：默认 INFO——consumer 这类常驻进程正常运行时只有
+# INFO 级输出，调高就又回到「日志文件是空的」。生产嫌吵可设 WARNING。
+LOG_LEVEL = os.environ.get("DJANGO_LOG_LEVEL", "INFO").upper()
+
 # 默认放开（无域名阶段）；nginx 透传原样 Host（含端口），Django 校验时剥端口再比对。
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
 
@@ -52,7 +84,8 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
 # Host」时才需要声明（外层 LB 改写 Host、TLS 提前终结）。值带 scheme，逗号分隔。
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
-# 默认值是宿主本机语义（dev 无 env 即此值）；容器由 env/app.env 注入 HOST=db。
+# 默认值是宿主本机语义（dev 无 env 即此值）；容器由 envs/container.env 注入 HOST=db
+# 与 *_FILE=/run/secrets/*，prod.py 守卫要求 HOST 必填。
 # 写 127.0.0.1 而不是 localhost：Windows 上 localhost 优先解析成 ::1，而 PostgreSQL / Redis
 # 通常只监听 IPv4，psycopg2 与 redis-py 会逐个地址回退——每次连接白等约 10s（实测 10.03s
 # vs 0.03s）。pytest 一个会话要建两三条连接，setup 就被拖成 40s 级。
@@ -86,6 +119,16 @@ CELERY_RESULT_BACKEND = REDIS_URL
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
+
+# Dashboard 采集 / 写库两段链路（采集在 ingest、存储在 analysis，两者只认任务名字符串）：
+# - DASHBOARD_WRITE_TASK 是唯一定义处：ingest.tasks.collect_dashboard 按它 send_task
+#   （不 import analysis，依赖方向 analysis → ingest 单向），analysis.tasks 的 name=
+#   与 tests 的对账断言必须一致。
+# - DASHBOARD_PAYLOAD_VIA_REDIS：默认 False = A（payload 随消息直接投递）；True = C
+#   （payload 暂存 Redis，只把 key 投递，避免大 payload 塞进 broker 消息）。
+DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
+DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
+DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
 
 # 阿里云：一朵云、两个资源集（生产/测试），两套账号共用 region，各产品 endpoint 分别传参。
 # 变量清单见 handbook/settings.md；凭据链路同为 *_FILE > 环境变量 > 空。
@@ -124,7 +167,46 @@ DIFY_CONFIG = {
 }
 
 
+# Zabbix API（ingest 采集器的数据源）：这里只放连接配置，单例与登录逻辑在
+# apps/ingest/collectors/zabbix/zabbix.py（get_zapi / close_zapi），未配置 url 则拒绝创建。
+# 变量清单与凭据链见 handbook/settings.md；zabbix_utils 自身也读同名 env 兜底，
+# 这里显式传参以 settings 为准，行为可预期。
+ZABBIX_CONFIG = {
+    "url": os.environ.get("ZABBIX_URL", ""),
+    "token": _env_or_file("ZABBIX_TOKEN"),
+    "user": _env_or_file("ZABBIX_USER"),
+    "password": _env_or_file("ZABBIX_PASSWORD"),
+    "timeout": int(os.environ.get("ZABBIX_TIMEOUT", "30")),
+}
+
+
 # 以下为环境无关的静态配置
+
+# Logging：业务模块的日志统一走 stderr（Django 的 DEFAULT_LOGGING 只给 django / django.server
+# 装了 handler，业务模块 `getLogger(__name__)` 传到 root 无 handler，INFO 全被 lastResort 丢掉）。
+# 只给项目自己的命名空间加 handler：不动 root（celery worker 会 hijack root）、不动 Django 默认
+# 配置；propagate 保持默认 True，pytest 的 caplog 仍能捕获。输出走 stderr 每次 emit 都 flush，
+# 宿主重定向的 data/logs/*.log 与 docker logs 都能实时收到。命令给操作者看的输出不在这里，
+# 走 BaseCommand 的 self.stdout / self.stderr。
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "netops_console": {
+            "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "netops_console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "netops_console",
+            "level": LOG_LEVEL,
+        },
+    },
+    "loggers": {name: {"handlers": ["netops_console"], "level": LOG_LEVEL} for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "llmtools", "netops")},
+}
 
 # nginx → Django 之间走的是 HTTP，不声明信任该头则 request.is_secure() 恒为 False：
 # 启用 HTTPS 后会出现重定向循环、Secure Cookie 不下发、CSRF Origin 校验失败。
@@ -140,6 +222,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "django_filters",
+    # OpenAPI 3 文档：sidecar 把 Swagger UI / ReDoc 静态资源带进 collectstatic
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # GinIndex（analysis.AccessFlow 的 device_ids / policy_ids）要求这个 app 在册
     "django.contrib.postgres",
     "core.apps.CoreConfig",
@@ -217,6 +302,8 @@ AUTH_USER_MODEL = "core.User"
 
 # DRF
 REST_FRAMEWORK = {
+    # OpenAPI 3 schema 生成器（drf-spectacular）
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -234,6 +321,34 @@ REST_FRAMEWORK = {
     # 列表接口统一数字分页：默认每页 50 条，客户端可用 ?page_size= 覆盖（上限 500）
     "DEFAULT_PAGINATION_CLASS": "netops.pagination.StandardPagination",
     "PAGE_SIZE": 50,
+}
+
+# API 文档（OpenAPI 3）：env 动态项按约定只在 base 定义一遍，三个环境文件不重复接线。
+# 内网默认放开：schema 只暴露接口元数据、不含业务数据；要收紧就给容器注入
+# DJANGO_API_DOCS_REQUIRE_LOGIN=1（IsAuthenticated，可用 /admin/ 登录后的 session 或 Token）。
+API_DOCS_PERMISSION = (
+    "rest_framework.permissions.IsAuthenticated" if os.environ.get("DJANGO_API_DOCS_REQUIRE_LOGIN", "").lower() in ("1", "true", "yes") else "rest_framework.permissions.AllowAny"
+)
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "网络运维管理平台 API",
+    "DESCRIPTION": "认证：Authorization: Token <key>（/api/auth/login/ 获取）；写操作限 operator 或超管。",
+    "VERSION": "2.0.0",
+    # schema 端点自身不出现在文档里
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_PERMISSIONS": [API_DOCS_PERMISSION],
+    # 内网不通外网：UI 资源一律走本地 sidecar，collectstatic 后进 /static/ 由 nginx 直出
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
+    "SWAGGER_UI_SETTINGS": {
+        "persistAuthorization": True,
+        "deepLinking": True,
+        "displayRequestDuration": True,
+        "docExpansion": "list",
+        "defaultModelsExpandDepth": -1,
+        "filter": True,
+    },
 }
 
 # Celery 行为（与环境无关；broker / result backend 的连接串见上方 Redis 段）

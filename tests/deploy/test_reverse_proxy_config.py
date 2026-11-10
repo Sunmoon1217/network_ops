@@ -11,8 +11,8 @@
 同样的请求只把 Host 从 `localhost:8000` 换成 `localhost`，失败原因就变成
 「CSRF cookie not set」——即 Origin 校验已通过。这几条测试分别锁住：nginx 侧必须
 透传带端口的 Host、Django 侧「Host 带端口则同源 Origin 可信」的规则、compose 把
-`DJANGO_CSRF_TRUSTED_ORIGINS`（在 `env/app.env` 里）注入 app/worker 两个容器、
-按服务拆分的 `env_file` 不许串味、以及数据库凭据只从 secrets 读。
+`DJANGO_CSRF_TRUSTED_ORIGINS`（在 `envs/common.env` 里）注入全部运行时服务、
+按层拆分的 `env_file` 不许串味、以及数据库凭据只从 secrets 读。
 """
 
 import logging
@@ -28,15 +28,15 @@ COMPOSE_FILE = settings.BASE_DIR / "compose.yml"
 
 
 def _env_file(name: str) -> str:
-    """读按服务拆分的 env 文件做契约断言。
+    """读按层拆分的 env 文件做契约断言。
 
-    `env/*.env` 是部署本地实例、**不入库**（见 env/README.md），fresh clone 里只有
-    `env/example/*.env` 模板——模板是变量清单的契约源头，实例是它的部署副本。
+    `envs/*.env` 是部署本地实例、**不入库**（见 envs/README.md），fresh clone 里只有
+    `envs/example/*.env` 模板——模板是变量清单的契约源头，实例是它的部署副本。
     所以实例优先（部署副本校验实际注入容器的文件），没有实例就校验入库模板。
     """
-    path = settings.BASE_DIR / "env" / name
+    path = settings.BASE_DIR / "envs" / name
     if not path.exists():
-        path = settings.BASE_DIR / "env" / "example" / name
+        path = settings.BASE_DIR / "envs" / "example" / name
     return path.read_text(encoding="utf-8")
 
 
@@ -74,25 +74,25 @@ def test_csrf_origin_is_trusted_only_when_host_carries_port(caplog):
 
 
 def test_app_and_worker_share_the_django_runtime_env_file():
-    """`DJANGO_CSRF_TRUSTED_ORIGINS` 等 Django 运行时变量在 `env/app.env` 里，
+    """`DJANGO_CSRF_TRUSTED_ORIGINS` 等 Django 运行时变量在 `envs/common.env` 里，
     由 compose 给每个跑 Django/celery 的服务**各注入一次**——有的拿不到就会行为不一致
     （celery 也跑同一份 Django settings）。
 
-    环境变量按「谁读」分三处（`.env` 给 compose 插值、`env/*.env` 给容器、`env/secrets/*`
+    环境变量按「谁读」分三处（`.env` 给 compose 插值、`envs/*.env` 给容器、`envs/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：app / worker（celery 双队列）/ consumer（访问流单写者消费者）
-    ——新增跑 Django 的服务时这个计数要跟着加。
+    当前注入方：db（postgres 镜像读 POSTGRES_DB）+ app / worker（celery 双队列）/
+    consumer（访问流单写者消费者）——新增服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
-    app_env = _env_file("app.env")
+    common_env = _env_file("common.env")
 
-    assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in app_env
-    assert compose.count("- env/app.env") == 3
+    assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
+    assert compose.count("- envs/common.env") == 4
 
 
 def test_each_service_only_gets_its_own_env_file():
-    """按服务拆分的 env_file 不许串味：gunicorn 的旋钮不该进 worker，celery 的不该进 app。"""
+    """按层拆分的 env_file 不许串味：gunicorn 的旋钮不该进 worker，celery 的不该进 app。"""
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
     assert _env_file("gunicorn.env").count("GUNICORN_WORKERS=") == 1
@@ -102,17 +102,21 @@ def test_each_service_only_gets_its_own_env_file():
     # worker 块切到下一个服务为止：后面还有 consumer（访问流单写者消费者），
     # 跨着切会让「串味」断言被别的服务满足（假绿）
     worker_block = compose.split("  worker:")[1].split("  consumer:")[0]
-    assert "- env/gunicorn.env" in app_block
-    assert "- env/celery.env" not in app_block
-    assert "- env/celery.env" in worker_block
-    assert "- env/gunicorn.env" not in worker_block
-    # 两个服务共用 app.env（Django 运行时）
-    assert "- env/app.env" in app_block
-    assert "- env/app.env" in worker_block
-    # db 只读自己的那份
+    assert "- envs/gunicorn.env" in app_block
+    assert "- envs/celery.env" not in app_block
+    assert "- envs/celery.env" in worker_block
+    assert "- envs/gunicorn.env" not in worker_block
+    # 两个服务共用 common.env（Django 运行时）与 container.env（容器差异层，排最后）
+    assert "- envs/common.env" in app_block
+    assert "- envs/common.env" in worker_block
+    assert "- envs/container.env" in app_block
+    assert "- envs/container.env" in worker_block
+    # db 只读共享层 + 容器差异层（没有服务级文件）
     db_block = compose.split("  db:")[1].split("  redis:")[0]
-    assert "- env/db.env" in db_block
-    assert "- env/app.env" not in db_block
+    assert "- envs/common.env" in db_block
+    assert "- envs/container.env" in db_block
+    assert "- envs/gunicorn.env" not in db_block
+    assert "- envs/celery.env" not in db_block
 
 
 def test_db_credentials_come_from_secrets_not_plaintext_env():
@@ -123,17 +127,16 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
-    # db 与 app/worker 的 env 文件都把凭据指向 /run/secrets/*
-    for name in ("db.env", "app.env"):
-        text = _env_file(name)
-        assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in text
-        assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in text
+    # 容器差异层把凭据指向 /run/secrets/*（db 与 app/worker 共用这一层）
+    container_env = _env_file("container.env")
+    assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in container_env
+    assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
     # db / consumer 只拿数据库凭据（*db-secrets），app / worker 拿 *app-secrets
     # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
-    assert "file: ${POSTGRES_USER_SECRET_FILE:-./env/secrets/postgres_user}" in compose
-    assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./env/secrets/postgres_password}" in compose
+    assert "file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}" in compose
+    assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}" in compose
     assert compose.count("secrets: *db-secrets") == 2
     assert compose.count("secrets: *app-secrets") == 2
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
@@ -168,6 +171,24 @@ def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
 
     monkeypatch.delenv("POSTGRES_PASSWORD")
     assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "default"
+
+
+def test_env_or_file_resolves_relative_path_against_base_dir(monkeypatch):
+    """host.env 里的相对 `*_FILE` 按 BASE_DIR 解析——宿主与容器共用同一份密钥文件。
+
+    容器内是绝对路径 /run/secrets/*，不受影响；宿主在 envs/host.env 里写
+    envs/secrets/…（相对路径）即可读同一份 envs/secrets/*，不用再 export 明文。
+    """
+    from netops import settings as project_settings
+
+    secret = project_settings.BASE_DIR / "tmp" / "pytest-relative-secret"
+    secret.parent.mkdir(exist_ok=True)
+    secret.write_text("s3cret\n", encoding="utf-8")
+    try:
+        monkeypatch.setenv("POSTGRES_PASSWORD_FILE", "tmp/pytest-relative-secret")
+        assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "s3cret"
+    finally:
+        secret.unlink(missing_ok=True)
 
 
 def test_env_or_file_fails_loudly_on_unreadable_secret(tmp_path, monkeypatch):

@@ -16,8 +16,8 @@
 #       那种「追加到最后」——后者对 --concurrency 只会多出一个监听，覆盖不掉。
 #   注意 CELERY_* 里的 0 与空串不同：`:-` 只对「未设置或空」取默认值，写 0 就是 0。
 #
-# 变量由 compose 的 env_file 注入（docker-compose.yml 的 consumer 服务把 env/app.env 注入），
-# 所以在 env/app.env 里改 ACCESS_FLOW_* 即可，不必碰 compose。
+# 变量由 compose 的 env_file 注入（consumer 服务把 envs/common.env + envs/container.env 注入），
+# 所以在 envs/common.env 里改 ACCESS_FLOW_* 即可，不必碰 compose。
 #
 # 关于单写者：
 #   consumer 是 AccessFlow 的**唯一写者**：只能跑一个实例（消费者组会把消息摊给多个成员，

@@ -22,7 +22,7 @@ logs/
 tmp/
 
 # 注意：frontend/dist 与 www 必须留在上下文里 —— 它们是宿主机上构建好的静态成品，
-# Dockerfile.app 要把它们 COPY 进镜像（nginx 通过命名卷读取）。
+# dockerfile / dockerfile.code 要把它们 COPY 进镜像（nginx 通过静态卷读取）。
 # 这两个目录在 .gitignore 里被忽略，但 docker build 只认本文件。
 
 # 反向代理资源（由 nginx 容器挂载，不进应用镜像）
@@ -38,20 +38,23 @@ nginx/ssl/
 *.log
 nohup.out
 
-# 容器环境变量文件与 docker secrets（env/*.env 由 compose 在运行时注入、env/secrets/* 只挂给
+# 容器环境变量文件与 docker secrets（envs/*.env 由 compose 在运行时注入、envs/secrets/* 只挂给
 # 运行中的容器，两者都不是构建期输入，绝不进镜像）
-env/
+envs/
 
 # 文档与 AI 工具
 /handbook/
 .mimocode/
+.workbuddy/
 .django-stub-gen/
 README.md
 AGENTS.md
 
 # 容器编排与容器文件自身（COPY . . 时不需要）
+compose.yml
 docker-compose.yml
 docker-compose.override.yml
+dockerfile*
 Dockerfile*
 .dockerignore
 

@@ -354,3 +354,29 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 - 堆叠组：备机不持有配置，产物记在**主设备**名下，所以 `--device <备机>` 会自动折算到
   主设备；
 - 数据库删除在一个事务里，文件系统删除不能回滚，放在事务提交之后。
+
+## 外部数据源采集器（`collectors/`）
+
+与「设备配置的采、解、存」并行的另一类采集：从外部系统拉数据给**总览大屏**用。
+
+```
+ingest/tasks.py: collect_dashboard(source)
+  → collectors/dashboard.py: collect(source)（async，纯函数式编排）
+       ├── zabbix/   异步 Zabbix API（get_zapi 进程级单例）+ 查询层 + JSON-RPC DTO
+       └── autotask/ 工单 / SLB / 巡检 HTTP 客户端 + pydantic DTO
+  → 返回纯 dict payload（metrics / samples / cases / run，采样时刻 3 分钟对齐）
+  → 按 settings.DASHBOARD_WRITE_TASK send_task → analysis.write_dashboard（唯一写库入口）
+```
+
+边界（三条，都是刻意的）：
+
+- **只采集、不落库**：`collectors/` 不 import 任何 ORM 写操作，也不 import `analysis`
+  （依赖方向单向）。写库全在 `analysis.tasks.write_dashboard` 的一个事务里。
+- **失败隔离**：单组设备 / 单接口失败只 warning 并跳过，不影响其余数据；整批异常仍投一条
+  `run.status=failed` 让大屏可见，再向上抛让 Celery 记 FAILURE。
+- **外部 DTO 用 pydantic + `netops.schema.ExtraModel`**（`extra="allow"`，透传原字段，工单的
+  `zhixing` / `shijian` / `status` 这类现场字段不会被丢弃）。
+
+任务名对账：`tests/ingest/test_dashboard_collect.py`（采集侧）+ `tests/analysis/test_dashboard_write.py`
+（写库侧）。**仓库内没有 beat / crontab 定时配置**，调度在外部（手工 / 平台定时器调
+`collect_dashboard.delay(source)`）。

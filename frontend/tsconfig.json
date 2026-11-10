@@ -13,7 +13,9 @@
     // "types": ["node"],
     "noEmit": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/shared/*"],
+      "@netops/*": ["./src/netops/*"],
+      "@dashboard/*": ["./src/dashboard/*"]
     }
   },
   "include": ["./auto-imports.d.ts", "./components.d.ts", "./src/**/*.ts", "./src/**/*.d.ts", "./src/**/*.vue"],

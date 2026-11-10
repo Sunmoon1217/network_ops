@@ -270,3 +270,39 @@ GET），不碰 worker、不碰数据库，30s 轮询无压力。
 `collect_backlog` 的三段：各队列 `LRANGE` 头部若干条（broker 消息是 JSON + base64 body，
 解不动按原文截断）、PEL 逐条点名、`last-delivered` 之后的未投递部分（**不含**已消费
 未 trim 的旧条目）。
+
+## 大屏供数（Dashboard）
+
+采集与写库分家，接缝仍是「只认任务名字符串」：
+
+```
+ingest.collect_dashboard(source)        # 采集：ingest/collectors/，纯 dict payload
+  → send_task(settings.DASHBOARD_WRITE_TASK)
+analysis.write_dashboard(payload)       # 唯一写库入口（一个事务内 upsert）
+  → GET /api/dashboard/                 # 只读供数（大屏前端轮询）
+```
+
+**写库（`analysis/tasks.py: write_dashboard`）**：事务内 `update_or_create`
+`DashboardMetric` / `MetricSample` / `ItsmCase`；工单再物化成 `panel=itsmtask` 的指标行；
+全量快照里消失的工单置 `is_active=False` 并删旧指标；每批另写一行 `CollectionRun`（不覆盖，
+供新鲜度审计）。唯一键保证**重复投递幂等**。
+
+**两种投递方式**（`settings/base.py`）：默认 payload 随消息直投（A 方案）；
+`DASHBOARD_PAYLOAD_VIA_REDIS=1` 时存 Redis、只投 `{"__redis_key__": …}`（C 方案，避免大 payload
+塞进 broker 消息），TTL `DASHBOARD_PAYLOAD_TTL=600`，写库侧取完即删、key 丢失直接报错。
+
+**模型（`analysis/models/dashboard.py`）**：
+
+| 模型 | 用途 |
+|------|------|
+| `DashboardMetric` | 当前值（EAV：`panel` / `group` / `name` / `value`，`value` 是 JSONField 保住 `string \| number`） |
+| `MetricSample` | 时序（唯一键含 `sampled_at`，同一时间点重跑不重复；为将来转 TimescaleDB hypertable 留路） |
+| `ItsmCase` | 工单快照（`is_active` 标记本轮是否仍在） |
+| `CollectionRun` | 每批采集一行（status / 时间 / 计数），只追加 |
+| `LinkTarget` | 链路目标配置表（当前写库任务不写它；实际目标常量仍在 ingest 侧 `LINK_TARGETS`——采集器不能反向读 analysis 的表） |
+
+**读接口**：`GET /api/dashboard/?panel=&group=&name=`（`analysis/api/dashboard.py`）只读；
+`group=linechart` 或 `name=bandwidth-*` 时把最近 3 小时 `MetricSample` 聚合回 EAV 行视图。
+它是全项目唯一用 `{status, message, result}` 包装的响应。契约测试：
+`tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` +
+`tests/analysis/test_dashboard_api.py`。

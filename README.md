@@ -12,14 +12,17 @@
 | **IP 管理** | `/ipam` | 子网、IP 地址、标签管理 |
 | **工具** | `/tools` | 路径追踪（防火墙策略匹配 + NAT + 路由 + 负载均衡）、机柜可视化（U 位视图） |
 | **任务中心** | — | 任务/阶段管理（Celery 采集→解析→存储）、运行监控（celery / Redis / 队列积压巡检） |
+| **总览大屏** | `dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
 
 ## 技术栈
 
 **后端**
 - Python 3.12 / Django 6.1 / Django REST Framework
 - PostgreSQL（TimescaleDB）+ Redis
-- Celery 异步任务（采集→解析→存储；访问流重建）
+- Celery 异步任务（采集→解析→存储；访问流重建；大屏采集→写库）
 - TTP 模板解析（设备配置 → 结构化数据入库）
+- OpenAPI 3 文档（drf-spectacular，`/api/schema/` 三路由，UI 走本地 sidecar）
+- 外部数据源采集（Zabbix / Autotask，`apps/ingest/collectors/`，pydantic DTO）
 - MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；基建与出口在根目录 `llmtools/`，各域注册实体，通用工具只认注册表，工具由 `llmtools/tools.py` 统一注册）
 
 **前端**
@@ -32,19 +35,21 @@
 
 ```
 network_ops/
-├── netops/          # Django 项目配置与基建（settings / urls / asgi / celery / pagination / mcp_server 兼容壳）
+├── netops/          # Django 项目配置与基建（settings / urls / asgi / lifespan / celery / pagination）
 ├── apps/
-│   ├── core/        # 用户认证、Token、Task/Stage、前端偏好、运维命令 + MCP 基建（server/registry/query/通用工具）
-│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）+ MCP 实体声明（specs）与域专属工具（locate）
-│   ├── ingest/      # 配置采集解析入库（每设备 Git 仓库 → TTP 解析 → Saver 写库）
-│   ├── analysis/    # 分析与观测（路径追踪/访问流/互联网分析/队列与 Redis 巡检）
-│   └── cloud/       # 云平台接入（阿里云 API 客户端 + 云资源缓存）
-├── frontend/        # Vue 3 + TypeScript + Vite（src/{api,components,views,...}）
-├── tests/           # pytest 测试（按应用分目录：core/assets/ingest/analysis/deploy/mcp）
-├── nginx/           # 反向代理（静态直出 + /api 代理）
-├── docker/          # 容器化构建手册（docker/README.md）与入口脚本
-├── env/             # 容器 env 文件（app/db/gunicorn/celery）+ secrets/（密钥，不入库）
-├── Dockerfile.base / Dockerfile.app / docker-compose.yml
+│   ├── core/        # 用户认证、Token、Task/Stage、前端偏好、运维命令
+│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）
+│   ├── ingest/      # 配置采集解析入库（每设备 Git 仓库 → TTP 解析 → Saver 写库）+ collectors/（Zabbix / Autotask 外部数据源）
+│   ├── analysis/    # 分析与观测（路径追踪/访问流/互联网分析/队列与 Redis 巡检/大屏供数），models/ 是包
+│   ├── cloud/       # 云平台接入（阿里云 API 客户端 + 云资源缓存）
+│   └── docs/        # 表格编辑 + 文档转换 + Dify 推送
+├── llmtools/        # MCP 工具子系统（基建 + 注册表 + 各域实体声明与工具）
+├── frontend/        # Vue 3 + TypeScript + Vite，双入口（index.html / dashboard.html），src/{shared,netops,dashboard}
+├── tests/           # pytest 测试（按应用分目录：core/assets/ingest/analysis/docs/deploy/mcp）
+├── nginx/           # 反向代理（静态直出 + /api、/mcp 代理）
+├── entrypoint/      # 容器入口脚本 + 容器化构建手册（entrypoint/README.md）
+├── envs/            # 配置三层（common / container / host）+ gunicorn / celery + secrets/（密钥，不入库）
+├── dockerfile.base / dockerfile.venv / dockerfile.code / compose.yml
 └── pyproject.toml / uv.lock
 ```
 
@@ -53,6 +58,7 @@ network_ops/
 ```bash
 # 后端
 uv sync --all-groups
+cp envs/example/*.env envs/     # 首次：配置实例不入库（日常只改 envs/common.env）
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
@@ -61,7 +67,8 @@ uv run python manage.py runserver
 cd frontend && pnpm install && pnpm dev
 ```
 
-宿主机直跑需要自行导出数据库/Redis 环境变量（`POSTGRES_*`、`REDIS_HOST`），凭据见 `env/secrets/`；完整说明在 `env/README.md`。
+宿主机直跑由 `netops/settings/base.py` 自动 `load_dotenv(envs/common.env)`（非 container 再叠
+`envs/host.env`），凭据见 `envs/secrets/`；完整说明在 `envs/README.md`。
 
 ### 提交前检查（git hooks）
 
@@ -98,16 +105,18 @@ uv run pytest tests/mcp/                          # 工具测试：mcp.Client �
 
 ## 部署
 
-生产/集成环境用 `docker compose`（db / redis / app / worker / nginx 等，nginx 为统一入口）：
+生产/集成环境用 `docker compose`（db / redis / code-init / app / worker / consumer / nginx，nginx 为统一入口）：
 
 ```bash
-cp .env.example .env          # 按需改宿主端口 / 镜像
-bash env/secrets/generate.sh  # 生成数据库凭据（默认沿用旧值）
-mkdir -p data/configs         # 配置源目录（唯一需要宿主目录的挂载点）
-docker compose up -d --build  # 构建顺序见 docker/README.md
+cp .env.example .env            # 按需改宿主端口 / 镜像
+cp envs/example/*.env envs/     # 配置实例（common / container / host / gunicorn / celery）
+bash envs/secrets/generate.sh   # 生成数据库凭据（默认沿用旧值）
+mkdir -p data                   # data 是唯一的 bind 挂载点
+docker compose up -d --build    # 构建顺序见 entrypoint/README.md
+docker compose up -d code-init  # 换代码镜像后必须重跑（app 挂的是 code 卷）
 ```
 
-细节见三份手册：`docker/README.md`（容器化构建）、`nginx/README.md`（反向代理）、`env/README.md`（配置分层）。
+细节见三份手册：`entrypoint/README.md`（容器化构建）、`nginx/README.md`（反向代理）、`envs/README.md`（配置分层）。
 
 ## 通用组件说明
 

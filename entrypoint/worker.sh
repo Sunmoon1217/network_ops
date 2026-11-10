@@ -16,8 +16,8 @@
 #       那种「追加到最后」——后者对 --concurrency 只会多出一个监听，覆盖不掉。
 #   注意 CELERY_* 里的 0 与空串不同：`:-` 只对「未设置或空」取默认值，写 0 就是 0。
 #
-# 变量由 compose 的 env_file 注入（docker-compose.yml 的 worker 服务把 env/app.env + env/celery.env 注入），
-# 所以在 env/celery.env 里改 CELERY_* 即可，不必碰 compose。
+# 变量由 compose 的 env_file 注入（worker 服务把 envs/common.env + envs/celery.env + envs/container.env 注入），
+# 所以在 envs/celery.env 里改 CELERY_* 即可，不必碰 compose。
 #
 # 关于并发：
 #   --concurrency=2 写死：默认池按 CPU 核数起（16 核 = 16 子进程 × 81M，空载即爆炸），

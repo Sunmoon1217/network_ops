@@ -107,3 +107,27 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 `mcpserver.streamable_http_app()` 的 HTTP 传输（`session_manager`）是**懒创建**的，
 全进程只应调用一次：重复调用会替换 `session_manager`，使先前那个 ASGI app 持有失效的
 manager（表现是能连上但会话不通）。
+
+## ASGI 装配（`netops/asgi.py`）
+
+三层，顺序不能反：
+
+```
+django_application = get_asgi_application()          # 先完成 django.setup()
+mcp_http_app = mcpserver.streamable_http_app(...)    # 建完才有 session_manager
+_dispatch            → /mcp* 给 mcp_http_app，其余给 django_application
+LifespanApp(_dispatch, [mcpserver.session_manager.run])
+```
+
+- `session_manager.run()` 是**生命周期钩子**，由 `netops/lifespan.py` 的 `LifespanApp` 在
+  `lifespan.startup` 时进入（全进程一次）、`shutdown` 时退出。Django 6.1 的 ASGI handler 收到
+  lifespan scope 直接抛 `ValueError`，所以 lifespan 必须在外层接走，**不能**转给 Django
+  （转发给 MCP 子应用也不必——它的 lifespan 就是 `session_manager.run()`）。
+- `transport_security` 必须显式传 `build_transport_security()`：默认值只信任 localhost，用
+  IP / 域名访问会 421。
+- 不用 Starlette `Mount`：`streamable_http_app()` 内部路由就是 `/mcp`，`Mount("/mcp", …)` 会把
+  端点叠成 `/mcp/mcp`，`Mount("/", …)` 又会被 Django 侧整体吞掉。
+- 钩子清单只在 `asgi.py` 组合（基建不自己注册），由 `tests/deploy/test_asgi_lifespan.py` 守；
+  换掉 `--worker-class uvicorn_worker.UvicornWorker` 就等于没有 lifespan（首个请求上告警一次）。
+- nginx 与 Vite 都已代理 `/mcp`（漏了会落到 SPA 兜底返回 `index.html`，表现为「被路由守卫跳
+  登录」）；MCP 是 SSE 长连接，反代要 `proxy_buffering off` + 长读超时。
