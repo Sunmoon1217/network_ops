@@ -20,7 +20,7 @@
 - PostgreSQL（TimescaleDB）+ Redis
 - Celery 异步任务（采集→解析→存储；访问流重建）
 - TTP 模板解析（设备配置 → 结构化数据入库）
-- MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；实体注册表 + 六工具，见下文）
+- MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；基建在 `apps/core/mcp/`，各域注册实体，通用工具只认注册表）
 
 **前端**
 - Vue 3 + TypeScript + Vite
@@ -32,10 +32,10 @@
 
 ```
 network_ops/
-├── netops/          # Django 项目配置与基建（settings / urls / asgi / celery / pagination / mcp_server）
+├── netops/          # Django 项目配置与基建（settings / urls / asgi / celery / pagination / mcp_server 兼容壳）
 ├── apps/
-│   ├── core/        # 用户认证、Token、Task/Stage、前端偏好、运维命令
-│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）+ MCP 工具出口（实体注册表 + 六工具）
+│   ├── core/        # 用户认证、Token、Task/Stage、前端偏好、运维命令 + MCP 基建（server/registry/query/通用工具）
+│   ├── assets/      # 网络域数据模型（设备/配置/IPAM/LTM/GTM/防火墙…）+ MCP 实体声明（specs）与域专属工具（locate）
 │   ├── ingest/      # 配置采集解析入库（每设备 Git 仓库 → TTP 解析 → Saver 写库）
 │   ├── analysis/    # 分析与观测（路径追踪/访问流/互联网分析/队列与 Redis 巡检）
 │   └── cloud/       # 云平台接入（阿里云 API 客户端 + 云资源缓存）

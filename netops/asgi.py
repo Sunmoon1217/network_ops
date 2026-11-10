@@ -16,8 +16,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'netops.settings')
 # 先完成 Django 初始化，域工具模块才能安全 import models。
 django_asgi_app = get_asgi_application()
 
-import assets.mcp.tools  # noqa: E402,F401 — import 即注册（工具挂到 netops.mcp_server.mcp）
-from netops.mcp_server import build_transport_security, mcp  # noqa: E402
+import assets.mcp.tools  # noqa: E402,F401 — import 即注册（通用工具 + 资产实体 + locate）
+from core.mcp.server import build_transport_security, mcp  # noqa: E402
 
 # Streamable HTTP 子应用：内部自带 /mcp 路由与 lifespan（进入 mcp.session_manager.run()）。
 # 构建之后 mcp.session_manager 才存在；本模块导入即完成全部接线，不额外监听端口。

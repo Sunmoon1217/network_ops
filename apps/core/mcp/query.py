@@ -27,7 +27,7 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Q, QuerySet
 from mcp.server.mcpserver.exceptions import ToolError
 
-from assets.mcp.entities import MAX_PAGE_SIZE, EntitySpec, get_spec, summary_fields, to_dict
+from core.mcp.registry import MAX_PAGE_SIZE, EntitySpec, get_spec, summary_fields, to_dict
 
 #: 过滤操作符白名单（与 ``entities.Filter`` 保持一致，不开放任意 lookup）
 OPERATORS = ("exact", "iexact", "icontains", "istartswith", "gte", "lte", "in", "isnull")
@@ -85,8 +85,10 @@ def _options(values: set[str] | tuple[str, ...]) -> str:
     return " / ".join(sorted(values)) or "(无)"
 
 
-def _walk_field_path(model: type, path: str) -> None:
-    """逐段确认路径在 ``_meta`` 中真实存在；拼错在编译期报错。"""
+def _walk_field_path(model: type | None, path: str) -> None:
+    """逐段确认路径在 ``_meta`` 中真实存在；视图注册没有 model，只能依赖白名单。"""
+    if model is None:
+        return
     current = model
     for segment in path.split("__"):
         try:
