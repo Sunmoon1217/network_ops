@@ -1,6 +1,6 @@
 """容器环境（DJANGO_ENV=container，由 env/app.env 注入）：容器与宿主的差异全部由 env 表达。
 
-本文件只留两条守卫：POSTGRES_HOST / REDIS_HOST 必须已注入——base 里默认 localhost，
+本文件只留两条守卫：POSTGRES_HOST / REDIS_HOST 必须已注入——base 里默认本机 127.0.0.1，
 而 Django 的连接是惰性的，env_file 少一行会拖到首个请求才 connection refused。
 """
 

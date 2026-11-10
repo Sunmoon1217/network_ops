@@ -52,20 +52,24 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
 # Host」时才需要声明（外层 LB 改写 Host、TLS 提前终结）。值带 scheme，逗号分隔。
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
-# 默认值是宿主 localhost 语义（dev 无 env 即此值）；容器由 env/app.env 注入 HOST=db。
+# 默认值是宿主本机语义（dev 无 env 即此值）；容器由 env/app.env 注入 HOST=db。
+# 写 127.0.0.1 而不是 localhost：Windows 上 localhost 优先解析成 ::1，而 PostgreSQL / Redis
+# 通常只监听 IPv4，psycopg2 与 redis-py 会逐个地址回退——每次连接白等约 10s（实测 10.03s
+# vs 0.03s）。pytest 一个会话要建两三条连接，setup 就被拖成 40s 级。
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("POSTGRES_DB", "netops"),
         "USER": _env_or_file("POSTGRES_USER", "netops"),
         "PASSWORD": _env_or_file("POSTGRES_PASSWORD", "netops_password"),
-        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
+        "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         "PORT": int(os.environ.get("POSTGRES_PORT", "5432")),
     }
 }
 
-# 默认宿主 localhost，容器注入 REDIS_HOST=redis；redis 官方镜像没有 *_FILE 机制，密码只走环境变量。
-REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+# 默认宿主本机（理由同上：localhost 在 Windows 上会先试 ::1，Redis 也只监听 IPv4）；
+# 容器注入 REDIS_HOST=redis；redis 官方镜像没有 *_FILE 机制，密码只走环境变量。
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("REDIS_DB", 0))
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")

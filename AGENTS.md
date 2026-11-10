@@ -123,8 +123,25 @@ uv run python manage.py reparse | purge_configs | import_server_owners   # 见 h
 pnpm dev | build | type-check
 
 # 质量
-uv run pytest ; uv run ruff check ; uv run ruff format ; uv run pyrefly check
+uv run pytest                                   # 单进程；排查单个文件时用它
+uv run pytest -n auto --dist loadfile           # 全量：多进程（每个 worker 建自己的 test_netops_gwN）
+uv run ruff check ; uv run ruff format ; uv run pyrefly check
 ```
+
+> 跑测试时加 `-v --tb=short`：命令输出不是流式的（进程结束才回显），只有 `-v` 才能看出逐条
+> 用例与百分比；范围大就按 `tests/<域>` 拆开跑。`-n` 需要数据库账号有 createdb 权限（dev 的
+> `netops` 是超级用户，已具备）；Windows 上 `test_reparse_command` 两个 fork 用例本来就红。
+> xdist 并行时 `-v` 仍是逐条输出（`[gwN] [ 12%] PASSED ...`），**不要混 `-q`**（会退化成每
+> worker 的字符进度）。要在运行**过程中**看进度，就让 pytest 跑在独立进程里写日志再 tail：
+>
+> ```powershell
+> $log = "$env:TEMP\netops_pytest.log"
+> Start-Process .\.venv\Scripts\python.exe -ArgumentList "-m","pytest","-n","auto","--dist","loadfile","-v" `
+>   -RedirectStandardOutput $log -RedirectStandardError "$env:TEMP\netops_pytest.err" -NoNewWindow
+> Get-Content $log -Tail 8        # 反复执行即可看到实时百分比
+> ```
+>
+> 别用 `| Select-Object -First N` 截 pytest 输出：管道提前关闭会杀掉进程、留下脏测试库。
 
 ## 关键约定
 

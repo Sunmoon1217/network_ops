@@ -56,13 +56,17 @@
 | `POSTGRES_DB` | `netops` | 库名 |
 | `POSTGRES_USER` / `POSTGRES_USER_FILE` | `netops` | 走凭据链 |
 | `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
-| `POSTGRES_HOST` | `localhost` | 容器注入 `db`；container / prod 必填 |
+| `POSTGRES_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
 | `POSTGRES_PORT` | `5432` | 容器内固定 5432 |
-| `REDIS_HOST` | `localhost` | 容器注入 `redis`；container / prod 必填 |
+| `REDIS_HOST` | `127.0.0.1` | 容器注入 `redis`；container / prod 必填 |
 | `REDIS_PORT` / `REDIS_DB` | `6379` / `0` | |
 | `REDIS_PASSWORD` | 空 | 非空时拼进 `REDIS_URL`；redis 官方镜像没有 `*_FILE` 机制，密码只走环境变量 |
 
 `CELERY_BROKER_URL` 与 `CELERY_RESULT_BACKEND` 都等于 `REDIS_URL`。
+
+两个 `HOST` 的默认值写 `127.0.0.1` 而不是 `localhost`：Windows 上 `localhost` 优先解析成
+`::1`，而本机的 PostgreSQL / Redis 通常只监听 IPv4，驱动会逐个地址回退——每次连接白等
+约 10s（实测 10.03s vs 0.03s）。pytest 一个会话要建两三条连接，setup 直接被拖到 40s 级。
 
 ### 访问流（AccessFlow）链路
 
@@ -114,7 +118,7 @@
 
 两条设计取舍：
 
-- **container 守卫存在的理由是「发现得早」**：base 里 `HOST` 默认 `localhost`，
+- **container 守卫存在的理由是「发现得早」**：base 里 `HOST` 默认 `127.0.0.1`，
   而 Django 的数据库连接是惰性的——env_file 少一行不会在启动时报错，要到首个请求才
   `connection refused`，故障发现晚一拍。守卫让它启动即拒。
 - **守卫一次报全**：缺几个就一条消息列出几个，不做「修一个、再启动、又缺一个」的挤牙膏式失败。

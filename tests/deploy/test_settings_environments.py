@@ -60,17 +60,17 @@ def _dispatch(monkeypatch, django_env=None, **env):
 
 
 def test_dev_is_default(monkeypatch):
-    """不设 DJANGO_ENV → dev：base 的默认语义 localhost / DEBUG=True / HOSTS=['*']。"""
+    """不设 DJANGO_ENV → dev：base 的默认语义 127.0.0.1 / DEBUG=True / HOSTS=['*']。"""
     m = _dispatch(monkeypatch)
     assert m.DEBUG is True
     assert m.ALLOWED_HOSTS == ["*"]
-    assert m.DATABASES["default"]["HOST"] == "localhost"
-    assert m.REDIS_HOST == "localhost"
+    assert m.DATABASES["default"]["HOST"] == "127.0.0.1"
+    assert m.REDIS_HOST == "127.0.0.1"
     assert m.CELERY_BROKER_URL == m.REDIS_URL
 
 
 def test_container_overrides_via_injection(monkeypatch):
-    """container 的差异靠 env 注入表达：HOST=db/redis 覆盖 base 的 localhost 默认。"""
+    """container 的差异靠 env 注入表达：HOST=db/redis 覆盖 base 的本机默认。"""
     m = _dispatch(monkeypatch, "container", POSTGRES_HOST="db", REDIS_HOST="redis")
     assert m.DATABASES["default"]["HOST"] == "db"    # 注入值胜过 base 默认
     assert m.REDIS_HOST == "redis"

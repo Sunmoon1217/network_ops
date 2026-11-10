@@ -30,13 +30,13 @@ elif "*" in _hosts:
     _errors.append("DJANGO_ALLOWED_HOSTS —— 生产不允许 '*'，请写具体域名/IP")
 
 if not os.environ.get("POSTGRES_HOST"):
-    _errors.append("POSTGRES_HOST —— 数据库地址（生产没有 localhost 默认）")
+    _errors.append("POSTGRES_HOST —— 数据库地址（生产不沿用本机默认）")
 
 if not (os.environ.get("POSTGRES_PASSWORD_FILE") or os.environ.get("POSTGRES_PASSWORD")):
     _errors.append("POSTGRES_PASSWORD_FILE（容器 secrets）或 POSTGRES_PASSWORD —— 数据库凭据")
 
 if not os.environ.get("REDIS_HOST"):
-    _errors.append("REDIS_HOST —— Redis 地址（生产没有 localhost 默认）")
+    _errors.append("REDIS_HOST —— Redis 地址（生产不沿用本机默认）")
 
 if _errors:
     raise ImproperlyConfigured(
