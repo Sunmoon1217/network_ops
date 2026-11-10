@@ -13,6 +13,8 @@
 
 | 文件 | 内容 |
 |------|------|
+| [`api.md`](api.md) | 全部 HTTP 路由 + 认证/注册约定 + 分页搜索口径 |
+| [`deploy.md`](deploy.md) | 部署与容器化：nginx/静态卷、两个数据目录、entrypoint 四步、健康检查、凭据、镜像 |
 | [`settings.md`](settings.md) | settings 分层与环境变量全表、凭据链、三个环境的守卫矩阵 |
 | [`ingest.md`](ingest.md) | 配置采集/解析/入库链路：阶段推进、信号防重入、Saver 契约、批量导入 |
 | [`analysis.md`](analysis.md) | 路径追踪、策略展开、访问流链路（队列/背压/单写者/事故复盘）、监控口径 |

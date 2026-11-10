@@ -204,6 +204,15 @@ GSLB 设备
   是端口（`[...]:80` 虽标准，但 IPv4 用方括号又多余）。`#` 不可能出现在地址里，
   含义唯一且紧凑。前端 `internet-asset.vue` 的 `TARGET_SEPARATOR` 与后端保持一致。
 
+### 负责人列
+
+按链路**最后的 IP** 反查 `ServerOwner`，回退顺序是
+`slb_member_address → llb_member_address → gtm_ip`（见 `_final_ip`）。匹配前两边都过
+`_normalize_ip`，否则 `2001:DB8::1` 与压缩写法对不上。负责人**不进分析缓存**——它挂在
+`build_path_rows` / `GET` 响应上现查，改了负责人不必重跑分析。前端表格自己扁平化、拿不到
+数据库，所以 GET 响应额外给一份 `owners`（键是链路最后 IP 的**原始写法**，与前端用同一份
+回退规则取值），避免在 JS 里重实现 IPv6 规范化。
+
 ### 扁平表与导出
 
 一行 = 一条从域名到最终后端的完整链路。只保留 LLB / SLB 两级虚拟服务器与最后一跳的
@@ -214,6 +223,22 @@ GSLB 设备
 **列序与前端 `slb.vue` / `gslb.vue` 的扁平列组手工保持一致**——表格渲染在前端、
 导出在后端的两份扁平化并存是项目既定先例（见 internet-asset 的 `build_path_rows`），
 改列时两边一起改。
+
+互联网资产分析当前 7 列：域名 / LLB_VS地址#端口 / LLB_Rule规则 / SLB_VS地址#端口 /
+SLB_Rule规则 / 服务器地址#端口 / 负责人。几个别顺手改坏的细节：
+
+- **「服务器地址#端口」是链路最后一跳的池成员**：两级取 SLB 的、一级取 LLB 的，断链时回退到
+  GTM 地址（见 `_final_target`）。有测试 `test_llb_member_equals_slb_virtual_server` 守这个前提。
+- 行字典里仍保留 `llb_address` / `llb_port` / `slb_member_address` 这类**分列字段**（导出与展示时
+  再按 `TARGET_SEPARATOR` 拼成 `地址#端口`）；`note` / `rtype` / `gtm_ip` 也仍在行里，只是不再
+  出现在表格与导出中——`note` 还被前端用来算「已解析」条数，删列时别顺手删字段。
+- `EXPORT_COLUMN_WIDTHS` 的条数必须与 `EXPORT_HEADERS` 相同（有测试守），列宽按序号用
+  `get_column_letter` 生成，别写死 `"ABCDEFGHIJKLM"`。
+- 分隔符是两端各一个常量（后端 `TARGET_SEPARATOR`、前端 `internet-asset.vue` 同名常量），
+  改要一起改；有测试守「`#` 不可能出现在 IP 里、且能唯一切回」。
+- 前端模板里**不要把 `row` 作为参数传给函数**（`serverTarget(row)`）：Element Plus 插槽给的
+  `row` 是它自己的 `DefaultRow`，传给形参类型为 `PathRow` 的函数会 `vue-tsc` 报错；把拼好的值
+  预先算进行字段（`llbTarget` / `slbTarget` / `serverTarget`）再读属性即可。
 
 ## 五、队列积压巡检（`queue_monitor.py`）
 

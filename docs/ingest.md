@@ -249,6 +249,82 @@ hillstone 的地址按来源分列：
 用 `attname` 而不是字段名——字段名描述符只接受模型实例，传 pk 会报
 `must be a Policy instance`。
 
+## 已注册解析器与 Saver
+
+`@ParserFactory.register` 注册的解析器（`(vendor, device_type)`）：
+
+```
+A10/slb、Cisco/firewall、F5/gslb、F5/slb、H3C/switch、H3C/router、
+Hillstone/firewall、Huawei/switch、Maipu/switch、Ruijie/switch
+```
+
+Saver 实现（`savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
+LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、
+GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、
+NatRuleSaver。
+
+其中 Route / Vlan / SnmpConfig / Policy / GTM 三个 / DeviceAccount / AddressBook / NatRule /
+LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），
+其余仍是原生 ORM，待逐步迁移。`LBVirtualServerSaver` 除虚拟服务器外还负责同一份 `virtuals`
+产出里嵌套的 `LtmProfile` / `LtmIRule` / `LtmPersist`（设备级清单，没有指向 virtual server
+的外键）；`GtmServerSaver` 同理兼写 `GtmVServer`。
+
+`ConfigBase` 下有 24 个子模型，其中 22 个已配 Saver。几个需要留意的点：
+
+- `Vlan` / `Route` / `SnmpConfig` / `NtpConfig` / `SyslogConfig` 原为裸 `models.Model`，已改为
+  继承 `ConfigBase`（migration `0023` / `0024`）。代价与收益：`SnmpConfig` / `NtpConfig` /
+  `SyslogConfig` 的 `device` 由一对一变成外键（1:1 → 1:N），各自重复声明的
+  `created_at` / `updated_at` 与基类同名同义故删除，`related_name` 变为默认的 `<model>_set`；
+  `Vlan.device` 由可空变必填；`Route` 新增 `device`，与 `vrf.device` 冗余，Saver 入库时用
+  `vrf` 保证一致，缺失时挂到设备的 `default` VRF。
+- `LtmPoolMember` 原为裸模型，只有 `pool_name` 字符串、没有 `device`，已改为继承 `ConfigBase`
+  （migration `0026`）。**保留 `pool_name` 而不是改成指向 `LtmPool` 的外键**：归属靠 `device`
+  限定（`LtmPool` 的 `(device, name)` 唯一）。存量迁移只有 `pool_name` 可用，无法唯一映射的行
+  （孤儿 / 多台设备同名池）直接删除并在迁移输出里逐条打印。所有按 `pool_name` 查成员的地方
+  （`LBPoolSaver`、`analysis/api/analysis.py`、`analysis/path_tracer.py`）**都必须同时限定
+  `device`**，否则不同设备上的同名池会互相串。
+- `NatRule` 的三个匹配 M2M 是 `blank=True`（不同厂商能给的信息差别很大：cisco 的 `nat` group
+  只有 `network_name` / `host_ip` / `public_ip`，给不出任何 service）。
+- `static_routes` 的模板字段名不统一（Maipu / Ruijie 用 `subnet_mask`，其余用 `mask`；cisco
+  还带 `interface_name` 与 `metric`）：`subnet_mask → mask` 由 `FIELD_ALIASES` 在 Saver 入口
+  归一，`RouteSaver` 只读 `mask`。
+- `SnmpConfigSaver` 兼容两种产出形态：Huawei / H3C router 的 `community` + `access_type` +
+  `host_ip`，以及 H3C switch（Comware V7）的 `target_hosts[].ip` + `securityname`。
+
+**尚未覆盖的两处**：
+
+- `NtpConfig` / `SyslogConfig` 已继承 `ConfigBase` 但**没有 Saver**：模板侧还没有 ntp / syslog
+  产出，写了也永不触发。补齐需连模板一起加 group。
+- `SecurityZone` 保持裸 `models.Model`：安全域是人工维护的信息，不从设备配置提取。
+
+`parsers/tmpls/running/` 下的模板（`route.ttp`、`arp.ttp`、`mac.ttp`、`lldp.ttp`、
+`h3c_route.ttp`）**不在 `ParserFactory` 注册表内**，由路径追踪 / 路由采集接口按名称动态调用；
+页面上显示「未关联解析器」不代表可以删。
+
+## 并发（实测结论）
+
+- 信号是**完全同步**的：在 `DeviceConfig.save()` 的调用栈里跑完「读 Git → 解析 → 全部 Saver」，
+  无线程池、无队列、无 async。`_processing` 是模块级 set、只在本进程内有效，键是
+  `DeviceConfig.pk`——**同一台设备的两个 DeviceConfig 并行进入流水线时它挡不住**；而「同一 pk
+  再次 `created=True`」不可能发生，所以它其实是冗余的（嵌套那次 `config_json` 回写是
+  `created=False`，在 `not created` 时已返回）。**更新已有的 DeviceConfig 永远不会触发流水线。**
+- **不同设备可以并行**：`runserver` 默认多线程，负载是 DB 往返瓶颈（每语句约 0.95 ms），
+  socket I/O 期间释放 GIL。实测 4 台设备 4 线程 18.34 s → 5.49 s（3.34x）。
+- **同一设备并行会写坏数据**：同一设备 4 线程并发写 4 份不同配置（100 个池），8/8 轮最终成员表
+  混进 2–3 份配置的地址，并出现 19 次 `duplicate key ... uni_pool_member_device_pool_node_port`；
+  2 线程时间歇性（6 轮 1 次、10 轮 0 次），更难发现。失败被 `_dispatch_savers` 按 Saver 吞掉只打
+  日志，HTTP 请求照样返回成功。
+- `reparse --workers N` 的并行单位是**设备**，且命令内部保证每台设备只派一个任务（同一 hostname
+  重复传入会去重）。它**只保证本命令内部**不同设备并发；Web 导入路径没有设备级互斥。
+
+## 批量写实测
+
+200 行规模（合成真实配置）：按 Saver 合计 **53.92 s / 13985 条 SQL → 9.47 s / 2802 条**
+（5.7x，每行 6.2 → 1.7 条）；端到端 4 台设备 **37.39 s → 7.64 s**（4.9x），F5 SLB 那台
+12.21 s → 0.24 s。剩下每行约 1–2 条 SQL 来自 DRF 自身：`PrimaryKeyRelatedField` 无条件
+`queryset.get(pk=...)`（DRF 没有「传模型实例就短路」的分支），以及 `UniqueTogetherValidator`
+每次校验一条查询——这两项是「Saver 走序列化器」的固有代价，没有动。
+
 ## 管理命令
 
 | 命令 | 用途 |

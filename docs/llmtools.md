@@ -79,6 +79,29 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 **`functools.wraps` 必须保留**——SDK 沿 `__wrapped__` 链读签名生成入参 schema，
 去掉 wraps 工具就没有参数说明书了。
 
+## 工具写法三条
+
+1. 只做「参数校验 → 查库 → 序列化」，字段口径复用 `assets.serializers`；
+2. 同步 `def` 别写 `async def`（事件循环里调 ORM 会 `SynchronousOnlyOperation`）；
+3. 模型可读的失败抛 `ToolError`（原文达模型、可自我纠正，如「设备不存在：xxx，可先用 find
+   搜索」）；程序 bug 不用管（SDK 泛化为 `Error executing tool …`，traceback 只进服务端日志）。
+
+**返回注解用 `dict[str, Any]` 而不是 `TypedDict`**：实体类型由注册表驱动、字段随序列化器走，
+固定结构不存在，写假 TypedDict 只会让类型检查放过字段漂移——字段口径的正确性由序列化器 +
+`tests/mcp/` 保证。工具名是全局平面命名空间，按域前缀（未来 `config_*` / `cloud_*` /
+`zabbix_*`）防撞名。测试模式：`mcp.Client(server)` 内存传输整链 + `django_db(transaction=True)`。
+
+**注册是集中式的**：域里既没有 `@mcp.tool()`，也不 import MCP 基建；重名在 `register_all()`
+启动期即抛错（SDK 默认是静默覆盖）。**没有任何「import 即注册」**：`specs.py` 底部不自动调用
+`register()`，声明模块 import 进来是纯的；接线只发生在 `__init__.py`。防循环靠导入顺序——
+基建（`server` / `registry` / `query` / `entity_tools`）先、`domains` 次之、`tools` 最后，而
+`domains/*` 只 import `registry` / `entity_tools`，绝不 import `tools` 或包本身。
+
+现状：资产域为实体注册表形态（`domains/assets/specs.py` 持 `NodeType` / `EntitySpec` 与
+`EDGES`），七个工具（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations` /
+`locate`）只做「spec → queryset → 序列化」，**新增表 = 注册表加一行，工具层零改动**；
+新增实体类型先进 `NodeType` 占位防拼写分叉。
+
 ## 会话管理器的单次约束
 
 `mcpserver.streamable_http_app()` 的 HTTP 传输（`session_manager`）是**懒创建**的，

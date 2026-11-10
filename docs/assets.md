@@ -4,7 +4,25 @@
 
 全部模型集中在单文件 `apps/assets/models.py`（没有 models 子目录），这样「一张表在哪」
 不需要再翻包。配置解析产物都继承 `ConfigBase`，`purge_configs` 用
-`ConfigBase.__subclasses__()` 运行时枚举它们。
+`ConfigBase.__subclasses__()` 运行时枚举它们（当前 24 个子类，其中 22 个已配 Saver）。
+
+| 领域 | 模型 |
+|------|------|
+| DCIM | SecurityZone, DataCenter, Room, Cabinet |
+| 设备 | Vendor, DeviceModel, Device, DeviceConnection, DeviceConfig, DeviceAccount, DeviceGroup, DeviceGroupMember |
+| 配置基类 | `ConfigBase`（被 Vrf / Interface / LTM / GTM / 防火墙等模型继承） |
+| 网络 | Vlan, Vrf, Interface, SnmpConfig, NtpConfig, SyslogConfig |
+| 负载均衡 LTM | LtmVirtualServer, LtmPool, LtmPoolMember, LtmProfile, LtmIRule, LtmSNAT, LtmPersist |
+| 全局负载均衡 GTM | GtmDatacenter, GtmWideip, GtmPool, GtmServer, GtmVServer |
+| 防火墙 | AddressBook, Service, Policy, NatRule |
+| IPAM | Tag, Subnet, IPAddress, SubnetUsageLog |
+| 路由与其它 | Route, Topology, ArpMac |
+| 人工维护 | ServerOwner（服务器 IP ↔ 负责人；不从设备配置提取，故不进 `ConfigBase`） |
+
+两条容易踩的：`Topology` 是单模型，图数据存 `graph_data` JSON，没有独立的节点/边表；
+`Device` 没有 `address` 字段，地址在 `DeviceConnection` 里。
+
+`ConfigBase` 化的代价与 `LtmPoolMember` 的 `pool_name` 取舍见 [`ingest.md`](ingest.md)。
 
 几条约束的理由：
 
