@@ -36,6 +36,12 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // MCP 端点（Streamable HTTP）。不代理的话 /mcp 会落到 history fallback
+      // 返回 index.html，被 Vue Router 当成未知路由 → 守卫跳登录。
+      '/mcp': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

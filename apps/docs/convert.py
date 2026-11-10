@@ -1,27 +1,7 @@
-"""文档转换：上传的文本文件 → md 或 自包含 html（含图时），pdf 直传。
+"""文档转换：上传的文本文件 → md 或自包含 html（含图时），pdf 直传。
 
-Dify 知识库 ``document/create-by-file`` **一次只收一个文件**（多文件报 too_many_files），
-所以「图片不能和 md 一起分开上传」——含图文档统一转成 **base64 内嵌的自包含 html**
-单文件推送，这就是「有图 → html」规则的由来。
-
-转换规则（``convert()`` 唯一入口）::
-
-    txt      → md（UTF-8 / GB18030 自适应解码）
-    md       → md；引用的本地图片随附上传后内嵌 → 自包含 html
-    docx     → md；含内嵌图片 → 自包含 html（base64 内嵌）
-    html/htm → html（本地图片引用随附上传后 base64 内嵌；无图原样保留）
-    xlsx     → md（每 sheet：网格表 + 行式键值「行记录」双写）
-    csv      → md（网格表 + 行式键值「行记录」双写）
-    pdf      → 直传（不转换；Dify 原生解析保留版式与图片）
-
-表格**双写**的由来：Dify 的分段是「分隔符 + max_tokens」机械切分、不认表格结构
-（社区有 content-aware chunker 专门绕这一点）——大表网格会被拦腰切、表头留在
-上一个 chunk，行碎片 `| 甲 | 1 |` 缺列名语义，向量/关键词检索都吃亏。「行记录」
-段落每行自带「列名：值」、天然抗分段切断，网格表保留给人看与编辑。
-
-md / html 里引用**本地图片**（相对路径或裸文件名）时，图片必须随附上传
-（接口的 attachments 字段）：引用全部能解析到 → 内嵌；解析不到 → 转换报错，
-不静默产出缺图的文档。http(s) / data: 远程引用不内嵌、原样保留。
+``convert()`` 是唯一入口；每种输入对应什么产物、为什么「有图就转 html」、表格为什么
+双写、本地图片引用怎么处理，见 handbook/docs-domain.md
 """
 
 import base64
@@ -58,9 +38,7 @@ class ConversionResult:
     has_images: bool  # 产物是否内嵌了图片
 
 
-# ---------------------------------------------------------------------------
 # 公共入口
-# ---------------------------------------------------------------------------
 
 
 def convert(name: str, content: bytes, attachments: dict[str, bytes] | None = None) -> ConversionResult:
@@ -87,9 +65,7 @@ def convert(name: str, content: bytes, attachments: dict[str, bytes] | None = No
     return _convert_docx(content, atts)  # docx
 
 
-# ---------------------------------------------------------------------------
 # 文本解码与表格 → md
-# ---------------------------------------------------------------------------
 
 
 def _decode_text(raw: bytes) -> str:
@@ -168,9 +144,7 @@ def _csv_to_md(text: str) -> str:
 def _xlsx_to_md(content: bytes) -> str:
     from docs import xlsx_io  # 本地导入：openpyxl 启动慢，仅 xlsx 路径需要
 
-    # 走 parse_xlsx 而不是裸调 openpyxl：它带「样式表损坏免疫」（降级跳过样式、
-    # 自扫 numFmt 保日期）与合并单元格填充——裸调会在坏 styles.xml 上整个判死
-    # （TypeError: expected <class 'openpyxl.styles.fills.Fill'>）。
+    # 走 parse_xlsx 而不是裸调 openpyxl：它有样式表损坏免疫与合并单元格填充（见 handbook/docs-domain.md）
     try:
         data = xlsx_io.parse_xlsx(io.BytesIO(content))
     except Exception as e:
@@ -183,9 +157,7 @@ def _xlsx_to_md(content: bytes) -> str:
     return "\n\n".join(parts)
 
 
-# ---------------------------------------------------------------------------
 # 本地图片引用解析
-# ---------------------------------------------------------------------------
 
 
 def _is_remote(ref: str) -> bool:
@@ -232,9 +204,7 @@ def _inline_local_images(text: str, atts: dict[str, bytes], is_html: bool) -> tu
     return text, found
 
 
-# ---------------------------------------------------------------------------
 # md / html 转换
-# ---------------------------------------------------------------------------
 
 
 def render_preview(text: str, target_format: str) -> str:
@@ -265,9 +235,7 @@ def _convert_html(text: str, atts: dict[str, bytes]) -> ConversionResult:
     return ConversionResult("html", text, found)
 
 
-# ---------------------------------------------------------------------------
 # docx 转换：块级中间结构（段落 / 表格 / 图片）→ md 或 html
-# ---------------------------------------------------------------------------
 
 
 def _docx_blocks(doc: DocxDocument):

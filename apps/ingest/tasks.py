@@ -27,11 +27,6 @@ def _update_stage_status(stage_id, status, output_data=None, error_message=""):
     stage.save()
 
 
-# ---------------------------------------------------------------------------
-# 阶段式任务（采集→解析→存储）
-# ---------------------------------------------------------------------------
-
-
 @shared_task(bind=True, name="ingest.run_collection_stage")
 def run_collection_stage(self, stage_id):
     """采集阶段 - 通过连接设备获取配置"""
@@ -44,13 +39,11 @@ def run_collection_stage(self, stage_id):
         if not device:
             raise ValueError("任务无关联设备")
 
-        # 获取设备连接
         connection = device.connections.filter(enabled=True).first()
         if not connection:
             raise ValueError(f"设备 {device.hostname} 无可用连接")
 
-        # TODO: 调用实际采集器（napalm/netmiko）
-        # 目前返回占位结果
+        # TODO: 调用实际采集器（napalm/netmiko），目前是占位结果
         config_text = f"# placeholder config for {device.hostname}"
 
         _update_stage_status(stage_id, "success", output_data={"config": config_text})
@@ -75,14 +68,12 @@ def run_parsing_stage(self, stage_id):
         if device is None:
             raise ValueError("任务未关联设备，无法解析")
 
-        # 从采集阶段获取原始配置
         collection_stage = task.stages.filter(stage_type="collection", status="success").first()
         if not collection_stage or not collection_stage.output_data:
             raise ValueError("无成功的采集阶段")
 
         raw_config = collection_stage.output_data.get("config", "")
 
-        # 选择解析器
         from ingest.parsers.factory import ParserFactory
 
         try:
@@ -114,17 +105,13 @@ def run_storage_stage(self, stage_id):
         if device is None:
             raise ValueError("任务未关联设备，无法入库")
 
-        # 从解析阶段获取结构化数据
         parsing_stage = task.stages.filter(stage_type="parsing", status="success").first()
         if not parsing_stage or not parsing_stage.output_data:
             raise ValueError("无成功的解析阶段")
 
         parsed_data = parsing_stage.output_data
 
-        # 选择 Saver。get_savers_for_config 的第一个元素是**key 列表**（一个 Saver
-        # 可能注册多个 key，如 PolicySaver 的 policies/acl/rules），必须整组交给它，
-        # 不能当成单个 key——原先 {key: parsed_data.get(key)} 会抛
-        # TypeError: unhashable type: 'list'
+        # 分组规则（一个 Saver 可注册多个 key、payload 只含自己有值的键）见 build_saver_payloads
         from ingest.savers.registry import build_saver_payloads
 
         total_created, total_updated = 0, 0
@@ -139,11 +126,6 @@ def run_storage_stage(self, stage_id):
         _update_stage_status(stage_id, "failed", error_message=str(e))
         # 同采集/解析阶段：不抛出会让 Celery 记成 SUCCESS
         raise
-
-
-# ---------------------------------------------------------------------------
-# DeviceConfig 异步任务
-# ---------------------------------------------------------------------------
 
 
 @shared_task(bind=True, name="ingest.run_config_parsing")
@@ -195,9 +177,7 @@ def run_config_storage(self, config_id):
             logger.warning("DeviceConfig %s config_json 为空，跳过", config_id)
             return
 
-        # 与 run_storage_stage 用同一套分组规则：每个 Saver 只拿到自己注册的 key。
-        # 原先直接把整个 config_json 递进去，等于让 Saver 能看到不属于它的键，
-        # 注册的 key 写错了也测不出来。
+        # 与 run_storage_stage 同一套分组：每个 Saver 只拿到自己注册的 key
         from ingest.savers.registry import build_saver_payloads
 
         total_created, total_updated = 0, 0

@@ -1,24 +1,6 @@
-"""互联网资产分析。
+"""互联网资产分析：从 GSLB 的 WideIP 逐层解析到最终后端地址，结果写缓存表。
 
-从 GSLB 设备的 WideIP 出发，逐层解析到最终的后端地址：
-
-    GSLB 设备
-      └─ GtmWideip（域名，pools 为池名列表）
-          └─ GtmPool（池，members 形如 "server_name:vs_name"）
-              └─ GtmVServer（GTM 侧虚拟服务器，含 IP 与端口）
-                  ├─ 未找到 → 结果标记「未找到」
-                  └─ 找到 → 用 IP:端口 查 LtmVirtualServer
-                      ├─ 未找到 → 返回 vserver 的 IP:端口
-                      └─ 找到 → LtmPool → LtmPoolMember
-                          └─ 用成员的 IP:端口 再查 LtmVirtualServer（级联 LB）
-                              └─ 找到 → 返回该成员的 IP:端口
-
-整个过程只做 4 次查询（WideIP / GTM VServer / LTM VS / LTM 成员各一次），
-再在内存里索引匹配，避免逐条记录查库。
-
-**结果不实时计算**：分析成本不低而结果变化不频繁，所以只在手动触发
-``POST /api/internet-analysis/analyze/`` 时重算并写入 ``InternetAnalysis`` 缓存表；
-``GET /api/internet-analysis/`` 与导出接口都只读缓存。
+链路图、成员三种形态、IPv6 规范化与分隔符的取舍见 handbook/analysis.md
 """
 
 import ipaddress
@@ -41,11 +23,8 @@ from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPo
 # 级联展开层数上限，防止 LTM 之间互相指向造成死循环
 MAX_NESTED_DEPTH = 3
 
-# 扁平表格的列：一行就是一条从域名到最终后端的完整链路
-#
-# 只保留 LLB / SLB 两级虚拟服务器与最后一跳的服务器：
-# **LLB 的池成员就是 SLB 的虚拟服务器**（同一份地址:端口），占两组列是重复的，
-# 所以合并成 LLB_VS / SLB_VS / 服务器 三段。字段来源见每列注释。
+# 一行 = 一条从域名到最终后端的完整链路；为什么合并成 LLB_VS / SLB_VS / 服务器 三段，
+# 见 handbook/analysis.md。字段来源见每列注释。
 EXPORT_HEADERS = [
     "域名",  # GtmWideip.name
     "LLB_VS地址#端口",  # LtmVirtualServer.vs_address#vs_port
@@ -99,12 +78,7 @@ def _normalize_ip(value) -> str:
         return text.lower()
 
 
-# 地址与端口之间的分隔符。
-#
-# **不要用 ":"**：IPv6 地址本身就带冒号，``2001:db8::1:80`` 分不清哪一段是端口
-# （回退写法 ``[...]:80`` 虽然标准，但 IPv4 用方括号又显得多余）。
-# 用 "#"：它不可能出现在 IPv4/IPv6 里，含义唯一且紧凑。
-# 前端 internet-asset.vue 里的 TARGET_SEPARATOR 要与这里保持一致。
+# 分隔符用 "#" 不用 ":"（IPv6 自带冒号会分不清端口）；前端 TARGET_SEPARATOR 必须一致
 TARGET_SEPARATOR = "#"
 
 
@@ -344,9 +318,7 @@ def internet_analysis_run(request):
     return Response(_cached_response(cached))
 
 
-# ---------------------------------------------------------------------------
 # 扁平化：一行 = 一条从 WideIP 到最终后端的完整链路
-# ---------------------------------------------------------------------------
 
 
 def _member_sort_key(member: dict) -> tuple[int, int]:

@@ -19,12 +19,11 @@ def all_savers() -> dict[tuple[str, str], type[BaseSaver]]:
 
 
 def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[list[str], BaseSaver]]:
-    """根据设备类型和 config_json 获取匹配的 Saver。
+    """根据设备类型和 config_json 获取匹配的 Saver，返回 ``(命中该 Saver 的 key 列表, 实例)``。
 
-    一个 Saver 可能注册了多个 key（例如 PolicySaver 覆盖 policies / acl / rules）。
-    这里把命中**同一个 Saver** 的 key 聚合后一并交给它——若按 key 逐个返回，
-    调用方只能把第一个键的数据传进去，Saver 内部 `a or b or c` 的短路链
-    会让其余键的数据被静默丢弃。
+    **按 Saver 聚合、不按 key 逐个返回**：一个 Saver 可能注册多个 key（PolicySaver 覆盖
+    policies / acl / rules），逐个返回会让调用方只传第一个键，Saver 内部 `a or b or c`
+    的短路链把其余键的数据静默丢弃。理由与 payload 规则见 handbook/ingest.md
     """
     grouped: dict[type[BaseSaver], list[str]] = {}
     for key in config_json:
@@ -37,11 +36,9 @@ def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[lis
 def build_saver_payloads(device_type: str, config_json: dict) -> list[tuple[BaseSaver, dict]]:
     """按 Saver 分组，返回 ``(saver 实例, 该 Saver 应该看到的 payload)``。
 
-    **调用方不要自己拼 payload**：命中同一个 Saver 的多个 key 必须一起传，且只传
-    有值的键。这条规则原先在 ``pipeline._dispatch_savers`` 与两个 Celery 存储任务里
-    各写了一遍，其中 ``run_storage_stage`` 把 ``keys``（列表）当成单个 key 用，
-    ``parsed_data.get(["policies", "acl"])`` 直接抛 ``TypeError: unhashable type``，
-    凡是匹配到 Saver 的设备都存不进去。收敛到这里，避免再次各写一份。
+    **调用方不要自己拼 payload**：同一个 Saver 的多个 key 必须一起传，且只传有值的键。
+    这条规则曾散在 pipeline 与两个 Celery 任务里各写一遍，其中一处把 key 列表当单 key
+    用而整批存不进去——收敛到这里，别再加第三份。
     """
     payloads: list[tuple[BaseSaver, dict]] = []
     for keys, saver in get_savers_for_config(device_type, config_json):

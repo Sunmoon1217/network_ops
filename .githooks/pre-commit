@@ -1,0 +1,134 @@
+#!/bin/sh
+# =============================================================================
+# pre-commit：提交前检查（只看本次暂存的文件，没相关文件就秒过）
+#
+# 检查项
+#   1. 冲突标记   暂存内容新增 <<<<<<< / >>>>>>> 即拒绝
+#   2. 后端 lint  ruff check（阻断；配置唯一来源 pyproject.toml）
+#   3. 后端格式   ruff format --check（默认只警告：仓库里已有存量未格式化文件，
+#                 见下方 NETOPS_HOOK_STRICT_FORMAT）
+#   4. 后端类型   pyrefly check（阻断；配置 [tool.pyrefly]；只有暂存文件里的错误才阻断，
+#                 其他文件的存量/WIP 报错只提示）
+#   5. 前端类型   vue-tsc --noEmit（阻断；仅 .ts/.tsx/.vue 变更且有 node_modules 时跑）
+#
+# 安装：sh scripts/setup-git-hooks.sh        # == git config core.hooksPath .githooks
+# 临时跳过：git commit --no-verify
+# 开关：
+#   NETOPS_SKIP_PYREFLY=1      跳过 pyrefly（约 2 秒）
+#   NETOPS_SKIP_FRONTEND=1     跳过前端类型检查（纯文档/后端提交想省 6 秒时用）
+#   NETOPS_HOOK_STRICT_FORMAT=1 把 ruff format 警告升级为阻断
+# =============================================================================
+set -u
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root" || exit 0
+
+fail=0
+info() { printf '  %s\n' "$*"; }
+
+# 暂存文件（ACMR = 新增/复制/修改/重命名；删除的文件无需检查）
+staged() { git diff --cached --name-only --diff-filter=ACMR -- "$@"; }
+staged_z() { git diff --cached --name-only --diff-filter=ACMR -z -- "$@"; }
+
+count=$(staged | wc -l | tr -d ' ')
+[ "$count" = "0" ] && exit 0
+printf '[pre-commit] 检查 %s 个暂存文件\n' "$count"
+
+# ---------------------------------------------------------------------------
+# 1. 冲突标记（只扫新增行；markdown 的 ==== 标题下划线不会误报）
+# ---------------------------------------------------------------------------
+markers=$(git diff --cached -U0 | grep -E '^\+(<{7} |>{7} )' || true)
+if [ -n "$markers" ]; then
+	printf '%s\n' "$markers" | sed 's/^/    /'
+	info '✗ 暂存内容里还有冲突标记（<<<<<<< / >>>>>>>）'
+	fail=1
+fi
+
+# ---------------------------------------------------------------------------
+# 2/3. 后端：ruff
+# ---------------------------------------------------------------------------
+# 依次找：本工作区 .venv → 主工作区 .venv（.worktrees/xxx 没有自己的 venv）→ PATH
+find_tool() {
+	for c in "$root/.venv/bin/$1" "$root/.venv/Scripts/$1.exe"; do
+		[ -x "$c" ] && printf '%s' "$c" && return 0
+	done
+	common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+	if [ -n "$common" ]; then
+		main=${common%/.git}
+		for c in "$main/.venv/bin/$1" "$main/.venv/Scripts/$1.exe"; do
+			[ -x "$c" ] && printf '%s' "$c" && return 0
+		done
+	fi
+	command -v "$1" 2>/dev/null && return 0
+	return 1
+}
+
+py=$(staged '*.py')
+if [ -n "$py" ]; then
+	ruff=$(find_tool ruff || true)
+	if [ -z "$ruff" ]; then
+		info '⚠ 未找到 ruff（先执行 uv sync），跳过后端检查'
+	else
+		info "→ ruff check"
+		staged_z '*.py' | xargs -0 "$ruff" check || fail=1
+
+		# migrations 由 Django 生成，pyproject 已把其排除出 format
+		fmt_files=$(staged '*.py' ':(exclude)*/migrations/*')
+		if [ -n "$fmt_files" ]; then
+			fmt_out=$(staged_z '*.py' ':(exclude)*/migrations/*' | xargs -0 "$ruff" format --check 2>&1) || fmt_bad=1
+			if [ "${fmt_bad:-0}" = "1" ]; then
+				bad=$(printf '%s\n' "$fmt_out" | sed -n 's/^ *--> \(.*\):[0-9]*:[0-9]*$/\1/p' | sort -u)
+				info '⚠ 以下文件不符合 ruff format：'
+				printf '%s\n' "${bad:-（无法解析，见下方 ruff 输出）}" | sed 's/^/      /'
+				info '  修复：uv run ruff format <文件>'
+				if [ "${NETOPS_HOOK_STRICT_FORMAT:-0}" = "1" ]; then
+					fail=1
+				fi
+			fi
+		fi
+	fi
+fi
+
+# ---------------------------------------------------------------------------
+# 4. 后端：pyrefly 类型检查（全项目约 2 秒；只有落在暂存文件里的错误才阻断）
+# ---------------------------------------------------------------------------
+if [ -n "$py" ]; then
+	if [ "${NETOPS_SKIP_PYREFLY:-0}" = "1" ]; then
+		info '⚠ 按 NETOPS_SKIP_PYREFLY=1 跳过 pyrefly'
+	else
+		pyrefly=$(find_tool pyrefly || true)
+		if [ -z "$pyrefly" ]; then
+			info '⚠ 未找到 pyrefly（先执行 uv sync），跳过类型检查'
+		else
+			info '→ pyrefly check'
+			if ! "$pyrefly" check --color never --output-format min-text; then
+				# 全项目有报错：先看是不是「本次暂存文件」自己的问题，别拿别人未提交的 WIP 挡你的提交
+				info '  ⚠ 项目内存在类型错误，只对本次暂存文件做阻断判定'
+				staged_z '*.py' | xargs -0 "$pyrefly" check --color never --output-format min-text || fail=1
+			fi
+		fi
+	fi
+fi
+
+# ---------------------------------------------------------------------------
+# 5. 前端：类型检查（vue-tsc 全量检查，约 6~10 秒）
+# ---------------------------------------------------------------------------
+if [ -n "$(staged '*.ts' '*.tsx' '*.vue')" ]; then
+	if [ "${NETOPS_SKIP_FRONTEND:-0}" = "1" ]; then
+		info '⚠ 按 NETOPS_SKIP_FRONTEND=1 跳过前端类型检查'
+	elif ! node --version >/dev/null 2>&1; then
+		info '⚠ 未找到 node（path 里没有 nodejs），跳过前端类型检查——请手工跑 cd frontend && pnpm type-check'
+	elif [ ! -f frontend/node_modules/vue-tsc/bin/vue-tsc.js ]; then
+		info '⚠ frontend/node_modules 缺失（先 cd frontend && pnpm install），跳过前端类型检查'
+	else
+		info '→ vue-tsc --noEmit'
+		(cd frontend && node node_modules/vue-tsc/bin/vue-tsc.js --noEmit) || fail=1
+	fi
+fi
+
+if [ "$fail" != "0" ]; then
+	printf '\n[pre-commit] 检查未通过：修复后重新 git add；确需跳过用 git commit --no-verify\n'
+	exit 1
+fi
+printf '[pre-commit] 通过\n'
+exit 0

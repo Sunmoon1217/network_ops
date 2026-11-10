@@ -61,43 +61,38 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Overview
-# ---------------------------------------------------------------------------
-
-
 @api_view(["GET"])
 def overview(request):
     """资产管理概览统计"""
     from django.db.models import Count
 
-    # --- 基础设施 ---
+    # 基础设施
     cabinets_by_dc = list(Cabinet.objects.values("room__datacenter__name").annotate(count=Count("id")).order_by("-count")[:10])
     cabinets_by_status = list(Cabinet.objects.values("status").annotate(count=Count("id")))
 
-    # --- 设备 ---
+    # 设备
     device_types = list(Device.objects.values("device_type").annotate(count=Count("id")).order_by("-count"))
     devices_by_vendor = list(Device.objects.values("device_model__vendor__name").annotate(count=Count("id")).order_by("-count")[:10])
     devices_by_zone = list(Device.objects.values("security_zone__name").annotate(count=Count("id")).order_by("-count"))
 
-    # --- 接口 ---
+    # 接口
     interface_modes = list(Interface.objects.values("mode").annotate(count=Count("id")))
 
-    # --- 路由 ---
+    # 路由
     route_protocols = list(Route.objects.values("protocol").annotate(count=Count("id")).order_by("-count"))
     routes_by_device = list(Route.objects.values("vrf__device__hostname").annotate(count=Count("id")).order_by("-count")[:10])
 
-    # --- 防火墙 ---
+    # 防火墙
     policies_by_action = list(Policy.objects.values("action").annotate(count=Count("id")))
     nat_by_type = list(NatRule.objects.values("nat_type").annotate(count=Count("id")))
     address_books_by_type = list(AddressBook.objects.values("address_type").annotate(count=Count("id")))
     services_by_protocol = list(Service.objects.values("protocol").annotate(count=Count("id")))
 
-    # --- IPAM ---
+    # IPAM
     subnets_by_dc = list(Subnet.objects.values("datacenter__name").annotate(count=Count("id")).order_by("-count"))
     subnets_by_zone = list(Subnet.objects.values("security_zone__name").annotate(count=Count("id")).order_by("-count"))
 
-    # --- SLB ---
+    # SLB
     vs_by_protocol = list(LtmVirtualServer.objects.values("protocol").annotate(count=Count("id")))
     pools_by_lb = list(LtmPool.objects.values("device__hostname").annotate(count=Count("id")).order_by("-count")[:10])
 
@@ -156,9 +151,6 @@ def overview(request):
     )
 
 
-# ---------------------------------------------------------------------------
-# Import
-# ---------------------------------------------------------------------------
 @api_view(["POST"])
 def import_excel(request):
     """导入 Excel 文件，支持多个 Sheet"""
@@ -225,9 +217,7 @@ def import_template(request):
     return response
 
 
-# ---------------------------------------------------------------------------
 # DCIM ViewSets
-# ---------------------------------------------------------------------------
 
 
 class SecurityZoneViewSet(viewsets.ModelViewSet):
@@ -375,9 +365,7 @@ class DeviceConnectionViewSet(viewsets.ModelViewSet):
         return qs
 
 
-# ---------------------------------------------------------------------------
 # Network ViewSets
-# ---------------------------------------------------------------------------
 
 
 class VlanViewSet(viewsets.ModelViewSet):
@@ -439,9 +427,7 @@ class DeviceAccountViewSet(viewsets.ModelViewSet):
         return qs
 
 
-# ---------------------------------------------------------------------------
 # Baseline ViewSets
-# ---------------------------------------------------------------------------
 
 
 class SnmpConfigViewSet(viewsets.ModelViewSet):
@@ -462,9 +448,7 @@ class SyslogConfigViewSet(viewsets.ModelViewSet):
     ordering_fields = ("created_at",)
 
 
-# ---------------------------------------------------------------------------
 # SLB (LTM) ViewSets
-# ---------------------------------------------------------------------------
 
 
 class LtmVirtualServerViewSet(viewsets.ModelViewSet):
@@ -589,9 +573,7 @@ class LtmPersistViewSet(viewsets.ModelViewSet):
         return qs
 
 
-# ---------------------------------------------------------------------------
 # GSLB (GTM) ViewSets
-# ---------------------------------------------------------------------------
 
 
 class GtmDatacenterViewSet(viewsets.ModelViewSet):
@@ -686,9 +668,7 @@ class GtmVServerViewSet(viewsets.ModelViewSet):
         return qs
 
 
-# ---------------------------------------------------------------------------
 # Firewall Policy ViewSets
-# ---------------------------------------------------------------------------
 
 
 class AddressBookViewSet(viewsets.ModelViewSet):
@@ -770,9 +750,7 @@ class NatRuleViewSet(viewsets.ModelViewSet):
         return qs
 
 
-# ---------------------------------------------------------------------------
 # IPAM ViewSets
-# ---------------------------------------------------------------------------
 
 
 class TagViewSet(viewsets.ModelViewSet):

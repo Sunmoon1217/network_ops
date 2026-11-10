@@ -101,11 +101,8 @@ class LBVirtualServerSaver(BaseSaver):
     def _flatten_names(self, value: Any) -> list[str]:
         """把 profiles / rules / persist 的多种产出形态拉平成名字列表。
 
-        实测三种形态（TTP 单条命中会给 dict 而不是 list）::
-
-            profiles -> [{"name": "/Common/http"}, ...]
-            rules    -> {"name": ["/Common/irule_redirect"]}
-            persist  -> {"name": "/Common/cookie"}
+        实测三种形态（`profiles` 是带 name 的 dict 列表、`rules` 是 name→list、
+        `persist` 是 name→str）——TTP 单条命中会给 dict 而不是 list。样例见 handbook/ingest.md
         """
         names: list[str] = []
         for item in as_list(value):
@@ -149,9 +146,8 @@ class LBPoolSaver(BaseSaver):
 
         pool_rows = []
         member_rows = []
-        # 成员没有独立的自然键，只能「先清后建」。清理范围按「设备 + 池名」圈定：
-        # 只按 pool_name 全局匹配会误删其他设备上同名池的成员。
-        # 池在配置里出现过就以配置为准，成员清空也要把旧记录删掉。
+        # 成员没有自然键，只能「先清后建」；清理范围按「设备 + 池名」圈定——只按
+        # pool_name 匹配会误删其他设备上同名池的成员。池出现过就以配置为准（清空也删）。
         touched_pool_names: list[str] = []
 
         for pool in pools:
@@ -250,9 +246,7 @@ class GTMWideipSaver(BaseSaver):
                 name=name,
                 rtype=rtype,
                 defaults={
-                    # f5_gtm.ttp 产出的是 wideip_type / wideip_lbmode，
-                    # 原先直接取 rtype / lb_mode，这两个字段永远是空
-                    # "rtype": w.get("wideip_type", w.get("rtype", "")),
+                    # f5_gtm.ttp 产出的键是 wideip_type / wideip_lbmode，不是 rtype / lb_mode
                     "lb_mode": w.get("wideip_lbmode", w.get("lb_mode", "")),
                     "pools": self._normalize_pools(w.get("pools", [])),
                 },

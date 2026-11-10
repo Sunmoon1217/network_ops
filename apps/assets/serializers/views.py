@@ -60,9 +60,19 @@ class DeviceModelSerializer(ParentClass):
 class DeviceGroupSerializer(ParentClass):
     member_count = serializers.SerializerMethodField()
 
+    group_type_display = serializers.SerializerMethodField()
+
     def get_member_count(self, obj) -> int:
         # 配合 viewset 的 prefetch_related("members")，这里不会额外查库
         return len(obj.members.all())
+
+    def get_group_type_display(self, obj) -> str:
+        """组类型的中文名。
+
+        MCP 工具只按序列化器口径取字段（不在工具层调 ``get_FOO_display``），
+        缺这个键，`list_records` / `get_record` 里就只剩 ``ha`` 这种内部值。
+        """
+        return obj.get_group_type_display() or ""
 
 
 @model(model=models.DeviceGroupMember)

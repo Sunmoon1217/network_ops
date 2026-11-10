@@ -187,8 +187,7 @@ def _load_values(file, lenient_styles: bool, merged: dict) -> dict:
         wb._cell_styles, wb._differential_styles = [], []
         wb._date_formats, wb._timedelta_formats = _lenient_date_formats(styles_bytes)
 
-    # 短暂替换 openpyxl 的样式入口、用完即还原（并发上传的最坏情况只是另一请求拿到
-    # 同款宽松样式解析，值不受影响）
+    # 短暂替换 openpyxl 的样式入口、用完即还原；并发上传最坏只是另一请求用同款宽松解析
     setattr(openpyxl_excel, "apply_stylesheet", apply_stylesheet_lenient)
     try:
         file.seek(0)

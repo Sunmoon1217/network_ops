@@ -1,22 +1,7 @@
-"""文档转换与 Dify 推送接口。
+"""文档转换与 Dify 推送接口：上传转换 → 编辑/重转（落版本快照）→ 推送（create 或原地 update）。
 
-管道三步走（每步独立接口，产物全程留档在库、版本可回滚）：
-
-1. ``POST /api/docs/documents/`` 上传转换——主文档 + 可选图片附件（multipart：
-   ``file`` + ``attachments``），落 ``converted`` 状态与 v1 版本快照（转换失败
-   直接 400，不落记录）；
-2. 修改：``PUT /api/docs/documents/<id>/`` 编辑转换产物文本，或
-   ``POST /api/docs/documents/<id>/reconvert/`` 替换源文件重新转换——都落新版本
-   快照（``DocumentRevision``），已推送文档标记 ``pending_sync`` 等待重推；
-3. ``POST /api/docs/documents/<id>/push/`` 推送 Dify 知识库：未推送走
-   create（md/html 用 create_by_text、pdf 用 create-by-file），已推送且有
-   待同步修改走 **update 原地更新**（update_by-text / update-by-file，不产生
-   重复文档）。
-
-另有查看与历史：``GET .../download/`` 源文件下载、``.../revisions/`` 版本列表 /
-快照详情 / 回滚（恢复以新版本落地）。pdf 源文件直传不转换，无产物可编辑——
-改内容只能替换源文件重新转换。权限走全局默认 ``IsOperatorOrReadOnly``：读任何
-已认证用户可用，写（上传 / 编辑 / 重转 / 推送 / 回滚 / 删除）限操作员。
+接口清单见 handbook/api.md 的 docs 段；三步管道、pdf 的特殊性与推送失败的处理见
+handbook/docs-domain.md
 """
 
 from pathlib import Path
@@ -37,9 +22,7 @@ from docs.models import Document, DocumentRevision
 _PUSH_CONTENT_TYPES = {"md": "text/markdown", "html": "text/html", "pdf": "application/pdf"}
 
 
-# ---------------------------------------------------------------------------
 # 序列化（响应形状的唯一来源；后端字段将来与前端 types 对账）
-# ---------------------------------------------------------------------------
 
 
 def _summary(doc: Document) -> dict:
@@ -85,9 +68,7 @@ def _revision_detail(rev: DocumentRevision) -> dict:
     return {**_revision_summary(rev), "converted": rev.converted}
 
 
-# ---------------------------------------------------------------------------
 # 内部
-# ---------------------------------------------------------------------------
 
 
 def _read_upload(f) -> bytes:
@@ -149,9 +130,7 @@ def _note(request) -> str:
     return str(request.data.get("note") or "").strip()[:200]
 
 
-# ---------------------------------------------------------------------------
 # 上传 / 列表 / 详情 / 编辑 / 下载 / 删除
-# ---------------------------------------------------------------------------
 
 
 @api_view(["GET", "POST"])
@@ -241,9 +220,7 @@ def document_download(request, pk):
     return response
 
 
-# ---------------------------------------------------------------------------
 # 重新转换（替换源文件）
-# ---------------------------------------------------------------------------
 
 
 @api_view(["POST"])
@@ -284,9 +261,7 @@ def document_reconvert(request, pk):
     return Response({**_detail(doc), "revision": rev.revision}, status=status.HTTP_201_CREATED)
 
 
-# ---------------------------------------------------------------------------
 # 版本历史
-# ---------------------------------------------------------------------------
 
 
 @api_view(["GET"])
@@ -324,9 +299,7 @@ def revision_restore(request, pk, revision):
     return Response({**_detail(doc), "revision": rev.revision}, status=status.HTTP_201_CREATED)
 
 
-# ---------------------------------------------------------------------------
 # 推送 Dify（create / update 两态）与索引状态
-# ---------------------------------------------------------------------------
 
 
 @api_view(["POST"])

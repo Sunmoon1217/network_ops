@@ -1,0 +1,4 @@
+# shell 脚本一律以 LF 检出：CRLF 会让首行变成 "#!/bin/sh^M"，
+# hook 直接执行不了（Windows 上 core.autocrlf=true 时就是这种坑）
+*.sh        text eol=lf
+.githooks/* text eol=lf

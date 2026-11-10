@@ -79,9 +79,7 @@ def _page(request, qs):
     return list(page or []), paginator
 
 
-# ---------------------------------------------------------------------------
 # LTM：VS → 池 → 成员
-# ---------------------------------------------------------------------------
 
 
 def _split_addr_port(term: str):
@@ -196,9 +194,7 @@ def ltm_chains(request):
     return paginator.get_paginated_response(_ltm_rows(page))
 
 
-# ---------------------------------------------------------------------------
 # GTM：WideIP → 池 → GTM 虚拟服务器
-# ---------------------------------------------------------------------------
 
 
 def _wideip_pairs_q(pairs) -> Q:
@@ -424,13 +420,8 @@ def gtm_facets(request):
     return Response(gtm_facet_values())
 
 
-# ---------------------------------------------------------------------------
-# 导出：扁平宽表 xlsx（openpyxl 后端生成、前端只下载 Blob——与互联网资产分析同模式）
-#
-# **列序与前端 slb.vue / gslb.vue 的扁平列组手工保持一致**（表格渲染在前端、
-# 导出在后端的两份扁平化并存是项目既定先例，见 internet-asset 的 build_path_rows）。
-# ---------------------------------------------------------------------------
-
+# 导出：扁平宽表 xlsx（openpyxl 后端生成、前端只下载 Blob）。
+# 列序与前端 slb.vue / gslb.vue 的扁平列组手工保持一致——改列时两边一起改（见 handbook/analysis.md）
 SLB_EXPORT_HEADERS = [
     "设备",
     "VS地址#端口",

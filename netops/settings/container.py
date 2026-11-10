@@ -1,13 +1,7 @@
-"""容器环境（docker compose 的 app / worker）：DJANGO_ENV=container（env/app.env 注入）。
+"""容器环境（DJANGO_ENV=container，由 env/app.env 注入）：容器与宿主的差异全部由 env 表达。
 
-容器与宿主的差异**全部由 env/app.env 的注入表达**（POSTGRES_HOST=db、REDIS_HOST=redis、
-*_FILE=/run/secrets/* …），配置读取统一在 base——本文件只留两条守卫：
-
-    POSTGRES_HOST / REDIS_HOST 必须已注入。
-
-它们来自 env_file：文件被误删一行时**启动即拒**，而不是退到 base 的 localhost 默认
-——Django 的数据库连接是惰性的，那样要到首个请求才报 connection refused，
-故障发现晚一拍。
+本文件只留两条守卫：POSTGRES_HOST / REDIS_HOST 必须已注入——base 里默认 localhost，
+而 Django 的连接是惰性的，env_file 少一行会拖到首个请求才 connection refused。
 """
 
 import os

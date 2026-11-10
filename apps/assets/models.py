@@ -516,9 +516,7 @@ class SyslogConfig(ConfigBase):
         return f"{self.device.hostname} Syslog"
 
 
-# ---------------------------------------------------------------------------
 # SLB (LTM - Local Traffic Manager)
-# ---------------------------------------------------------------------------
 
 
 class LtmVirtualServer(ConfigBase):
@@ -635,9 +633,7 @@ class LtmPersist(ConfigBase):
         ordering = ("device", "name", "-pk")
 
 
-# ---------------------------------------------------------------------------
 # GSLB (GTM - Global Traffic Manager)
-# ---------------------------------------------------------------------------
 
 
 class GtmDatacenter(ConfigBase):
@@ -743,9 +739,7 @@ class GtmVServer(ConfigBase):
         ordering = ("device", "server", "name", "-pk")
 
 
-# ---------------------------------------------------------------------------
 # Firewall Policy
-# ---------------------------------------------------------------------------
 
 
 class AddressBook(ConfigBase):
@@ -794,11 +788,8 @@ class Service(ConfigBase):
     class Meta:
         verbose_name = "服务"
         verbose_name_plural = verbose_name
-        # 行级自然键唯一：一个服务名允许多行端口定义（tcp 22 与 udp 53 各一行，
-        # 2026-09 修复——原先按 (device, name) 唯一，多协议端口被迫合并进一条
-        # protocol/port，udp 语义直接丢失）。仍按设备隔离：不同设备可以有同名服务；
-        # 同名内靠 (protocol, port, port2) 区分行，ServiceSaver 按这组自然键做差量
-        # （建缺、删多、description 变才更新），详见 models 注释与 ServiceSaver。
+        # 行级自然键唯一：一个服务名允许多行端口定义（tcp 22 与 udp 53 各一行），
+        # ServiceSaver 按这组键做差量。为什么不再按 (device, name) 唯一见 handbook/assets.md
         constraints = (
             models.UniqueConstraint(
                 fields=["device", "name", "protocol", "port", "port2"],
@@ -883,9 +874,7 @@ class NatRule(ConfigBase):
         ordering = ("device", "order")
 
 
-# ---------------------------------------------------------------------------
 # IPAM
-# ---------------------------------------------------------------------------
 
 
 class Tag(models.Model):
@@ -1026,9 +1015,7 @@ class Route(ConfigBase):
         return f"{self.destination} → {self.nexthop or self.interface}"
 
 
-# ---------------------------------------------------------------------------
 # 网络拓扑
-# ---------------------------------------------------------------------------
 
 
 class Topology(models.Model):
@@ -1050,9 +1037,7 @@ class Topology(models.Model):
         return self.name
 
 
-# ---------------------------------------------------------------------------
 # ARP/MAC 表
-# ---------------------------------------------------------------------------
 
 
 class ArpMac(models.Model):
@@ -1090,9 +1075,7 @@ class ArpMac(models.Model):
         return f"{self.ip_address} → {self.mac_address}"
 
 
-# ---------------------------------------------------------------------------
 # 子网使用率趋势
-# ---------------------------------------------------------------------------
 
 
 class SubnetUsageLog(models.Model):
@@ -1113,9 +1096,7 @@ class SubnetUsageLog(models.Model):
         return f"{self.subnet.network} @ {self.recorded_at:%Y-%m-%d %H:%M}"
 
 
-# ---------------------------------------------------------------------------
 # 服务器负责人（人工维护）
-# ---------------------------------------------------------------------------
 
 
 class ServerOwner(models.Model):

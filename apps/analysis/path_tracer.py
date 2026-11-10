@@ -1,15 +1,6 @@
-"""
-路径追踪算法
+"""路径追踪：模拟报文从源到目的逐跳转发（LB 匹配 → 策略 → NAT → 路由 → 下一跳）。
 
-模拟数据包从源到目的的转发过程：
-1. 整理源目地址端口
-2. 查找源目地址所在VRF，如果是同一个VRF，直接返回
-3. 循环：
-   a. 如果当前设备是LB，检查VS匹配
-   b. 如果当前设备是FW，策略匹配
-   c. 查找路由，找不到则结束
-   d. 如果是直连路由，结束
-   e. 否则更新VRF为下一跳VRF
+VRF 判定优先级、路由链终点判定与几个会导致接口 500 的坑，见 handbook/analysis.md
 """
 
 import ipaddress
@@ -63,11 +54,6 @@ class TraceResult:
     blocked_by: str = ""
     lb_backend: list[dict] = field(default_factory=list)
     error: str = ""
-
-
-# ---------------------------------------------------------------------------
-# 辅助函数
-# ---------------------------------------------------------------------------
 
 
 def _ip_in_addressbook(ip_str: str, ab: AddressBook, _visited: set[int] | None = None, _depth: int = 0) -> bool:
@@ -192,18 +178,10 @@ def _find_device_by_interface(device: Device, interface_name: str) -> Device | N
 
 
 def _find_vrf_for_ip(ip_str: str) -> str:
-    """
-    通过IP查找所属VRF（从Subnet表查询）
+    """通过IP查找所属VRF（从 Subnet 表查；表里有 0.0.0.0/0 兜底，无需 Interface 回退）。
 
-    Subnet表有0.0.0.0/0兜底，必定命中，无需Interface表回退。
-
-    优先级：
-    1. device → 设备VRF
-    2. 专线tag → 合作方VRF
-    3. 0.0.0.0/0 → internet
-    4. datacenter+securityzone → 路由链跟踪
-    5. gateway → 网关设备VRF
-    6. 其他 → default
+    优先级：device → 专线 tag → 0.0.0.0/0（internet）→ datacenter+securityzone
+    （路由链跟踪）→ gateway → default。详见 handbook/analysis.md
     """
     subnet = _find_subnet_for_ip(ip_str)
     if not subnet:
@@ -244,20 +222,10 @@ def _find_vrf_for_ip(ip_str: str) -> str:
 
 
 def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
-    """
-    通过设备路由表查找VRF（datacenter + securityzone场景）
+    """通过设备路由表查找VRF（datacenter + securityzone 场景）。
 
-    路由链跟踪：
-    查找所有包含该网段的路由，沿下一跳跟踪直到终点设备。
-    终点 = 没有该网段特定路由的设备（只有默认路由）。
-
-    举例：
-      intyw-cs:default       /23 → intyw-fw
-      intyw-fw:default       /23 → intyw-cs:VRF-INTYW
-      intyw-cs:VRF-INTYW     /23 → intyw-slb
-      intyw-slb:default      default → intyw-cs:VRF-INTYW  (无/23特定路由，是终点)
-
-    终点: intyw-slb:default → 返回 "default"
+    沿「包含该网段且前缀相同」的路由逐跳跟踪，**终点 = 没有该网段特定路由的设备**。
+    追踪例与判据见 handbook/analysis.md
     """
     visited: set[int] = set()  # 设备ID环路检测
 
@@ -267,10 +235,8 @@ def _find_vrf_from_routing_table(ip_str: str, subnet) -> str:
     for route in Route.objects.filter(enabled=True, destination__isnull=False).select_related("vrf__device"):
         try:
             route_network = ipaddress.ip_network(route.destination, strict=False)
-            # 版本不同的路由不可能是这条目的地址的下一跳，直接跳过。
-            # 这个判断不能省：ipaddress 的 subnet_of 在 IPv4/IPv6 混用时会抛
-            # TypeError（"not of the same version"），原来那句 type: ignore 掩盖的
-            # 正是这个真实崩溃——IPv6 静态路由遇上 IPv4 目的地址会让整个追踪接口 500。
+            # 版本必须显式比对：subnet_of 在 IPv4/IPv6 混用时抛 TypeError，
+            # 早期靠 type: ignore 掩盖，实际会让追踪接口 500。
             if route_network.version != subnet_network.version:
                 continue
             if (
@@ -471,20 +437,8 @@ def _is_ip_address(s: str) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# 主函数
-# ---------------------------------------------------------------------------
-
-
 def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS) -> TraceResult:
-    """
-    路径追踪主函数
-
-    流程：
-    1. 整理源目地址端口
-    2. 查找源目VRF，如果相同直接返回
-    3. 循环：LB检查 → 策略匹配 → 路由查找 → VRF切换
-    """
+    """路径追踪主函数：查源目设备与 VRF → 逐跳 LB / 策略 / NAT / 路由 → 返回 HopResult 列表。"""
     result = TraceResult(final_src=src_ip, final_dst=dst_ip, final_port=dst_port)
     max_hops = min(max_hops, MAX_HOPS)
     _clear_route_cache()
@@ -679,15 +633,12 @@ def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS
         # 7. 更新VRF（使用接收接口VRF，避免被覆盖）
         recv_intf_vrf = Interface.objects.filter(device=next_device, ip_address=route.nexthop).first()
         if recv_intf_vrf and recv_intf_vrf.vrf:
-            # 这里要的是 VRF 名字不是 Vrf 对象：vrf_name 后面会被拿去
-            # Vrf.objects.filter(name=...)、放进 visited_vrfs 集合做环路判断、
-            # 以及塞进 HopResult.vrf 直接返回给接口。赋对象的话查询匹配不上、
-            # 环路判断永远不成立、接口序列化还会 500。
+            # 要的是 VRF 名字不是 Vrf 对象：vrf_name 后面用于 filter(name=...)、
+            # 放 visited_vrfs 做环路判断、塞进 HopResult.vrf 返回，赋对象三者全坏。
             vrf_name = recv_intf_vrf.vrf.name
         elif current_vrf != "default":
             vrf_name = current_vrf
 
-        # 8. 跳转
         result.hops.append(hop)
         src_device = next_device
 

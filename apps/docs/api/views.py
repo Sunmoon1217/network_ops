@@ -22,9 +22,7 @@ from docs.xlsx_io import build_xlsx, parse_xlsx
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-# ---------------------------------------------------------------------------
 # 序列化（响应形状的唯一来源；前后端字段对账见前端 types/spreadsheet.ts）
-# ---------------------------------------------------------------------------
 
 
 def _summary(sp: Spreadsheet) -> dict:
@@ -63,9 +61,7 @@ def _save_result(created: bool, revision: int, changes: list, summary: dict) -> 
     return {"created": created, "revision": revision, "changes": changes, "summary": summary}
 
 
-# ---------------------------------------------------------------------------
 # 内部：落版本
-# ---------------------------------------------------------------------------
 
 
 def _apply_revision(sp: Spreadsheet, data: dict, note: str, user):
@@ -94,9 +90,7 @@ def _note(request) -> str:
     return str(request.data.get("note") or "").strip()[:200]
 
 
-# ---------------------------------------------------------------------------
 # 接口
-# ---------------------------------------------------------------------------
 
 
 @api_view(["GET"])

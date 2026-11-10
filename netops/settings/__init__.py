@@ -1,13 +1,7 @@
 """settings 包入口：base 定义（env 动态项唯一一处）→ 按 DJANGO_ENV 白名单选环境文件。
 
-- 环境旋钮唯一：**DJANGO_ENV**（dev = 默认 / container / prod），未知值**直接拒绝启动**
-  ——拼错（如 prd）不许静默落 dev。
-- `DJANGO_SETTINGS_MODULE` 恒为 `netops.settings`：manage/asgi/wsgi/celery 的 setdefault、
-  pytest（pyproject.toml）都指包；容器由 env/app.env 注入 `DJANGO_ENV=container`。
-- 覆盖顺序：`from .base import *` 先、`from .<env> import *` 后 → 环境文件的少数
-  硬差异（prod 的 DEBUG=False、守卫即 import 副作用）胜出；dev 为空壳，无覆盖。
-- 另做两件事：把 base 的两个助手暴露到包上（tests/deploy 直接用
-  netops.settings._env_or_file）、把 apps/ 加进 sys.path（core/ingest/assets/analysis 以顶层包出现）。
+环境旋钮唯一：DJANGO_ENV（dev 默认 / container / prod），未知值直接拒绝启动；覆盖顺序与
+守卫矩阵见 handbook/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
 """
 
 import os
@@ -32,5 +26,10 @@ else:
     raise ImproperlyConfigured(f"未知 DJANGO_ENV={_ENV!r}，可选 dev / container / prod")
 
 APPS_DIR = BASE_DIR / "apps"
+# 根目录也在 sys.path 里：根目录下的 llmtools（LLM 工具出口层）以顶层包出现。
+# 它通常已由 manage.py / 容器 WORKDIR 带进来，但 gunicorn --chdir、从别处跑 pytest
+# 会丢掉它——显式补上，别让出口层的可用性依赖 CWD。
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 if str(APPS_DIR) not in sys.path:
     sys.path.insert(0, str(APPS_DIR))

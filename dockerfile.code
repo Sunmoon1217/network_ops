@@ -13,6 +13,7 @@ WORKDIR /opt/netops
 COPY manage.py pyproject.toml uv.lock ./code/
 COPY netops/ ./code/netops/
 COPY apps/ ./code/apps/
+COPY llmtools/ ./code/llmtools/
 COPY entrypoint/ ./code/entrypoint/
 
 COPY frontend/dist ./http/

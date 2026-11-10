@@ -1,12 +1,8 @@
-"""生产环境（DJANGO_ENV=prod）：唯一不走环境变量的硬差异 + 关键 env 必填守卫（fail loud）。
+"""生产环境（DJANGO_ENV=prod）：DEBUG 硬覆盖 + 关键 env 必填守卫（fail loud）。
 
-- `DEBUG = False` 是本文件唯一的「按环境硬改」——生产写死，**不吃 DJANGO_DEBUG 后门**；
-- 守卫查 `os.environ` 的**原始值**：base 的动态读取带默认值兜底（HOSTS 默认 `*`、
-  HOST 默认 localhost、密钥有开发期 fallback），只有在这里检查「有没有设置」，
-  才能在**启动时**把配置缺失拦下来，而不是等首个请求连库/被攻击面暴露才发现。
-
-与 dev/container 的区别不是「读不读环境变量」，而是**缺了会怎样**：
-那两个缺配置有可用默认值，prod 没有——配错就在 import 本文件时炸。
+与 dev/container 的区别不是「读不读环境变量」，而是缺了会怎样：那两个缺配置有可用默认值，
+prod 没有——配错就在 import 本文件时炸。守卫查 os.environ 原始值（base 的读取带默认值兜底），
+否则「没设置」会被兜底掩盖。守卫清单见 handbook/settings.md。
 """
 
 import os
