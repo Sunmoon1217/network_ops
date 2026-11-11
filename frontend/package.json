@@ -6,11 +6,10 @@
   "scripts": {
     "dev": "vite",
     "gen-dts": "vite build --mode gen-dts",
-    "prebuild": "pnpm gen-dts",
-    "pretype-check": "pnpm gen-dts",
-    "build": "vue-tsc --noEmit && vite build",
+    "gen-dts:if-needed": "node scripts/ensure-dts.mjs",
+    "build": "vite build && vue-tsc --noEmit",
     "preview": "vite preview",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "pnpm gen-dts:if-needed && vue-tsc --noEmit"
   },
   "dependencies": {
     "@antv/g6": "^5.1.1",

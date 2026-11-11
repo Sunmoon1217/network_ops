@@ -5,15 +5,15 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
-// 「只生成 d.ts」模式：`pnpm gen-dts` 用它。
+// 「只生成 d.ts」模式：`pnpm gen-dts` / `pnpm gen-dts:if-needed` 用它。
 //
-// 为什么需要：auto-imports.d.ts / components.d.ts 由这两个插件在 **buildEnd** 写出（dev
-// 下靠 transform 的节流写入），而 `pnpm build` 的第一步是 `vue-tsc --noEmit`——新 clone
-// 上这两个文件还不存在（它们在 .gitignore 里），vue-tsc 会把 `ref` / `computed` /
-// `ElMessage` 全判成 "Cannot find name"。所以 build 前先单独跑一次本模式，把 d.ts 生成出来。
+// 为什么需要：auto-imports.d.ts / components.d.ts 由这两个插件在 **buildEnd** 写出（dev 下
+// 靠 transform 的节流写入，只覆盖被请求到的模块，装不全），而 `vue-tsc` 必须要它们——
+// 缺失时 `ref` / `computed` / `ElMessage` 全被判成 "Cannot find name"。
 //
-// 本模式**只为了让插件跑完生命周期**：产物丢进 node_modules/.cache（不碰 dist）、关掉压缩与
-// sourcemap（这一步只为写文件，不需要优化过的产物）。
+// 日常 `pnpm build` 就一次打包（d.ts 在它的 buildEnd 里顺带写出，`vue-tsc` 排在打包之后）；
+// 只有「还没构建过 / 改过插件 imports、resolvers」才需要本模式单独补：`scripts/ensure-dts.mjs`
+// 发现文件缺失时自动跑它，产物丢 node_modules/.cache（不碰 dist）、关掉压缩与 sourcemap。
 const DTS_ONLY_MODE = 'gen-dts'
 
 export default defineConfig(({ mode }) => {
