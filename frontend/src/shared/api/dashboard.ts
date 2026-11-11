@@ -4,6 +4,7 @@ import type {
   DashboardData,
   DashboardEnvelope,
   DashboardQuery,
+  LinkSeries,
 } from '@/types/dashboard'
 
 /**
@@ -34,8 +35,17 @@ export const getDashboard = async (query: DashboardQuery = {}): Promise<Dashboar
   return data.result
 }
 
-/** 最近 3 小时的链路带宽折线（后端固定 3 小时窗口，无 since/until 参数）。 */
-export const getLinkSeries = () => getDashboard({ panel: 'link', group: 'linechart' })
+/** 最近 3 小时的链路带宽折线（后端固定窗口，无 since/until 参数）。
+ *
+ * 返回 `{ rows, meta }`：`rows` 仍是旧的 EAV 行，`meta` 是脱敏的面板 / scope /
+ * target label（随缓存一起下发），链路组件一次请求拿全。
+ */
+export const getLinkSeries = async (): Promise<LinkSeries> => {
+  const { data } = await client.get<DashboardEnvelope<DashboardData[]>>('', {
+    params: { panel: 'link', group: 'linechart' },
+  })
+  return { rows: data.result, meta: data.meta ?? null }
+}
 
 /** 单个时间点的最新采样，用于增量补点。 */
 export const getLinkLatest = (time: string) =>

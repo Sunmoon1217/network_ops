@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "panels": [
+    { "id": "internet", "label": "互联网链路使用率", "scopes": ["ipv4", "ipv6"] },
+    { "id": "firewall", "label": "防火墙链路使用率", "scopes": ["fwlink"] }
+  ],
+  "scopes": {
+    "ipv4": "IPv4 互联网链路",
+    "ipv6": "IPv6 互联网链路",
+    "fwlink": "防火墙链路"
+  },
+  "targets": [
+    { "scope": "ipv4", "subject": "zjbgp", "label": "中金BGP", "host": "ZGCB-ZJE04-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "ipv4", "subject": "jxqcu", "label": "世纪互联联通", "host": "ZGCB-JXQA03-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "ipv4", "subject": "jxqct", "label": "世纪互联电信", "host": "ZGCB-JXQA03-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "ipv6", "subject": "zjbgp", "label": "中金BGP", "host": "ZGCB-ZJE04-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "ipv6", "subject": "jxqcu", "label": "世纪互联联通", "host": "ZGCB-JXQA03-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "ipv6", "subject": "jxqct", "label": "世纪互联电信", "host": "ZGCB-JXQA03-INT-AS01", "ifname": "ifname", "enabled": true },
+    { "scope": "fwlink", "subject": "coreyw", "label": "核心业务区", "host": "ZGCB-ZJB02-COREYW-FW01", "ifname": "ifname", "enabled": true },
+    { "scope": "fwlink", "subject": "intyw", "label": "互金业务区", "host": "ZGCB-ZJB02-INTYW-FW01", "ifname": "ifname", "enabled": true },
+    { "scope": "fwlink", "subject": "mgtyw", "label": "管理业务区", "host": "ZGCB-ZJB02-MGTYW-FW01", "ifname": "ifname", "enabled": true },
+    { "scope": "fwlink", "subject": "intdmz", "label": "互联网DMZ", "host": "ZGCB-ZJE04-INT-FW01", "ifname": "ifname", "enabled": true }
+  ]
+}

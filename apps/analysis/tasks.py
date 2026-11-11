@@ -138,7 +138,7 @@ def write_dashboard(delivery):
                         "is_active": True,
                     },
                 )
-                # 读模型物化成「一条工单一行」，前端 ChartsCard-2 直接按 name 取工单号
+                # 读模型物化成「一条工单一行」，前端 AutomationTicketWidget 直接按 name 取工单号
                 DashboardMetric.objects.update_or_create(
                     panel="itsmtask",
                     group="case",

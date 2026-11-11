@@ -82,13 +82,13 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
     当前注入方：db（postgres 镜像读 POSTGRES_DB）+ app / worker（celery 双队列）/
-    consumer（访问流单写者消费者）——新增服务时这个计数要跟着加。
+    consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     common_env = _env_file("common.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
-    assert compose.count("- envs/common.env") == 4
+    assert compose.count("- envs/common.env") == 5
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -133,12 +133,12 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
-    # db / consumer 只拿数据库凭据（*db-secrets），app / worker 拿 *app-secrets
+    # db / consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
     # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
     assert "file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}" in compose
     assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}" in compose
     assert compose.count("secrets: *db-secrets") == 2
-    assert compose.count("secrets: *app-secrets") == 2
+    assert compose.count("secrets: *app-secrets") == 3
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
     for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
         block = compose.split(anchor)[1].split("\n\n")[0]

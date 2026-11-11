@@ -25,6 +25,8 @@ worker:
   env_file: [envs/common.env, envs/celery.env, envs/container.env]
 consumer:
   env_file: [envs/common.env, envs/container.env]
+beat:
+  env_file: [envs/common.env, envs/celery.env, envs/container.env]
 ```
 
 ## 加载与优先级（宿主侧）
@@ -64,13 +66,14 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 也不把同名普通账号静默提权。登录后请立即改密码。实现见
 `apps/core/management/commands/ensure_superuser.py`。
 
-## 与另外两类配置的分工
+## 与其它配置的分工
 
 | 位置 | 谁读 | 放什么 |
 |------|------|--------|
 | `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `REDIS_PORT`）、镜像 tag、secrets 文件路径 |
 | `envs/*.env`（本目录） | **容器进程**（env_file）与**宿主进程**（load_dotenv） | 上表各层 |
 | `envs/secrets/*` | 容器进程（`/run/secrets/*`）与宿主进程（相对 `*_FILE`） | 密钥 |
+| `conf/*.json`（项目根） | **进程直接读文件**（如 ingest 的 `link_config`） | 平台自身的结构化配置（链路清单与展示 label）；**入库、随版本走**，单值项可被同名环境变量覆盖 |
 
 三条容易踩的规则：
 
@@ -80,6 +83,9 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 2. 同一个变量同时出现在 `environment:` 与 `env_file` 时 **`environment` 优先**。
 3. 多个 `env_file` 按顺序合并，**后面的覆盖前面的**（本目录里各层互补，正常不会撞；
    `container.env` 排最后就是利用这条保证容器差异一定生效）。
+4. **同名配置的优先级**：环境变量覆盖配置文件（`env > conf/*.json > 代码默认`），与
+   `load_dotenv(override=False)` 一致；只覆盖顶层单值（路径、TTL 等），数组 / 映射结构
+   不做环境变量覆盖。
 
 ## 这些文件入库吗？
 
@@ -93,6 +99,9 @@ cp envs/example/*.env envs/
 
 然后按实际环境修改 `envs/common.env` 的值（差异层通常不用动）；compose 的 `env_file`
 与 `base.py` 指向的都是无 `.example` 后缀的实例。
+
+`conf/*.json` 相反：**入库、随版本走**（现场值不同时走 git 提交或 env 同名覆盖），
+不参与上面的 `cp envs/example/*.env envs/` 初始化。
 
 ## 语法提醒
 

@@ -30,6 +30,12 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 let resizeObserver: ResizeObserver | null = null
 const palette = ['#ffc0cb', '#008080', '#ffa500', '#ff00ff']
+// 按系列名稳定取色：线路增删时其余线路颜色不重排（避免整图跳色）
+const colorFor = (name: string) => {
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 9973
+  return palette[hash % palette.length] ?? '#34c8ff'
+}
 const handleResize = () => myChart?.resize()
 
 // 初始化图表
@@ -113,8 +119,8 @@ const updateChart = () => {
         },
       },
     },
-    series: groupdata.value.map((item, index) => {
-      const color = palette[index % palette.length] ?? '#34c8ff'
+    series: groupdata.value.map((item) => {
+      const color = colorFor(item.name)
 
       return {
         name: item.name,
@@ -143,12 +149,14 @@ const updateChart = () => {
     }),
     color: palette,
   }
-  myChart.setOption(option)
+  // replaceMerge：series 数量减少时清掉旧线（默认按 index 合并会残留已删除的线路）
+  myChart.setOption(option, { replaceMerge: ['series', 'legend'] })
 }
 
 // 轮播切换
 const startCarousel = () => {
   carouselInterval = window.setInterval(() => {
+    if (!props.data.length) return
     currentIndex.value = (currentIndex.value + 1) % props.data.length
     currentGroup.value = props.data[currentIndex.value]
     nextTick(() => {
@@ -173,11 +181,12 @@ watch(
   () => [props.data, props.xAxisData],
   () => {
     if (!props.data.length) return
-    if (!currentGroup.value) {
-      currentGroup.value = props.data[0]
-    }
+    // 数据整体替换后 currentGroup 仍指向上一帧对象：按当前轮播索引重取，
+    // 否则要等下一次 5 秒轮播才吃到新数据（表现为滞后 + 突然跳动）。
+    const index = Math.min(currentIndex.value, props.data.length - 1)
+    currentIndex.value = index
+    currentGroup.value = props.data[index]
     updateChart()
-    handleResize()
   },
   { deep: true },
 )

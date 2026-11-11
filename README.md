@@ -105,7 +105,7 @@ uv run pytest tests/mcp/                          # 工具测试：mcp.Client �
 
 ## 部署
 
-生产/集成环境用 `docker compose`（db / redis / code-init / app / worker / consumer / nginx，nginx 为统一入口）：
+生产/集成环境用 `docker compose`（db / redis / code-init / app / worker / consumer / beat / nginx，nginx 为统一入口）：
 
 ```bash
 cp .env.example .env            # 按需改宿主端口 / 镜像

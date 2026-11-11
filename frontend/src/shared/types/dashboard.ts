@@ -3,6 +3,8 @@ export interface Response<T = any> {
   status: number
   message: string
   result: T
+  /** 仅链路 linechart 分支携带：脱敏后的面板 / scope / target label。 */
+  meta?: DashboardLinkMeta | null
 }
 
 export type DashboardEnvelope<T = DashboardData[]> = Response<T>
@@ -27,6 +29,36 @@ export interface DashboardQuery {
 export interface LinkPoint {
   time: string
   data: Record<string, Record<string, number | null>>
+}
+
+/** 链路面板：一张图包含哪些 scope。 */
+export interface LinkPanelMeta {
+  id: string
+  label: string
+  scopes: string[]
+}
+
+/** 一条链路的展示字段（后端不下发 host / ifname）。 */
+export interface LinkTargetMeta {
+  scope: string
+  subject: string
+  label: string
+  enabled: boolean
+}
+
+/** 链路 linechart 的 meta：label / 分组 / 停用过滤都靠它。 */
+export interface DashboardLinkMeta {
+  panels: LinkPanelMeta[]
+  scopes: Record<string, string>
+  targets: LinkTargetMeta[]
+  window_hours: number | null
+  refreshed_at: string | null
+}
+
+/** getLinkSeries() 的返回：数据行 + 展示配置。 */
+export interface LinkSeries {
+  rows: DashboardData[]
+  meta: DashboardLinkMeta | null
 }
 
 /** devicestatus/<group>/cputop|memtop 的 top 项。 */

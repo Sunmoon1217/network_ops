@@ -98,6 +98,11 @@
 | `DASHBOARD_WRITE_TASK` | `analysis.write_dashboard` | 任务名的**唯一定义处**：`ingest.tasks.collect_dashboard` 按它 `send_task`（不 import analysis）。`tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` 对账 |
 | `DASHBOARD_PAYLOAD_VIA_REDIS` | `0` | `0` = payload 随消息直投（A 方案）；`1` = payload 暂存 Redis、只投 `{"__redis_key__": …}`（C 方案） |
 | `DASHBOARD_PAYLOAD_TTL` | `600` | C 方案下暂存 key 的 TTL（秒） |
+| `DASHBOARD_LINKS_FILE` | `conf/links.json` | 链路清单与展示 label 的唯一权威；容器 `/etc/netops/conf/links.json`、宿主相对 `BASE_DIR` 解析 |
+| `DASHBOARD_LINK_CACHE_KEY` | `dashboard:link:series` | 链路缓存 key（常量，不支持 env 覆盖）；ingest 写、analysis 只读 |
+| `DASHBOARD_LINK_CACHE_TTL` | `600` | 缓存 TTL（秒），应大于刷新周期，Zabbix 抖动时保留上一份 |
+| `DASHBOARD_LINK_REFRESH_SECONDS` | `180` | beat 刷新周期（秒）；管理命令 `refresh_link_cache` 可立即刷新 |
+| `DASHBOARD_LINK_WINDOW_HOURS` | `3` | 链路折线窗口（小时） |
 
 ### Zabbix（`ingest/collectors/zabbix`）
 

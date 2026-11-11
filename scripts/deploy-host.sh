@@ -9,18 +9,19 @@
 # 用法：
 #   ./scripts/deploy-host.sh build     # 装依赖 + 前端构建 + collectstatic
 #   ./scripts/deploy-host.sh migrate   # migrate_if_needed（带库级锁）+ ensure_superuser
-#   ./scripts/deploy-host.sh start     # 后台启动 app / worker / consumer 三个进程
-#   ./scripts/deploy-host.sh stop      # 停止三个进程
+#   ./scripts/deploy-host.sh start     # 后台启动 app / worker / consumer / beat 四个进程
+#   ./scripts/deploy-host.sh stop      # 停止四个进程
 #   ./scripts/deploy-host.sh restart   # stop + start
-#   ./scripts/deploy-host.sh status    # 查看三个进程状态
+#   ./scripts/deploy-host.sh status    # 查看四个进程状态
 #   ./scripts/deploy-host.sh deploy    # build + migrate + restart（完整发布）
 #
-# 三个进程与 compose 的 app / worker / consumer 一一对应，命令与 entrypoint/*.sh 保持一致：
+# 四个进程与 compose 的 app / worker / consumer / beat 一一对应，命令与 entrypoint/*.sh 保持一致：
 #   app      gunicorn + UvicornWorker，监听 0.0.0.0:8000（与 nginx upstream 耦合，勿改 bind）
 #   worker   celery worker，同时消费 celery,access_flow 两个队列，并发固定 2
 #            （同设备并发入库会写坏数据，见 AGENTS.md；默认池按 CPU 起会空载爆炸）
 #   consumer 访问流消费者，AccessFlow 的唯一写者——**全机只能起一个实例**，
 #            本脚本对已存活进程跳过启动，靠 PID 文件防止误起第二份
+#   beat     大屏链路缓存周期投递，**单实例**；启动前先同步刷一次缓存
 #
 # PID 与日志：data/run/*.pid、data/logs/*.log（data/ 是运行期目录，不入库）。
 # gunicorn / celery 的可调旋钮沿用 envs/gunicorn.env、envs/celery.env（存在则 source，
@@ -196,25 +197,38 @@ cmd_consumer() {
     exec uv run python manage.py access_flow_consumer
 }
 
+cmd_beat() {
+    # 与 entrypoint/beat.sh 一致：先同步刷一次链路缓存（失败不阻塞），再起调度；
+    # --schedule / --pidfile 放 data/run，避免往项目根写运行期文件。
+    uv run python manage.py refresh_link_cache || echo "警告：启动时链路缓存刷新失败，beat 继续启动" >&2
+    exec uv run celery -A netops beat \
+        --loglevel="$CELERY_LOGLEVEL" \
+        --schedule="$RUN_DIR/celerybeat-schedule" \
+        --pidfile="$RUN_DIR/celerybeat.pid"
+}
+
 do_start() {
     check_envs
-    echo "==> 启动三个进程"
+    echo "==> 启动四个进程"
     start_service app      "$RUN_DIR/app.pid"      cmd_app
     start_service worker   "$RUN_DIR/worker.pid"   cmd_worker
     start_service consumer "$RUN_DIR/consumer.pid" cmd_consumer
+    start_service beat     "$RUN_DIR/beat.pid"     cmd_beat
 }
 
 do_stop() {
-    echo "==> 停止三个进程"
+    echo "==> 停止四个进程"
     stop_service app      "$RUN_DIR/app.pid"
     stop_service worker   "$RUN_DIR/worker.pid"
     stop_service consumer "$RUN_DIR/consumer.pid"
+    stop_service beat     "$RUN_DIR/beat.pid"
 }
 
 do_status() {
     status_service app      "$RUN_DIR/app.pid"
     status_service worker   "$RUN_DIR/worker.pid"
     status_service consumer "$RUN_DIR/consumer.pid"
+    status_service beat     "$RUN_DIR/beat.pid"
 }
 
 # ---- 入口 --------------------------------------------------------------------

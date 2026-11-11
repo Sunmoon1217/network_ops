@@ -10,7 +10,7 @@
 >
 > ⚠️ **当前镜像布局（以 `compose.yml` 与 `entrypoint/*.sh` 为准）**：`dockerfile.base` →
 > `dockerfile.venv` → `dockerfile.code`（busybox + 源码 + 静态成品），由一次性容器 `code-init`
-> 把 `code` / `static` 两个命名卷铺满，app / worker / consumer 挂 `code:/app:ro` 运行；**换代码镜像
+> 把 `code` / `static` 两个命名卷铺满，app / worker / consumer / beat 挂 `code:/app:ro` 运行；**换代码镜像
 > 或改源码后必须重跑 `code-init`**。下面 §1–§4 讲的 `dockerfile.base / dockerfile.venv / dockerfile`
 > 是**传统方案**（代码打进镜像），对应现在的 `dockerfile.base` / `dockerfile.venv` / `dockerfile`，
 > 仍可构建但不再是默认部署路径。
