@@ -21,6 +21,12 @@ urlpatterns = [
     # 文档域（表格编辑 + 文档转换）：/api/docs/
     path("api/", include("docs.api.urls")),
     path("favicon.ico", views.favicon),
+    # Vite 双入口：大屏必须单独接管，不能落到下面的 SPA 兜底（那里一律返回主站 index.html）。
+    # /dashboard 是友好 URL，与 nginx 的 location = /dashboard 对齐；两个入口共用 /assets/*。
+    # 这里不整段排除 dashboard 前缀：大屏没有前端路由，其余子路径仍由主站兜底，
+    # 与 nginx 的 try_files 行为保持一致。
+    path("dashboard.html", views.vue_dashboard),
+    re_path(r"^dashboard/?$", views.vue_dashboard),
     re_path(r"^assets/(?P<path>.*)$", views.serve_frontend_assets),
 ]
 

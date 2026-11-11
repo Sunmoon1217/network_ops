@@ -12,7 +12,7 @@
 | **IP 管理** | `/ipam` | 子网、IP 地址、标签管理 |
 | **工具** | `/tools` | 路径追踪（防火墙策略匹配 + NAT + 路由 + 负载均衡）、机柜可视化（U 位视图） |
 | **任务中心** | — | 任务/阶段管理（Celery 采集→解析→存储）、运行监控（celery / Redis / 队列积压巡检） |
-| **总览大屏** | `dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
+| **总览大屏** | `/dashboard`、`/dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
 
 ## 技术栈
 

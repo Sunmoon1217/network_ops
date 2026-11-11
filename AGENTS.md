@@ -199,6 +199,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   要求：nginx 用**变量式** upstream + 启动时推导 `resolver`、conf.d 必须 `$http_host` 透传 Host
   （否则后台登录 403）。容器启动四步、健康检查、凭据、镜像重建时机：
   [`handbook/deploy.md`](handbook/deploy.md)。
+- **双入口静态托管**：`frontend/dist/` 有 `index.html`（主站 `#app`）与 `dashboard.html`
+  （大屏 `#dashboard`），共用 `/assets/*` 的 main chunk。**nginx 直出与 Django 托管都必须单独返回
+  `dashboard.html`**（nginx 显式 location + no-cache；Django 兜底前的 `vue_dashboard`），
+  SPA 兜底只回主站 `index.html`；`/dashboard`、`/dashboard/` 是三处（Vite dev / nginx / Django）
+  一致的友好 URL。漏配的表现是「大屏变成主站登录页 / 空白」。细节：[`handbook/deploy.md`](handbook/deploy.md)。
 - **代理感知**：`SECURE_PROXY_SSL_HEADER` 让 Django 识别 nginx 传来的原始协议；`ALLOWED_HOSTS`
   默认 `*`；`DJANGO_CSRF_TRUSTED_ORIGINS` 正常拓扑**留空即可**。
 - **「账号密码换 token」的接口必须 `@authentication_classes([])`**（login / register），否则带

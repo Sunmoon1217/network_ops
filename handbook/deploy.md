@@ -8,7 +8,7 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 ## 入口与静态资源（代码卷 + 静态卷）
 
 `nginx/` 作为统一入口（80/443）：`/api/*`、`/admin/*`、`/media/*`、`/mcp` 代理到 compose 里
-的 **app 容器**，`/assets/*`、`/static/*` 由 nginx 直出。
+的 **app 容器**，`/assets/*`、`/static/*` 与两个入口 html（`/`、`/dashboard*`）由 nginx 直出。
 
 静态成品与源码都走「镜像 → 一次性容器 → 命名卷」这一条路：
 
@@ -22,12 +22,13 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 **换代码镜像或改源码后必须重跑 `code-init` 再 `up -d`**：app 用的是卷里的代码，不是镜像里的
 `/app`（`up -d --build` 也不会换容器，见技能 `docker-compose-behavior` 第 3 节）。
 
-**静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+
-`<卷>/static/*`（collectstatic），所以 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖
-`/`、`/assets/*`、`/static/*`。`code_init.sh` 每次 `rm -rf` 再 `cp -a`（权威重铺）——不清会留下
-上一版带 hash 的遗留资源；宿主侧 `www/` 与 `frontend/dist/` 仍由各自工具清空
-（`collectstatic --clear` / Vite 的 `emptyOutDir`），互不干扰。为什么非要绕一层卷（跨容器只能
-靠卷；卷遮住镜像内容且只播种一次）：技能 `nginx-container-proxy` 第 6 节。
+**静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/dashboard.html` +
+`<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic），所以 nginx **一个 root**
+（`/usr/share/nginx/html`）就覆盖 `/`、`/dashboard*`、`/assets/*`、`/static/*`。
+`code_init.sh` 每次 `rm -rf` 再 `cp -a`（权威重铺）——不清会留下上一版带 hash 的遗留资源；
+宿主侧 `www/` 与 `frontend/dist/` 仍由各自工具清空（`collectstatic --clear` / Vite 的
+`emptyOutDir`），互不干扰。为什么非要绕一层卷（跨容器只能靠卷；卷遮住镜像内容且只播种一次）：
+技能 `nginx-container-proxy` 第 6 节。
 
 **nginx 侧显式写卷、worker / consumer 用 `volumes_from`**：nginx 只写
 `static:/usr/share/nginx/html:ro` 才能只读、挑卷、放在自己的路径上（`volumes_from` 会把源容器
@@ -42,6 +43,23 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 2. conf.d 必须用 `$http_host`（含端口）透传 Host，否则后台登录 403（`$host` 会丢端口）。
 
 这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守。
+
+### 双入口：大屏必须单独接管
+
+Vite 打的是 `index.html`（主站，挂载点 `#app`）与 `dashboard.html`（大屏，挂载点
+`#dashboard`），两者共用 `/assets/*` 里同一份 main chunk，靠页面里的挂载点决定启动哪个应用。
+所以静态卷里必须有 `dashboard.html`，且两条静态链路都不能把大屏请求交给 SPA 兜底：
+
+| 链路 | 单独处理 |
+|------|---------|
+| nginx 直出（`nginx/conf.d/netops.conf`） | `location = /dashboard.html` 显式返回并设 `no-cache`（入口 html 引用带 hash 的 assets，缓存会让发版不生效）；`location = /dashboard` 与 `= /dashboard/` 内部重定向回 `dashboard.html`；`location /` 的 `try_files` 仍只兜主站 `/index.html` |
+| Django 托管（`netops/urls.py` + `netops/views.py`，宿主直跑 / 只暴露 443 时） | 兜底前的 `path("dashboard.html")` 与 `re_path(r"^dashboard/?$")` 交给 `views.vue_dashboard`；`vue_index` 仍只回主站 `index.html` |
+
+漏掉任意一边，症状都是「打开大屏却是主站登录页 / 一片空白」：拿到的是 `index.html`，页面里
+没有 `#dashboard`。`pnpm dev` 由 `dashboardEntryPlugin` 把 `/dashboard` 归一到
+`dashboard.html`（Vite 自带的 SPA fallback 原本会改写成 `/index.html`）；两个 Dockerfile
+构建时都校验两个入口齐全，`code-init` 把整份 dist 铺进静态卷。契约由
+`tests/deploy/test_dashboard_entry.py` 守。
 
 ## 三个数据挂载：仓库卷 / 配置源 bind / 代码卷
 
