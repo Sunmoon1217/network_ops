@@ -276,13 +276,26 @@ def collect_dashboard(source):
 
 @shared_task(name="ingest.refresh_link_cache")
 def refresh_link_cache_task():
-    """大屏链路带宽：Zabbix 直取 → Redis（不落库）；失败向上抛让 Celery 记 FAILURE。
+    """大屏链路带宽：Zabbix 直取 → Redis（不落库）。
 
-    全部链路失败抛 ``LinkCollectionError``（消息里是各 target 的原因摘要，单行）；
-    单条失败只在 ``link_cache`` 里 warning，本任务照常返回摘要。
+    失败分两类，刻意区别对待：
+
+    - **全部链路采集失败**（``LinkCollectionError``，外部数据源整体不可用）属可预期故障：
+      只记一条 ``logger.error``（消息里是各 target 的原因摘要，单行），任务返回
+      ``{"status": "failed", ...}``，**不 raise**——Celery 不会打整段 traceback，下个周期
+      自动重试。这是为了压掉 180s 一轮的刷屏日志。
+    - **其它异常**（Redis 不可用、``conf/links.json`` 非法等真实故障）照常向上抛，
+      让 Celery 记 FAILURE 并保留 traceback。
+
+    单条链路失败只在 ``link_cache`` 里 warning，本任务照常返回摘要。
     """
-    from ingest.collectors.link_cache import refresh_link_cache
+    from ingest.collectors.link_cache import LinkCollectionError, refresh_link_cache
 
-    summary = refresh_link_cache()
+    try:
+        summary = refresh_link_cache()
+    except LinkCollectionError as exc:
+        logger.error("链路缓存刷新失败（全部链路不可用，下个周期重试）: %s", exc)
+        return {"status": "failed", "error": str(exc)}
+
     logger.info("链路缓存刷新完成: %s", summary)
-    return summary
+    return {"status": "success", **summary}

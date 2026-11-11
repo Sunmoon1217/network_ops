@@ -427,3 +427,21 @@ conf/links.json → collectors/link_cache.py
 投递与执行仍分离：beat 只发消息，采集与落库都在 worker（`-Q celery,access_flow` 已含默认队列）。
 若现场还留着仓库外的调度器（cron 里调 `collect_dashboard.delay`），**必须先停掉**，否则同一份数据
 会被采两遍（落库幂等不脏，但外部接口压力翻倍）。
+
+两个容易误判的点：
+
+- **新条目首轮不是立刻发**：interval 条目在加入时把 `last_run_at` 记为当前时刻
+  （`celery.beat.Entry`），第一次发送要等满一个周期。所以 beat 刚重启后 Autotask（600s）要等
+  10 分钟才会出现 `Sending due task`——`entrypoint/beat.sh` 启动钩子用
+  `manage.py collect_dashboard` 先补投一次，避免大屏空 10 分钟。
+- **beat 日志里的「生效调度」**：启动钩子会把 `app.conf.beat_schedule` 打进日志。条目缺失说明
+  beat 读到的还是旧代码（code 卷没重铺 / 容器没重启），而不是调度配置写错了。
+
+手工触发与排障（不需要等 beat）：
+
+```bash
+python manage.py collect_dashboard                  # 投递 zabbix + autotask
+python manage.py collect_dashboard autotask         # 只投一个源
+python manage.py collect_dashboard zabbix --sync    # 本进程同步采集（采集异常直接打终端）
+python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只校验 conf/links.json）
+```

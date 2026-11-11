@@ -199,9 +199,13 @@ cmd_consumer() {
 }
 
 cmd_beat() {
-    # 与 entrypoint/beat.sh 一致：先同步刷一次链路缓存（失败不阻塞），再起调度；
+    # 与 entrypoint/beat.sh 一致：先同步刷一次链路缓存、投递一次设备组 / Autotask 采集
+    # （interval 条目首轮要等满一个周期，autotask 默认 600s），再打印调度自检、起调度；
     # --schedule / --pidfile 放 data/run，避免往项目根写运行期文件。
     uv run python manage.py refresh_link_cache || echo "警告：启动时链路缓存刷新失败，beat 继续启动" >&2
+    uv run python manage.py collect_dashboard || echo "警告：启动时大屏采集投递失败，beat 继续启动" >&2
+    uv run python manage.py shell -c "from netops.celery import app; print('[beat] 生效调度:', {name: (entry['task'], entry['schedule']) for name, entry in app.conf.beat_schedule.items()})" \
+        || echo "警告：beat 调度自检失败（不影响调度本身）" >&2
     exec uv run celery -A netops beat \
         --loglevel="$CELERY_LOGLEVEL" \
         --schedule="$RUN_DIR/celerybeat-schedule" \
