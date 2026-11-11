@@ -51,6 +51,28 @@ def test_nginx_forwards_host_with_port(conf_name):
         assert value == "$http_host", f"{conf_name}: {header} 用了 {value}，会把端口丢掉"
 
 
+@pytest.mark.parametrize("conf_name", ["netops.conf", "netops-ssl.conf.disabled"])
+def test_nginx_proxies_mcp_without_buffering(conf_name):
+    """`/mcp` 必须有独立 location，且关缓冲、关 gzip、读/发超时到小时级。
+
+    三种漏配各自的表现完全不同，都不好从现象定位：
+    - 少这条 location → `/mcp` 落到 SPA 兜底返回 `index.html`（客户端以为「被路由守卫拦住」）；
+    - 开了 `proxy_buffering` → SSE 事件攒在 nginx 缓冲区，工具调用一直 pending；
+    - 用继承来的 300s 超时 → 长连接中途被掐断（MCP 会话小时级）。
+    """
+    text = (NGINX_CONF_DIR / conf_name).read_text(encoding="utf-8")
+    match = re.search(r"location\s+/mcp\s*\{([^}]*)\}", text)
+    assert match, f"{conf_name} 缺少 location /mcp"
+    # 空白不固定（有的配置对齐成多列），归一化后再断言
+    block = " ".join(match.group(1).split())
+
+    assert "proxy_pass http://$netops_upstream;" in block
+    assert "proxy_buffering off;" in block
+    assert "gzip off;" in block
+    assert "proxy_read_timeout 3600s;" in block
+    assert "proxy_send_timeout 3600s;" in block
+
+
 @pytest.mark.django_db
 def test_csrf_origin_is_trusted_only_when_host_carries_port(caplog):
     """Host 带端口时同源 Origin 通过校验；Host 不带端口时同一个 Origin 被拒。
