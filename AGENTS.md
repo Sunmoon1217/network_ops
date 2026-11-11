@@ -209,13 +209,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `src/dashboard/`（大屏，别名 `@dashboard`）。两个入口共用 `src/main.ts`，按页面里的 `#app` /
   `#dashboard` 各自建 app + pinia + router；**共享层不许反向 import 两个应用**。
 - **`auto-imports.d.ts` / `components.d.ts` 不入库，但 `vue-tsc` 必须要它们**：两个文件由 vite
-  插件在 **buildEnd** 写出，所以 `pnpm build` 是「先打包、后类型检查」的单次构建
-  （`vite build && vue-tsc --noEmit`）——别改成先 `vue-tsc`，新 clone 上会因缺声明报
-  "Cannot find name"。要单独补声明用 `pnpm gen-dts`（`vite build --mode gen-dts`，产物丢
-  `node_modules/.cache`、不碰 `dist`）；`pnpm type-check` 与 `.githooks` 只在**文件缺失**时
-  自动补（`scripts/ensure-dts.mjs`），避免多跑一遍打包。dev 服务器写不全 `components.d.ts`
-  （只覆盖被请求到的模块），别拿它当生成手段。**改插件配置（imports / resolvers）后**记得
-  `pnpm gen-dts`。
+  插件在 **buildEnd** 写出，所以 `pnpm build`（= `pnpm gen-dts && vue-tsc --noEmit && vite build`）
+  与 `pnpm type-check`、`.githooks/pre-commit` 都**先重建声明**再检查，别改成直接跑 `vue-tsc`
+  （缺声明会报 "Cannot find name"）。`gen-dts` 是 `vite build --mode gen-dts`：产物丢
+  `node_modules/.cache`、不碰 `dist`，但它仍是一次完整打包，所以 `pnpm build` 日志里会出现两次
+  "built in"。dev 服务器写不全 `components.d.ts`（只覆盖被请求到的模块），别拿它当生成手段。
 - **前端函数风格**：`.vue` / `.ts` 一律箭头函数，不用 `function` 声明。自检（应无输出）：
   `grep -rnE "^[ \t]*(export )?(async )?function [A-Za-z_$]" frontend/src --include=*.ts --include=*.vue`
 - **前端类型集中**：具名 `interface` / `type` / `enum` 全在 `frontend/src/shared/types/`（按域分文件 +

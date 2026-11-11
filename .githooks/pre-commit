@@ -10,7 +10,7 @@
 #   4. 后端类型   pyrefly check（阻断；配置 [tool.pyrefly]；只有暂存文件里的错误才阻断，
 #                 其他文件的存量/WIP 报错只提示）
 #   5. 前端类型   vue-tsc --noEmit（阻断；仅 .ts/.tsx/.vue 变更且有 node_modules 时跑）
-#               缺 auto-imports.d.ts / components.d.ts 时先跑 vite build --mode gen-dts 补齐
+#               先跑 vite build --mode gen-dts 重建 auto-imports / components 声明（约 3 秒）
 #
 # 安装：sh scripts/setup-git-hooks.sh        # == git config core.hooksPath .githooks
 # 临时跳过：git commit --no-verify
@@ -122,10 +122,9 @@ if [ -n "$(staged '*.ts' '*.tsx' '*.vue')" ]; then
 	elif [ ! -f frontend/node_modules/vue-tsc/bin/vue-tsc.js ]; then
 		info '⚠ frontend/node_modules 缺失（先 cd frontend && pnpm install），跳过前端类型检查'
 	else
-		# auto-imports.d.ts / components.d.ts 是 vite 插件生成的（不入库）：新 clone 上缺它们
-		# 时 vue-tsc 会把 ref / computed / ElMessage 全判成 "Cannot find name"。
-		# 脚本自己判「缺才补」，已有声明时是零开销。
-		(cd frontend && node scripts/ensure-dts.mjs >/dev/null 2>&1) \
+		# auto-imports.d.ts / components.d.ts 是 vite 插件生成的（不入库）：缺它们时 vue-tsc 会把
+		# ref / computed / ElMessage 全判成 "Cannot find name"。每次都重建（约 3 秒），别只判存在。
+		(cd frontend && node node_modules/vite/bin/vite.js build --mode gen-dts >/dev/null 2>&1) \
 			|| info '⚠ d.ts 生成失败，接下来的 vue-tsc 可能会报 Cannot find name'
 		info '→ vue-tsc --noEmit'
 		(cd frontend && node node_modules/vue-tsc/bin/vue-tsc.js --noEmit) || fail=1
