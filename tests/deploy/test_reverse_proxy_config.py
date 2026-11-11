@@ -51,6 +51,28 @@ def test_nginx_forwards_host_with_port(conf_name):
         assert value == "$http_host", f"{conf_name}: {header} 用了 {value}，会把端口丢掉"
 
 
+@pytest.mark.parametrize("conf_name", ["netops.conf", "netops-ssl.conf.disabled"])
+def test_nginx_proxies_mcp_without_buffering(conf_name):
+    """`/mcp` 必须有独立 location，且关缓冲、关 gzip、读/发超时到小时级。
+
+    三种漏配各自的表现完全不同，都不好从现象定位：
+    - 少这条 location → `/mcp` 落到 SPA 兜底返回 `index.html`（客户端以为「被路由守卫拦住」）；
+    - 开了 `proxy_buffering` → SSE 事件攒在 nginx 缓冲区，工具调用一直 pending；
+    - 用继承来的 300s 超时 → 长连接中途被掐断（MCP 会话小时级）。
+    """
+    text = (NGINX_CONF_DIR / conf_name).read_text(encoding="utf-8")
+    match = re.search(r"location\s+/mcp\s*\{([^}]*)\}", text)
+    assert match, f"{conf_name} 缺少 location /mcp"
+    # 空白不固定（有的配置对齐成多列），归一化后再断言
+    block = " ".join(match.group(1).split())
+
+    assert "proxy_pass http://$netops_upstream;" in block
+    assert "proxy_buffering off;" in block
+    assert "gzip off;" in block
+    assert "proxy_read_timeout 3600s;" in block
+    assert "proxy_send_timeout 3600s;" in block
+
+
 @pytest.mark.django_db
 def test_csrf_origin_is_trusted_only_when_host_carries_port(caplog):
     """Host 带端口时同源 Origin 通过校验；Host 不带端口时同一个 Origin 被拒。
@@ -82,13 +104,13 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
     当前注入方：db（postgres 镜像读 POSTGRES_DB）+ app / worker（celery 双队列）/
-    consumer（访问流单写者消费者）——新增服务时这个计数要跟着加。
+    consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     common_env = _env_file("common.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
-    assert compose.count("- envs/common.env") == 4
+    assert compose.count("- envs/common.env") == 5
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -133,12 +155,12 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
-    # db / consumer 只拿数据库凭据（*db-secrets），app / worker 拿 *app-secrets
+    # db / consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
     # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
     assert "file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}" in compose
     assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}" in compose
     assert compose.count("secrets: *db-secrets") == 2
-    assert compose.count("secrets: *app-secrets") == 2
+    assert compose.count("secrets: *app-secrets") == 3
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
     for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
         block = compose.split(anchor)[1].split("\n\n")[0]

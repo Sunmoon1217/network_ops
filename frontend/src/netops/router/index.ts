@@ -93,6 +93,21 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'topology', component: () => import('@netops/views/topology/topology.vue') },
+        { path: 'edit', name: 'topology-edit', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '拓扑编辑' } },
+      ],
+    },
+    {
+      // 资产域下尚未实现的页面：统一走待开发占位页（见 roadmap T1/T3/T6）
+      path: '/assets',
+      meta: { requiresAuth: true },
+      children: [
+        { path: 'physical', name: 'asset-physical', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '物理机' } },
+        { path: 'virtual', name: 'asset-virtual', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '虚拟机' } },
+        { path: 'load-balancer', name: 'asset-load-balancer', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '负载均衡（资产）' } },
+        { path: 'domain', name: 'asset-domain', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '域名（资产）' } },
+        { path: 'link', name: 'asset-link', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '链路信息' } },
+        { path: 'application', name: 'asset-application', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '应用系统' } },
+        { path: 'database', name: 'asset-database', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '数据库实例' } },
       ],
     },
     {

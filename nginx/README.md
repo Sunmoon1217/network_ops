@@ -5,13 +5,14 @@
 ## 架构
 
 ```
-                        ┌─ /assets/*  ──▶ /usr/share/nginx/html/assets/*   (Vue 构建产物)
-                        ├─ /static/*  ──▶ /usr/share/nginx/static/*       (collectstatic 产物)
+                        ┌─ /assets/*     ──▶ /usr/share/nginx/html/assets/*  (Vue 构建产物，双入口共用)
+                        ├─ /dashboard*   ──▶ /usr/share/nginx/html/dashboard.html (大屏入口，单独处理)
+                        ├─ /static/*     ──▶ /usr/share/nginx/static/*      (collectstatic 产物)
 client ──▶ nginx ───────┤
-          (80/443)      ├─ /api/*     ──▶ app:8000                        (compose 的 app 服务)
-                        ├─ /admin/*   ──▶ app:8000
-                        ├─ /media/*   ──▶ app:8000
-                        └─ 其它        ──▶ try_files → index.html (SPA 路由)
+          (80/443)      ├─ /api/*        ──▶ app:8000                       (compose 的 app 服务)
+                        ├─ /admin/*      ──▶ app:8000
+                        ├─ /media/*      ──▶ app:8000
+                        └─ 其它          ──▶ try_files → index.html (主站 SPA 路由)
 ```
 
 两类静态资源都绕过了 Django，不再经过 Python 进程。
@@ -28,8 +29,8 @@ client ──▶ nginx ───────┤
 4. nginx 只读挂载这**一个**卷。
 
 镜像里因此**没有任何 node/npm/pnpm**，构建也只需秒级。代价是构建前必须先在宿主机
-把成品构建出来——镜像里有断言，`frontend/dist` 缺 `index.html` 或 `www` 为空都会
-直接构建失败。
+把成品构建出来——镜像里有断言，`frontend/dist` 缺 `index.html` / `dashboard.html`
+（Vite 双入口）或 `www` 为空都会直接构建失败。
 
 ### 为什么必须用卷
 
@@ -48,9 +49,10 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 
 ```
 <卷>/
-├── index.html   ← Vite 产物（SPA 入口，/ 走 try_files 兜底）
-├── assets/*     ← Vite 产物（/assets/*）
-└── static/*     ← collectstatic 产物（/static/*，STATIC_URL 就是 /static/）
+├── index.html      ← Vite 产物（主站入口，/ 走 try_files 兜底）
+├── dashboard.html  ← Vite 产物（大屏入口，nginx 单独返回，不能当 SPA 兜底）
+├── assets/*        ← Vite 产物（/assets/*，两个入口共用）
+└── static/*        ← collectstatic 产物（/static/*，STATIC_URL 就是 /static/）
 ```
 
 宿主机上 `www/` 与 `frontend/dist/` 仍然是各自独立的目录、各自的工具负责清空（`collectstatic --clear` / `pnpm build` 的 `emptyOutDir`），只有容器里的**这一份副本**被合到一起，所以两个清空动作互不干扰。
@@ -91,7 +93,7 @@ nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不�
 
 | 卷 | app 容器 | nginx 容器 | 内容 |
 |----|---------|-----------|------|
-| `static_data` | `/var/lib/netops-static`（读写） | `/usr/share/nginx/html`（只读） | `index.html` + `assets/`（Vite）与 `static/`（collectstatic） |
+| `static_data` | `/var/lib/netops-static`（读写） | `/usr/share/nginx/html`（只读） | `index.html` + `dashboard.html` + `assets/`（Vite）与 `static/`（collectstatic） |
 | `config_repo_data`（**命名卷**） | `/app/data/config_repo`（读写） | — | 配置仓库（git），app 与 worker **共用同一个卷**，必须持久化 |
 | `./data/configs`（**宿主机 bind**） | `/app/data/configs`（**只读**） | — | Excel「配置文件」sheet 的 `config_dir` 源目录，只有 app 挂 |
 
@@ -121,7 +123,8 @@ docker compose run --rm app python manage.py migrate
 docker compose run --rm app python manage.py createsuperuser
 ```
 
-访问 <http://localhost>（端口可用 `NGINX_PORT` 覆盖）。
+访问 <http://localhost>（端口可用 `NGINX_PORT` 覆盖）；大屏是独立入口
+<http://localhost/dashboard>（也可直接访问 `/dashboard.html`），不要指望主站 SPA 路由能带到它。
 
 ### 后端地址为什么用 `resolver` + 变量
 
@@ -245,7 +248,9 @@ docker compose restart nginx
 浏览器会提示自签证书不受信任，属正常现象。生产环境请替换为正式证书。
 
 > HTTPS 配置目前只做反向代理，不做静态直出（静态由 80 端口的 server 处理）。
-> 若生产上只暴露 443，需要把 `netops.conf` 里的静态 `location` 一并复制过去。
+> 若生产上只暴露 443，需要把 `netops.conf` 里的静态 `location` 一并复制过去，
+> **包括大屏的三条 `location = /dashboard*`**（否则 `/dashboard.html` 会被代理到 Django，
+> 由 Django 侧的 `vue_dashboard` 兜着；虽然能返回，但缓存与大屏入口的约定就散成两份了）。
 
 ## 静态资源策略
 
@@ -253,16 +258,18 @@ docker compose restart nginx
 |------|---------|------|
 | `/assets/*` | nginx 直出（Vue 产物） | `public, max-age=31536000, immutable` |
 | `/static/*` | nginx 直出（collectstatic 产物） | `public, max-age=2592000`（30 天） |
-| `/index.html` | nginx 直出 | `no-cache, no-store, must-revalidate` |
+| `/index.html` | nginx 直出（主站入口） | `no-cache, no-store, must-revalidate` |
+| `/dashboard.html` | nginx 直出（大屏入口，单独处理） | `no-cache, no-store, must-revalidate` |
+| `/dashboard`、`/dashboard/` | 内部重定向到 `/dashboard.html` | 同上 |
 | `/api/*` | 代理到 app | — |
 | `/admin/*`、`/media/*` | 代理到 app | — |
-| 其它路径 | SPA 兜底 → `index.html` | — |
+| 其它路径 | SPA 兜底 → 主站 `index.html` | — |
 
 已启用 gzip（`text/*`、`application/javascript`、`application/json`、`image/svg+xml`、字体等）。
 
-### 为什么 index.html 不缓存，assets 长期缓存？
+### 为什么两个入口 html 都不缓存，assets 长期缓存？
 
-Vite 构建产物的文件名带内容 hash（如 `accounts-CLRZcrUY.js`），内容变了文件名就变，因此可以安全地长期缓存；而 `index.html` 引用了这些文件名，必须不缓存才能让发版立即生效。
+Vite 构建产物的文件名带内容 hash（如 `accounts-CLRZcrUY.js`），内容变了文件名就变，因此可以安全地长期缓存；而 `index.html` 与 `dashboard.html` 都引用了这些文件名，必须都不缓存才能让发版立即生效。
 
 ## 可配置的环境变量
 

@@ -115,6 +115,13 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
+# MCP 工具出口（/mcp）两个旋钮。出口**匿名**：能访问到端点就能调工具，身份与配额只到
+# 「客户端 IP」这一层（netops/mcp_gateway.py），要收紧就加鉴权而不是加开关。
+# - MCP_ENABLED=0：asgi 不建 MCP 子应用也不 import llmtools，/mcp 直接回 404；
+# - MCP_RATE_LIMIT_PER_MINUTE：按 IP 的分钟窗口，0 = 不限流（Redis 不可用时放行）。
+MCP_ENABLED = os.environ.get("MCP_ENABLED", "1").lower() in ("1", "true", "yes")
+MCP_RATE_LIMIT_PER_MINUTE = int(os.environ.get("MCP_RATE_LIMIT_PER_MINUTE", "60"))
+
 # 访问流（AccessFlow）重建链路的旋钮：阈值口径、取值理由与任务名三处对账见 handbook/analysis.md
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
@@ -129,6 +136,17 @@ ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
 DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
 DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
+
+# 链路带宽（只做链路）改为 Zabbix 直取 + Redis 缓存，不落库：
+# - conf/links.json 是采集清单与展示 label 的唯一权威；DASHBOARD_LINKS_FILE 是单值路径，
+#   容器 /etc/netops/conf/links.json（compose 把宿主 conf/ 只读挂进去）、宿主 conf/links.json；
+# - CACHE_TTL 大于 REFRESH_SECONDS：Zabbix 短暂抖动时还能读到上一份；
+# - WINDOW_HOURS 是折线窗口（原 analysis.api.dashboard.LINECHART_HOURS）。
+DASHBOARD_LINKS_FILE = os.environ.get("DASHBOARD_LINKS_FILE", "conf/links.json")
+DASHBOARD_LINK_CACHE_KEY = "dashboard:link:series"
+DASHBOARD_LINK_CACHE_TTL = int(os.environ.get("DASHBOARD_LINK_CACHE_TTL", "600"))
+DASHBOARD_LINK_REFRESH_SECONDS = int(os.environ.get("DASHBOARD_LINK_REFRESH_SECONDS", "180"))
+DASHBOARD_LINK_WINDOW_HOURS = int(os.environ.get("DASHBOARD_LINK_WINDOW_HOURS", "3"))
 
 # 阿里云：一朵云、两个资源集（生产/测试），两套账号共用 region，各产品 endpoint 分别传参。
 # 变量清单见 handbook/settings.md；凭据链路同为 *_FILE > 环境变量 > 空。
@@ -363,4 +381,12 @@ CELERY_TASK_SOFT_TIME_LIMIT = 3000
 CELERY_TASK_ROUTES = {
     # 键必须等于 ACCESS_FLOW_TASK；改名后 Redis 里的旧消息会 Unknown task，升级前停 worker 清队列
     "analysis.rebuild_access_flows": {"queue": "access_flow"},
+}
+# 大屏链路缓存周期刷新：beat 只负责按时投递，采集仍由 worker 执行（Zabbix async 客户端
+# 只活在 worker 的 event loop 里）。队列走默认 celery，与写入链共用并发槽。
+CELERY_BEAT_SCHEDULE = {
+    "dashboard-link-cache": {
+        "task": "ingest.refresh_link_cache",
+        "schedule": DASHBOARD_LINK_REFRESH_SECONDS,
+    },
 }

@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
@@ -16,12 +17,29 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 // 产物丢 node_modules/.cache（不碰 dist）、关掉压缩与 sourcemap。
 const DTS_ONLY_MODE = 'gen-dts'
 
+// dev 下 /dashboard 会被 Vite 自带的 SPA fallback 改写成 /index.html（主站），
+// 与生产 nginx / Django 的「大屏单独处理」不一致。configureServer 里直接注册中间件
+// 发生在 Vite 内部中间件之前，把友好 URL 归一到第二个入口 dashboard.html。
+const dashboardEntryPlugin: Plugin = {
+  name: 'netops-dashboard-entry',
+  configureServer: (server) => {
+    server.middlewares.use((req, _res, next) => {
+      const [pathname, query] = (req.url ?? '').split('?')
+      if (pathname === '/dashboard' || pathname === '/dashboard/') {
+        req.url = query === undefined ? '/dashboard.html' : `/dashboard.html?${query}`
+      }
+      next()
+    })
+  },
+}
+
 export default defineConfig(({ mode }) => {
   const dtsOnly = mode === DTS_ONLY_MODE
 
   return {
     plugins: [
       vue(),
+      dashboardEntryPlugin,
       AutoImport({
         imports: [
           'vue',

@@ -92,6 +92,9 @@ services:
       - code:/app:ro
       - repo:/configs
       - data:/data
+      # 大屏链路配置：宿主 conf/ 只读挂进容器，改 JSON + refresh_link_cache 即生效，
+      # 不进 code 卷，所以重跑 code-init / 重建容器都不会覆盖它。
+      - ./conf:/etc/netops/conf:ro
     depends_on:
       code-init:
         condition: service_completed_successfully
@@ -137,6 +140,31 @@ services:
     depends_on:
       app:
         condition: service_started
+    networks:
+      - internal
+
+  # 大屏链路缓存：beat 按期投递 ingest.refresh_link_cache，采集仍由 worker 执行。
+  # 启动时先同步刷一次（entrypoint/beat.sh），避免 Redis 空导致大屏首屏空白；
+  # volumes_from 继承 app 的 code / repo / data / conf 卷，--schedule 写 /tmp 避开只读 code 卷。
+  beat:
+    <<: *app-base
+    container_name: netops-beat
+    restart: unless-stopped
+    entrypoint: ["/app/entrypoint/beat.sh"]
+    env_file:
+      - envs/common.env
+      - envs/celery.env
+      - envs/container.env
+    secrets: *app-secrets
+    volumes_from:
+      - app:ro
+    depends_on:
+      code-init:
+        condition: service_completed_successfully
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - internal
 

@@ -2,15 +2,20 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
+from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 from . import views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # OpenAPI 3 文档：三个路由都在 /api/ 下，nginx 的 /api/ 代理与 SPA_EXCLUDE_PREFIXES 不用改。
+    # OpenAPI 3 文档：/api/schema/ 是浏览器入口，302 到 Swagger UI；描述文件单独挂在
+    # /api/schema/openapi.yaml，name="schema" 不能丢——两个 UI 靠它反解取数，
+    # 若把 schema 视图留在 /api/schema/，UI 会拉到重定向后的 HTML 而不是 OpenAPI 文件。
+    # 四条路由都在 /api/ 下，nginx 的 /api/ 代理与 SPA_EXCLUDE_PREFIXES 不用改。
     # 不叫 /api/docs/——那是 docs 业务域（表格编辑 / 文档转换）的前缀。
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/", RedirectView.as_view(pattern_name="swagger-ui", permanent=False), name="api-docs"),
+    path("api/schema/openapi.yaml", SpectacularAPIView.as_view(), name="schema"),
     path("api/schema/swagger-ui/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/schema/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("api/", include("core.api.urls")),
@@ -21,6 +26,12 @@ urlpatterns = [
     # 文档域（表格编辑 + 文档转换）：/api/docs/
     path("api/", include("docs.api.urls")),
     path("favicon.ico", views.favicon),
+    # Vite 双入口：大屏必须单独接管，不能落到下面的 SPA 兜底（那里一律返回主站 index.html）。
+    # /dashboard 是友好 URL，与 nginx 的 location = /dashboard 对齐；两个入口共用 /assets/*。
+    # 这里不整段排除 dashboard 前缀：大屏没有前端路由，其余子路径仍由主站兜底，
+    # 与 nginx 的 try_files 行为保持一致。
+    path("dashboard.html", views.vue_dashboard),
+    re_path(r"^dashboard/?$", views.vue_dashboard),
     re_path(r"^assets/(?P<path>.*)$", views.serve_frontend_assets),
 ]
 

@@ -8,29 +8,33 @@
 ``frontend/src/shared/api/dashboard.ts`` 里显式取 ``data.result``）；本项目其它接口是
 裸 DRF Response，这里是唯一例外，等前端统一后再改回裸数组。
 
-查询参数 ``panel`` / ``group`` / ``name`` 对齐旧 ``getdashboard``。当前值直接读
-``DashboardMetric``；``group=linechart`` 或 ``name=bandwidth-*`` 时，把 ``MetricSample``
-最近 3 小时的链路样本聚合成「一行一个时间点」的 EAV 视图，前端 ``ChartsCard-1``
-无需改动即可消费。写入口是 analysis 的写库任务（由 ingest 采集任务按任务名投递），
-本模块只读。
+查询参数 ``panel`` / ``group`` / ``name`` 对齐旧 ``getdashboard``。``DashboardMetric``
+仍然服务设备状态 / 工单 / SLB / 巡检；``group=linechart`` 或 ``name=bandwidth-*`` 时
+**不再读 MetricSample**，而是读 ingest 侧刷新进 Redis 的链路缓存（``link_cache``），
+把完整结果拼回旧 EAV 行视图，并把脱敏的面板 / scope / target label 放在响应的
+``meta`` 里（前端 ``LinkBandwidthWidget`` 一次请求拿全，前端零改动消费数据部分）。
+写入口是 ingest 的 ``refresh_link_cache``，本模块只读。
 """
 
-from datetime import timedelta
-
-from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from analysis.models import DashboardMetric, MetricSample
+from analysis.models import DashboardMetric
 from assets.models import Cabinet, Device
+from ingest.collectors.link_cache import read_link_cache
 
-LINECHART_HOURS = 3
 
+def _envelope(result, meta=None):
+    """包成 ``{status, message, result}``：大屏前端显式取 ``data.result``。
 
-def _envelope(result):
-    """包成 ``{status, message, result}``：大屏前端显式取 ``data.result``。"""
-    return Response({"status": 200, "message": "ok", "result": result})
+    ``meta`` 只给链路 linechart 分支（面板 / scope / target label），其它接口
+    不带这个键，响应形状保持不变。
+    """
+    body = {"status": 200, "message": "ok", "result": result}
+    if meta is not None:
+        body["meta"] = meta
+    return Response(body)
 
 
 def _metric_row(metric):
@@ -44,37 +48,33 @@ def _metric_row(metric):
     }
 
 
-def _linechart_rows():
-    """规范化时序样本 → 前端期望的 ``{time, data:{ipv4:{...}, fwlink:{...}}}`` 行。
-
-    时间用 aware 的 ``sampled_at`` 按本地时区格式化（``USE_TZ=True``），``name`` 统一
-    成短横线形式 ``bandwidth-HH:MM``，与 ``getlinklatest`` 的查询对齐；旧后端写的
-    ``bandwidth_{time}``（下划线、且 time 是整条时间轴 dict）查不到。
-    """
-    since = timezone.now() - timedelta(hours=LINECHART_HOURS)
-    samples = (
-        MetricSample.objects.filter(kind="link_bandwidth", sampled_at__gte=since)
-        .order_by("sampled_at")
-        .values_list("sampled_at", "scope", "subject", "value")
-    )
-
-    points: dict = {}
-    for sampled_at, scope, subject, value in samples:
-        label = timezone.localtime(sampled_at).strftime("%H:%M")
-        point = points.setdefault(sampled_at, {"time": label, "data": {}})
-        point["data"].setdefault(scope, {})[subject] = value
-
-    return [
+def _link_points(payload, name=None):
+    """缓存 payload → 旧 EAV 行视图 ``bandwidth-HH:MM``（前端数据形状零改动）。"""
+    points = [
         {
             "id": index,
             "panel": "link",
             "group": "linechart",
-            "name": f"bandwidth-{point['time']}",
+            "name": f"bandwidth-{point.get('time', '')}",
             "value": None,
             "list_value": [point],
         }
-        for index, point in enumerate(points.values())
+        for index, point in enumerate(payload.get("points") or [])
     ]
+    if name:
+        points = [point for point in points if point["name"] == name]
+    return points
+
+
+def _link_meta(payload):
+    """缓存里的展示字段（采集侧已脱敏，不含 host / ifname）。"""
+    return {
+        "panels": payload.get("panels") or [],
+        "scopes": payload.get("scopes") or {},
+        "targets": payload.get("targets") or [],
+        "window_hours": payload.get("window_hours"),
+        "refreshed_at": payload.get("refreshed_at"),
+    }
 
 
 @api_view(["GET"])
@@ -97,10 +97,12 @@ def dashboard(request):
 
     wants_linechart = (not panel or panel == "link") and (group == "linechart" or (name and name.startswith("bandwidth-")))
     if wants_linechart:
-        points = _linechart_rows()
-        if name:
-            points = [point for point in points if point["name"] == name]
-        result.extend(points)
+        payload = read_link_cache()
+        if payload is None:
+            # 缓存未生成 / Redis 不可用：返回空链路数据，前端保留上一次成功结果
+            return _envelope(result)
+        result.extend(_link_points(payload, name))
+        return _envelope(result, meta=_link_meta(payload))
 
     return _envelope(result)
 

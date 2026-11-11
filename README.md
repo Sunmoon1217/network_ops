@@ -12,7 +12,7 @@
 | **IP 管理** | `/ipam` | 子网、IP 地址、标签管理 |
 | **工具** | `/tools` | 路径追踪（防火墙策略匹配 + NAT + 路由 + 负载均衡）、机柜可视化（U 位视图） |
 | **任务中心** | — | 任务/阶段管理（Celery 采集→解析→存储）、运行监控（celery / Redis / 队列积压巡检） |
-| **总览大屏** | `dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
+| **总览大屏** | `/dashboard`、`/dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
 
 ## 技术栈
 
@@ -21,7 +21,7 @@
 - PostgreSQL（TimescaleDB）+ Redis
 - Celery 异步任务（采集→解析→存储；访问流重建；大屏采集→写库）
 - TTP 模板解析（设备配置 → 结构化数据入库）
-- OpenAPI 3 文档（drf-spectacular，`/api/schema/` 三路由，UI 走本地 sidecar）
+- OpenAPI 3 文档（drf-spectacular，浏览器入口 `/api/schema/` → Swagger UI；描述文件 `/api/schema/openapi.yaml`，UI 走本地 sidecar）
 - 外部数据源采集（Zabbix / Autotask，`apps/ingest/collectors/`，pydantic DTO）
 - MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；基建与出口在根目录 `llmtools/`，各域注册实体，通用工具只认注册表，工具由 `llmtools/tools.py` 统一注册）
 
@@ -105,7 +105,7 @@ uv run pytest tests/mcp/                          # 工具测试：mcp.Client �
 
 ## 部署
 
-生产/集成环境用 `docker compose`（db / redis / code-init / app / worker / consumer / nginx，nginx 为统一入口）：
+生产/集成环境用 `docker compose`（db / redis / code-init / app / worker / consumer / beat / nginx，nginx 为统一入口）：
 
 ```bash
 cp .env.example .env            # 按需改宿主端口 / 镜像

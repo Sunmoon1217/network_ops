@@ -45,11 +45,8 @@ const handleLogout = async () => {
 .user-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  height: 42px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  gap: 10px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 .bar-right {

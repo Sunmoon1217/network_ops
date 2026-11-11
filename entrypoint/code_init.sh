@@ -7,9 +7,10 @@
 #   2) 静态产物 → static_data 卷（挂 /static；nginx 之后以 /usr/share/nginx/html:ro 使用）
 #
 # 静态卷的目录布局**按 URL 前缀设计**，nginx 一个 root 就能覆盖全部静态请求：
-#   <卷>/index.html   ← Vite 产物（SPA 入口，/ 走 try_files 兜底）
-#   <卷>/assets/*     ← Vite 产物（/assets/*）
-#   <卷>/static/*     ← collectstatic 产物（/static/*，STATIC_URL 就是 /static/）
+#   <卷>/index.html      ← Vite 产物（主站入口，/ 走 try_files 兜底）
+#   <卷>/dashboard.html  ← Vite 产物（大屏入口，nginx / Django 都单独返回，别当 SPA 兜底）
+#   <卷>/assets/*        ← Vite 产物（/assets/*，两个入口共用）
+#   <卷>/static/*        ← collectstatic 产物（/static/*，STATIC_URL 就是 /static/）
 #
 # 两次复制都是**权威**的（先清再铺），否则上一版带 hash 的遗留资源会一直堆在卷里，
 # 且删掉的源文件会在卷里残留。清卷根时要**排除 static/**：它由下一步单独同步。

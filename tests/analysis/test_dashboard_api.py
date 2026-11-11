@@ -37,3 +37,41 @@ def test_dashboard_cabinets_allow_anonymous_and_project_minimal_fields():
     assert result["devices"][0]["cabinet"] == cabinet.pk
     assert result["devices"][0]["device_type_display"] == "交换机"
     assert "remark" not in result["devices"][0]
+
+
+@pytest.mark.django_db
+def test_link_linechart_reads_cache_and_returns_meta(monkeypatch):
+    """链路 linechart 不再读 MetricSample：从 Redis 缓存拼回旧 EAV 行，并带脱敏 meta。"""
+    payload = {
+        "window_hours": 3,
+        "refreshed_at": "2026-11-11T10:00:00+00:00",
+        "panels": [{"id": "internet", "label": "互联网链路使用率", "scopes": ["ipv4"]}],
+        "scopes": {"ipv4": "IPv4 互联网链路"},
+        "targets": [{"scope": "ipv4", "subject": "zjbgp", "label": "中金BGP", "enabled": True}],
+        "points": [{"time": "18:00", "data": {"ipv4": {"zjbgp": 12.3}}}],
+    }
+    monkeypatch.setattr("analysis.api.dashboard.read_link_cache", lambda: payload)
+
+    body = APIClient().get("/api/dashboard/?panel=link&group=linechart").json()
+
+    assert body["meta"] == {
+        "panels": payload["panels"],
+        "scopes": payload["scopes"],
+        "targets": payload["targets"],
+        "window_hours": 3,
+        "refreshed_at": payload["refreshed_at"],
+    }
+    row = [item for item in body["result"] if item["group"] == "linechart"][0]
+    assert row["name"] == "bandwidth-18:00"
+    assert row["list_value"][0]["data"]["ipv4"]["zjbgp"] == 12.3
+
+
+@pytest.mark.django_db
+def test_link_linechart_cache_miss_returns_empty(monkeypatch):
+    """缓存未生成时不报错、不带 meta，前端保留上一次成功结果。"""
+    monkeypatch.setattr("analysis.api.dashboard.read_link_cache", lambda: None)
+
+    body = APIClient().get("/api/dashboard/?group=linechart").json()
+
+    assert body["result"] == []
+    assert "meta" not in body

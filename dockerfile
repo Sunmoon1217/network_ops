@@ -21,6 +21,10 @@ RUN set -eux; \
         echo "错误：frontend/dist 缺少 index.html。请先在宿主机执行 cd frontend && pnpm build" >&2; \
         exit 1; \
     fi; \
+    if [ ! -f /app/frontend/dist/dashboard.html ]; then \
+        echo "错误：frontend/dist 缺少 dashboard.html（Vite 双入口，请重新 pnpm build）" >&2; \
+        exit 1; \
+    fi; \
     if [ -z "$(ls -A /app/www)" ]; then \
         echo "错误：www 是空目录。请先在宿主机执行 uv run python manage.py collectstatic --noinput" >&2; \
         exit 1; \

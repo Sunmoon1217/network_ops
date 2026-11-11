@@ -1,6 +1,6 @@
 # 部署与容器化
 
-compose 起 **db(TimescaleDB) / redis / code-init（一次性）/ app / worker / consumer / nginx**，
+compose 起 **db(TimescaleDB) / redis / code-init（一次性）/ app / worker / consumer / beat / nginx**，
 nginx 是统一入口。本文档收「部署侧的硬要求与代价」；构建顺序、分层取舍、`uv sync` 参数、
 冒烟清单契约见 `entrypoint/README.md`。第三方软件的实测行为（compose 插值、挂载属主、容器里
 git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名。
@@ -8,7 +8,7 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 ## 入口与静态资源（代码卷 + 静态卷）
 
 `nginx/` 作为统一入口（80/443）：`/api/*`、`/admin/*`、`/media/*`、`/mcp` 代理到 compose 里
-的 **app 容器**，`/assets/*`、`/static/*` 由 nginx 直出。
+的 **app 容器**，`/assets/*`、`/static/*` 与两个入口 html（`/`、`/dashboard*`）由 nginx 直出。
 
 静态成品与源码都走「镜像 → 一次性容器 → 命名卷」这一条路：
 
@@ -16,23 +16,24 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 宿主机（pnpm build + collectstatic）
   → dockerfile.code COPY 源码到 /opt/netops/code、静态成品到 /opt/netops/http
   → code-init（entrypoint/code_init.sh）把这两份**权威**铺进 code / static 两个命名卷
-  → app / worker / consumer 挂 code:/app:ro 运行；nginx 只读挂 static:/usr/share/nginx/html:ro
+  → app / worker / consumer / beat 挂 code:/app:ro 运行；nginx 只读挂 static:/usr/share/nginx/html:ro
 ```
 
 **换代码镜像或改源码后必须重跑 `code-init` 再 `up -d`**：app 用的是卷里的代码，不是镜像里的
 `/app`（`up -d --build` 也不会换容器，见技能 `docker-compose-behavior` 第 3 节）。
 
-**静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/assets/*`（Vite）+
-`<卷>/static/*`（collectstatic），所以 nginx **一个 root**（`/usr/share/nginx/html`）就覆盖
-`/`、`/assets/*`、`/static/*`。`code_init.sh` 每次 `rm -rf` 再 `cp -a`（权威重铺）——不清会留下
-上一版带 hash 的遗留资源；宿主侧 `www/` 与 `frontend/dist/` 仍由各自工具清空
-（`collectstatic --clear` / Vite 的 `emptyOutDir`），互不干扰。为什么非要绕一层卷（跨容器只能
-靠卷；卷遮住镜像内容且只播种一次）：技能 `nginx-container-proxy` 第 6 节。
+**静态卷的布局按 URL 前缀设计**：`<卷>/index.html` + `<卷>/dashboard.html` +
+`<卷>/assets/*`（Vite）+ `<卷>/static/*`（collectstatic），所以 nginx **一个 root**
+（`/usr/share/nginx/html`）就覆盖 `/`、`/dashboard*`、`/assets/*`、`/static/*`。
+`code_init.sh` 每次 `rm -rf` 再 `cp -a`（权威重铺）——不清会留下上一版带 hash 的遗留资源；
+宿主侧 `www/` 与 `frontend/dist/` 仍由各自工具清空（`collectstatic --clear` / Vite 的
+`emptyOutDir`），互不干扰。为什么非要绕一层卷（跨容器只能靠卷；卷遮住镜像内容且只播种一次）：
+技能 `nginx-container-proxy` 第 6 节。
 
-**nginx 侧显式写卷、worker / consumer 用 `volumes_from`**：nginx 只写
+**nginx 侧显式写卷、worker / consumer / beat 用 `volumes_from`**：nginx 只写
 `static:/usr/share/nginx/html:ro` 才能只读、挑卷、放在自己的路径上（`volumes_from` 会把源容器
-**所有**卷带过来且路径被绑死）；反过来 worker / consumer 正是要**完全一致**的代码与配置仓库
-路径，所以用 `volumes_from: [app:ro]`（`code` 是只读卷，不会引入多写者）。
+**所有**卷带过来且路径被绑死）；反过来 worker / consumer / beat 正是要**完全一致**的代码、
+配置仓库与 `conf/` 路径，所以用 `volumes_from: [app:ro]`（`code` 是只读卷，不会引入多写者）。
 
 **nginx 侧与本项目耦合的两条硬要求**：
 
@@ -43,15 +44,33 @@ git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名�
 
 这条契约由 `tests/deploy/test_reverse_proxy_config.py` 守。
 
-## 三个数据挂载：仓库卷 / 配置源 bind / 代码卷
+### 双入口：大屏必须单独接管
+
+Vite 打的是 `index.html`（主站，挂载点 `#app`）与 `dashboard.html`（大屏，挂载点
+`#dashboard`），两者共用 `/assets/*` 里同一份 main chunk，靠页面里的挂载点决定启动哪个应用。
+所以静态卷里必须有 `dashboard.html`，且两条静态链路都不能把大屏请求交给 SPA 兜底：
+
+| 链路 | 单独处理 |
+|------|---------|
+| nginx 直出（`nginx/conf.d/netops.conf`） | `location = /dashboard.html` 显式返回并设 `no-cache`（入口 html 引用带 hash 的 assets，缓存会让发版不生效）；`location = /dashboard` 与 `= /dashboard/` 内部重定向回 `dashboard.html`；`location /` 的 `try_files` 仍只兜主站 `/index.html` |
+| Django 托管（`netops/urls.py` + `netops/views.py`，宿主直跑 / 只暴露 443 时） | 兜底前的 `path("dashboard.html")` 与 `re_path(r"^dashboard/?$")` 交给 `views.vue_dashboard`；`vue_index` 仍只回主站 `index.html` |
+
+漏掉任意一边，症状都是「打开大屏却是主站登录页 / 一片空白」：拿到的是 `index.html`，页面里
+没有 `#dashboard`。`pnpm dev` 由 `dashboardEntryPlugin` 把 `/dashboard` 归一到
+`dashboard.html`（Vite 自带的 SPA fallback 原本会改写成 `/index.html`）；两个 Dockerfile
+构建时都校验两个入口齐全，`code-init` 把整份 dist 铺进静态卷。契约由
+`tests/deploy/test_dashboard_entry.py` 守。
+
+## 四个挂载：仓库卷 / 配置源 bind / 配置目录 / 代码卷
 
 | 路径 | 形式 | 为什么 |
 |------|------|--------|
 | `/configs`（`CONFIG_REPO_PATH`） | **命名卷** `repo`（读写） | 解析流水线的内部工作目录，**不需要宿主可见**；属主继承自镜像、容器 root 写自己的卷，无需 uid 对齐（技能 `docker-mounts-and-ownership`） |
 | `/data` | **bind** `${PWD}/data`（`driver_opts: type none, o bind`） | 运维放文件的地方（Excel「配置文件」sheet 的 `config_dir` 默认 `/data/configs`）；宿主目录不存在时 `up` 直接失败，**首次部署要先 `mkdir -p data`**；同名卷已存在时 `driver_opts` 被静默忽略，换绑定点要先 `docker volume rm network-ops-extradata` |
-| `/app`（代码） | **命名卷** `code`（`ro` 挂进 app / worker / consumer） | 由 `code-init` 铺入，跨沙箱只传镜像不复制源码 |
+| `/etc/netops/conf` | **bind** `./conf`（`ro`） | 平台自身的结构化配置（`conf/links.json`）：入库、随版本走；不在 code/static 卷里，**重跑 `code-init` / recreate 都不会覆盖现场内容**；挂载点刻意避开容器内已有的 `/configs`（repo 卷）与 `/data/configs` |
+| `/app`（代码） | **命名卷** `code`（`ro` 挂进 app / worker / consumer / beat） | 由 `code-init` 铺入，跨沙箱只传镜像不复制源码 |
 
-worker / consumer 用 `volumes_from: [app:ro]` 继承同三卷（导入配置是 app 的接口）。
+worker / consumer / beat 用 `volumes_from: [app:ro]` 继承同一组卷（导入配置是 app 的接口）。
 
 `config_repo` 是**每台设备一个独立仓库**（`init_repo(hostname)` 在
 `<CONFIG_REPO_PATH>/<hostname>/` 下 git init + 初始 commit），`save_config` / `get_config` /
@@ -104,6 +123,12 @@ venv / code 镜像并重跑 `code-init`**（技能 `docker-compose-behavior` 第
 celery 侧只有一个 `CELERY_LOGLEVEL`——`--concurrency` 刻意不暴露（同设备并发会写坏数据，
 见 [`ingest.md`](ingest.md)「并发」）。
 
+**beat 的启动钩子**（`entrypoint/beat.sh`）：先 `python manage.py refresh_link_cache`
+同步刷一次链路缓存（失败只警告、不阻塞启动，下个周期重试），再
+`exec celery -A netops beat --schedule=/tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid`。
+`/app` 是只读 code 卷，celery 默认往 cwd 写 schedule 会直接 EROFS；beat **单实例**，
+不能 scale（会重复调度）。
+
 ## 启动三步（`entrypoint/app.sh`）
 
 1. 拼出整条 gunicorn 命令（静态成品已由 `code-init` 铺进静态卷，这里不再复制）；
@@ -121,9 +146,10 @@ celery 侧只有一个 `CELERY_LOGLEVEL`——`--concurrency` 刻意不暴露（
 
 ## 健康检查
 
-compose 只给 **db / redis / nginx** 配了 healthcheck，app / worker / consumer 没有
+compose 只给 **db / redis / nginx** 配了 healthcheck，app / worker / consumer / beat 没有
 （`depends_on` 用 `service_started`，由 `restart: unless-stopped` 兜底；consumer 的判活依据是
-Redis 里的 `access_flow:heartbeat` 键，TTL 300s）。细节与实测：技能 `container-healthchecks`。
+Redis 里的 `access_flow:heartbeat` 键，TTL 300s；beat 额外等 `redis: service_healthy`，
+因为启动即刷缓存需要 Redis 就绪）。细节与实测：技能 `container-healthchecks`。
 
 | 服务 | 探针 | 不能省的参数 |
 |------|------|--------------|
@@ -132,7 +158,7 @@ Redis 里的 `access_flow:heartbeat` 键，TTL 300s）。细节与实测：技�
 | nginx | `curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/` | **`--noproxy '*'` 不能省**；别用 busybox `wget`（不认 `no_proxy`）；`-f` 让 4xx/5xx 也算失败；探 80 还能发现「conf.d 没挂进来」（没有 server 块 nginx 照样启动） |
 
 app 的 `depends_on: code-init: service_completed_successfully` 是为了**等代码卷铺完**；
-worker / consumer 只是 `app: service_started`。
+worker / consumer 只是 `app: service_started`；beat 等 `code-init` 完成 + `redis: service_healthy`。
 
 ## 环境变量与凭据
 
@@ -141,6 +167,8 @@ worker / consumer 只是 `app: service_started`。
 `${VAR}` 只读根 `.env`**、`environment:` 优先于 `env_file`、多个 `env_file` **后面的覆盖前面
 的**（所以 `container.env` 排最后，容器差异一定生效）。宿主直跑读同一份 `common.env` +
 `host.env`，由 `base.py` 的 `load_dotenv` 兜底（见 [`settings.md`](settings.md)）。
+链路配置路径 `DASHBOARD_LINKS_FILE` 写在 `envs/container.env`（`/etc/netops/conf/links.json`），
+宿主直跑用默认的 `conf/links.json`（相对 `BASE_DIR`）。
 
 命令已在 `entrypoint/*.sh` 里拼好，compose 里没有需要 `$$` 转义的 shell 字符串；`$$` 只出现在
 healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。

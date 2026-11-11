@@ -167,6 +167,33 @@ rules    -> {"name": ["/Common/irule_redirect"]}
 persist  -> {"name": "/Common/cookie"}
 ```
 
+## A10 SLB Saver（`savers/a10_lb.py`）
+
+A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 各消费 A10 自己的顶层键
+（`service_groups` / `virtual_server`），不与 F5 的 `pools` / `virtuals` 冲突：
+
+**service-group → LtmPool / LtmPoolMember**（`A10ServiceGroupSaver`）：
+
+- `service-group` ≈ F5 `pool`：`name`→`name`、`method`→`mode`、`monitor`→`monitors`
+  （A10 模板无 health-check 行时 monitor 默认产出字符串 `"None"`，Saver 过滤掉）；
+- A10 成员直接写 `address:port`，没有 F5 的 node 名，所以 `LtmPoolMember.name` 用地址
+  充当成员名、`address` 列原样落地址——path_tracer 拿 `address` 做下一跳匹配，不受影响。
+
+**virtual-server → LtmVirtualServer / LtmProfile / LtmPersist**（`A10VirtualServerSaver`）：
+
+- A10 一个 `virtual-server` 是「一个 VIP 地址 + 多个 port 的 virtual-service」，而 F5
+  一个 `ltm virtual` 只有一个 destination（address:port）——所以 A10 的「virtual-server +
+  virtual-service」组合才对应一行 `LtmVirtualServer`，`name` 用 `{vs_name}:{port}` 保证
+  唯一（唯一键 `(device, name)`）；
+- 字段映射：`address`→`vs_address`、`port`→`vs_port`、`protocol`→`protocol`、
+  `enabled`→`status`、`service-group`→`pool`、source-nat 的 `snat_type`/`snat_pool`→
+  `snat_type`/`snat_pool`；
+- `template http` / `template client-ssl` → `LtmProfile`（`type` 是模板里的固定词
+  http / client-ssl，不是从名字推导）；`template persist` → `LtmPersist`（`type` =
+  `persist_type`、`name` = `persist_name`）；
+- `servers`（slb server 节点清单）没有对应 `Ltm*` 模型，与 F5 `nodes` 一样保持「产出
+  无消费」，落在 `KNOWN_UNCONSUMED_PRODUCTS`。
+
 ## 防火墙 Saver 的映射约定（`savers/firewall.py`）
 
 ### AddressBookSaver
@@ -260,8 +287,8 @@ Hillstone/firewall、Huawei/switch、Maipu/switch、Ruijie/switch
 
 Saver 实现（`savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
 LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、
-GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、
-NatRuleSaver。
+GtmServerSaver、GtmPoolSaver、A10ServiceGroupSaver、A10VirtualServerSaver、AddressBookSaver、
+ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver。
 
 其中 Route / Vlan / SnmpConfig / Policy / GTM 三个 / DeviceAccount / AddressBook / NatRule /
 LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），
@@ -361,22 +388,33 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 
 ```
 ingest/tasks.py: collect_dashboard(source)
-  → collectors/dashboard.py: collect(source)（async，纯函数式编排）
+  → collectors/dashboard.py: collect(source)（设备组 / Autotask，纯函数式编排）
        ├── zabbix/   异步 Zabbix API（get_zapi 进程级单例）+ 查询层 + JSON-RPC DTO
        └── autotask/ 工单 / SLB / 巡检 HTTP 客户端 + pydantic DTO
   → 返回纯 dict payload（metrics / samples / cases / run，采样时刻 3 分钟对齐）
   → 按 settings.DASHBOARD_WRITE_TASK send_task → analysis.write_dashboard（唯一写库入口）
+
+链路带宽是独立链，不落库：
+conf/links.json → collectors/link_cache.py
+  → queries.link_history（history.get，3 分钟分桶、多监控项取 max）
+  → SET dashboard:link:series（TTL > 刷新周期）
+  → GET /api/dashboard/?group=linechart 直读
 ```
 
-边界（三条，都是刻意的）：
+边界（四条，都是刻意的）：
 
 - **只采集、不落库**：`collectors/` 不 import 任何 ORM 写操作，也不 import `analysis`
-  （依赖方向单向）。写库全在 `analysis.tasks.write_dashboard` 的一个事务里。
-- **失败隔离**：单组设备 / 单接口失败只 warning 并跳过，不影响其余数据；整批异常仍投一条
-  `run.status=failed` 让大屏可见，再向上抛让 Celery 记 FAILURE。
+  （依赖方向单向）。写库全在 `analysis.tasks.write_dashboard` 的一个事务里；链路缓存的
+  读取由 analysis 侧直接 `GET` 同一个 Redis key。
+- **失败隔离**：单组设备 / 单接口 / 单条链路失败只 warning 并跳过，不影响其余数据；
+  设备组整批异常仍投一条 `run.status=failed` 让大屏可见，链路全部失败才抛，再向上抛让
+  Celery 记 FAILURE。
 - **外部 DTO 用 pydantic + `netops.schema.ExtraModel`**（`extra="allow"`，透传原字段，工单的
   `zhixing` / `shijian` / `status` 这类现场字段不会被丢弃）。
+- **链路清单只认 `conf/links.json`**：`subject` 是稳定数据键，`host` / `ifname` 只在本侧
+  使用，不下发免认证接口。
 
-任务名对账：`tests/ingest/test_dashboard_collect.py`（采集侧）+ `tests/analysis/test_dashboard_write.py`
-（写库侧）。**仓库内没有 beat / crontab 定时配置**，调度在外部（手工 / 平台定时器调
-`collect_dashboard.delay(source)`）。
+任务名对账：`tests/ingest/test_dashboard_collect.py`（采集侧）+ `tests/ingest/test_link_cache.py`
+（链路缓存）+ `tests/analysis/test_dashboard_write.py`（写库侧）。**链路缓存已内置 beat**
+（`CELERY_BEAT_SCHEDULE` 投递 `ingest.refresh_link_cache`）；设备组 / Autotask 仍由外部调度
+`collect_dashboard.delay(source)`。

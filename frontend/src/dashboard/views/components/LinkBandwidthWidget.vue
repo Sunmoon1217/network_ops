@@ -1,35 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getLinkSeries } from '@/api/dashboard'
-import type { ChartDataGroup, LinkPoint } from '@dashboard/types'
+import type { ChartDataGroup, LinkPanelMeta, LinkPoint, LinkTargetMeta } from '@dashboard/types'
 import LineCharts from '@dashboard/ui/LineCharts.vue'
 import { useInterval } from '@dashboard/utils/timer'
 
-const SCOPE_LABELS: Record<string, string> = {
-  ipv4: 'IPv4 互联网链路',
-  ipv6: 'IPv6 互联网链路',
-  fwlink: '防火墙链路',
-}
-const SUBJECT_LABELS: Record<string, string> = {
-  zjbgp: '中金BGP',
-  jxqcu: '世纪互联联通',
-  jxqct: '世纪互联电信',
-  coreyw: '核心业务区',
-  intyw: '互金业务区',
-  mgtyw: '管理业务区',
-  intdmz: '互联网DMZ',
-}
-
 const points = ref<LinkPoint[]>([])
+const panels = ref<LinkPanelMeta[]>([])
+const scopes = ref<Record<string, string>>({})
+const targets = ref<LinkTargetMeta[]>([])
 const loadError = ref('')
 const timeAxis = computed(() => points.value.map((point) => point.time))
 
+const labelOf = (subject: string) => targets.value.find((item) => item.subject === subject)?.label ?? subject
+const scopeLabel = (scope: string) => scopes.value[scope] ?? scope
+
+// 配置里 disabled 的不画；配置还没到（缓存缺失）时不过滤，避免整块空白
+const visibleKeys = computed(() => {
+  const keys = new Set<string>()
+  targets.value
+    .filter((item) => item.enabled)
+    .forEach((item) => keys.add(`${item.scope}/${item.subject}`))
+  return keys
+})
+const isVisible = (scope: string, subject: string) =>
+  targets.value.length === 0 || visibleKeys.value.has(`${scope}/${subject}`)
+
 const values = computed(() =>
   points.value.flatMap((point) =>
-    Object.values(point.data).flatMap((scope) =>
-      Object.values(scope).filter(
-        (value): value is number => typeof value === 'number' && Number.isFinite(value),
-      ),
+    Object.entries(point.data).flatMap(([scope, scoped]) =>
+      Object.entries(scoped)
+        .filter(([subject]) => isVisible(scope, subject))
+        .map(([, value]) => value)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value)),
     ),
   ),
 )
@@ -37,21 +40,25 @@ const peak = computed(() => (values.value.length ? Math.max(...values.value) : n
 const subjectCount = computed(() => {
   const subjects = new Set<string>()
   points.value.forEach((point) =>
-    Object.values(point.data).forEach((scope) => Object.keys(scope).forEach((key) => subjects.add(key))),
+    Object.entries(point.data).forEach(([scope, scoped]) => {
+      Object.keys(scoped).forEach((subject) => {
+        if (isVisible(scope, subject)) subjects.add(`${scope}/${subject}`)
+      })
+    }),
   )
   return subjects.size
 })
 
 // 后端返回的 EAV：{time, data: {scope: {subject: value}}}；系列按实际出现的 subject 动态生成。
-const toGroups = (scopes: string[]): ChartDataGroup[] =>
-  scopes.map((scope) => {
+const toGroups = (scopeIds: string[]): ChartDataGroup[] =>
+  scopeIds.map((scope) => {
     const subjects = Array.from(
       new Set(points.value.flatMap((point) => Object.keys(point.data[scope] ?? {}))),
-    )
+    ).filter((subject) => isVisible(scope, subject))
     return {
-      title: SCOPE_LABELS[scope] ?? scope,
+      title: scopeLabel(scope),
       data: subjects.map((subject) => ({
-        name: SUBJECT_LABELS[subject] ?? subject,
+        name: labelOf(subject),
         value: points.value.map((point) => {
           const value = point.data[scope]?.[subject]
           // LineCharts 把 -1 转 null；后端未采到的样本 value 为 null，不能当成 0 画出来
@@ -61,17 +68,30 @@ const toGroups = (scopes: string[]): ChartDataGroup[] =>
     }
   })
 
-const extLinkData = computed(() => toGroups(['ipv4', 'ipv6']))
-const fwLinkData = computed(() => toGroups(['fwlink']))
+// 面板与 scope 归属来自后端配置；缓存未到时用数据里出现的 scope 兜底（不写死线路名）
+const renderPanels = computed<LinkPanelMeta[]>(() => {
+  if (panels.value.length) return panels.value
+  const scopeIds = Array.from(new Set(points.value.flatMap((point) => Object.keys(point.data))))
+  return scopeIds.length ? [{ id: 'links', label: '链路使用率', scopes: scopeIds }] : []
+})
+const panelGroups = computed(() =>
+  renderPanels.value.map((panel) => ({ panel, groups: toGroups(panel.scopes) })),
+)
 
 const fetchLinks = async () => {
   try {
-    // 后端固定聚合最近 3 小时的 link_bandwidth 样本，无 since/until 参数，直接全量刷新
-    const rows = await getLinkSeries()
-    points.value = rows
+    const { rows, meta } = await getLinkSeries()
+    if (meta) {
+      panels.value = meta.panels
+      scopes.value = meta.scopes
+      targets.value = meta.targets
+    }
+    const next = rows
       .filter((row) => row.name.startsWith('bandwidth-'))
       .map((row) => row.list_value?.[0] as LinkPoint | undefined)
       .filter((point): point is LinkPoint => Boolean(point?.data))
+    // 全量取：新数据到达前保留旧值，空结果不覆盖（避免图表卸载重建）
+    if (next.length) points.value = next
     loadError.value = ''
   } catch (error) {
     console.error('[dashboard] 链路数据获取失败:', error)
@@ -104,20 +124,15 @@ onMounted(() => {
         </article>
         <article class="stats-card">
           <div class="stats-head"><span>最新采样</span><strong>{{ timeAxis.length ? timeAxis[timeAxis.length - 1] : '--' }}</strong></div>
-          <div class="stats-meta"><span>数据源 Zabbix</span><span>由后端采集落库</span></div>
+          <div class="stats-meta"><span>数据源 Zabbix</span><span>由后端缓存供数</span></div>
         </article>
       </div>
       <p v-if="loadError" class="error">{{ loadError }}</p>
       <p v-else-if="!points.length" class="hint">近 3 小时暂无链路采样</p>
     </section>
-    <div class="items linechart">
-      <h4>互联网链路使用率</h4>
-      <LineCharts v-if="points.length" :data="extLinkData" :xAxisData="timeAxis" />
-      <div v-else class="chart-empty">暂无链路采样数据</div>
-    </div>
-    <div class="items linechart">
-      <h4>防火墙链路使用率</h4>
-      <LineCharts v-if="points.length" :data="fwLinkData" :xAxisData="timeAxis" />
+    <div v-for="item in panelGroups" :key="item.panel.id" class="items linechart">
+      <h4>{{ item.panel.label }}</h4>
+      <LineCharts v-if="points.length" :data="item.groups" :xAxisData="timeAxis" />
       <div v-else class="chart-empty">暂无链路采样数据</div>
     </div>
   </div>

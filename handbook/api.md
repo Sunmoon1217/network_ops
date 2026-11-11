@@ -121,13 +121,18 @@ Dify 推送配置在 `settings/base.py` 的 `DIFY_CONFIG`，变量清单见 [`se
 
 | 路径 | 说明 |
 |------|------|
-| `/api/schema/` | OpenAPI 3 schema（YAML） |
+| `/api/schema/` | 浏览器入口，302 重定向到 Swagger UI（打开手册用这个） |
 | `/api/schema/swagger-ui/` | Swagger UI |
 | `/api/schema/redoc/` | ReDoc |
+| `/api/schema/openapi.yaml` | OpenAPI 3 描述文件（YAML；`?format=json` 取 JSON），给 Postman / 代码生成器 / curl 用 |
 
-**不叫 `/api/docs/`**——那是 docs 业务域前缀。UI 资源走本地 sidecar（内网不通外网，随
+**不叫 `/api/docs/`**——那是 docs 业务域前缀。两个 UI 都靠 `name="schema"` 反解描述文件地址，
+所以 `/api/schema/` 不能再挂 `SpectacularAPIView`：那会让 UI 拉到重定向后的 HTML。重定向是
+302（不缓存），也不透传 query string——原来 `/api/schema/?format=json`、`?lang=xx` 这类用法
+改走 `/api/schema/openapi.yaml`。UI 资源走本地 sidecar（内网不通外网，随
 `collectstatic` 进 `/static/` 由 nginx 直出）；权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制
-（默认放开）。三条路由按 `/api/` 前缀天然不会被 SPA 兜底吃掉，`tests/deploy/test_api_docs.py` 守。
+（默认放开，`SERVE_PERMISSIONS` 同时作用于四条路由）。四条路由按 `/api/` 前缀天然不会被 SPA
+兜底吃掉，`tests/deploy/test_api_docs.py` 守。
 
 ## 大屏供数（`analysis/api/dashboard.py`）
 

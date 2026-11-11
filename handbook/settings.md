@@ -98,6 +98,18 @@
 | `DASHBOARD_WRITE_TASK` | `analysis.write_dashboard` | 任务名的**唯一定义处**：`ingest.tasks.collect_dashboard` 按它 `send_task`（不 import analysis）。`tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` 对账 |
 | `DASHBOARD_PAYLOAD_VIA_REDIS` | `0` | `0` = payload 随消息直投（A 方案）；`1` = payload 暂存 Redis、只投 `{"__redis_key__": …}`（C 方案） |
 | `DASHBOARD_PAYLOAD_TTL` | `600` | C 方案下暂存 key 的 TTL（秒） |
+| `DASHBOARD_LINKS_FILE` | `conf/links.json` | 链路清单与展示 label 的唯一权威；容器 `/etc/netops/conf/links.json`、宿主相对 `BASE_DIR` 解析 |
+| `DASHBOARD_LINK_CACHE_KEY` | `dashboard:link:series` | 链路缓存 key（常量，不支持 env 覆盖）；ingest 写、analysis 只读 |
+| `DASHBOARD_LINK_CACHE_TTL` | `600` | 缓存 TTL（秒），应大于刷新周期，Zabbix 抖动时保留上一份 |
+| `DASHBOARD_LINK_REFRESH_SECONDS` | `180` | beat 刷新周期（秒）；管理命令 `refresh_link_cache` 可立即刷新 |
+| `DASHBOARD_LINK_WINDOW_HOURS` | `3` | 链路折线窗口（小时） |
+
+### MCP 工具出口（`/mcp`）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `MCP_ENABLED` | `1` | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。见 [`llmtools.md`](llmtools.md) |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
 
 ### Zabbix（`ingest/collectors/zabbix`）
 
@@ -183,4 +195,4 @@ WARNING 以上，INFO 全被静默丢弃。常驻的 consumer 运行期输出全
 `SPECTACULAR_SETTINGS` 的 UI 资源一律 `SIDECAR`（内网不通外网，随 `collectstatic` 进
 `/static/` 由 nginx 直出），`SERVE_INCLUDE_SCHEMA=False`；权限取 `API_DOCS_PERMISSION`
 （默认 `AllowAny`，`DJANGO_API_DOCS_REQUIRE_LOGIN=1` 收紧成 `IsAuthenticated`）。
-三条路由见 [`api.md`](api.md)。
+路由见 [`api.md`](api.md)。
