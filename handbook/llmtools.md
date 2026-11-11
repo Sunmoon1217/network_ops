@@ -110,14 +110,21 @@ manager（表现是能连上但会话不通）。
 
 ## ASGI 装配（`netops/asgi.py`）
 
-三层，顺序不能反：
+四层，顺序不能反：
 
 ```
 django_application = get_asgi_application()          # 先完成 django.setup()
-mcp_http_app = mcpserver.streamable_http_app(...)    # 建完才有 session_manager
+mcp_http_app = McpGuardMiddleware(                   # 出口护栏（匿名限流），只管 /mcp
+    mcpserver.streamable_http_app(...)               # 建完才有 session_manager
+)
 _dispatch            → /mcp* 给 mcp_http_app，其余给 django_application
 LifespanApp(_dispatch, [mcpserver.session_manager.run])
 ```
+
+- 护栏包在 MCP 子应用外面而**不是** `_dispatch` 外面：`/api`、静态资源、admin 的请求量比
+  `/mcp` 大得多，没必要每条都过卡。
+- `MCP_ENABLED=0` 时这一整段都不存在（不 import `llmtools`、不建子应用、`LIFESPAN_HOOKS` 空），
+  `/mcp` 由 `_dispatch` 自己回 404——**不能**交给 Django，SPA 兜底会返回 200 + `index.html`。
 
 - `session_manager.run()` 是**生命周期钩子**，由 `netops/lifespan.py` 的 `LifespanApp` 在
   `lifespan.startup` 时进入（全进程一次）、`shutdown` 时退出。Django 6.1 的 ASGI handler 收到
@@ -130,4 +137,24 @@ LifespanApp(_dispatch, [mcpserver.session_manager.run])
 - 钩子清单只在 `asgi.py` 组合（基建不自己注册），由 `tests/deploy/test_asgi_lifespan.py` 守；
   换掉 `--worker-class uvicorn_worker.UvicornWorker` 就等于没有 lifespan（首个请求上告警一次）。
 - nginx 与 Vite 都已代理 `/mcp`（漏了会落到 SPA 兜底返回 `index.html`，表现为「被路由守卫跳
-  登录」）；MCP 是 SSE 长连接，反代要 `proxy_buffering off` + 长读超时。
+  登录」）；流式响应用 SSE 分块下发，反代要 `proxy_buffering off` + 长读超时，由
+  `tests/deploy/test_reverse_proxy_config.py` 守。
+
+## 出口（`/mcp`）：匿名 + 按 IP 限流
+
+现状**匿名**：能访问到端点就能调工具，身份与配额只到「客户端 IP」这一层
+（`netops/mcp_gateway.py`）。这是有意的临时状态——先把出口打通，鉴权后补。
+
+- **为什么 `Mcp-Session-Id` 不算凭证**：它在 `initialize` 的应答里下发，而 SDK 自己不做认证
+  （`scope["user"]` 由外层给）。没有外层身份时，`_session_owners` 的归属比对退化成
+  `None == None`，任何人都能开会话。SDK 只保证「同一会话同一身份」，不回答「你是谁」。
+- **要加鉴权时**：改 `_guard` 一处即可——验完 token 把调用者写进
+  `scope["user"] = AuthenticatedUser(AccessToken(token=…, client_id=…, scopes=[], subject=…))`
+  （`mcp.server.auth.middleware.bearer_auth` / `mcp.server.auth.provider`），SDK 随即接管
+  会话归属绑定：别人拿着你的 session id 请求会被回 404「Session not found」（故意伪装成不存在）。
+  每个请求都要重新带 `Authorization`——归属比对看的是**本请求**的 `scope["user"]`。
+- **限流口径**：按 IP 的分钟固定窗口（`INCR` + `EXPIRE`，跨分钟最多宽限一个窗口），默认
+  60 次/分钟，`0` = 不限流。IP 取值顺序 `X-Real-IP` → `X-Forwarded-For` 首跳 → ASGI `client`：
+  nginx 用 `$remote_addr` 覆盖前者（伪造不了），而 `$proxy_add_x_forwarded_for` 会保留客户端
+  自带的前缀。不经 nginx 直连时两者都可伪造，此时限流只是「防手滑」，不是防护墙。
+- **Redis 故障 fail-open**：只记 warning 后放行。限流是护栏不是业务，不该把出口搞挂。

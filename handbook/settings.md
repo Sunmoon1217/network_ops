@@ -99,6 +99,13 @@
 | `DASHBOARD_PAYLOAD_VIA_REDIS` | `0` | `0` = payload 随消息直投（A 方案）；`1` = payload 暂存 Redis、只投 `{"__redis_key__": …}`（C 方案） |
 | `DASHBOARD_PAYLOAD_TTL` | `600` | C 方案下暂存 key 的 TTL（秒） |
 
+### MCP 工具出口（`/mcp`）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `MCP_ENABLED` | `1` | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。见 [`llmtools.md`](llmtools.md) |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
+
 ### Zabbix（`ingest/collectors/zabbix`）
 
 | 变量 | 默认 | 说明 |

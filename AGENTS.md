@@ -302,10 +302,15 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   / `DASHBOARD_PAYLOAD_VIA_REDIS` / `DASHBOARD_PAYLOAD_TTL` 三处定义在 `base.py`；任务名由
   `tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` 对账。
   细节：[`handbook/analysis.md`](handbook/analysis.md)。
-- **`asgi.py` 三层**：`django_application` → `_dispatch`（`/mcp*` 交 MCP，其余交 Django）→
-  `LifespanApp`（握手 + `LIFESPAN_HOOKS`，当前是 MCP 的 `session_manager.run`）。钩子清单只在
-  `asgi.py` 组合，基建不自己注册；换掉 `--worker-class uvicorn_worker.UvicornWorker` 就没有
-  lifespan（`LifespanApp` 会在首个请求上告警一次）。见 [`handbook/llmtools.md`](handbook/llmtools.md)。
+- **`asgi.py` 四层**：`django_application` → `_dispatch`（`/mcp*` 交 MCP，其余交 Django）→
+  MCP 子应用外层的 `McpGuardMiddleware` → `LifespanApp`（握手 + `LIFESPAN_HOOKS`，当前是 MCP 的
+  `session_manager.run`）。钩子清单只在 `asgi.py` 组合，基建不自己注册；换掉
+  `--worker-class uvicorn_worker.UvicornWorker` 就没有 lifespan（`LifespanApp` 会在首个请求上告警一次）。
+  见 [`handbook/llmtools.md`](handbook/llmtools.md)。
+- **MCP 出口 `/mcp` 目前匿名**（只按客户端 IP 限流 + `MCP_ENABLED` 总开关）：能访问到端点就能调
+  工具，**不要**以为 `Mcp-Session-Id` 是凭证（SDK 只做「同一会话同一身份」，身份要外层给）。
+  关掉开关时 `/mcp` 必须由 `_dispatch` 自己回 404——交给 Django 会落到 SPA 兜底返回 `index.html`。
+  加鉴权的唯一落点是 `netops/mcp_gateway.py` 的 `_guard`。见 [`handbook/llmtools.md`](handbook/llmtools.md)。
 
 ## 语言约定
 
