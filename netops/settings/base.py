@@ -115,6 +115,13 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
+# MCP 工具出口（/mcp）两个旋钮。出口**匿名**：能访问到端点就能调工具，身份与配额只到
+# 「客户端 IP」这一层（netops/mcp_gateway.py），要收紧就加鉴权而不是加开关。
+# - MCP_ENABLED=0：asgi 不建 MCP 子应用也不 import llmtools，/mcp 直接回 404；
+# - MCP_RATE_LIMIT_PER_MINUTE：按 IP 的分钟窗口，0 = 不限流（Redis 不可用时放行）。
+MCP_ENABLED = os.environ.get("MCP_ENABLED", "1").lower() in ("1", "true", "yes")
+MCP_RATE_LIMIT_PER_MINUTE = int(os.environ.get("MCP_RATE_LIMIT_PER_MINUTE", "60"))
+
 # 访问流（AccessFlow）重建链路的旋钮：阈值口径、取值理由与任务名三处对账见 handbook/analysis.md
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
 ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")

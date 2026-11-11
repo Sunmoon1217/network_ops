@@ -104,6 +104,13 @@
 | `DASHBOARD_LINK_REFRESH_SECONDS` | `180` | beat 刷新周期（秒）；管理命令 `refresh_link_cache` 可立即刷新 |
 | `DASHBOARD_LINK_WINDOW_HOURS` | `3` | 链路折线窗口（小时） |
 
+### MCP 工具出口（`/mcp`）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `MCP_ENABLED` | `1` | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。见 [`llmtools.md`](llmtools.md) |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
+
 ### Zabbix（`ingest/collectors/zabbix`）
 
 | 变量 | 默认 | 说明 |
