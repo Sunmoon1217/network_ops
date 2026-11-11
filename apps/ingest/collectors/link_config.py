@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -76,8 +75,8 @@ class LinkConfig:
 
 
 def config_path() -> Path:
-    raw = os.environ.get("DASHBOARD_LINKS_FILE", DEFAULT_CONFIG_PATH)
-    path = Path(raw)
+    """配置路径：DASHBOARD_LINKS_FILE 由 settings 统一注入（env 覆盖默认值）。"""
+    path = Path(settings.DASHBOARD_LINKS_FILE)
     return path if path.is_absolute() else settings.BASE_DIR / path
 
 
