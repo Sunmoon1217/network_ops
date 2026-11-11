@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "gen-dts": "vite build --mode gen-dts",
-    "build": "pnpm gen-dts && vue-tsc --noEmit && vite build",
+    "build": "vite build && vue-tsc --noEmit",
     "preview": "vite preview",
     "type-check": "pnpm gen-dts && vue-tsc --noEmit"
   },
