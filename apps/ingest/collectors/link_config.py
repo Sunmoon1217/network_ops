@@ -1,31 +1,55 @@
-"""链路带宽配置（``conf/links.json``）：读取、校验与脱敏投影的唯一入口。
+"""链路带宽配置（``conf/links.json``）：读取、域规则校验与脱敏投影。
 
-- 采集侧（ingest）按 ``enabled`` 的 targets 查 Zabbix；只读接口只消费 ``meta()``
-  （**不含 host / ifname**），所以免认证的大屏接口不会暴露现场拓扑。
-- 路径由 ``DASHBOARD_LINKS_FILE`` 指定：容器里是 ``/etc/netops/conf/links.json``
-  （compose 把宿主 ``conf/`` 只读挂进去），宿主直跑是 ``conf/links.json``；
-  相对路径按 ``settings.BASE_DIR`` 解析，不依赖进程 CWD。
-- 不做静默兜底：文件缺失 / JSON 写坏 / 字段非法一律抛 ``LinkConfigError``，
-  由管理命令 ``refresh_link_cache --check`` 或 Celery 任务显式失败，避免把
-  「配置写错了」伪装成「大屏暂无数据」。
+通用部分（路径解析 / JSON / pydantic 严格校验 / 统一异常）在 ``netops.config``；这里只保留
+链路域的规则（version、scope 引用、subject 唯一、非空）与展示投影。投影 **不含
+host / ifname**，所以免认证的大屏接口不会暴露现场拓扑。
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from django.conf import settings
+from pydantic import ValidationError
+
+from netops.config import ConfigError, StrictModel, load_json_config
 
 CONFIG_VERSION = 1
 DEFAULT_CONFIG_PATH = "conf/links.json"
 PLACEHOLDER_IFNAME = "ifname"
 
 
-class LinkConfigError(ValueError):
-    """配置缺失、不可解析或字段非法。"""
+class LinkConfigError(ConfigError):
+    """链路配置缺失、不可解析或违反域规则。"""
+
+
+class LinkTargetModel(StrictModel):
+    """一条链路的原始配置（类型由 pydantic 严格校验，域规则在 ``_build_config``）。"""
+
+    scope: str
+    subject: str
+    label: str
+    host: str
+    ifname: str
+    enabled: bool = True
+
+
+class LinkPanelModel(StrictModel):
+    """一张图的原始配置。"""
+
+    id: str
+    label: str
+    scopes: list[str]
+
+
+class LinkConfigModel(StrictModel):
+    """``conf/links.json`` 的顶层结构。"""
+
+    version: int
+    panels: list[LinkPanelModel]
+    scopes: dict[str, str]
+    targets: list[LinkTargetModel]
 
 
 @dataclass(frozen=True)
@@ -76,6 +100,8 @@ class LinkConfig:
 
 def config_path() -> Path:
     """配置路径：DASHBOARD_LINKS_FILE 由 settings 统一注入（env 覆盖默认值）。"""
+    from django.conf import settings
+
     path = Path(settings.DASHBOARD_LINKS_FILE)
     return path if path.is_absolute() else settings.BASE_DIR / path
 
@@ -83,93 +109,86 @@ def config_path() -> Path:
 def load_links_config(path: Path | None = None) -> LinkConfig:
     file = path or config_path()
     try:
-        raw = file.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise LinkConfigError(f"链路配置不可读: {file}（{exc}）") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise LinkConfigError(f"链路配置不是合法 JSON: {file}: {exc}") from exc
-    return parse_links_config(data, source=str(file))
+        model = load_json_config(file, LinkConfigModel)
+    except ConfigError as exc:
+        raise LinkConfigError(str(exc)) from exc
+    return _build_config(model, source=str(file))
 
 
 def parse_links_config(data: Any, *, source: str = DEFAULT_CONFIG_PATH) -> LinkConfig:
-    """校验并实例化；任何结构问题都带来源路径抛 ``LinkConfigError``。"""
+    """校验并实例化；任何结构 / 域规则问题都带来源路径抛 ``LinkConfigError``。"""
+    try:
+        model = LinkConfigModel.model_validate(data)
+    except ValidationError as exc:
+        raise LinkConfigError(f"{source}: 字段校验失败: {exc}") from exc
+    return _build_config(model, source=source)
+
+
+def _build_config(model: LinkConfigModel, *, source: str) -> LinkConfig:
+    """类型已由 pydantic 保证，这里只查域规则（业务语义）。"""
 
     def fail(message: str) -> LinkConfigError:
         return LinkConfigError(f"{source}: {message}")
 
-    if not isinstance(data, dict):
-        raise fail("顶层必须是 JSON 对象")
-    if data.get("version") != CONFIG_VERSION:
-        raise fail(f"version 必须为 {CONFIG_VERSION}（当前 {data.get('version')!r}）")
-
-    scopes_raw = data.get("scopes")
-    if not isinstance(scopes_raw, dict) or not scopes_raw:
+    if model.version != CONFIG_VERSION:
+        raise fail(f"version 必须为 {CONFIG_VERSION}（当前 {model.version!r}）")
+    if not model.scopes:
         raise fail("scopes 必须是非空对象（scope slug → 中文名）")
     scopes: dict[str, str] = {}
-    for scope, label in scopes_raw.items():
-        if not isinstance(scope, str) or not scope.strip():
+    for scope, label in model.scopes.items():
+        if not scope.strip():
             raise fail("scopes 的键不能为空")
-        if not isinstance(label, str) or not label.strip():
+        if not label.strip():
             raise fail(f"scopes.{scope} 的中文名不能为空")
         scopes[scope] = label.strip()
 
-    panels_raw = data.get("panels")
-    if not isinstance(panels_raw, list) or not panels_raw:
+    if not model.panels:
         raise fail("panels 必须是非空数组")
     panels: list[LinkPanel] = []
     panel_ids: set[str] = set()
-    for index, item in enumerate(panels_raw):
-        if not isinstance(item, dict):
-            raise fail(f"panels[{index}] 必须是对象")
-        panel_id = item.get("id")
-        label = item.get("label")
-        panel_scopes = item.get("scopes")
-        if not isinstance(panel_id, str) or not panel_id.strip():
+    for index, item in enumerate(model.panels):
+        if not item.id.strip():
             raise fail(f"panels[{index}].id 不能为空")
-        if panel_id in panel_ids:
-            raise fail(f"panels 的 id 重复: {panel_id}")
-        panel_ids.add(panel_id)
-        if not isinstance(label, str) or not label.strip():
+        if item.id in panel_ids:
+            raise fail(f"panels 的 id 重复: {item.id}")
+        panel_ids.add(item.id)
+        if not item.label.strip():
             raise fail(f"panels[{index}].label 不能为空")
-        if not isinstance(panel_scopes, list) or not panel_scopes:
+        if not item.scopes:
             raise fail(f"panels[{index}].scopes 必须是非空数组")
-        for scope in panel_scopes:
+        for scope in item.scopes:
             if scope not in scopes:
                 raise fail(f"panels[{index}].scopes 引用了未定义的 scope: {scope!r}")
-        panels.append(LinkPanel(id=panel_id, label=label.strip(), scopes=tuple(panel_scopes)))
+        panels.append(LinkPanel(id=item.id, label=item.label.strip(), scopes=tuple(item.scopes)))
 
-    targets_raw = data.get("targets")
-    if not isinstance(targets_raw, list) or not targets_raw:
+    if not model.targets:
         raise fail("targets 必须是非空数组")
     targets: list[LinkTarget] = []
     seen: set[tuple[str, str]] = set()
-    for index, item in enumerate(targets_raw):
-        if not isinstance(item, dict):
-            raise fail(f"targets[{index}] 必须是对象")
-        scope = item.get("scope")
-        subject = item.get("subject")
-        label = item.get("label")
-        host = item.get("host")
-        ifname = item.get("ifname")
-        enabled = item.get("enabled", True)
-        if scope not in scopes:
-            raise fail(f"targets[{index}].scope 未在 scopes 中定义: {scope!r}")
-        if not isinstance(subject, str) or not subject.strip():
+    for index, item in enumerate(model.targets):
+        if item.scope not in scopes:
+            raise fail(f"targets[{index}].scope 未在 scopes 中定义: {item.scope!r}")
+        if not item.subject.strip():
             raise fail(f"targets[{index}].subject 不能为空")
-        key = (scope, subject.strip())
+        key = (item.scope, item.subject.strip())
         if key in seen:
-            raise fail(f"targets 里 scope/subject 重复: {scope}/{subject}")
+            raise fail(f"targets 里 scope/subject 重复: {item.scope}/{item.subject}")
         seen.add(key)
-        if not isinstance(label, str) or not label.strip():
+        if not item.label.strip():
             raise fail(f"targets[{index}].label 不能为空")
-        if not isinstance(host, str) or not host.strip():
+        if not item.host.strip():
             raise fail(f"targets[{index}].host 不能为空")
-        if not isinstance(ifname, str) or not ifname.strip():
+        if not item.ifname.strip():
             raise fail(f"targets[{index}].ifname 不能为空")
-        if not isinstance(enabled, bool):
-            raise fail(f"targets[{index}].enabled 必须是布尔值")
-        targets.append(LinkTarget(scope=scope, subject=subject.strip(), label=label.strip(), host=host.strip(), ifname=ifname.strip(), enabled=enabled))
+        targets.append(
+            LinkTarget(
+                scope=item.scope,
+                subject=item.subject.strip(),
+                label=item.label.strip(),
+                host=item.host.strip(),
+                ifname=item.ifname.strip(),
+                enabled=item.enabled,
+            )
+        )
 
     return LinkConfig(panels=tuple(panels), scopes=scopes, targets=tuple(targets))
