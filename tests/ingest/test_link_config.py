@@ -82,10 +82,10 @@ def test_bad_json(tmp_path):
 
 
 def test_config_path_resolves_relative_to_base_dir(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_LINKS_FILE", "conf/links.json")
+    monkeypatch.setattr(settings, "DASHBOARD_LINKS_FILE", "conf/links.json")
     assert config_path() == Path(settings.BASE_DIR) / "conf" / "links.json"
 
-    monkeypatch.setenv("DASHBOARD_LINKS_FILE", "/etc/netops/conf/links.json")
+    monkeypatch.setattr(settings, "DASHBOARD_LINKS_FILE", "/etc/netops/conf/links.json")
     assert config_path() == Path("/etc/netops/conf/links.json")
 
 

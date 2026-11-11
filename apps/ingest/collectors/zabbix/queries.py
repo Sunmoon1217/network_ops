@@ -9,6 +9,7 @@
     items(...)          查监控项当前值（可给 name / key_ 组合条件并发查）
     problems(...)       看当前告警（自动补齐触发器与主机）
     link_peak(...)      某主机某接口的带宽峰值（不给时间取当前值，给时间取区间峰值）
+    link_history(...)   某主机某接口在区间内的历史样本（保留时间维度，供大屏分桶）
 
 文件名不叫 ``tools.py``：与 ``apps/<域>/mcp/tools.py``（MCP 工具注册）语义不同；
 未来 Zabbix 的 MCP 工具按约定住 ``apps/ingest/mcp/tools.py``，工具名以 ``zabbix_`` 开头。
@@ -235,3 +236,42 @@ async def link_peak(
         current=[item.lastvalue for item in monitored],
         itemids=[item.itemid for item in monitored],
     )
+
+
+async def link_history(
+    host: str,
+    ifname: str,
+    *,
+    time_from: int,
+    time_till: int,
+    history_type: int = 0,
+    limit: int = 600,
+) -> list[tuple[int, float]]:
+    """某主机某接口在区间内的历史样本 ``[(clock, value)]``，保留时间维度。
+
+    与 :func:`link_peak` 共用「找监控项」逻辑；一个 target 可能命中多个监控项
+    （进出方向 / 带宽使用率），全部样本一起返回，由调用方按 3 分钟桶取 max。
+    ``limit`` 按单 target 给足（3 小时 ≈ 60 个采样点 × 多个 item）。
+    """
+    monitored = await _link_items(host, ifname, None)
+    if not monitored:
+        raise ValueError(f"未找到监控项: {host}, {ifname}")
+    zapi = await get_zapi()
+    rows = await zapi.history_get(
+        itemids=[item.itemid for item in monitored],
+        history=history_type,
+        time_from=time_from,
+        time_till=time_till,
+        limit=limit,
+    )
+    samples: list[tuple[int, float]] = []
+    for row in rows:
+        value = _as_float(row.value)
+        if value is None:
+            continue
+        try:
+            clock = int(row.clock)
+        except (TypeError, ValueError):
+            continue
+        samples.append((clock, value))
+    return samples

@@ -272,3 +272,13 @@ def collect_dashboard(source):
         "samples": len(payload["samples"]),
         "cases": len(payload["cases"]),
     }
+
+
+@shared_task(name="ingest.refresh_link_cache")
+def refresh_link_cache_task():
+    """大屏链路带宽：Zabbix 直取 → Redis（不落库）；失败向上抛让 Celery 记 FAILURE。"""
+    from ingest.collectors.link_cache import refresh_link_cache
+
+    summary = refresh_link_cache()
+    logger.info("链路缓存刷新完成: %s", summary)
+    return summary
