@@ -306,3 +306,39 @@ analysis.write_dashboard(payload)       # 唯一写库入口（一个事务内 u
 它是全项目唯一用 `{status, message, result}` 包装的响应。契约测试：
 `tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` +
 `tests/analysis/test_dashboard_api.py`。
+
+### 大屏配置化：前端 `config.json` 暂缓，线路清单归采集侧
+
+**结论（2026-11 讨论，暂不实现）**：不加大屏前端的 `dashboard.config.json`（拟放进
+`frontend/public/` → `dist/`，页面启动 fetch 后微调 widget 的标题 / tag / 刷新周期 /
+显示项）。这类配置只改 UI，不是当前想要的「微调监控内容」；现场真正要调的是
+**链路带宽图上出现哪几条线路**，它的权威在 Django 采集侧，不在 Vue。
+
+链路从哪来（现状）：
+
+```
+ingest/collectors/dashboard.py  LINK_TARGETS   # 10 条：(scope, subject, Zabbix host, ifname)，host 是现场值、ifname 仍是占位
+  → _collect_links() → MetricSample(kind=link_bandwidth)
+analysis/api/dashboard.py  _linechart_rows()   # 近 3 小时样本全量聚合，不筛选
+frontend/src/dashboard/views/components/LinkBandwidthWidget.vue  # 按返回里出现的 subject 动态生成曲线，SUBJECT_LABELS 只做中文名映射
+```
+
+即「显示哪几条线」今天等于「`LINK_TARGETS` 里写了哪几行」，改一次要走
+「改 Python → 重建 code 镜像 → 重跑 `code-init`」。将来做线路清单配置化时：
+
+- 一份清单（`scope` / `subject` / `host` / `ifname` / `label` / `enabled`）同时驱动采集、
+  读接口过滤与前端中文名，别只改采集：`MetricSample` 近 3 小时的历史样本仍在库里，
+  删掉的线路会继续画到窗口滚过去为止；`_linechart_rows()` 按同一份清单过滤才即时生效，
+  Vue 也不必再维护 `SUBJECT_LABELS` 那份硬编码。
+- 依赖方向别绕回去：`analysis.models.LinkTarget` 已建表但采集器不能反向读 analysis 的表
+  （见其 docstring 与本文模型表）。合法做法是 analysis 侧读出清单、作为任务参数投给
+  `ingest.collect_dashboard`，或把清单留在 ingest 侧。容器里 app 已挂 `data:/data`，
+  放宿主 `data/dashboard/` 天然可见、改了不用重建镜像、不重跑 `code-init`。
+
+为什么前端 `config.json` 也不能「拷进 dist 后现场直接改」（部署侧结论，细节见
+[`deploy.md`](deploy.md)「入口与静态资源」与「双入口」）：`code_init.sh` 每次
+`rm -rf` 静态卷根再权威重铺、`static` 卷给 nginx 是 `:ro`；nginx 与 Django 的 SPA 兜底
+还会把不存在的 JSON 返回成 `index.html`，`res.json()` 直接失败；而 app 容器没挂
+`static` 卷，读不到 dist 里的默认文件。若以后仍要做前端配置，现场文件必须放在静态卷
+之外的宿主 bind 目录，并在 nginx / Django / Vite dev 三处显式接管 + `no-store`，
+dist 里那份只当随版本默认值。
