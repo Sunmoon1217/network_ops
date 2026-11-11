@@ -67,11 +67,12 @@ const metricRow = (rows: DashboardData[], panel: string, group: string, name: st
 const fetchSummary = async () => {
   try {
     // 只取状态栏与巡检两个 panel，避免把工单明细、设备状态全表一起拉回来
-    const [statusbar, inspectionRows, series] = await Promise.all([
+    const [statusbar, inspectionRows, linkSeries] = await Promise.all([
       getDashboard({ panel: 'statusbar' }),
       getDashboard({ panel: 'inspection' }),
       getLinkSeries(),
     ])
+    const series = linkSeries.rows
 
     const deviceCount = toNumber(
       metricRow(statusbar, 'statusbar', 'devicecount', 'count')?.list_value?.[0]?.count,
