@@ -415,6 +415,15 @@ conf/links.json → collectors/link_cache.py
   使用，不下发免认证接口。
 
 任务名对账：`tests/ingest/test_dashboard_collect.py`（采集侧）+ `tests/ingest/test_link_cache.py`
-（链路缓存）+ `tests/analysis/test_dashboard_write.py`（写库侧）。**链路缓存已内置 beat**
-（`CELERY_BEAT_SCHEDULE` 投递 `ingest.refresh_link_cache`）；设备组 / Autotask 仍由外部调度
-`collect_dashboard.delay(source)`。
+（链路缓存）+ `tests/analysis/test_dashboard_write.py`（写库侧）。**大屏三条链全部由内置 beat
+投递**（`CELERY_BEAT_SCHEDULE`，条目名固定、周期取 settings）：
+
+| 条目 | 任务 | 周期 |
+|------|------|------|
+| `dashboard-link-cache` | `ingest.refresh_link_cache` | `DASHBOARD_LINK_REFRESH_SECONDS`（180s） |
+| `dashboard-collect-zabbix` | `ingest.collect_dashboard("zabbix")` | `DASHBOARD_COLLECT_SECONDS`（180s） |
+| `dashboard-collect-autotask` | `ingest.collect_dashboard("autotask")` | `DASHBOARD_AUTOTASK_SECONDS`（600s） |
+
+投递与执行仍分离：beat 只发消息，采集与落库都在 worker（`-Q celery,access_flow` 已含默认队列）。
+若现场还留着仓库外的调度器（cron 里调 `collect_dashboard.delay`），**必须先停掉**，否则同一份数据
+会被采两遍（落库幂等不脏，但外部接口压力翻倍）。

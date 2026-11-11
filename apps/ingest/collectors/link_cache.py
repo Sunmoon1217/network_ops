@@ -7,7 +7,7 @@
 
 缓存 value 是「完整窗口结果 + 脱敏展示字段」，同步的读接口只 ``GET`` 这一个 key，
 所以不存在读放大，也不需要处理同步 / 异步混用。Zabbix 抖动时保留上一份缓存
-（TTL 大于刷新周期），全部链路失败才向上抛让 Celery 记 FAILURE。
+（TTL 大于刷新周期），全部链路失败才抛 :class:`LinkCollectionError` 让 Celery 记 FAILURE。
 """
 
 from __future__ import annotations
@@ -22,13 +22,21 @@ import redis
 from django.conf import settings
 from django.utils import timezone
 
-from .link_config import LinkConfig, load_links_config
+from .link_config import LinkConfig, LinkTarget, load_links_config
 from .zabbix import queries
 
 logger = getLogger(__name__)
 
 # 采样按 3 分钟对齐（与旧采集器 _aligned_now 的口径一致）
 BUCKET_SECONDS = 180
+
+
+class LinkCollectionError(RuntimeError):
+    """全部链路采集失败（一条都没成）。
+
+    继承 ``RuntimeError`` 保持既有调用方（管理命令的 ``except Exception``）不用改；
+    单独成类是为了让 worker 日志里能一眼分辨「外部数据源整体不可用」与真正的编码错误。
+    """
 
 
 def _redis_client():
@@ -64,11 +72,10 @@ async def build_link_payload(
 
     # bucket → scope → subject → 该桶内多监控项的 max（与旧 link_peak 的取 max 口径一致）
     buckets: dict[int, dict[str, dict[str, float]]] = {}
-    failures = 0
+    failures: list[tuple[LinkTarget, BaseException]] = []
     for target, result in zip(enabled, results, strict=True):
         if isinstance(result, BaseException):
-            failures += 1
-            logger.warning("链路历史采集失败: %s/%s, err=%s", target.scope, target.subject, result)
+            failures.append((target, result))
             continue
         for clock, value in result:
             if clock < start or clock > end:
@@ -77,9 +84,15 @@ async def build_link_payload(
             previous = scope_data.get(target.subject)
             scope_data[target.subject] = value if previous is None else max(previous, value)
 
-    # 全部失败才抛；单条失败只 warning（其余线路照常显示）
-    if enabled and failures == len(enabled):
-        raise RuntimeError(f"全部链路采集失败（{failures} 条）")
+    # 全部失败才抛；单条失败只 warning（其余线路照常显示）。
+    # 全挂时**不再逐条 warning**：异常消息里已带每个 target 的原因，Celery 记 FAILURE 时
+    # traceback 就只剩这一行；``from None`` 去掉 asyncio 的异常链，避免 180s 一轮刷屏。
+    if enabled and len(failures) == len(enabled):
+        detail = "; ".join(f"{target.scope}/{target.subject}: {type(exc).__name__}: {exc}" for target, exc in failures)
+        raise LinkCollectionError(f"全部 {len(failures)} 条链路采集失败 —— {detail}") from None
+
+    for target, exc in failures:
+        logger.warning("链路历史采集失败: %s/%s, err=%s", target.scope, target.subject, exc)
 
     return {
         **config.meta(),
@@ -93,6 +106,7 @@ def refresh_link_cache(config: LinkConfig | None = None, *, client=None) -> dict
     """同步入口：采集 → ``SET dashboard:link:series``（带 TTL），返回写入摘要。
 
     Celery 任务、管理命令、beat 启动钩子共用这一个函数，避免三处逻辑分叉。
+    全部链路失败时抛 :class:`LinkCollectionError`（不写缓存，旧值靠 TTL 继续服务）。
     """
     config = config or load_links_config()
     payload = asyncio.run(build_link_payload(config))

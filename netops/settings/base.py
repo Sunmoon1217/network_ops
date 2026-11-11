@@ -137,6 +137,12 @@ DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
 DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
 DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
 
+# 设备组（zabbix）与工单 / SLB / 巡检（autotask）的采集周期：两条链都由内置 beat 投递
+# ingest.collect_dashboard(source)，参数就是数据源名。单位秒，必须 > 0（0 会让 beat 每轮
+# 立即重投，等于压测外部接口）；autotask 走外部工单系统，默认更慢。
+DASHBOARD_COLLECT_SECONDS = int(os.environ.get("DASHBOARD_COLLECT_SECONDS", "180"))
+DASHBOARD_AUTOTASK_SECONDS = int(os.environ.get("DASHBOARD_AUTOTASK_SECONDS", "600"))
+
 # 链路带宽（只做链路）改为 Zabbix 直取 + Redis 缓存，不落库：
 # - conf/links.json 是采集清单与展示 label 的唯一权威；DASHBOARD_LINKS_FILE 是单值路径，
 #   容器 /etc/netops/conf/links.json（compose 把宿主 conf/ 只读挂进去）、宿主 conf/links.json；
@@ -382,11 +388,23 @@ CELERY_TASK_ROUTES = {
     # 键必须等于 ACCESS_FLOW_TASK；改名后 Redis 里的旧消息会 Unknown task，升级前停 worker 清队列
     "analysis.rebuild_access_flows": {"queue": "access_flow"},
 }
-# 大屏链路缓存周期刷新：beat 只负责按时投递，采集仍由 worker 执行（Zabbix async 客户端
-# 只活在 worker 的 event loop 里）。队列走默认 celery，与写入链共用并发槽。
+# 大屏三条周期链都由内置 beat 投递：beat 只按时发消息，采集 / 落库仍由 worker 执行
+# （Zabbix async 客户端只活在 worker 的 event loop 里）。队列走默认 celery，与写入链共用
+# 并发槽。条目名固定，改名等于换调度（beat 的 schedule 文件按条目名记上次运行时间）。
 CELERY_BEAT_SCHEDULE = {
     "dashboard-link-cache": {
         "task": "ingest.refresh_link_cache",
         "schedule": DASHBOARD_LINK_REFRESH_SECONDS,
+    },
+    # args 就是 collect_dashboard 的 source 参数（未知 source 会抛 ValueError）
+    "dashboard-collect-zabbix": {
+        "task": "ingest.collect_dashboard",
+        "schedule": DASHBOARD_COLLECT_SECONDS,
+        "args": ("zabbix",),
+    },
+    "dashboard-collect-autotask": {
+        "task": "ingest.collect_dashboard",
+        "schedule": DASHBOARD_AUTOTASK_SECONDS,
+        "args": ("autotask",),
     },
 }

@@ -278,6 +278,8 @@ GET），不碰 worker、不碰数据库，30s 轮询无压力。
 
 ```
 ingest.collect_dashboard(source)        # 设备组 / Autotask：纯 dict payload
+  ← 内置 beat 投递：zabbix 每 DASHBOARD_COLLECT_SECONDS（180s）
+                   autotask 每 DASHBOARD_AUTOTASK_SECONDS（600s）
   → send_task(settings.DASHBOARD_WRITE_TASK)
 analysis.write_dashboard(payload)       # 唯一写库入口（一个事务内 upsert）
 
@@ -326,8 +328,9 @@ target label（不含 host / ifname），前端一次请求拿全。缓存未生
   180s）与管理命令 `python manage.py refresh_link_cache [--check]`；beat 启动时先同步刷一次
   （失败不阻塞，下个周期重试）。TTL `DASHBOARD_LINK_CACHE_TTL`（默认 600s）大于刷新周期，
   Zabbix 抖动时还能读到上一份。
-- **失败隔离**：单条链路失败只 warning、其余照常；全部失败才抛（Celery 记 FAILURE /
-  管理命令非零退出）。
+- **失败隔离**：单条链路失败只 warning、其余照常；全部失败才抛 `LinkCollectionError`
+  （Celery 记 FAILURE / 管理命令非零退出）。全挂时**不逐条 warning**——异常消息里带每个
+  target 的原因摘要、`from None` 去掉异常链，worker 日志只留一行可定位的 traceback。
 - **前端**：`LinkBandwidthWidget` 不再硬编码 `SCOPE_LABELS` / `SUBJECT_LABELS`，label、分组、
   停用过滤都来自响应 `meta`；全量取（3 小时窗口约几十 KB），新数据到达前保留旧值，
   `LineCharts` 用 `replaceMerge` 清掉已删除的 series。

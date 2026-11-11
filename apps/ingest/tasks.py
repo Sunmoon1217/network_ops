@@ -276,7 +276,11 @@ def collect_dashboard(source):
 
 @shared_task(name="ingest.refresh_link_cache")
 def refresh_link_cache_task():
-    """大屏链路带宽：Zabbix 直取 → Redis（不落库）；失败向上抛让 Celery 记 FAILURE。"""
+    """大屏链路带宽：Zabbix 直取 → Redis（不落库）；失败向上抛让 Celery 记 FAILURE。
+
+    全部链路失败抛 ``LinkCollectionError``（消息里是各 target 的原因摘要，单行）；
+    单条失败只在 ``link_cache`` 里 warning，本任务照常返回摘要。
+    """
     from ingest.collectors.link_cache import refresh_link_cache
 
     summary = refresh_link_cache()

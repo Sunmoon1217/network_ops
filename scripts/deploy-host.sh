@@ -21,7 +21,8 @@
 #            （同设备并发入库会写坏数据，见 AGENTS.md；默认池按 CPU 起会空载爆炸）
 #   consumer 访问流消费者，AccessFlow 的唯一写者——**全机只能起一个实例**，
 #            本脚本对已存活进程跳过启动，靠 PID 文件防止误起第二份
-#   beat     大屏链路缓存周期投递，**单实例**；启动前先同步刷一次缓存
+#   beat     大屏三条链（链路缓存 / 设备组 / Autotask）的周期投递，**单实例**；
+#            启动前先同步刷一次链路缓存
 #
 # PID 与日志：data/run/*.pid、data/logs/*.log（data/ 是运行期目录，不入库）。
 # gunicorn / celery 的可调旋钮沿用 envs/gunicorn.env、envs/celery.env（存在则 source，

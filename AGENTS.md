@@ -179,11 +179,12 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **五条 Celery 链**：① 阶段式工作流（`/api/tasks/` 是唯一入口，采集→解析→存储由 `Stage`
   状态回写推进）；② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；
   ③ 访问流重建（`ACCESS_FLOW_TASK` 字符串投递 → 独立队列 → 单写者 consumer）；
-  ④ 大屏落库（`ingest.collect_dashboard` 采集设备组 / Autotask → `DASHBOARD_WRITE_TASK` 投递 →
-  `analysis.write_dashboard` 唯一写库）；⑤ 大屏链路缓存（内置 beat 周期投递
-  `ingest.refresh_link_cache` → Zabbix `history.get` → Redis `dashboard:link:series`，**不落库**，
-  读接口直接 GET）。broker/backend 都是 Redis，**必须有 worker 消费**；设备组 / Autotask 的
-  定时调度仍在仓库外。链路细节与坑：
+  ④ 大屏落库（内置 beat 投递 `ingest.collect_dashboard` 采集设备组 / Autotask →
+  `DASHBOARD_WRITE_TASK` 投递 → `analysis.write_dashboard` 唯一写库）；⑤ 大屏链路缓存
+  （内置 beat 周期投递 `ingest.refresh_link_cache` → Zabbix `history.get` → Redis
+  `dashboard:link:series`，**不落库**，读接口直接 GET）。broker/backend 都是 Redis，
+  **必须有 worker 消费**；大屏三条链的周期都在 `CELERY_BEAT_SCHEDULE`（`DASHBOARD_LINK_REFRESH_SECONDS`
+  / `DASHBOARD_COLLECT_SECONDS` / `DASHBOARD_AUTOTASK_SECONDS`），仓库外不要再挂调度器。链路细节与坑：
   [`handbook/ingest.md`](handbook/ingest.md)、[`handbook/analysis.md`](handbook/analysis.md)。
 - **采集器边界**：`ingest/collectors/` 只做「调外部接口 → 归一成可 JSON 序列化的 dict」
   （Zabbix / Autotask，DTO 用 pydantic + `netops.schema.ExtraModel`），**不碰数据库、不 import

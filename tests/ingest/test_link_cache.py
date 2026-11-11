@@ -1,6 +1,7 @@
 """链路缓存：分桶、脱敏、失败隔离与 Redis 写入 / 读取。"""
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,7 +53,7 @@ def test_build_payload_buckets_and_keeps_max():
     assert "ifname" not in payload["targets"][0]
 
 
-def test_build_payload_isolates_single_failure():
+def test_build_payload_isolates_single_failure(caplog):
     config = _config()
     base = int(NOW.timestamp())
 
@@ -61,16 +62,35 @@ def test_build_payload_isolates_single_failure():
             raise RuntimeError("boom")
         return [(base - 180, 30.0)]
 
-    with patch.object(queries, "link_history", new=AsyncMock(side_effect=fake_history)):
-        payload = asyncio.run(link_cache.build_link_payload(config, now=NOW))
+    with caplog.at_level(logging.WARNING, logger=link_cache.logger.name):
+        with patch.object(queries, "link_history", new=AsyncMock(side_effect=fake_history)):
+            payload = asyncio.run(link_cache.build_link_payload(config, now=NOW))
 
     assert payload["points"][0]["data"] == {"ipv4": {"jxqcu": 30.0}}
+    # 部分失败仍逐条 warning（便于定位是哪一条），但不抛
+    assert [row for row in caplog.records if "ipv4/zjbgp" in row.getMessage()]
 
 
 def test_build_payload_raises_when_all_fail():
+    """全挂抛专用异常：消息里带每个 target 的原因，且不留异常链（traceback 只有一行）。"""
     with patch.object(queries, "link_history", new=AsyncMock(side_effect=RuntimeError("boom"))):
-        with pytest.raises(RuntimeError, match="全部链路采集失败"):
+        with pytest.raises(link_cache.LinkCollectionError, match="全部 2 条链路采集失败") as exc_info:
             asyncio.run(link_cache.build_link_payload(_config(), now=NOW))
+
+    message = str(exc_info.value)
+    assert "ipv4/zjbgp: RuntimeError: boom" in message
+    assert "ipv4/jxqcu: RuntimeError: boom" in message
+    assert exc_info.value.__cause__ is None  # raise ... from None
+
+
+def test_all_fail_skips_per_target_warning(caplog):
+    """全挂时只在异常里报一次，不再逐条 warning（180s 一轮不该刷 10 行）。"""
+    with caplog.at_level(logging.WARNING, logger=link_cache.logger.name):
+        with patch.object(queries, "link_history", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            with pytest.raises(link_cache.LinkCollectionError):
+                asyncio.run(link_cache.build_link_payload(_config(), now=NOW))
+
+    assert not [row for row in caplog.records if "链路历史采集失败" in row.getMessage()]
 
 
 def test_build_payload_skips_all_disabled():
