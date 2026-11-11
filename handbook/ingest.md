@@ -167,6 +167,33 @@ rules    -> {"name": ["/Common/irule_redirect"]}
 persist  -> {"name": "/Common/cookie"}
 ```
 
+## A10 SLB Saver（`savers/a10_lb.py`）
+
+A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 各消费 A10 自己的顶层键
+（`service_groups` / `virtual_server`），不与 F5 的 `pools` / `virtuals` 冲突：
+
+**service-group → LtmPool / LtmPoolMember**（`A10ServiceGroupSaver`）：
+
+- `service-group` ≈ F5 `pool`：`name`→`name`、`method`→`mode`、`monitor`→`monitors`
+  （A10 模板无 health-check 行时 monitor 默认产出字符串 `"None"`，Saver 过滤掉）；
+- A10 成员直接写 `address:port`，没有 F5 的 node 名，所以 `LtmPoolMember.name` 用地址
+  充当成员名、`address` 列原样落地址——path_tracer 拿 `address` 做下一跳匹配，不受影响。
+
+**virtual-server → LtmVirtualServer / LtmProfile / LtmPersist**（`A10VirtualServerSaver`）：
+
+- A10 一个 `virtual-server` 是「一个 VIP 地址 + 多个 port 的 virtual-service」，而 F5
+  一个 `ltm virtual` 只有一个 destination（address:port）——所以 A10 的「virtual-server +
+  virtual-service」组合才对应一行 `LtmVirtualServer`，`name` 用 `{vs_name}:{port}` 保证
+  唯一（唯一键 `(device, name)`）；
+- 字段映射：`address`→`vs_address`、`port`→`vs_port`、`protocol`→`protocol`、
+  `enabled`→`status`、`service-group`→`pool`、source-nat 的 `snat_type`/`snat_pool`→
+  `snat_type`/`snat_pool`；
+- `template http` / `template client-ssl` → `LtmProfile`（`type` 是模板里的固定词
+  http / client-ssl，不是从名字推导）；`template persist` → `LtmPersist`（`type` =
+  `persist_type`、`name` = `persist_name`）；
+- `servers`（slb server 节点清单）没有对应 `Ltm*` 模型，与 F5 `nodes` 一样保持「产出
+  无消费」，落在 `KNOWN_UNCONSUMED_PRODUCTS`。
+
 ## 防火墙 Saver 的映射约定（`savers/firewall.py`）
 
 ### AddressBookSaver
@@ -260,8 +287,8 @@ Hillstone/firewall、Huawei/switch、Maipu/switch、Ruijie/switch
 
 Saver 实现（`savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
 LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、
-GtmServerSaver、GtmPoolSaver、AddressBookSaver、ServiceSaver、PolicySaver、DeviceAccountSaver、
-NatRuleSaver。
+GtmServerSaver、GtmPoolSaver、A10ServiceGroupSaver、A10VirtualServerSaver、AddressBookSaver、
+ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver。
 
 其中 Route / Vlan / SnmpConfig / Policy / GTM 三个 / DeviceAccount / AddressBook / NatRule /
 LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`BaseSaver.upsert`），

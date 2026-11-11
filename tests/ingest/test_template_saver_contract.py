@@ -224,9 +224,10 @@ gtm wideip A www.example.com {
    port 80 tcp
 slb service-group sg1 tcp
     method round-robin
+    member 10.1.1.1:80
 slb virtual-server vs1 10.2.2.2
-    port 80 tcp
-       service-group sg1
+   port 80 tcp
+      service-group sg1
 """,
     ),
     (
@@ -267,9 +268,9 @@ interface GigabitEthernet0/1
 def test_inline_config_lands_in_db(cid, vendor, dtype, cfg):
     """内联配置端到端，判据同上：有产出有 Saver 必须入库 >0 行。
 
-    A10 的全部顶层键（servers/service_groups/virtual_server）目前都在
-    KNOWN_UNCONSUMED_PRODUCTS 里（无 Saver 是登记在案的缺口）——它验证的是
-    「产出键没有出现新的未消费缺口」，而不是入库行数。
+    A10 的 service_groups / virtual_server 已有 Saver（servers / account 仍是
+    登记在案的未消费缺口）；``if not payloads`` 分支防御性地覆盖「某厂商全部
+    产出键都无 Saver」的情形，验证没有出现新的未消费缺口。
     """
     from ingest.mapping import canonical_key
     from ingest.parsers.contract import KNOWN_UNCONSUMED_PRODUCTS
