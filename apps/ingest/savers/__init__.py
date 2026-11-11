@@ -7,6 +7,7 @@
 3. 在本文件中 import
 """
 
+from .a10_lb import A10ServiceGroupSaver, A10VirtualServerSaver
 from .account import DeviceAccountSaver
 from .base import BaseSaver, as_list
 from .firewall import AddressBookSaver, NatRuleSaver, PolicySaver, ServiceSaver
@@ -25,6 +26,8 @@ from .registry import get_savers_for_config
 from .routing import RouteSaver, VrfSaver
 
 __all__ = [
+    "A10ServiceGroupSaver",
+    "A10VirtualServerSaver",
     "BaseSaver",
     "as_list",
     "DeviceAccountSaver",

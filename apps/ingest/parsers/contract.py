@@ -35,7 +35,8 @@ KNOWN_UNCONSUMED_PRODUCTS: dict[str, set[str]] = {
     # regions / topologies / monitors 尚无对应模型
     "gslb": {"monitors", "regions", "topologies"},
     "router": {"bgp", "hostname", "ospf", "ssh", "version"},
-    "slb": {"account", "nodes", "servers", "service_groups", "virtual_server"},
+    # service_groups / virtual_server 已由 A10 SLB Saver 消费（feature/a10-slb-saver）
+    "slb": {"account", "nodes", "servers"},
     "switch": {
         "dhcp",
         "dhcp_pools",
