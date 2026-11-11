@@ -40,15 +40,16 @@ network_ops/
 ├── llmtools/            # MCP 工具子系统（根目录包、非 app）：server / registry / query / entity_tools / tools / domains
 ├── frontend/            # Vue 3 + TS + Vite，双入口（index.html / dashboard.html）；src/{shared,netops,dashboard} 三层，dist/ 由 nginx 直出
 ├── nginx/               # 反向代理（静态直出 + API/MCP 代理 + 启动时的 resolver 推导）
-├── entrypoint/          # 容器入口脚本（code_init / app / worker / consumer）+ README（**容器化构建手册**）
+├── entrypoint/          # 容器入口脚本（code_init / app / worker / consumer / beat）+ README（**容器化构建手册**）
 ├── envs/                # 容器与宿主共用的一套配置：common.env 共享 + container/host.env 差异 + gunicorn/celery.env + secrets/（凭据，不入库）
+├── conf/                # 平台自身的结构化配置（links.json 链路清单 / 展示 label），入库、随版本走；运行时只读挂到 /etc/netops/conf（与 data/configs 的「设备配置」区分开）
 ├── handbook/            # 设计说明（长解释的家，见 handbook/README.md）；不入镜像
-├── scripts/             # deploy-host.sh（宿主 app/worker/consumer 三进程）+ switch-branch / setup-git-hooks
+├── scripts/             # deploy-host.sh（宿主 app/worker/consumer/beat 四进程）+ switch-branch / setup-git-hooks
 ├── tests/               # 按应用分目录，pytest testpaths 指向此处
 ├── typings/             # 第三方库存根（zabbix_utils 等；pyrefly 的 site-packages-path）
 ├── data/                # 运行期数据（不入库）：config_repo（宿主直跑那份）、configs（Excel 源目录，只读 bind 进 app）、run/logs
 ├── dockerfile*          # .base（只装系统依赖）/ .venv（uv sync）/ .code（源码 + 静态成品）/ 传统 dockerfile（备选）
-├── compose.yml          # db(TimescaleDB) / redis / code-init / app / worker / consumer / nginx
+├── compose.yml          # db(TimescaleDB) / redis / code-init / app / worker / consumer / beat / nginx
 └── pyproject.toml       # 依赖、pytest、ruff、pyrefly 配置
 ```
 
@@ -175,12 +176,14 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
   `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`（OpenAPI 文档）。
-- **四条 Celery 链**：① 阶段式工作流（`/api/tasks/` 是唯一入口，采集→解析→存储由 `Stage`
+- **五条 Celery 链**：① 阶段式工作流（`/api/tasks/` 是唯一入口，采集→解析→存储由 `Stage`
   状态回写推进）；② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；
   ③ 访问流重建（`ACCESS_FLOW_TASK` 字符串投递 → 独立队列 → 单写者 consumer）；
-  ④ 大屏供数（`ingest.collect_dashboard` 采集 → `DASHBOARD_WRITE_TASK` 投递 →
-  `analysis.write_dashboard` 唯一写库；仓库内没有 beat/定时配置，调度在外部）。
-  broker/backend 都是 Redis，**必须有 worker 消费**。链路细节与坑：
+  ④ 大屏落库（`ingest.collect_dashboard` 采集设备组 / Autotask → `DASHBOARD_WRITE_TASK` 投递 →
+  `analysis.write_dashboard` 唯一写库）；⑤ 大屏链路缓存（内置 beat 周期投递
+  `ingest.refresh_link_cache` → Zabbix `history.get` → Redis `dashboard:link:series`，**不落库**，
+  读接口直接 GET）。broker/backend 都是 Redis，**必须有 worker 消费**；设备组 / Autotask 的
+  定时调度仍在仓库外。链路细节与坑：
   [`handbook/ingest.md`](handbook/ingest.md)、[`handbook/analysis.md`](handbook/analysis.md)。
 - **采集器边界**：`ingest/collectors/` 只做「调外部接口 → 归一成可 JSON 序列化的 dict」
   （Zabbix / Autotask，DTO 用 pydantic + `netops.schema.ExtraModel`），**不碰数据库、不 import
@@ -195,8 +198,10 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   **例外是批量导入**（挂 `_defer_pipeline` 后投 celery 链）。两套链路并存，别混。
 - **部署**：nginx 是统一入口；静态资源走「宿主机构建 → 镜像 COPY → `code-init` 铺进命名卷 →
   nginx 只读挂载」（**换代码镜像或改源码后必须重跑 `code-init`**：app 挂的是 `code` 卷，不是镜像里的
-  `/app`）；仓库卷 `repo` 是**命名卷**、`data` 是**只读 bind**（首次部署先 `mkdir -p data`）。两条硬
-  要求：nginx 用**变量式** upstream + 启动时推导 `resolver`、conf.d 必须 `$http_host` 透传 Host
+  `/app`）；仓库卷 `repo` 是**命名卷**、`data` 是**只读 bind**（首次部署先 `mkdir -p data`）、
+  `conf/` 是**只读 bind**（挂 `/etc/netops/conf`，重跑 `code-init` / recreate 都不覆盖）。业务进程
+  app / worker / consumer / **beat** 四者并存，beat 单实例、启动时先刷一次链路缓存。两条硬要求：
+  nginx 用**变量式** upstream + 启动时推导 `resolver`、conf.d 必须 `$http_host` 透传 Host
   （否则后台登录 403）。容器启动四步、健康检查、凭据、镜像重建时机：
   [`handbook/deploy.md`](handbook/deploy.md)。
 - **双入口静态托管**：`frontend/dist/` 有 `index.html`（主站 `#app`）与 `dashboard.html`
@@ -293,12 +298,15 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `status`；有非法行则整批不导入并非零退出）。
 - `Topology` 是单模型（图数据存 `graph_data` JSON，没有节点/边表）；`Device` 没有 `address` 字段
   （地址在 `DeviceConnection`）。
-- **大屏供数（Dashboard）读写分离**：采集在 `ingest`（`collect_dashboard` / `collectors/`）、写库
-  只在 `analysis.write_dashboard` 一个事务里 upsert，`GET /api/dashboard/` 只读。这是全项目**唯一**
-  用 `{status, message, result}` 包装的接口（旧大屏前端拦截器只取 `res.result`）。`DASHBOARD_WRITE_TASK`
-  / `DASHBOARD_PAYLOAD_VIA_REDIS` / `DASHBOARD_PAYLOAD_TTL` 三处定义在 `base.py`；任务名由
-  `tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` 对账。
-  细节：[`handbook/analysis.md`](handbook/analysis.md)。
+- **大屏供数（Dashboard）读写分离**：设备状态 / 工单 / SLB / 巡检的采集在 `ingest`
+  （`collect_dashboard` / `collectors/`）、写库只在 `analysis.write_dashboard` 一个事务里 upsert；
+  **链路带宽不走库**：`conf/links.json` → `link_cache` 直取 Zabbix → Redis，
+  `GET /api/dashboard/?group=linechart` 直读缓存并带脱敏 `meta`（panels / scopes / label）。
+  这是全项目**唯一**用 `{status, message, result}` 包装的接口（旧大屏前端拦截器只取 `res.result`）。
+  `DASHBOARD_WRITE_TASK` / `DASHBOARD_PAYLOAD_VIA_REDIS` / `DASHBOARD_PAYLOAD_TTL` /
+  `DASHBOARD_LINKS_FILE` 等定义在 `base.py`；任务名由
+  `tests/ingest/test_dashboard_collect.py` + `tests/ingest/test_link_cache.py` +
+  `tests/analysis/test_dashboard_write.py` 对账。细节：[`handbook/analysis.md`](handbook/analysis.md)。
 - **`asgi.py` 三层**：`django_application` → `_dispatch`（`/mcp*` 交 MCP，其余交 Django）→
   `LifespanApp`（握手 + `LIFESPAN_HOOKS`，当前是 MCP 的 `session_manager.run`）。钩子清单只在
   `asgi.py` 组合，基建不自己注册；换掉 `--worker-class uvicorn_worker.UvicornWorker` 就没有

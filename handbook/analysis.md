@@ -273,13 +273,20 @@ GET），不碰 worker、不碰数据库，30s 轮询无压力。
 
 ## 大屏供数（Dashboard）
 
-采集与写库分家，接缝仍是「只认任务名字符串」：
+两条链，接缝仍是「只认任务名字符串」：设备状态 / 工单 / SLB / 巡检仍落库；**链路带宽**
+改为 Zabbix 直取 + Redis 缓存，不落库。
 
 ```
-ingest.collect_dashboard(source)        # 采集：ingest/collectors/，纯 dict payload
+ingest.collect_dashboard(source)        # 设备组 / Autotask：纯 dict payload
   → send_task(settings.DASHBOARD_WRITE_TASK)
 analysis.write_dashboard(payload)       # 唯一写库入口（一个事务内 upsert）
-  → GET /api/dashboard/                 # 只读供数（大屏前端轮询）
+
+conf/links.json                         # 链路清单与展示 label 的唯一权威
+  → ingest.refresh_link_cache           # beat 周期 / 管理命令 / beat 启动钩子
+  → Zabbix history.get（3 分钟分桶，多监控项取 max）
+  → SET dashboard:link:series（TTL > 刷新周期）
+
+GET /api/dashboard/                     # 只读：指标表 + 链路缓存
 ```
 
 **写库（`analysis/tasks.py: write_dashboard`）**：事务内 `update_or_create`
@@ -299,46 +306,30 @@ analysis.write_dashboard(payload)       # 唯一写库入口（一个事务内 u
 | `MetricSample` | 时序（唯一键含 `sampled_at`，同一时间点重跑不重复；为将来转 TimescaleDB hypertable 留路） |
 | `ItsmCase` | 工单快照（`is_active` 标记本轮是否仍在） |
 | `CollectionRun` | 每批采集一行（status / 时间 / 计数），只追加 |
-| `LinkTarget` | 链路目标配置表（当前写库任务不写它；实际目标常量仍在 ingest 侧 `LINK_TARGETS`——采集器不能反向读 analysis 的表） |
+| `LinkTarget` | 链路目标配置表（**当前不使用**；链路清单在 `conf/links.json`，采集器不能反向读 analysis 的表） |
 
 **读接口**：`GET /api/dashboard/?panel=&group=&name=`（`analysis/api/dashboard.py`）只读；
-`group=linechart` 或 `name=bandwidth-*` 时把最近 3 小时 `MetricSample` 聚合回 EAV 行视图。
-它是全项目唯一用 `{status, message, result}` 包装的响应。契约测试：
-`tests/ingest/test_dashboard_collect.py` + `tests/analysis/test_dashboard_write.py` +
-`tests/analysis/test_dashboard_api.py`。
+`group=linechart` 或 `name=bandwidth-*` 时**不查 `MetricSample`**，读 Redis 缓存
+`dashboard:link:series` 并拼回旧 EAV 行视图；响应的 `meta` 带脱敏的 panels / scopes /
+target label（不含 host / ifname），前端一次请求拿全。缓存未生成时返回空数组，前端保留
+上一次成功结果。它是全项目唯一用 `{status, message, result}` 包装的响应。契约测试：
+`tests/ingest/test_dashboard_collect.py` + `tests/ingest/test_link_cache.py` +
+`tests/analysis/test_dashboard_write.py` + `tests/analysis/test_dashboard_api.py`。
 
-### 大屏配置化：前端 `config.json` 暂缓，线路清单归采集侧
+### 链路带宽：配置、缓存与刷新
 
-**结论（2026-11 讨论，暂不实现）**：不加大屏前端的 `dashboard.config.json`（拟放进
-`frontend/public/` → `dist/`，页面启动 fetch 后微调 widget 的标题 / tag / 刷新周期 /
-显示项）。这类配置只改 UI，不是当前想要的「微调监控内容」；现场真正要调的是
-**链路带宽图上出现哪几条线路**，它的权威在 Django 采集侧，不在 Vue。
-
-链路从哪来（现状）：
-
-```
-ingest/collectors/dashboard.py  LINK_TARGETS   # 10 条：(scope, subject, Zabbix host, ifname)，host 是现场值、ifname 仍是占位
-  → _collect_links() → MetricSample(kind=link_bandwidth)
-analysis/api/dashboard.py  _linechart_rows()   # 近 3 小时样本全量聚合，不筛选
-frontend/src/dashboard/views/components/LinkBandwidthWidget.vue  # 按返回里出现的 subject 动态生成曲线，SUBJECT_LABELS 只做中文名映射
-```
-
-即「显示哪几条线」今天等于「`LINK_TARGETS` 里写了哪几行」，改一次要走
-「改 Python → 重建 code 镜像 → 重跑 `code-init`」。将来做线路清单配置化时：
-
-- 一份清单（`scope` / `subject` / `host` / `ifname` / `label` / `enabled`）同时驱动采集、
-  读接口过滤与前端中文名，别只改采集：`MetricSample` 近 3 小时的历史样本仍在库里，
-  删掉的线路会继续画到窗口滚过去为止；`_linechart_rows()` 按同一份清单过滤才即时生效，
-  Vue 也不必再维护 `SUBJECT_LABELS` 那份硬编码。
-- 依赖方向别绕回去：`analysis.models.LinkTarget` 已建表但采集器不能反向读 analysis 的表
-  （见其 docstring 与本文模型表）。合法做法是 analysis 侧读出清单、作为任务参数投给
-  `ingest.collect_dashboard`，或把清单留在 ingest 侧。容器里 app 已挂 `data:/data`，
-  放宿主 `data/dashboard/` 天然可见、改了不用重建镜像、不重跑 `code-init`。
-
-为什么前端 `config.json` 也不能「拷进 dist 后现场直接改」（部署侧结论，细节见
-[`deploy.md`](deploy.md)「入口与静态资源」与「双入口」）：`code_init.sh` 每次
-`rm -rf` 静态卷根再权威重铺、`static` 卷给 nginx 是 `:ro`；nginx 与 Django 的 SPA 兜底
-还会把不存在的 JSON 返回成 `index.html`，`res.json()` 直接失败；而 app 容器没挂
-`static` 卷，读不到 dist 里的默认文件。若以后仍要做前端配置，现场文件必须放在静态卷
-之外的宿主 bind 目录，并在 nginx / Django / Vite dev 三处显式接管 + `no-store`，
-dist 里那份只当随版本默认值。
+- **配置**：`conf/links.json`（入库、随版本走；宿主 `conf/` 只读挂到容器
+  `/etc/netops/conf`）。`panels` 是图标题 + scope 分组，`scopes` 是 scope 中文名，
+  `targets` 是 `scope / subject / label / host / ifname / enabled`。`subject` 是稳定数据键，
+  `label` 可随意改；`host` / `ifname` 只给采集侧，不下发免认证接口。
+- **刷新**：`ingest.refresh_link_cache`（beat 周期 `DASHBOARD_LINK_REFRESH_SECONDS`，默认
+  180s）与管理命令 `python manage.py refresh_link_cache [--check]`；beat 启动时先同步刷一次
+  （失败不阻塞，下个周期重试）。TTL `DASHBOARD_LINK_CACHE_TTL`（默认 600s）大于刷新周期，
+  Zabbix 抖动时还能读到上一份。
+- **失败隔离**：单条链路失败只 warning、其余照常；全部失败才抛（Celery 记 FAILURE /
+  管理命令非零退出）。
+- **前端**：`LinkBandwidthWidget` 不再硬编码 `SCOPE_LABELS` / `SUBJECT_LABELS`，label、分组、
+  停用过滤都来自响应 `meta`；全量取（3 小时窗口约几十 KB），新数据到达前保留旧值，
+  `LineCharts` 用 `replaceMerge` 清掉已删除的 series。
+- 前端那份 `dashboard.config.json` 没有采用（只改 UI，不解决「监控哪几条线」）；
+  `MetricSample` 里旧的 `link_bandwidth` 样本不再被读，可忽略；`LinkTarget` 表仍未启用。
