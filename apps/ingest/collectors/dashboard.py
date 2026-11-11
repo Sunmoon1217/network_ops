@@ -93,21 +93,7 @@ DEVICE_GROUPS = {
 CPU_KEYS = ["cpu.util", "cpu.utilization", "topsec.cpu", "cpu.usage"]
 MEM_KEYS = ["memory.util", "mem.tmm.ratio", "zdns.mem.usage"]
 
-# 链路采集目标从旧 link_dict 迁来：host 是现场值，**ifname 仍是占位**，填上真实接口名
-# 之后才会拿到带宽数据（填之前 link_peak 找不到监控项，采样值为 null）。
-# 放在 ingest 侧而不是 analysis.LinkTarget：采集器执行时不能反向读 analysis 的表。
-LINK_TARGETS = (
-    ("ipv4", "zjbgp", "ZGCB-ZJE04-INT-AS01", "ifname"),
-    ("ipv4", "jxqcu", "ZGCB-JXQA03-INT-AS01", "ifname"),
-    ("ipv4", "jxqct", "ZGCB-JXQA03-INT-AS01", "ifname"),
-    ("ipv6", "zjbgp", "ZGCB-ZJE04-INT-AS01", "ifname"),
-    ("ipv6", "jxqcu", "ZGCB-JXQA03-INT-AS01", "ifname"),
-    ("ipv6", "jxqct", "ZGCB-JXQA03-INT-AS01", "ifname"),
-    ("fwlink", "coreyw", "ZGCB-ZJB02-COREYW-FW01", "ifname"),
-    ("fwlink", "intyw", "ZGCB-ZJB02-INTYW-FW01", "ifname"),
-    ("fwlink", "mgtyw", "ZGCB-ZJB02-MGTYW-FW01", "ifname"),
-    ("fwlink", "intdmz", "ZGCB-ZJE04-INT-FW01", "ifname"),
-)
+# 链路带宽已改由 conf/links.json + link_cache 直取 Zabbix（不落库），这里不再维护清单。
 
 
 def _aligned_now():
@@ -186,25 +172,6 @@ async def _collect_group(slug, group_name, sampled_at):
     return (count if not isinstance(count, BaseException) else 0), metrics, samples
 
 
-async def _collect_links(sampled_at):
-    """链路带宽峰值：一行一条链路一个采样点，供 API 聚合回 linechart 视图。"""
-    if not LINK_TARGETS:
-        return []
-    results = await asyncio.gather(
-        *(queries.link_peak(host=host, ifname=ifname) for _, _, host, ifname in LINK_TARGETS),
-        return_exceptions=True,
-    )
-    samples = []
-    for (group, name, _, _), result in zip(LINK_TARGETS, results, strict=True):
-        if isinstance(result, BaseException):
-            logger.warning("链路峰值采集失败: %s/%s, err=%s", group, name, result)
-            peak, itemids = None, []
-        else:
-            peak, itemids = result["peak"], result["itemids"]
-        samples.append(_sample("link_bandwidth", group, name, peak, payload={"itemids": itemids}, sampled_at=sampled_at))
-    return samples
-
-
 def _success_rate(case_rows):
     """真实成功率：外部字段带 status 才算，没有就返回 None（不写恒为 100 的假指标）。"""
     statuses = [row["raw"].get("status") for row in case_rows if row["raw"].get("status")]
@@ -224,9 +191,7 @@ async def _collect_autotask(sampled_at):
         for case in cases:
             raw = case.model_dump()
             case_rows.append({"case_no": case.case_no, "title": case.title, "applicant": case.shenqing, "raw": raw})
-        metrics.append(
-            _metric("statusbar", "itsmtask", "count", list_value=[{"count": len(case_rows), "success": _success_rate(case_rows)}], sampled_at=sampled_at)
-        )
+        metrics.append(_metric("statusbar", "itsmtask", "count", list_value=[{"count": len(case_rows), "success": _success_rate(case_rows)}], sampled_at=sampled_at))
 
     if isinstance(slb, BaseException):
         logger.warning("SLB 采集失败: %s", slb)
@@ -263,7 +228,6 @@ async def collect(source: str) -> DashboardPayload:
                 metrics.extend(group_metrics)
                 samples.extend(group_samples)
             metrics.append(_metric("statusbar", "devicecount", "count", list_value=[{"count": total}], sampled_at=sampled_at))
-            samples.extend(await _collect_links(sampled_at))
         elif source == "autotask":
             metrics, cases = await _collect_autotask(sampled_at)
         else:
