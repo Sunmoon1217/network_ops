@@ -185,9 +185,12 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **采集器边界**：`ingest/collectors/` 只做「调外部接口 → 归一成可 JSON 序列化的 dict」
   （Zabbix / Autotask，DTO 用 pydantic + `netops.schema.ExtraModel`），**不碰数据库、不 import
   `analysis`**；连接配置在 `settings.ZABBIX_CONFIG`（Token 优先于用户名密码）。
-- **OpenAPI 3 文档**：`netops/urls.py` 挂 `/api/schema/`、`/api/schema/swagger-ui/`、
-  `/api/schema/redoc/`（**不叫 `/api/docs/`**，那是 docs 业务域）；UI 资源走 sidecar（内网不通外网），
-  权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制（默认放开）。见 [`handbook/api.md`](handbook/api.md)。
+- **OpenAPI 3 文档**：`/api/schema/` 是浏览器入口（302 → Swagger UI）；描述文件在
+  `/api/schema/openapi.yaml`（`name="schema"`，两个 UI 靠它反解取数，**别把 schema 视图挂回
+  `/api/schema/`**，否则 UI 会拉到重定向后的 HTML）；另有 `/api/schema/swagger-ui/`、
+  `/api/schema/redoc/`（**不叫 `/api/docs/`**，那是 docs 业务域）；UI 资源走 sidecar
+  （内网不通外网），权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制（默认放开）。
+  见 [`handbook/api.md`](handbook/api.md)。
 - **业务日志**：`settings/base.py` 的 `LOGGING` 只给项目命名空间（`core/ingest/assets/analysis/
   cloud/docs/llmtools/netops`）装 stderr handler，级别 `DJANGO_LOG_LEVEL`（默认 INFO）；**不动
   root**（celery 会 hijack）、`propagate` 保持 True（`caplog` 仍可捕获）。

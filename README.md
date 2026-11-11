@@ -21,7 +21,7 @@
 - PostgreSQL（TimescaleDB）+ Redis
 - Celery 异步任务（采集→解析→存储；访问流重建；大屏采集→写库）
 - TTP 模板解析（设备配置 → 结构化数据入库）
-- OpenAPI 3 文档（drf-spectacular，`/api/schema/` 三路由，UI 走本地 sidecar）
+- OpenAPI 3 文档（drf-spectacular，浏览器入口 `/api/schema/` → Swagger UI；描述文件 `/api/schema/openapi.yaml`，UI 走本地 sidecar）
 - 外部数据源采集（Zabbix / Autotask，`apps/ingest/collectors/`，pydantic DTO）
 - MCP Server（官方 Python SDK 2.x，`/mcp` Streamable HTTP；基建与出口在根目录 `llmtools/`，各域注册实体，通用工具只认注册表，工具由 `llmtools/tools.py` 统一注册）
 

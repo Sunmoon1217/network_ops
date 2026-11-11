@@ -183,4 +183,4 @@ WARNING 以上，INFO 全被静默丢弃。常驻的 consumer 运行期输出全
 `SPECTACULAR_SETTINGS` 的 UI 资源一律 `SIDECAR`（内网不通外网，随 `collectstatic` 进
 `/static/` 由 nginx 直出），`SERVE_INCLUDE_SCHEMA=False`；权限取 `API_DOCS_PERMISSION`
 （默认 `AllowAny`，`DJANGO_API_DOCS_REQUIRE_LOGIN=1` 收紧成 `IsAuthenticated`）。
-三条路由见 [`api.md`](api.md)。
+路由见 [`api.md`](api.md)。
