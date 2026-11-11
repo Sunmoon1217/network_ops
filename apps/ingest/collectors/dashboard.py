@@ -82,7 +82,7 @@ class DashboardPayload(TypedDict):
     run: RunPayload
 
 
-# Zabbix 主机组名按现场配置；slug 与前端 MidCard-1.vue 的 CARD_CONFIG 对齐。
+# Zabbix 主机组名按现场配置；slug 与前端 DeviceStatusWidget.vue 的设备分组对齐。
 DEVICE_GROUPS = {
     "switch": "Type:交换机",
     "router": "Type:路由器",

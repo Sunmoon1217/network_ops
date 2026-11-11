@@ -10,7 +10,7 @@
 
 查询参数 ``panel`` / ``group`` / ``name`` 对齐旧 ``getdashboard``。当前值直接读
 ``DashboardMetric``；``group=linechart`` 或 ``name=bandwidth-*`` 时，把 ``MetricSample``
-最近 3 小时的链路样本聚合成「一行一个时间点」的 EAV 视图，前端 ``ChartsCard-1``
+最近 3 小时的链路样本聚合成「一行一个时间点」的 EAV 视图，前端 ``LinkBandwidthWidget``
 无需改动即可消费。写入口是 analysis 的写库任务（由 ingest 采集任务按任务名投递），
 本模块只读。
 """

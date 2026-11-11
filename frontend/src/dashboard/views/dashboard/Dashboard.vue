@@ -4,12 +4,12 @@ import { stylevar } from '@dashboard/ui/theme/dashboard_stylevar'
 import { getDashboard, getLinkSeries } from '@/api/dashboard'
 import type { DashboardData, InspectItem, LinkPoint } from '@dashboard/types'
 import { useInterval } from '@dashboard/utils/timer'
-import MidCard_1 from './components/MidCard-1.vue'
-import MidCard_2 from './components/MidCard-2.vue'
-import MidCard_3 from './components/MidCard-3.vue'
-import MidCard_5 from './components/MidCard-5.vue'
-import ChartsCard_1 from './components/ChartsCard-1.vue'
-import ChartsCard_2 from './components/ChartsCard-2.vue'
+import DeviceStatusWidget from './components/DeviceStatusWidget.vue'
+import InspectionWidget from './components/InspectionWidget.vue'
+import SlbOverviewWidget from './components/SlbOverviewWidget.vue'
+import LinkBandwidthWidget from './components/LinkBandwidthWidget.vue'
+import CabinetUsageWidget from './components/CabinetUsageWidget.vue'
+import AutomationTicketWidget from './components/AutomationTicketWidget.vue'
 
 const StyleVar = stylevar
 
@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
               <span class="tag">CPU / 内存 / 硬件告警</span>
             </div>
             <div class="panel-body">
-              <MidCard_1 />
+              <DeviceStatusWidget />
             </div>
           </section>
 
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
               <span class="tag">健康检查</span>
             </div>
             <div class="panel-body">
-              <MidCard_2 />
+              <InspectionWidget />
             </div>
           </section>
 
@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
               <span class="tag">实例 / 监听</span>
             </div>
             <div class="panel-body">
-              <MidCard_3 />
+              <SlbOverviewWidget />
             </div>
           </section>
 
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
               <span class="tag">近 3 小时峰值</span>
             </div>
             <div class="panel-body">
-              <ChartsCard_1 />
+              <LinkBandwidthWidget />
             </div>
           </section>
 
@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
               <span class="tag">资产库 U 位</span>
             </div>
             <div class="panel-body">
-              <MidCard_5 />
+              <CabinetUsageWidget />
             </div>
           </section>
 
@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
               <span class="tag">执行明细</span>
             </div>
             <div class="panel-body">
-              <ChartsCard_2 />
+              <AutomationTicketWidget />
             </div>
           </section>
         </main>
