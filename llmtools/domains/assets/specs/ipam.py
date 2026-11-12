@@ -1,0 +1,160 @@
+"""设备台账与 IPAM 侧实体：设备 / 设备组 / 接口 / VLAN / VRF / 路由 / 子网 / IP / ARP。
+
+``device`` 同时是整张关系图的根节点：它的 13 条挂载边声明在 ``../edges.py``，
+不在这里——实体声明只管「发布了什么」，不管「怎么串起来」。
+"""
+
+from assets import models
+from assets.serializers import views as s
+from llmtools.registry import EntitySpec, Filter
+
+from ..nodes import NodeType
+from ._helpers import _arp_extra_search
+
+BUNDLE: dict[str, EntitySpec] = {
+    NodeType.DEVICE: EntitySpec(
+        node_type=NodeType.DEVICE,
+        label="网络设备",
+        model=models.Device,
+        serializer=s.DeviceSerializer,
+        key="hostname",
+        summary=("hostname", "device_type", "device_type_display", "ip_address", "idc_name", "security_zone_name"),
+        filters={
+            "keyword": Filter(("hostname", "ip_address", "remark")),
+            "device_type": Filter(("device_type",), "exact"),
+            "vendor": Filter(("device_model__vendor__name",)),
+            "group": Filter(("group_memberships__group__name",)),
+            "idc": Filter(("idc__name",)),
+            "security_zone": Filter(("security_zone__name",)),
+        },
+        search=("hostname", "ip_address", "remark"),
+        select_related=("device_model__vendor", "idc", "cabinet__room", "security_zone"),
+        order=("hostname",),
+        default_sections=("groups", "interfaces", "ip_addresses", "arp"),
+    ),
+    NodeType.DEVICE_GROUP: EntitySpec(
+        node_type=NodeType.DEVICE_GROUP,
+        label="设备组",
+        model=models.DeviceGroup,
+        serializer=s.DeviceGroupSerializer,
+        key="name",
+        summary=("name", "group_type", "group_type_display", "description", "device_role"),
+        filters={"keyword": Filter(("name", "description"))},
+        search=("name", "description"),
+        prefetch=("members__device",),
+        order=("name",),
+    ),
+    NodeType.INTERFACE: EntitySpec(
+        node_type=NodeType.INTERFACE,
+        label="接口",
+        model=models.Interface,
+        serializer=s.InterfaceSerializer,
+        key="interface",
+        summary=("device_hostname", "interface", "mode", "ip_address", "enabled", "description"),
+        filters={
+            "keyword": Filter(("interface", "description", "ip_address")),
+            "device": Filter(("device__hostname",)),
+            "mode": Filter(("mode",), "exact"),
+        },
+        search=("interface", "description", "ip_address"),
+        scoped=True,
+        select_related=("device", "vrf"),
+        order=("device__hostname", "interface"),
+    ),
+    NodeType.VLAN: EntitySpec(
+        node_type=NodeType.VLAN,
+        label="VLAN",
+        model=models.Vlan,
+        serializer=s.VlanSerializer,
+        key="vid",
+        summary=("device_hostname", "vid", "name", "description"),
+        filters={"device": Filter(("device__hostname",)), "vid": Filter(("vid",), "exact")},
+        scoped=True,
+        select_related=("device",),
+        order=("device__hostname", "vid"),
+    ),
+    NodeType.VRF: EntitySpec(
+        node_type=NodeType.VRF,
+        label="VRF",
+        model=models.Vrf,
+        serializer=s.VrfSerializer,
+        key="name",
+        summary=("device_hostname", "name", "rd", "description"),
+        filters={"device": Filter(("device__hostname",)), "keyword": Filter(("name", "rd"))},
+        search=("name", "rd"),
+        scoped=True,
+        select_related=("device",),
+        order=("device__hostname", "name"),
+    ),
+    NodeType.ROUTE: EntitySpec(
+        node_type=NodeType.ROUTE,
+        label="路由",
+        model=models.Route,
+        serializer=s.RouteSerializer,
+        key="destination",
+        summary=("device_hostname", "destination", "nexthop", "interface", "protocol", "metric"),
+        filters={
+            "device": Filter(("device__hostname",)),
+            "vrf": Filter(("vrf__name",)),
+            "keyword": Filter(("destination", "nexthop", "interface")),
+            "protocol": Filter(("protocol",), "exact"),
+        },
+        search=("destination", "nexthop"),
+        scoped=True,
+        select_related=("device", "vrf"),
+        order=("device__hostname", "destination"),
+    ),
+    NodeType.SUBNET: EntitySpec(
+        node_type=NodeType.SUBNET,
+        label="子网",
+        model=models.Subnet,
+        serializer=s.SubnetSerializer,
+        key="network",
+        summary=("network", "vlan", "gateway", "vrf", "description"),
+        filters={
+            "keyword": Filter(("network", "description", "vlan")),
+            "vlan": Filter(("vlan",), "exact"),
+            "vrf": Filter(("vrf",), "exact"),
+        },
+        search=("network", "description"),
+        select_related=("datacenter", "security_zone"),
+        order=("network",),
+    ),
+    NodeType.IP_ADDRESS: EntitySpec(
+        node_type=NodeType.IP_ADDRESS,
+        label="IP地址",
+        model=models.IPAddress,
+        serializer=s.IPAddressSerializer,
+        key="ip_address",
+        summary=("ip_address", "status", "device_hostname", "interface", "description"),
+        filters={
+            "keyword": Filter(("ip_address", "description")),
+            "subnet": Filter(("subnet__network",)),
+            "status": Filter(("status",), "exact"),
+            "device": Filter(("device__hostname",)),
+        },
+        search=("ip_address", "description"),
+        select_related=("subnet", "device", "security_zone"),
+        order=("ip_address",),
+    ),
+    NodeType.ARP_MAC: EntitySpec(
+        node_type=NodeType.ARP_MAC,
+        label="ARP/MAC",
+        model=models.ArpMac,
+        serializer=s.ArpMacSerializer,
+        key="ip_address",
+        summary=("device_hostname", "ip_address", "mac_address", "vlan", "interface", "arp_type", "status"),
+        filters={
+            "keyword": Filter(("ip_address", "mac_address", "interface")),
+            "device": Filter(("device__hostname",)),
+            "vlan": Filter(("vlan",), "exact"),
+            "status": Filter(("status",), "exact"),
+        },
+        search=("ip_address", "mac_address", "interface"),
+        # 业务键是 设备+IP+MAC 三件套，单靠 ip 取不唯一
+        gettable=False,
+        select_related=("device",),
+        order=("device__hostname", "ip_address"),
+        extra_search=_arp_extra_search,
+    ),
+}

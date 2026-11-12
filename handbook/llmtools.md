@@ -92,15 +92,21 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 `zabbix_*`）防撞名。测试模式：`mcp.Client(server)` 内存传输整链 + `django_db(transaction=True)`。
 
 **注册是集中式的**：域里既没有 `@mcp.tool()`，也不 import MCP 基建；重名在 `register_all()`
-启动期即抛错（SDK 默认是静默覆盖）。**没有任何「import 即注册」**：`specs.py` 底部不自动调用
-`register()`，声明模块 import 进来是纯的；接线只发生在 `__init__.py`。防循环靠导入顺序——
+启动期即抛错（SDK 默认是静默覆盖）。**没有任何「import 即注册」**：`specs/__init__.py` 不自动调用
+`register()`，声明模块 import 进来是纯的；接线只发生在 `llmtools/__init__.py`。防循环靠导入顺序——
 基建（`server` / `registry` / `query` / `entity_tools`）先、`domains` 次之、`tools` 最后，而
 `domains/*` 只 import `registry` / `entity_tools`，绝不 import `tools` 或包本身。
 
-现状：资产域为实体注册表形态（`domains/assets/specs.py` 持 `NodeType` / `EntitySpec` 与
-`EDGES`），七个工具（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations` /
-`locate`）只做「spec → queryset → 序列化」，**新增表 = 注册表加一行，工具层零改动**；
-新增实体类型先进 `NodeType` 占位防拼写分叉。
+现状：资产域为实体注册表形态，2026-11 从单文件拆成四层——`domains/assets/nodes.py`（`NodeType`，
+零 import 的公共词汇）、`domains/assets/specs/`（实体声明，按子域分 `ipam` / `slb` / `firewall` /
+`owners`，各自导出 `BUNDLE`）、`domains/assets/edges.py`（36 条关系边，不属于任何子域）、
+`specs/__init__.py`（合并 + 启动期校验 + `register()`）。拆分的两个硬约束：**边只依赖模型与
+`NodeType`、不 import 实体声明**（避免环）；**`node_type` 撞名与「同 src 边名重复」由
+`specs/__init__` 在 import 期断言**（`edge_named` 只取第一条命中，重名会静默串台）。
+
+七个工具（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations` / `locate`）
+只做「spec → queryset → 序列化」，**新增表 = 对应子域加一条 spec（+ 需要时 edges.py 加一条边），
+工具层零改动**；新增实体类型先进 `nodes.py` 的 `NodeType` 占位防拼写分叉。
 
 ## 会话管理器的单次约束
 

@@ -14,7 +14,7 @@ from django.utils import timezone
 from mcp.server.mcpserver.exceptions import ToolError
 
 from assets import models
-from llmtools.domains.assets.specs import _mac_compact, _mac_variants
+from llmtools.domains.assets.specs._helpers import _mac_compact, _mac_variants
 from llmtools.entity_tools import _detect, _parse_ip
 
 #: 观测数据超过这个时长没刷新就提示「旧数据」，避免拿三个月前的 ARP 下结论
