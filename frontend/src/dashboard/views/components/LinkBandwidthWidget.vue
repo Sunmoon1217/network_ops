@@ -10,6 +10,7 @@ const panels = ref<LinkPanelMeta[]>([])
 const scopes = ref<Record<string, string>>({})
 const targets = ref<LinkTargetMeta[]>([])
 const loadError = ref('')
+const refreshedAt = ref<string | null>(null)
 const timeAxis = computed(() => points.value.map((point) => point.time))
 
 const labelOf = (subject: string) => targets.value.find((item) => item.subject === subject)?.label ?? subject
@@ -85,6 +86,7 @@ const fetchLinks = async () => {
       panels.value = meta.panels
       scopes.value = meta.scopes
       targets.value = meta.targets
+      refreshedAt.value = meta.refreshed_at
     }
     const next = rows
       .filter((row) => row.name.startsWith('bandwidth-'))
@@ -129,6 +131,7 @@ onMounted(() => {
       </div>
       <p v-if="loadError" class="error">{{ loadError }}</p>
       <p v-else-if="!points.length" class="hint">近 3 小时暂无链路采样</p>
+      <p v-else-if="!refreshedAt" class="hint" style="color: var(--el-color-warning, #e6a23c)">数据未更新，显示上一次结果</p>
     </section>
     <div v-for="item in panelGroups" :key="item.panel.id" class="items linechart">
       <h4>{{ item.panel.label }}</h4>

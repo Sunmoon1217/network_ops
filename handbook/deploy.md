@@ -139,6 +139,11 @@ celery 侧只有一个 `CELERY_LOGLEVEL`——`--concurrency` 刻意不暴露（
 不能 scale（会重复调度）。**换代码后只重启 `beat` 不够**：code 卷没重铺时它读到的还是旧
 settings，必须先 `docker compose up -d code-init` 再重启 `beat`。
 
+两条启动路径（`entrypoint/beat.sh` 与 `scripts/deploy-host.sh` 的 `cmd_beat`）必须同构，
+由 `tests/deploy/test_beat_startup_hooks.py` 对账：同步刷链路缓存 → 补投两个采集源 →
+打印生效调度 → `exec celery beat`，且每步都有 `|| echo` 兜底（`set -e` 下失败不阻塞启动）。
+漏掉补投会让大屏空 10 分钟，而调度条目测试全绿——这类脚本级回归只有这条契约能拦住。
+
 ## 启动三步（`entrypoint/app.sh`）
 
 1. 拼出整条 gunicorn 命令（静态成品已由 `code-init` 铺进静态卷，这里不再复制）；

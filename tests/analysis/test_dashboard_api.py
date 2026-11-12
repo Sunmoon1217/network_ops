@@ -67,11 +67,25 @@ def test_link_linechart_reads_cache_and_returns_meta(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_link_linechart_cache_miss_returns_empty(monkeypatch):
-    """缓存未生成时不报错、不带 meta，前端保留上一次成功结果。"""
+def test_link_linechart_cache_miss_returns_static_meta_shell(monkeypatch):
+    """缓存未生成时仍下发静态 meta 空壳：前端能画出图框，且不含任何伪造数值点。"""
     monkeypatch.setattr("analysis.api.dashboard.read_link_cache", lambda: None)
 
     body = APIClient().get("/api/dashboard/?group=linechart").json()
 
     assert body["result"] == []
-    assert "meta" not in body
+    meta = body["meta"]
+    assert meta["panels"] and meta["scopes"] and meta["targets"]  # 来自 conf/links.json
+    assert meta["refreshed_at"] is None
+    assert meta["window_hours"] is None
+
+
+def test_empty_link_payload_has_no_fabricated_points():
+    """空壳只带静态 meta：不造 0 值曲线（全 0 会把 Zabbix 全挂伪装成零流量）。"""
+    from ingest.collectors.link_cache import empty_link_payload
+
+    payload = empty_link_payload()
+
+    assert payload["points"] == []
+    assert payload["refreshed_at"] is None
+    assert {"panels", "scopes", "targets"} <= set(payload)

@@ -22,7 +22,7 @@ from rest_framework.response import Response
 
 from analysis.models import DashboardMetric
 from assets.models import Cabinet, Device
-from ingest.collectors.link_cache import read_link_cache
+from ingest.collectors.link_cache import empty_link_payload, read_link_cache
 
 
 def _envelope(result, meta=None):
@@ -99,8 +99,8 @@ def dashboard(request):
     if wants_linechart:
         payload = read_link_cache()
         if payload is None:
-            # 缓存未生成 / Redis 不可用：返回空链路数据，前端保留上一次成功结果
-            return _envelope(result)
+            # 缓存未生成 / Redis 不可用：下发静态 meta 空壳（不造数值），前端据此画空图框
+            payload = empty_link_payload()
         result.extend(_link_points(payload, name))
         return _envelope(result, meta=_link_meta(payload))
 
