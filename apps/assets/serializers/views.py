@@ -273,3 +273,8 @@ class ArpMacSerializer(DeviceRelatedSerializer):
 @model(model=models.SubnetUsageLog)
 class SubnetUsageLogSerializer(ParentClass):
     subnet_network = serializers.CharField(source="subnet.network", read_only=True, default="")
+
+
+@model(model=models.ServerOwner)
+class ServerOwnerSerializer(ParentClass):
+    pass
