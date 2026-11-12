@@ -20,7 +20,7 @@ class Command(BaseCommand):
     help = "访问流单写者消费进程（只能跑一个实例）：XREADGROUP → 重建入库 → XACK"
 
     def add_arguments(self, parser):
-        parser.add_argument("--count", type=int, default=500, help="每轮最多取多少条消息（默认 500）")
+        parser.add_argument("--count", type=int, default=10, help="每轮最多取多少条消息（默认 10）")
         parser.add_argument("--block", type=int, default=5000, help="XREADGROUP 阻塞毫秒数（默认 5000）")
         parser.add_argument(
             "--once",
