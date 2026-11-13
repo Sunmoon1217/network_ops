@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count
 
 from assets.models import (
@@ -35,6 +35,10 @@ from assets.models import (
 
 #: 地址与端口的分隔符（IPv6 也用 ``#``，与前端 ``types/lb.ts`` 同约定）
 TARGET_SEPARATOR = "#"
+
+#: 归并的事务级咨询锁 key（"SOFT"）：信号（多 worker）与管理命令共用，避免并发
+#: ``get_or_create`` 撞唯一约束。项目强绑 PostgreSQL，直接用。
+_SYNC_LOCK_KEY = 0x534F4654
 
 
 @dataclass
@@ -320,8 +324,16 @@ def sync_load_balancer_services() -> SyncStats:
     return stats
 
 
+@transaction.atomic
 def sync_soft_assets(asset_type: str = "all") -> SyncStats:
-    """``asset_type``：``all`` / ``domain`` / ``lb``。"""
+    """``asset_type``：``all`` / ``domain`` / ``lb``。
+
+    整个归并在一把事务级咨询锁里执行：Celery 多 worker 与管理命令并发时串行，
+    后到者会看到前者的结果，``get_or_create`` 不会撞唯一约束。
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_SYNC_LOCK_KEY])
+
     stats = SyncStats()
     if asset_type in ("all", "domain"):
         stats.merge(sync_domain_assets())

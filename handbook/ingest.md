@@ -44,6 +44,14 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 **堆叠组备机不解析**：`config_owner.resolve_config_owner` 把配置归属判给主设备，
 备机的流水线直接把原因写进 `PipelineResult.skipped` 返回。
 
+## 配置入库后刷新软资产（T4）
+
+配置行变化会影响派生资产（域名 / 负载均衡服务），四条入库路径在完成后都会调用
+`assets.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
+`run_storage_stage`、批量导入的 `run_config_storage`、`reparse` 命令收尾（并行子进程里
+不发，父进程统一发一次）。接收器在**事务提交后**执行全量归并，同一事务只跑最后一次；
+细节见 [`assets.md`](assets.md)「软资产归并（T4）」。
+
 ## Saver 分组规则
 
 `registry.get_savers_for_config` 返回的是 `[(keys, saver)]`，`keys` 是**一个列表**：

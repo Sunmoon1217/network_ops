@@ -166,8 +166,13 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
    取值没变就不写，`ci_id` 始终不变。
 4. 列表读主表 + `select_related` 扩展表，`StandardPagination` SQL 分页 → **换页零全量重算**；
    详情 / 展开才反查配置行作证据。
-5. 触发：管理命令全量重建 `python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]`
-   （先支持全量，与 `rebuild_access_flows` 同一套路）。信号增量刷新暂未接。
+5. 触发有两路（共用同一把 PG 事务级咨询锁，不会并发写重）：
+   - **自动**：配置解析 / 存储完成后由 `ingest` 发 `assets.signals.soft_assets_stale`
+     （`DeviceConfig` 同步入库、阶段工作流的 storage 阶段、批量导入的 storage 任务、
+     `reparse` 命令收尾各一处）。接收器在**事务提交后**执行全量归并，同一事务多次请求
+     只跑最后一次；失败只记日志，不影响配置入库。
+   - **手动**：`python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]`
+     全量重建（异常兜底 / 对账）。
    已消失的配置**不删除**对应资产（可能已有人工标注），需要时另行处理。
 
 实现位置：`apps/assets/services/soft_asset_sync.py`（`sync_soft_assets` /
@@ -198,7 +203,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
   扩展表不进 `ConfigBase.__subclasses__()`、列表只读。
 - 待做：详情展开关联配置行（域名 → `GtmWideip` 证据链、服务 → `LtmVirtualServer`）。
 
-状态：**进行中**（扩展表、归并链路、管理命令、只读列表 API 与前端两页已实现；
+状态：**进行中**（扩展表、归并链路、管理命令、只读列表 API、前端两页与信号自动刷新已实现；
 详情展开关联配置行未做）。
 
 ## API 视图（`api/views.py`）

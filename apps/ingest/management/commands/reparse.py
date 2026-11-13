@@ -41,9 +41,7 @@ def _run_one(config_pk: int, force_parse: bool) -> dict:
         "parsed": result.parsed,
         "key_count": len(result.config_json),
         "skipped": result.skipped,
-        "outcomes": [
-            {"label": o.label, "created": o.created, "updated": o.updated, "error": o.error} for o in result.outcomes
-        ],
+        "outcomes": [{"label": o.label, "created": o.created, "updated": o.updated, "error": o.error} for o in result.outcomes],
     }
 
 
@@ -132,6 +130,12 @@ class Command(BaseCommand):
         self.stdout.write("")
         suffix = f"，并行度 {workers}" if workers > 1 else ""
         self.stdout.write(f"完成：{len(configs)} 台设备，{failed} 个 Saver 失败，{skipped} 台跳过{suffix}")
+
+        # 重跑 Saver 会改配置行 → 统一刷新一次软资产（子进程里不触发，避免并发全量归并）
+        if any(summary["outcomes"] for summary in summaries):
+            from assets.signals import request_soft_asset_sync
+
+            request_soft_asset_sync(f"reparse 重跑 {len(configs)} 台设备")
 
         if workers == 1 and len(configs) > 1:
             self.stdout.write(self.style.HTTP_INFO("提示：加 --workers N 可以跨设备并行（每台设备只派一个任务）"))

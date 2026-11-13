@@ -82,9 +82,13 @@ def on_device_config_saved(sender, instance, created, **kwargs):
 
     _processing.add(instance.pk)
     try:
+        from assets.signals import request_soft_asset_sync
         from ingest.pipeline import run_config_pipeline
 
-        run_config_pipeline(instance.device, instance)
+        result = run_config_pipeline(instance.device, instance)
+        # 配置行可能被 Saver 改过 → 请求刷新域名 / 负载均衡资产（事务提交后执行）
+        if result.outcomes:
+            request_soft_asset_sync("DeviceConfig 同步解析入库")
     except Exception as e:
         logger.error("DeviceConfig %s 处理失败: %s", instance.pk, e, exc_info=True)
     finally:
