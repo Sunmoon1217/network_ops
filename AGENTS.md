@@ -8,6 +8,12 @@
 
 网络运维管理平台：Django REST 后端 + Vue 3 前端。
 
+**现阶段目标**：资产**信息录入与查询**平台，不是资产全生命周期管理系统。做信息录入（配置解析入库 /
+Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详情聚合）；不做生命周期管理（新增 / 变更 / 退役
+流程、状态机、审批）、数据质量治理闭环、对外部平台的写入 / 纳管 / 状态回写。外部平台联动**只做查询
+（只读）**，后续可能扩展 Zabbix 监控平台的统一管理视图，仍不写回。范围边界与任务裁剪见
+[`handbook/roadmap.md`](handbook/roadmap.md)「现阶段目标与范围边界」。
+
 - 后端：数据模型 + REST API；设备配置解析入库（`ingest/parsers` TTP + `savers`）；
   `ingest/collectors/` 接 Zabbix / Autotask 给总览大屏供数。
 - 前端：Vite **双入口**（`index.html` 主站 / `dashboard.html` 大屏），构建产物可由 Django 直接托管（开发调试）。
