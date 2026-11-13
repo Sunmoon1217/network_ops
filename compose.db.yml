@@ -18,6 +18,7 @@ services:
     restart: unless-stopped
     init: true
     env_file:
+      - envs/common.env
       - envs/db.env
     secrets:
       - db_user
@@ -44,6 +45,7 @@ services:
     # 「大小写不敏感的唯一键」这个跨库差异在配置里可见，而不是靠镜像默认值。
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
     env_file:
+      - envs/common.env
       - envs/db.env
     secrets:
       - db_password

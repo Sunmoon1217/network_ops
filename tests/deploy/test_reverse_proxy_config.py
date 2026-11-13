@@ -115,8 +115,9 @@ def test_app_and_worker_share_the_django_runtime_env_file():
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
     assert compose.count("- envs/common.env") == 4
+    # db 的两个模板也要读 common.env（库名/账号在里面），外加只给容器的 db.env
+    assert db_templates.count("- envs/common.env") == 2
     assert db_templates.count("- envs/db.env") == 2
-    assert "- envs/common.env" not in db_templates
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -147,9 +148,24 @@ def test_each_service_only_gets_its_own_env_file():
     assert db_templates.count("- envs/db.env") == 2
     for service_key in ("  postgresql:", "  mysql:"):
         db_block = db_templates.split(service_key)[1].split("\n\n")[0]
+        assert "- envs/common.env" in db_block, service_key
         assert "- envs/db.env" in db_block, service_key
         assert "- envs/gunicorn.env" not in db_block, service_key
         assert "- envs/celery.env" not in db_block, service_key
+
+
+def test_db_deployment_independent_vars_live_once_in_common_env():
+    """`DB_ENGINE` / `DB_NAME` / `DB_USER` 与部署方式无关 → 只在 common.env 定义一次，
+    镜像认的名字在同一文件内用 ${} 嵌套；层文件（container/host/db.env）不再重复。"""
+    common = _env_file("common.env")
+    assert "DB_ENGINE=${DB_SERVICE:-postgresql}" in common
+    assert "POSTGRES_DB=${DB_NAME}" in common
+    assert "MYSQL_DATABASE=${DB_NAME}" in common
+    assert "MYSQL_USER=${DB_USER}" in common
+
+    for name in ("container.env", "host.env", "db.env"):
+        for line in _env_file(name).splitlines():
+            assert not line.startswith(("DB_ENGINE=", "DB_NAME=", "DB_USER=")), f"{name}: {line}"
 
 
 def test_db_credentials_come_from_secrets_not_plaintext_env():

@@ -8,9 +8,9 @@
 
 | 文件 | 层 | 谁加载 | 放什么 |
 |------|----|--------|--------|
-| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——日常维护的主要文件 |
-| `container.env` | 容器差异层 | compose `env_file`（排在**最后**，只给四个应用进程） | 只在容器成立的东西：`REDIS_HOST=redis`、阿里云 `*_FILE`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START` |
-| `db.env` | **数据库连接层** | compose `env_file`（四个应用进程 + db 容器） | 一套 `DB_*`（引擎/库名/用户/凭据文件路径），再用 `${}` **嵌套**成镜像认的 `POSTGRES_*` / `MYSQL_*`；改库名/用户只改这里与根 `.env` |
+| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（`DB_ENGINE`/`DB_NAME`/`DB_USER` 及镜像认的 `POSTGRES_DB`/`MYSQL_DATABASE`/`MYSQL_USER`、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——日常维护的主要文件 |
+| `container.env` | 容器差异层 | compose `env_file`（排在**最后**，只给四个应用进程） | 只在容器成立的东西：`DB_HOST=db` / `REDIS_HOST=redis`、阿里云 `*_FILE`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START` |
+| `db.env` | **数据库凭据层（仅容器）** | compose `env_file`（四个应用进程 + db 容器） | docker secrets 的文件路径，并 `${}` 嵌套成镜像认的 `POSTGRES_*_FILE` / `MYSQL_*_FILE`；库名/账号在 `common.env`，`DB_HOST` 在 `container.env` |
 | `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`DB_ENGINE` / `DB_HOST=127.0.0.1` / `DB_NAME` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
 | `gunicorn.env` / `celery.env` | 服务层 | compose `env_file`（只给对应服务） | 每个服务自己的旋钮，与部署方式无关 |
 | `secrets/*` | 密钥 | 容器：`secrets` 挂载 `/run/secrets/*`；宿主：经 `host.env` 的相对 `*_FILE` | 数据库/阿里云凭据；只有密钥被 `.gitignore` 排除，见 `secrets/README.md` |
@@ -34,9 +34,12 @@ beat:
 
 | 变量 | 出现处 | 为什么同名 | 谁看得到 |
 |------|--------|-----------|----------|
-| `DB_ENGINE` / `DB_HOST` / `DB_NAME` / `DB_USER` | `db.env`（容器）与 `host.env`（宿主） | 同一套连接语义，两种部署各留一份 | **互斥**：容器只读 env_file 组合，宿主只 `load_dotenv(common+host)` |
-| `DB_NAME` / `DB_USER` | 根 `.env` 与 `db.env` | `db.env` 里写 `DB_NAME=${DB_NAME:-netops}`，右侧由 Compose 从根 `.env` 取 | 容器：根 `.env` 是取值来源，`db.env` 是落地值 |
-| `REDIS_PORT` | `common.env`（容器内端口） | 已与宿主映射分开：根 `.env` 用 `REDIS_HOST_PORT` | — |
+| `DB_HOST` | `container.env`（容器=`db`）与 `host.env`（宿主=`127.0.0.1`） | 容器走 compose 服务名，宿主走本机地址，**值本来就不同** | 互斥：容器只读 env_file 组合，宿主只 `load_dotenv(common+host)` |
+| `REDIS_HOST` | `container.env`（`redis`）与 `host.env`（`127.0.0.1`） | 同上 | 同上 |
+| `REDIS_PORT` | `common.env`（容器内端口） | 宿主映射已改名 `REDIS_HOST_PORT`，不再同名 | — |
+
+**`DB_ENGINE` / `DB_NAME` / `DB_USER` 不在此表**：它们与部署方式无关，收敛在 `common.env` 里只定义一次
+（`DB_ENGINE=${DB_SERVICE:-postgresql}`，镜像名在同一文件内嵌套）。
 
 `envs/example/*` 与 `envs/*` 的同名是**模板与实例**的关系（实例不入库）。
 

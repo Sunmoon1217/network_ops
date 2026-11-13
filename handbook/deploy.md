@@ -194,11 +194,13 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 `aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`。
 数据库连接参数集中在 **`envs/db.env`** 一份文件里，compose 直接用 `env_file` 加载它：
 
-- 文件里先定义一套 `DB_*`（引擎、库名、用户、`DB_HOST=db`、凭据文件路径），再用 `${}` **在同一个
-  文件内嵌套**出各镜像认的名字：`POSTGRES_DB=${DB_NAME}`、`MYSQL_DATABASE=${DB_NAME}`、
-  `POSTGRES_USER_FILE=${DB_USER_FILE}`、`MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}` 等。
-  这是 **env_file 自身的插值**（Compose 加载时展开），右侧引用的 `DB_SERVICE` / `DB_NAME` /
-  `DB_USER` 来自根 `.env`，所以后端与库名仍然只在根 `.env` 维护一份；
+- `envs/common.env` 里定义部署无关的 `DB_ENGINE` / `DB_NAME` / `DB_USER`，并在同一文件内嵌套出
+  `POSTGRES_DB=${DB_NAME}`、`MYSQL_DATABASE=${DB_NAME}`、`MYSQL_USER=${DB_USER}`；
+  `envs/db.env` 只补容器特有的凭据路径并嵌套 `POSTGRES_USER_FILE=${DB_USER_FILE}`、
+  `MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}`；`DB_HOST=db` 在 `container.env`（db 容器自己不读它）。
+  这是 **env_file 自身的插值**（Compose 加载时展开）：`DB_ENGINE` 的右侧 `DB_SERVICE` 来自
+  根 `.env`，而 `DB_NAME` / `DB_USER` 与镜像名同文件定义，与部署方式无关的这三项只在
+  `common.env` 出现一次；
 - 四个应用进程与 db 容器都 `env_file: envs/db.env`：应用只认 `DB_*`（settings 的 `_env_or_file()`
   读 `*_FILE`），db 镜像各取自己那份 `POSTGRES_*` / `MYSQL_*`，对方的变量被忽略；
 - `envs/container.env` 不再放数据库连接（它同时注入四个应用进程，放这里对 db 容器毫无意义）。
@@ -232,7 +234,8 @@ db:
 
 模板文件里只有 `postgresql` / `mysql` 两份**服务定义**，不是两个服务——最终模型里 `db` 只有一个，
 `up -d` 不会把两个库都起起来。四个应用进程的 `DB_ENGINE` 由 `x-db-env` 锚点跟随同一个
-`${DB_SERVICE}` 注入，所以容器里不需要另改 `envs/common.env`（宿主直跑才读它）。
+`${DB_SERVICE}` 决定（写在 `envs/common.env` 的 `DB_ENGINE` 里）；库名/账号也在 common.env，
+宿主直跑读同一份。
 
 三条硬约束（都是 `extends` 的语义，实测过）：
 
