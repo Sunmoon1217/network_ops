@@ -38,7 +38,7 @@ const fetchLatestConfig = async () => {
 }
 
 const goToHistory = () => {
-  router.push(`/devices/${deviceId}/history`)
+  router.push(`/asset/devices/${deviceId}/history`)
 }
 
 onMounted(fetchLatestConfig)

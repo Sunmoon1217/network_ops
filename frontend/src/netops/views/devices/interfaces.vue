@@ -74,7 +74,7 @@ onMounted(fetchAll)
         <DataColumn prop="description" label="描述" min-width="150" show-overflow-tooltip />
         <DataColumn v-if="authStore.canWrite" column-key="operation" label="操作" :width="80" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="router.push(`/devices/interfaces/${row.id}/edit`)">编辑</el-button>
+            <el-button size="small" link type="primary" @click="router.push(`/asset/interfaces/${row.id}/edit`)">编辑</el-button>
           </template>
         </DataColumn>
       </DataTable>

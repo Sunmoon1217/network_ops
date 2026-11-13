@@ -26,7 +26,7 @@ const save = async () => {
     if (isNew.value) await createSnmpConfig(form.value)
     else await updateSnmpConfig(form.value.id, form.value)
     ElMessage.success('保存成功')
-    router.push('/devices/baseline')
+    router.push('/config/baseline')
   } catch { ElMessage.error('保存失败') }
 }
 </script>

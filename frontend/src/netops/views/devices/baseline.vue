@@ -59,7 +59,7 @@ onMounted(() => { loadTab(activeTab.value) })
     <el-tabs v-model="activeTab" class="page-tabs">
       <el-tab-pane label="SNMP" name="snmp">
         <div class="tab-toolbar">
-          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/snmp/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/config/baseline/snmp/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineSnmp" :data="snmpList" :loading="snmpLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -80,7 +80,7 @@ onMounted(() => { loadTab(activeTab.value) })
           </DataColumn>
           <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/snmp/${row.id}/edit`)">编辑</el-button>
+              <el-button size="small" link type="primary" @click="router.push(`/config/baseline/snmp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSnmpRow('SNMP配置', () => deleteSnmpConfig(row.id), refetchSnmp)">删除</el-button>
             </template>
           </DataColumn>
@@ -90,7 +90,7 @@ onMounted(() => { loadTab(activeTab.value) })
 
       <el-tab-pane label="NTP" name="ntp">
         <div class="tab-toolbar">
-          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/ntp/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/config/baseline/ntp/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineNtp" :data="ntpList" :loading="ntpLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -107,7 +107,7 @@ onMounted(() => { loadTab(activeTab.value) })
           </DataColumn>
           <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/ntp/${row.id}/edit`)">编辑</el-button>
+              <el-button size="small" link type="primary" @click="router.push(`/config/baseline/ntp/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteNtpRow('NTP配置', () => deleteNtpConfig(row.id), refetchNtp)">删除</el-button>
             </template>
           </DataColumn>
@@ -117,7 +117,7 @@ onMounted(() => { loadTab(activeTab.value) })
 
       <el-tab-pane label="Syslog" name="syslog">
         <div class="tab-toolbar">
-          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/devices/baseline/syslog/create')">新增</el-button>
+          <el-button v-if="authStore.canWrite" type="primary" size="small" @click="router.push('/config/baseline/syslog/create')">新增</el-button>
         </div>
         <DataTable :table-key="TABLE_KEYS.baselineSyslog" :data="syslogList" :loading="syslogLoading" size="small" height="">
           <DataColumn prop="device_hostname" label="设备" width="150" />
@@ -134,7 +134,7 @@ onMounted(() => { loadTab(activeTab.value) })
           </DataColumn>
           <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="router.push(`/devices/baseline/syslog/${row.id}/edit`)">编辑</el-button>
+              <el-button size="small" link type="primary" @click="router.push(`/config/baseline/syslog/${row.id}/edit`)">编辑</el-button>
               <el-button size="small" link type="danger" @click="deleteSyslogRow('Syslog配置', () => deleteSyslogConfig(row.id), refetchSyslog)">删除</el-button>
             </template>
           </DataColumn>

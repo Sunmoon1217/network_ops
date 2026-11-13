@@ -27,7 +27,7 @@ const save = async () => {
     else await api.put(`/api/assets/devices/${form.value.id}/`, form.value)
     ElMessage.success('保存成功')
     listStore.touch()
-    router.push('/devices')
+    router.push('/asset/devices')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.hostname?.[0] || '保存失败')
   }

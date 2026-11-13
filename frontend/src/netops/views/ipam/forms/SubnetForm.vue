@@ -27,7 +27,7 @@ const save = async () => {
     if (isNew.value) await createSubnet(form.value)
     else await updateSubnet(form.value.id, form.value)
     ElMessage.success('保存成功')
-    router.push('/ipam/subnets')
+    router.push('/asset/subnets')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.network?.[0] || '保存失败')
   }

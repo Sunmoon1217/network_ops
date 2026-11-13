@@ -24,7 +24,7 @@ onMounted(fetchAll)
 <template>
   <PageLayout title="标签管理">
     <template #actions>
-      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/ipam/tags/create')">新增标签</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/asset/tags/create')">新增标签</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.ipamTags" :data="tags" :loading="loading">
@@ -38,7 +38,7 @@ onMounted(fetchAll)
         <DataColumn prop="subnet_count" label="关联网段" width="100" />
         <DataColumn v-if="authStore.canWrite" label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="router.push(`/ipam/tags/${row.id}/edit`)">编辑</el-button>
+            <el-button size="small" link type="primary" @click="router.push(`/asset/tags/${row.id}/edit`)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </DataColumn>

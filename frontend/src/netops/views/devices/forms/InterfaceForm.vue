@@ -33,7 +33,7 @@ const save = async () => {
       enabled: form.value.enabled,
     })
     ElMessage.success('保存成功')
-    router.push('/devices/interfaces')
+    router.push('/asset/interfaces')
   } catch { ElMessage.error('保存失败') }
 }
 </script>

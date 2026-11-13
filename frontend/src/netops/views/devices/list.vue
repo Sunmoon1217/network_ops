@@ -28,8 +28,8 @@ const { data: devices, loading, search, page, pageSize, total, fetchData, refetc
 
 const importDialogVisible = ref(false)
 
-const goToConfig = (row: any) => router.push(`/devices/${row.id}/config`)
-const goToHistory = (row: any) => router.push(`/devices/${row.id}/history`)
+const goToConfig = (row: any) => router.push(`/asset/devices/${row.id}/config`)
+const goToHistory = (row: any) => router.push(`/asset/devices/${row.id}/history`)
 
 const fetchAll = () => fetchData(() => getDevices(pageParams()))
 
@@ -46,7 +46,7 @@ watch([search, page, pageSize], syncToUrl)
 onMounted(fetchAll)
 
 // keep-alive 激活时：仅在「新建 / 编辑保存」置脏后重查一次，其余返回复用缓存；
-// 同时把 URL 校正回当前状态（从编辑返回时 router.push('/devices') 会清掉 query）
+// 同时把 URL 校正回当前状态（从编辑返回时 router.push('/asset/devices') 会清掉 query）
 onActivated(() => {
   if (listStore.consume()) refetch()
   syncToUrl()
@@ -58,7 +58,7 @@ onActivated(() => {
     <template #actions>
       <el-input v-model="search" placeholder="搜索主机名 / IP" clearable style="width: 220px" />
       <el-button v-if="authStore.canWrite" @click="importDialogVisible = true">导入</el-button>
-      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/devices/create')">添加设备</el-button>
+      <el-button v-if="authStore.canWrite" type="primary" @click="router.push('/asset/devices/create')">添加设备</el-button>
     </template>
     <div class="table-wrapper">
       <DataTable :table-key="TABLE_KEYS.deviceList" :data="devices" :loading="loading">
@@ -81,7 +81,7 @@ onActivated(() => {
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="goToConfig(row)">配置</el-button>
             <el-button size="small" link type="info" @click="goToHistory(row)">历史</el-button>
-            <el-button v-if="authStore.canWrite" size="small" link type="warning" @click="router.push(`/devices/${row.id}/edit`)">编辑</el-button>
+            <el-button v-if="authStore.canWrite" size="small" link type="warning" @click="router.push(`/asset/devices/${row.id}/edit`)">编辑</el-button>
           </template>
         </DataColumn>
       </DataTable>

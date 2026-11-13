@@ -33,7 +33,7 @@ const save = async () => {
     if (isNew.value) await createIpAddress(form.value)
     else await updateIpAddress(form.value.id, form.value)
     ElMessage.success('保存成功')
-    router.push('/ipam/ip-addresses')
+    router.push('/asset/ip-addresses')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.ip_address?.[0] || '保存失败')
   }

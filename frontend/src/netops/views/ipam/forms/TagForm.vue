@@ -23,7 +23,7 @@ const save = async () => {
     if (isNew.value) await createTag(form.value)
     else await updateTag(form.value.id, form.value)
     ElMessage.success('保存成功')
-    router.push('/ipam/tags')
+    router.push('/asset/tags')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.name?.[0] || '保存失败')
   }

@@ -27,33 +27,33 @@ export const menuOptions: MenuItem[] = [
       {
         index: 'assets-host', label: '主机',
         children: [
-          { index: '/devices', label: '网络设备', icon: renderIcon(IconDeviceList) },
-          { index: '/assets/physical', label: '物理机' },
-          { index: '/assets/virtual', label: '虚拟机' },
+          { index: '/asset/devices', label: '网络设备', icon: renderIcon(IconDeviceList) },
+          { index: '/asset/physical', label: '物理机' },
+          { index: '/asset/virtual', label: '虚拟机' },
         ],
       },
       {
         index: 'assets-component', label: '组件',
         children: [
-          { index: '/devices/interfaces', label: '网卡/接口', icon: renderIcon(IconInterfaces) },
-          { index: '/devices/vlans', label: 'VLAN' },
+          { index: '/asset/interfaces', label: '网卡/接口', icon: renderIcon(IconInterfaces) },
+          { index: '/asset/vlans', label: 'VLAN' },
         ],
       },
       {
         index: 'assets-network-service', label: '网络服务',
         children: [
-          { index: '/ipam/ip-addresses', label: 'IP 地址', icon: renderIcon(IconIp) },
-          { index: '/ipam/subnets', label: '网段', icon: renderIcon(IconSubnet) },
-          { index: '/assets/load-balancer', label: '负载均衡' },
-          { index: '/assets/domain', label: '域名' },
-          { index: '/assets/link', label: '链路信息' },
+          { index: '/asset/ip-addresses', label: 'IP 地址', icon: renderIcon(IconIp) },
+          { index: '/asset/subnets', label: '网段', icon: renderIcon(IconSubnet) },
+          { index: '/asset/load-balancer', label: '负载均衡' },
+          { index: '/asset/domain', label: '域名' },
+          { index: '/asset/link', label: '链路信息' },
         ],
       },
       {
         index: 'assets-application', label: '应用服务',
         children: [
-          { index: '/assets/application', label: '应用系统' },
-          { index: '/assets/database', label: '数据库实例' },
+          { index: '/asset/application', label: '应用系统' },
+          { index: '/asset/database', label: '数据库实例' },
         ],
       },
     ],
@@ -74,16 +74,16 @@ export const menuOptions: MenuItem[] = [
       { index: '/config/routing-table', label: '路由表', icon: renderIcon(IconRouting) },
       { index: '/config/arp-mac', label: 'ARP/MAC', icon: renderIcon(IconInterfaces) },
       { index: '/config/policy', label: '访问策略', icon: renderIcon(IconPolicy) },
-      { index: '/devices/baseline', label: '基线管理', icon: renderIcon(IconBaseline) },
-      { index: '/devices/parsers', label: '解析器模板', icon: renderIcon(IconParsers) },
-      { index: '/devices/accounts', label: '设备账号', icon: renderIcon(IconBaseline) },
+      { index: '/config/baseline', label: '基线管理', icon: renderIcon(IconBaseline) },
+      { index: '/config/parsers', label: '解析器模板', icon: renderIcon(IconParsers) },
+      { index: '/config/accounts', label: '设备账号', icon: renderIcon(IconBaseline) },
     ],
   },
   {
     index: 'monitor', label: '监控', icon: renderIcon(Timer),
     children: [
-      { index: '/tasks', label: '任务列表', icon: renderIcon(Timer) },
-      { index: '/tasks/monitor', label: '运行监控', icon: renderIcon(DataAnalysis) },
+      { index: '/monitor/tasks', label: '任务列表', icon: renderIcon(Timer) },
+      { index: '/monitor/status', label: '运行监控', icon: renderIcon(DataAnalysis) },
     ],
   },
   {
