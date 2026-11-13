@@ -5,6 +5,7 @@ from .models import (
     ApplicationService,
     ArpMac,
     Cabinet,
+    CIObjectLink,
     CIRelationship,
     ConfigurationItem,
     DatabaseInstance,
@@ -949,3 +950,20 @@ class LoadBalancerServiceAdmin(admin.ModelAdmin):
     search_fields = ("asset_key", "vip", "ci__ci_id")
     list_select_related = ("ci",)
     autocomplete_fields = ("ci",)
+
+
+# 存量资产登记（T4）：映射只由 register_assets 维护，admin 只用于核对
+@admin.register(CIObjectLink)
+class CIObjectLinkAdmin(admin.ModelAdmin):
+    list_display = ("id", "source_type", "source_id", "ci")
+    list_filter = ("source_type",)
+    search_fields = ("ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+    readonly_fields = ("ci", "source_type", "source_id", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

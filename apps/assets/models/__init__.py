@@ -64,6 +64,7 @@ from .network import (
     Vlan,
     Vrf,
 )
+from .registry import CI_OBJECT_CHOICES, CIObjectLink, CIObjectType
 from .relations import (
     CI_RELATION_CHOICES,
     CIRelationship,
@@ -131,6 +132,9 @@ __all__ = [
     "CI_RELATION_CHOICES",
     "CIRelationType",
     "CIRelationship",
+    "CIObjectLink",
+    "CIObjectType",
+    "CI_OBJECT_CHOICES",
     "DomainAsset",
     "LoadBalancerService",
 ]

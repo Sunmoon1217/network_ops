@@ -129,8 +129,8 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 
 **现有 43 张模型零改动**：配置行保持权威、不动不删；DCIM 算位置维度不进 CI；
 设备内部功能（Vlan / Vrf / Interface / Route / ArpMac 等）只作资产明细，不进 CI。
-存量资产（`Device` / `IPAddress` / `Subnet`）是登记进 CI 主表、还是由 T6 统一检索 union 接入，
-留到 T4 开工时定。
+存量资产（`Device` / `IPAddress` / `Subnet`）**登记进 CI 主表**（不复制字段、不走 T6 union），
+见下文「存量资产登记（T4）」。
 
 ### 为什么必须有专属扩展表
 
@@ -205,6 +205,26 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 
 状态：**进行中**（扩展表、归并链路、管理命令、只读列表 API、前端两页与信号自动刷新已实现；
 详情展开关联配置行未做）。
+
+### 存量资产登记（T4）
+
+`Device` / `IPAddress` / `Subnet` 已经是成熟的资产表：复制字段会分叉，T6 union 又让「统一 CI」
+名不副实。所以选择**登记**——原表零改动：
+
+- 一条 `ConfigurationItem`（`ci_type` 对应 `device` / `ip_address` / `subnet`，`name` 取
+  `hostname` / `ip_address` / `network`）+ 一条 `CIObjectLink(source_type, source_id → ci)`；
+- `ci_id` 仍是不透明锚点：来源用 `(source_type, source_id)` 定位，**不给 CI 编 `DEV-123`**
+  这类确定性 ID——类型与主键都不该进标识（T15 要把它写进 Zabbix 标签）；
+- 命令：`python manage.py register_assets [--type all|device|ip|subnet] [--dry-run]`；
+- 幂等：按映射 upsert；源记录改名只更新 `name`，`ci_id` 不变；批量 `bulk_create` /
+  `bulk_update`，IPAM 万级也能一次跑完；并发用 PG 事务级咨询锁（键 `REGI`，与软资产的
+  `SOFT` 分开）；
+- 生命周期：源记录删除后 CI **不删**（与软资产「配置消失不删资产」同策略）；需要清理时另做；
+- 映射表不继承 `ConfigBase`，`purge_configs` 不会清掉台账；`ci_type` 与 `source_type`
+  不一致时 `save()` 抛 `ValueError`（与 `_CIExtension` 同一道防线）。
+
+实现：`apps/assets/models/registry.py`、`apps/assets/services/existing_asset_registry.py`、
+`apps/assets/management/commands/register_assets.py`，迁移 `0035_ci_object_link`。
 
 ## API 视图（`api/views.py`）
 
