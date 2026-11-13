@@ -15,6 +15,12 @@
 #   ./scripts/deploy-host.sh status    # 查看四个进程状态
 #   ./scripts/deploy-host.sh deploy    # build + migrate + restart（完整发布）
 #
+# start / stop / restart / status 可追加服务名子参数，只操作单个进程：
+#   ./scripts/deploy-host.sh start app      # 只启动 app
+#   ./scripts/deploy-host.sh restart beat   # 只重启 beat
+#   ./scripts/deploy-host.sh stop worker    # 只停 worker
+#   服务名取值：app / worker / consumer / beat
+#
 # 四个进程与 compose 的 app / worker / consumer / beat 一一对应，命令与 entrypoint/*.sh 保持一致：
 #   app      gunicorn + UvicornWorker，监听 0.0.0.0:8000（与 nginx upstream 耦合，勿改 bind）
 #   worker   celery worker，同时消费 celery,access_flow 两个队列，并发固定 2
@@ -108,6 +114,31 @@ do_migrate() {
 }
 
 # ---- 进程管理 ----------------------------------------------------------------
+
+# 所有服务名称列表
+SERVICES=("app" "worker" "consumer" "beat")
+
+# 辅助函数：根据服务名获取 PID 文件路径
+get_pid_file() {
+    local service="$1"
+    echo "$RUN_DIR/${service}.pid"
+}
+
+# 辅助函数：验证服务名是否合法
+validate_service() {
+    local service="$1"
+    local valid=false
+    for s in "${SERVICES[@]}"; do
+        if [ "$s" == "$service" ]; then
+            valid=true
+            break
+        fi
+    done
+    if [ "$valid" == false ]; then
+        echo "错误：未知的服务 '$service'。可用服务：${SERVICES[*]}" >&2
+        exit 1
+    fi
+}
 
 # start_service <name> <pidfile> <shell-function>
 start_service() {
@@ -214,26 +245,54 @@ cmd_beat() {
 
 do_start() {
     check_envs
-    echo "==> 启动四个进程"
-    start_service app      "$RUN_DIR/app.pid"      cmd_app
-    start_service worker   "$RUN_DIR/worker.pid"   cmd_worker
-    start_service consumer "$RUN_DIR/consumer.pid" cmd_consumer
-    start_service beat     "$RUN_DIR/beat.pid"     cmd_beat
+    local target="${1:-}"
+
+    if [ -n "$target" ]; then
+        validate_service "$target"
+        echo "==> 启动服务: $target"
+        case "$target" in
+            app)      start_service app      "$(get_pid_file app)"      cmd_app ;;
+            worker)   start_service worker   "$(get_pid_file worker)"   cmd_worker ;;
+            consumer) start_service consumer "$(get_pid_file consumer)" cmd_consumer ;;
+            beat)     start_service beat     "$(get_pid_file beat)"     cmd_beat ;;
+        esac
+    else
+        echo "==> 启动所有四个进程"
+        start_service app      "$(get_pid_file app)"      cmd_app
+        start_service worker   "$(get_pid_file worker)"   cmd_worker
+        start_service consumer "$(get_pid_file consumer)" cmd_consumer
+        start_service beat     "$(get_pid_file beat)"     cmd_beat
+    fi
 }
 
 do_stop() {
-    echo "==> 停止四个进程"
-    stop_service app      "$RUN_DIR/app.pid"
-    stop_service worker   "$RUN_DIR/worker.pid"
-    stop_service consumer "$RUN_DIR/consumer.pid"
-    stop_service beat     "$RUN_DIR/beat.pid"
+    local target="${1:-}"
+
+    if [ -n "$target" ]; then
+        validate_service "$target"
+        echo "==> 停止服务: $target"
+        stop_service "$target" "$(get_pid_file "$target")"
+    else
+        echo "==> 停止所有四个进程"
+        stop_service app      "$(get_pid_file app)"
+        stop_service worker   "$(get_pid_file worker)"
+        stop_service consumer "$(get_pid_file consumer)"
+        stop_service beat     "$(get_pid_file beat)"
+    fi
 }
 
 do_status() {
-    status_service app      "$RUN_DIR/app.pid"
-    status_service worker   "$RUN_DIR/worker.pid"
-    status_service consumer "$RUN_DIR/consumer.pid"
-    status_service beat     "$RUN_DIR/beat.pid"
+    local target="${1:-}"
+
+    if [ -n "$target" ]; then
+        validate_service "$target"
+        status_service "$target" "$(get_pid_file "$target")"
+    else
+        status_service app      "$(get_pid_file app)"
+        status_service worker   "$(get_pid_file worker)"
+        status_service consumer "$(get_pid_file consumer)"
+        status_service beat     "$(get_pid_file beat)"
+    fi
 }
 
 # ---- 入口 --------------------------------------------------------------------
@@ -241,14 +300,15 @@ do_status() {
 case "${1:-}" in
     build)   do_build ;;
     migrate) do_migrate ;;
-    start)   do_start ;;
-    stop)    do_stop ;;
-    restart) do_stop; do_start ;;
-    status)  do_status ;;
+    start)   do_start "${2:-}" ;;
+    stop)    do_stop "${2:-}" ;;
+    restart) do_stop "${2:-}"; do_start "${2:-}" ;;
+    status)  do_status "${2:-}" ;;
     deploy)  do_build; do_migrate; do_stop; do_start ;;
     *)
-        echo "用法: $0 {build|migrate|start|stop|restart|status|deploy}"
+        echo "用法: $0 {build|migrate|start|stop|restart|status|deploy} [app|worker|consumer|beat]"
         echo "  deploy = build + migrate + restart（完整发布）"
+        echo "  start/stop/restart/status 后可跟服务名，不跟则操作所有服务"
         exit 1
         ;;
 esac
