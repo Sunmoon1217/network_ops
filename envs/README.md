@@ -30,6 +30,16 @@ beat:
   env_file: [envs/common.env, envs/celery.env, envs/db.env, envs/container.env]
 ```
 
+## 同名变量（故意的，别当冲突处理）
+
+| 变量 | 出现处 | 为什么同名 | 谁看得到 |
+|------|--------|-----------|----------|
+| `DB_ENGINE` / `DB_HOST` / `DB_NAME` / `DB_USER` | `db.env`（容器）与 `host.env`（宿主） | 同一套连接语义，两种部署各留一份 | **互斥**：容器只读 env_file 组合，宿主只 `load_dotenv(common+host)` |
+| `DB_NAME` / `DB_USER` | 根 `.env` 与 `db.env` | `db.env` 里写 `DB_NAME=${DB_NAME:-netops}`，右侧由 Compose 从根 `.env` 取 | 容器：根 `.env` 是取值来源，`db.env` 是落地值 |
+| `REDIS_PORT` | `common.env`（容器内端口） | 已与宿主映射分开：根 `.env` 用 `REDIS_HOST_PORT` | — |
+
+`envs/example/*` 与 `envs/*` 的同名是**模板与实例**的关系（实例不入库）。
+
 ## 加载与优先级（宿主侧）
 
 `netops/settings/base.py` import 时：
@@ -71,7 +81,7 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 
 | 位置 | 谁读 | 放什么 |
 |------|------|--------|
-| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `DB_PORT` / `MYSQL_HOST_PORT` / `REDIS_PORT`）、数据库后端 `DB_SERVICE`、镜像 tag、secrets 文件路径 |
+| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `DB_PORT_POSTGRES` / `DB_PORT_MYSQL` / `REDIS_HOST_PORT`）、数据库后端 `DB_SERVICE` / `DB_NAME` / `DB_USER`、镜像 tag、secrets 文件路径 |
 | `envs/*.env`（本目录） | **容器进程**（env_file）与**宿主进程**（load_dotenv） | 上表各层 |
 | `envs/secrets/*` | 容器进程（`/run/secrets/*`）与宿主进程（相对 `*_FILE`） | 密钥 |
 | `conf/*.json`（项目根） | **进程直接读文件**（如 ingest 的 `link_config`） | 平台自身的结构化配置（链路清单与展示 label）；**入库、随版本走**，单值项可被同名环境变量覆盖 |
