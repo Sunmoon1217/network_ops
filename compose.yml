@@ -40,7 +40,7 @@ services:
       - internal
 
   db:
-    image: timescale/timescaledb:2.27.1-pg16
+    image: ${DB_IMAGE:-timescale/timescaledb:2.27.1-pg16}
     container_name: netops-db
     restart: unless-stopped
     init: true

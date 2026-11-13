@@ -107,11 +107,26 @@ def test_runs_migrate_when_pending(monkeypatch):
     assert "1 个未应用的迁移" in out.getvalue()
 
 
+def _lock_is_held(cursor, vendor) -> bool:
+    """从数据库自己的视角判断迁移锁是否被持有（PG advisory / MySQL 命名锁）。
+
+    断言不能靠命令内部的局部变量自证——锁是数据库层面的状态，必须另开连接查。
+    """
+    if vendor == "mysql":
+        cursor.execute("SELECT IS_USED_LOCK(%s)", [mod.MYSQL_LOCK_NAME])
+        return cursor.fetchone()[0] is not None
+    cursor.execute(
+        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = %s AND objid = %s",
+        [MIGRATION_LOCK_ID >> 32, MIGRATION_LOCK_ID & 0xFFFFFFFF],
+    )
+    return cursor.fetchone()[0] == 1
+
+
 @pytest.mark.django_db
 def test_advisory_lock_is_held_while_migrating(monkeypatch):
-    """检查 + 迁移期间必须真的持有 advisory lock。
+    """检查 + 迁移期间必须真的持有锁（PG advisory / MySQL GET_LOCK）。
 
-    用**另一条连接**查 `pg_locks` 而不是自证：锁是数据库层面的，本地变量糊弄不过去。
+    用**另一条连接**查数据库的锁视图而不是自证：锁是数据库层面的，本地变量糊弄不过去。
     """
     seen = []
 
@@ -119,11 +134,7 @@ def test_advisory_lock_is_held_while_migrating(monkeypatch):
         other = connections.create_connection("default")
         try:
             with other.cursor() as cursor:
-                cursor.execute(
-                    "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = %s AND objid = %s",
-                    [MIGRATION_LOCK_ID >> 32, MIGRATION_LOCK_ID & 0xFFFFFFFF],
-                )
-                seen.append(cursor.fetchone()[0])
+                seen.append(_lock_is_held(cursor, other.vendor))
         finally:
             other.close()
 
@@ -132,7 +143,7 @@ def test_advisory_lock_is_held_while_migrating(monkeypatch):
 
     call_command("migrate_if_needed", stdout=StringIO())
 
-    assert seen == [1], "迁移期间没有在 pg_locks 里看到那把 advisory lock"
+    assert seen == [True], "迁移期间没有在数据库里看到那把迁移锁"
 
 
 @pytest.mark.django_db
@@ -144,11 +155,7 @@ def test_lock_is_released_afterwards(monkeypatch):
     call_command("migrate_if_needed", stdout=StringIO())
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = %s AND objid = %s",
-            [MIGRATION_LOCK_ID >> 32, MIGRATION_LOCK_ID & 0xFFFFFFFF],
-        )
-        assert cursor.fetchone()[0] == 0
+        assert _lock_is_held(cursor, connection.vendor) is False
 
 
 def test_mysql_branch_uses_get_lock(monkeypatch):

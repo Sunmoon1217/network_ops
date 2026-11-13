@@ -68,16 +68,25 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
+| `DB_ENGINE` | `postgresql` | `postgresql` / `mysql`，其它值**拒绝启动**；MySQL 的默认端口因此变成 3306 |
 | `POSTGRES_DB` | `netops` | 库名 |
 | `POSTGRES_USER` / `POSTGRES_USER_FILE` | `netops` | 走凭据链 |
 | `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
 | `POSTGRES_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
-| `POSTGRES_PORT` | `5432` | 容器内固定 5432 |
+| `POSTGRES_PORT` | `5432`（MySQL 下 `3306`） | 容器内固定为后端默认端口 |
 | `REDIS_HOST` | `127.0.0.1` | 容器注入 `redis`；container / prod 必填 |
 | `REDIS_PORT` / `REDIS_DB` | `6379` / `0` | |
 | `REDIS_PASSWORD` | 空 | 非空时拼进 `REDIS_URL`；redis 官方镜像没有 `*_FILE` 机制，密码只走环境变量 |
 
 `CELERY_BROKER_URL` 与 `CELERY_RESULT_BACKEND` 都等于 `REDIS_URL`。
+
+**变量名沿用 `POSTGRES_*`**：它们在本项目已经是「数据库连接」的事实标准名，被 prod / container
+守卫、compose 的 secrets 文件名与 `tests/deploy` 的契约断言绑定；换后端只换 `DB_ENGINE`，
+不改名（MySQL 下 `POSTGRES_USER` 就是 MySQL 账号，别被名字骗到）。
+
+MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
+`pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段
+构建解决，运行阶段只保留 `libmariadb3`。跨库差异清单见 [`deploy.md`](deploy.md) 的「MySQL 后端」。
 
 两个 `HOST` 的默认值写 `127.0.0.1` 而不是 `localhost`：Windows 上 `localhost` 优先解析成
 `::1`，而本机的 PostgreSQL / Redis 通常只监听 IPv4，驱动会逐个地址回退——每次连接白等

@@ -26,6 +26,7 @@ _MANAGED_KEYS = (
     "DJANGO_ENV",
     "DJANGO_DEBUG",
     "DJANGO_LOG_LEVEL",
+    "DB_ENGINE",
     *PROD_REQUIRED,
     "POSTGRES_PASSWORD_FILE",
     "POSTGRES_USER",
@@ -112,6 +113,41 @@ def test_unknown_django_env_rejected(monkeypatch):
     """白名单：未知 DJANGO_ENV（拼错如 prd）拒绝启动，不许静默落 dev。"""
     with pytest.raises(ImproperlyConfigured, match="未知 DJANGO_ENV='prd'"):
         _dispatch(monkeypatch, "prd")
+
+
+# ---------------------------------------------------------------------------
+# 数据库后端：DB_ENGINE 只换 ENGINE 与默认端口，变量名沿用 POSTGRES_*
+# ---------------------------------------------------------------------------
+
+
+def test_db_engine_defaults_to_postgresql(monkeypatch):
+    """不设 DB_ENGINE → PostgreSQL，端口默认 5432，不带 MySQL 专属 OPTIONS。"""
+    m = _dispatch(monkeypatch)
+    db = m.DATABASES["default"]
+    assert db["ENGINE"] == "django.db.backends.postgresql"
+    assert db["PORT"] == 5432
+    assert "OPTIONS" not in db
+
+
+def test_db_engine_mysql_switches_backend_and_port(monkeypatch):
+    """DB_ENGINE=mysql → 换后端与默认端口；显式给 utf8mb4 字符集。"""
+    m = _dispatch(monkeypatch, DB_ENGINE="mysql")
+    db = m.DATABASES["default"]
+    assert db["ENGINE"] == "django.db.backends.mysql"
+    assert db["PORT"] == 3306
+    assert db["OPTIONS"] == {"charset": "utf8mb4"}
+
+
+def test_db_engine_mysql_keeps_explicit_port(monkeypatch):
+    """POSTGRES_PORT 显式给出时胜过按后端的默认值。"""
+    m = _dispatch(monkeypatch, DB_ENGINE="mysql", POSTGRES_PORT="3307")
+    assert m.DATABASES["default"]["PORT"] == 3307
+
+
+def test_db_engine_rejects_unknown(monkeypatch):
+    """白名单：拼错（如 mysq1）拒绝启动，不许静默落回 PostgreSQL。"""
+    with pytest.raises(ImproperlyConfigured, match="DB_ENGINE"):
+        _dispatch(monkeypatch, DB_ENGINE="mysq1")
 
 
 # ---------------------------------------------------------------------------

@@ -203,6 +203,39 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 时应用凭据，换值不改库里已有密码——详见 `envs/secrets/README.md`）。密钥不入库（`.gitignore`）、
 不进构建上下文（`.dockerignore`）；redis 密码仍是环境变量（官方镜像没有 `*_FILE` 机制）。
 
+## MySQL 后端（可选部署形态）
+
+默认仍是 PostgreSQL（TimescaleDB 镜像）。MySQL 作为**可选部署形态**由覆盖层提供，不改主 compose：
+
+```bash
+docker compose -f compose.yml -f compose.mysql.yml up -d
+```
+
+覆盖层只做四件事：换 `db` 的镜像（`MYSQL_IMAGE`，默认 `mysql:8.4-oracle`）、换数据卷
+（`network-ops-mysqldata` → `/var/lib/mysql`）、换 healthcheck（`mysqladmin ping`）、给四个应用
+进程注入 `DB_ENGINE=mysql` 与 `POSTGRES_PORT=3306`。`ports` / `volumes` / `secrets` 用了
+`!override`——Compose 对这几个字段默认是**追加**，不加会把 `5432:5432` 和
+`/var/lib/postgresql/data` 一起留着。
+
+官方 mysql 镜像**没有 `MYSQL_USER_FILE`**：用户名走 `MYSQL_USER`（不是秘密），密码仍走
+`envs/secrets/postgres_password`（root 暂时复用同一份，不新增轮换流程）。
+
+**不能复用 PG 的数据卷**：换后端等于换一套库，`network-ops-pgdata` 里的数据不会出现在 MySQL 里。
+
+跨库差异（2026-11 在 MySQL 8.4.13 上实测，`-n auto` 全量 769 项通过）：
+
+| 项 | PostgreSQL | MySQL | 处理 |
+|----|-----------|-------|------|
+| `AccessFlow.device_ids` / `policy_ids` 的 GIN | `GinIndex` | JSON 列不能直接建索引（3152） | 建表不带索引，PG 侧用 `CREATE INDEX ... USING gin` 补建（`operator.0002`）；**MySQL 上这两个 `__contains` 查询是全表扫描** |
+| `Service` 五列自然键 | 3108 字节没问题 | 超 InnoDB 3072 字节上限（1071） | 按后端分建：PG 普通唯一约束，MySQL 函数唯一索引 `(device_id, MD5(CONCAT_WS(...)))`（`assets.0029`） |
+| 大小写 | 唯一键与 `exact` 区分大小写 | `utf8mb4_0900_ai_ci` 不区分 | 已知差异：普通唯一键会把 `SW-01` / `sw-01` 判重；上面那个函数索引按字节哈希，仍区分 |
+| DDL 回滚 | 迁移失败可回滚 | DDL 隐式提交，回滚不了 | 迁移失败会留半套 schema；MySQL 部署以「删库重建」为恢复手段，见下 |
+| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | 代码本来就不用返回值，无影响 |
+
+MySQL 侧要求 **8.0.13+**（函数索引；Django 6.1 的下限是 8.0.11）。迁移失败（MySQL 上不可回滚）
+的处理：停止 app → `DROP DATABASE netops` → 重建空库 → 重跑 `migrate_if_needed`；MySQL 只面向
+新部署，不接受从 PG 迁移数据。
+
 ## 镜像
 
 `pyproject.toml` / `uv.lock` 变了必须重建 `dockerfile.venv`（不是 base），否则运行期才报
