@@ -69,6 +69,10 @@ from .relations import (
     CIRelationship,
     CIRelationType,
 )
+from .soft_assets import (
+    DomainAsset,
+    LoadBalancerService,
+)
 
 __all__ = [
     "CI_TYPE_CHOICES",
@@ -127,4 +131,6 @@ __all__ = [
     "CI_RELATION_CHOICES",
     "CIRelationType",
     "CIRelationship",
+    "DomainAsset",
+    "LoadBalancerService",
 ]

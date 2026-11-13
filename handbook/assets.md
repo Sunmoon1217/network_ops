@@ -153,6 +153,8 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 主表只放公共属性（`ci_id` / `ci_type` / `name` / `description` / `tags` / `monitor_status`），
 专属字段一律留扩展表；两者一对一（`_CIExtension`，见上文「统一配置项体系（T1）」）。
 `ci_id` 由主表生成、稳定不变，归一键只用来定位 / 去重，不作为主键。
+实现位置：`apps/assets/models/soft_assets.py`（`DomainAsset` / `LoadBalancerService`），
+由 `models/__init__.py` re-export。
 
 ### 归并链路
 
@@ -175,7 +177,8 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 - 契约测试锁住：归一键唯一、跨设备去重成一条、增量 upsert 幂等（重复解析不产生新资产）、
   列表分页不触发全量归并、配置行保持只读、扩展表不进 `ConfigBase.__subclasses__()`。
 
-状态：**未开始**（本轮只补方案，未建表、未写归并代码）。
+状态：**进行中**（扩展表 `DomainAsset` / `LoadBalancerService` 已建，见 `models/soft_assets.py`
+与 `0034_soft_asset_extensions`；归并链路与 API 未开始）。
 
 ## API 视图（`api/views.py`）
 
