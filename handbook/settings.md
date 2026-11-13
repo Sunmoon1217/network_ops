@@ -85,7 +85,7 @@
 `MYSQL_*` 只在 `envs/db.env` 里用 `${}` 嵌套出来（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
 `DB_USER → MYSQL_USER`），不进 settings。容器部署不必直接改 `DB_ENGINE`：根 `.env` 的
 `DB_SERVICE` 由 compose 同时用于「选模板」和「注入四个应用进程的 `DB_ENGINE`」；宿主直跑没有
-compose，才改 `envs/common.env` 的 `DB_ENGINE`。
+compose，才改 `envs/host.env` 的 `DB_ENGINE`。
 
 MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
 `pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段

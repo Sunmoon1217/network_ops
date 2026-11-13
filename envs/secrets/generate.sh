@@ -1,8 +1,12 @@
 #!/bin/bash
 #
-# 生成数据库凭据的 docker secrets 文件：
+# 生成 docker secrets 文件：
 #   envs/secrets/db_user       → 容器内 /run/secrets/db_user
 #   envs/secrets/db_password   → 容器内 /run/secrets/db_password
+#   envs/secrets/aliyun_{prod,test}_access_key_{id,secret} → /run/secrets/同名
+#
+# 数据库密码可以本地随机生成；阿里云 AK/SK **不能**——先从环境变量或根 .env 读取，
+# 读不到就写空文件（compose 要求文件存在），运行期调用云 API 会因空凭据失败直到填入。
 #
 # 谁用它们：
 #   * db 容器     —— postgres 官方镜像的 DB_USER_FILE / DB_PASSWORD_FILE
@@ -31,7 +35,7 @@ FORCE=0
 
 usage() {
     cat <<'EOF'
-生成数据库凭据的 docker secrets 文件（envs/secrets/db_user、envs/secrets/db_password）
+生成 docker secrets 文件（db_user / db_password / 四个 aliyun_*）
 
 用法：
   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 DB_USER / DB_PASSWORD
@@ -82,6 +86,31 @@ write_secret() {
     echo "已写入 $path"
 }
 
+# 从环境变量或 .env 取一个值（环境变量优先）
+pick() {
+    eval "value=\${$1:-}"
+    [ -n "$value" ] || value=$(env_value "$1")
+    printf '%s' "$value"
+}
+
+# 允许为空的 secret：文件必须存在（compose 会校验），内容可以之后再填
+write_optional_secret() {
+    name=$1
+    value=$2
+    path="$SECRETS_DIR/$name"
+    if [ -e "$path" ] && [ "$FORCE" -ne 1 ]; then
+        echo "跳过 $path（已存在；要覆盖加 --force）"
+        return 0
+    fi
+    printf '%s\n' "$value" > "$path"
+    chmod 600 "$path"
+    if [ -z "$value" ]; then
+        echo "已创建空文件 $path（未提供凭据：在环境变量或 .env 里填 ALIYUN_* 后重跑 --force）"
+    else
+        echo "已写入 $path"
+    fi
+}
+
 umask 077
 mkdir -p "$SECRETS_DIR"
 
@@ -99,6 +128,12 @@ fi
 
 write_secret db_user "$user"
 write_secret db_password "$password"
+
+# 阿里云 AK/SK：来源优先级 环境变量 > 根 .env；缺省写空文件
+write_optional_secret aliyun_prod_access_key_id "$(pick ALIYUN_PROD_ACCESS_KEY_ID)"
+write_optional_secret aliyun_prod_access_key_secret "$(pick ALIYUN_PROD_ACCESS_KEY_SECRET)"
+write_optional_secret aliyun_test_access_key_id "$(pick ALIYUN_TEST_ACCESS_KEY_ID)"
+write_optional_secret aliyun_test_access_key_secret "$(pick ALIYUN_TEST_ACCESS_KEY_SECRET)"
 
 cat <<'EOF'
 

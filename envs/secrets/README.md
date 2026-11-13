@@ -21,9 +21,11 @@
 | `aliyun_test_access_key_id` | `/run/secrets/aliyun_test_access_key_id` | 同上 |
 | `aliyun_test_access_key_secret` | `/run/secrets/aliyun_test_access_key_secret` | 同上 |
 
-> 阿里云 AK/Secret **不是随机生成的**——从阿里云控制台获取后手工写入这四个文件。
-> 宿主机直跑 Django 时默认走同名环境变量（`ALIYUN_PROD_ACCESS_KEY_ID` 等，export 即可）；
-> 也可取消 `envs/host.env` 里对应 `*_FILE` 注释行，与容器共用同一份密钥文件。
+> 阿里云 AK/Secret **不是随机生成的**：`generate.sh` 从**环境变量或根 `.env`** 读取
+> `ALIYUN_{PROD,TEST}_ACCESS_KEY_{ID,SECRET}` 后写入这四个文件；读不到就建空文件（compose 要求
+> 文件存在），填好凭据后 `generate.sh --force` 重写即可。
+> 宿主机直跑 Django 时默认走同名环境变量（export 即可）；也可取消 `envs/host.env` 里对应
+> `*_FILE` 注释行，与容器共用同一份密钥文件。
 
 这两个文件**不入库**（`.gitignore` 排除）、不进构建上下文（`.dockerignore` 排除）。
 
