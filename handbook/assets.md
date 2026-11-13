@@ -2,10 +2,11 @@
 
 ## 模型
 
-模型用 `apps/assets/models/` 包，`__init__.py` **只做 re-export、不写模型定义**：
+模型用 `apps/assets/models/` 包，`__init__.py` **只做 re-export、不写模型定义**，并用
+`__all__` 显式列出 51 个公开名字（与 `analysis/models/` 同一套做法，不用 `noqa: F401`）：
 历史网络域模型集中在 `network.py`（原单文件 `models.py` 的内容一字未改，35 处跨类直接引用
 都还在同一模块，无循环 import），统一配置项体系（T1）在 `ci.py`。`from assets.models import X`
-与 `app_label` 不变，历史迁移照样对得上（与 `analysis/models/` 同一套做法）。
+与 `app_label` 不变，历史迁移照样对得上。
 **不能同时留 `models.py` 与 `models/`**（包优先，单文件被静默忽略）。配置解析产物都继承
 `ConfigBase`，`purge_configs` 用 `ConfigBase.__subclasses__()` 运行时枚举它们（当前 24 个子类，
 其中 22 个已配 Saver）。

@@ -161,7 +161,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
 - **模型包入口**：`assets` 与 `analysis` 都用 `models/` 包，`__init__.py` **只做 re-export、
-  不写模型定义**。`assets` 的模型定义在 `network.py`（历史网络域模型）与 `ci.py`（统一配置项），
+  不写模型定义**，并用 `__all__` 声明公开名字（**不要**用文件级 `noqa: F401` 抑制 re-export，
+  那会把整个文件的未使用导入检查一起关掉）。`assets` 的模型定义在 `network.py`（历史网络域模型）与 `ci.py`（统一配置项），
   `analysis` 在 `access_flow` / `internet_analysis` / `dashboard`。`from assets.models import X`
   与 `app_label` 保持不变、历史迁移不受影响；新增内聚模块独立成子文件，`__init__.py` 不写实现。
   **不能同时留 `models.py` 与 `models/`**（包优先，单文件被静默忽略）。细节：[`handbook/assets.md`](handbook/assets.md)。
