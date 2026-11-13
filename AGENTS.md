@@ -125,6 +125,7 @@ uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status          # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog         # 积压明细（--json / --limit）
 uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
+uv run python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]   # GTM/LTM → 软资产
 uv run python manage.py rebuild_access_flows --device <H> [--sync]
 ./scripts/deploy-host.sh deploy | status      # 宿主部署：app / worker / consumer 三进程
 

@@ -158,14 +158,29 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 
 ### 归并链路
 
-1. 数据源：`GtmWideip` / `LtmVirtualServer` 及其从属的 `GtmPool` / `LtmPoolMember` 等。
-2. 按归一键分组、跨设备去重；同名配置在各设备上取值不同时，沿用 `group_merge` 的
-   `inconsistent` / `conflict_fields` 口径标注，取主机名序第一台的值。
-3. 增量 upsert 到 `ConfigurationItem` + 对应扩展表；配置行不动不删。
+1. 数据源：`GtmWideip` / `LtmVirtualServer` 及其从属的 `GtmPool` / `GtmVServer` / `LtmPoolMember` 等。
+2. 按归一键分组、跨设备去重；同一键在各设备上取值不同时，沿用 `group_merge` 的
+   `inconsistent` / `conflict_fields` 口径标注，取主机名序第一台的值。域名比较 `lb_mode` / `ttl`，
+   服务比较 `protocol` / `status`；池名与 VIP 列表是并集，不判冲突。
+3. 增量 upsert 到 `ConfigurationItem` + 对应扩展表；配置行不动不删。重复执行幂等：
+   取值没变就不写，`ci_id` 始终不变。
 4. 列表读主表 + `select_related` 扩展表，`StandardPagination` SQL 分页 → **换页零全量重算**；
    详情 / 展开才反查配置行作证据。
-5. 触发时机**待定**：配置解析入库后信号增量刷新，或管理命令全量重建（项目已有
-   `rebuild_access_flows` 先例）。两者可并存：日常增量、异常时全量对账。
+5. 触发：管理命令全量重建 `python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]`
+   （先支持全量，与 `rebuild_access_flows` 同一套路）。信号增量刷新暂未接。
+   已消失的配置**不删除**对应资产（可能已有人工标注），需要时另行处理。
+
+实现位置：`apps/assets/services/soft_asset_sync.py`（`sync_soft_assets` /
+`sync_domain_assets` / `sync_load_balancer_services`），命令在
+`apps/assets/management/commands/sync_soft_assets.py`。
+
+**字段映射要点**：
+
+- 域名：`rtypes` 是跨设备记录类型并集；`ttl` / `fallback_ips` 取自关联 `GtmPool`；
+  `vips` 沿 `pool.members` → `GtmVServer` 折算成 `地址#端口`。
+- 服务：`pools` 是各设备 `vs.pool` 并集；`member_count` 是**单台设备**上关联池成员数之和，
+  再取各设备最大值 —— 主备是同一份配置，不能把两台相加；`profiles` / `rules` 取并集。
+- 无地址的透明 VS（`vs_address` 为空）跳过，不构成对外服务资产。
 
 写入只由归并链路负责；人工只允许补登记 / 改标注，不直接改归并产出的配置字段。
 域名 / LB 优先归并，其余软资产优先人工录入（见「资产分类边界」）。
@@ -177,8 +192,8 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 - 契约测试锁住：归一键唯一、跨设备去重成一条、增量 upsert 幂等（重复解析不产生新资产）、
   列表分页不触发全量归并、配置行保持只读、扩展表不进 `ConfigBase.__subclasses__()`。
 
-状态：**进行中**（扩展表 `DomainAsset` / `LoadBalancerService` 已建，见 `models/soft_assets.py`
-与 `0034_soft_asset_extensions`；归并链路与 API 未开始）。
+状态：**进行中**（扩展表 `DomainAsset` / `LoadBalancerService` 已建，归并链路与管理命令
+`sync_soft_assets` 已实现；列表 API 与前端页面未开始）。
 
 ## API 视图（`api/views.py`）
 
