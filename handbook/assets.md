@@ -47,7 +47,31 @@ T3 统一关系表、T6 统一资产目录的基础。
 | 模型 | 作用 |
 |------|------|
 | `ConfigurationItem` | 主表：`ci_id` / `ci_type` / `name` / `description` / `tags` / `monitor_status` + 时间戳；公共属性上收在这里 |
-| `PhysicalServer` / `VirtualMachine` / `DatabaseInstance` / `ApplicationService` | 4 类新增 CI 的专属属性，一对一挂主表（`_CIExtension` 抽象基类） |
+| `PhysicalServer` | **实物资产**：1 类，一对一挂主表（`_CIExtension` 抽象基类） |
+| `VirtualMachine` / `DatabaseInstance` / `ApplicationService` | **软资产**：3 类，同样一对一挂主表；优先人工录入 |
+
+### 资产分类边界
+
+`CIType` **只登记资产**，按 `PHYSICAL_TYPES` / `SOFT_TYPES` 两个 frozenset 分组（零迁移的常量分组，
+不落 `asset_kind` 字段）：
+
+| 类 | 判据 | 类型 |
+|---|---|---|
+| 实物资产 | 有物理实体 | `DEVICE`、`PHYSICAL_SERVER` |
+| 软资产 | 无物理实体，身份来自自身全局标识，设备只是部署位置之一 | `VIRTUAL_MACHINE`、`DATABASE_INSTANCE`、`APPLICATION_SERVICE`、`SUBNET`、`IP_ADDRESS`、`DOMAIN`、`LOAD_BALANCER_SERVICE` |
+| 设备内部功能 / 状态 | 身份是 `(设备, 名称/编号)`，强依赖所属设备、跨设备无独立身份 | `Vlan` / `Vrf` / `Interface` / `Route` / `ArpMac` 及 24 个 `ConfigBase` 子类的其余部分 |
+| 位置维度 | 不是资产，是位置 | DCIM：`DataCenter` / `Room` / `Cabinet` |
+| 关系 / 元数据 / 日志 | 不是资产 | `DeviceGroup*`、T3 关系表、字典表、时序日志等 |
+
+**软资产有两种来源**，别混：
+
+| 来源 | 类型 | 做法 |
+|---|---|---|
+| 人工登记 / 独立资产表 | 虚拟机、数据库实例、应用服务（T1 已建）、`IPAddress`、`Subnet` | 已经是资产实体，直接登记进 CI 主表 |
+| 从配置行归并 | 域名（`DOMAIN`）、负载均衡服务（`LOAD_BALANCER_SERVICE`） | `GtmWideip` / `LtmVirtualServer` 是**某台设备上的一条配置行**，不是资产；T4 按归一键（FQDN 小写去尾点 / `VIP#port`，IPv6 用 `#`）跨设备归并成一条资产，设备退居「部署位置」多值 |
+
+所以域名 / LB **不是**给配置行加个 `ci_id` 就算完 —— 那样一个域名会变成 N 条资产。
+配置行只在资产详情 / 展开时查，资产列表在主表上做 SQL 分页。
 
 几条容易踩的：
 
@@ -61,8 +85,9 @@ T3 统一关系表、T6 统一资产目录的基础。
   不接任何回写 / 对账逻辑。T2 的业务归属字段（负责人 / 业务 / 部门 / 环境）是告警富化的数据源，
   字段命名要按「能直接塞进告警上下文」来定。
 - **`ci_type` 类型词汇集中在 `CIType`**（字符串常量，不用 `Enum`——同值字符串与 Enum 成员哈希不同，
-  作为 dict 键会查不到）。现阶段只落地 4 类新增 CI；其余类型是现有资产模型的类型词汇，
-  T4 接入统一 CI 时按此清单路由。
+  作为 dict 键会查不到）。只登记 9 类资产；`DOMAIN` / `LOAD_BALANCER_SERVICE` 是**软资产类型**，
+  刻意不叫配置模型名（`GTM_WIDEIP` / `LTM_VIRTUAL_SERVER`），避免又被当成配置行。
+  趁 `ConfigurationItem` 无存量数据连常量值一起改了，旧值不保留兼容。
 - **扩展模型必须挂在匹配类型的 CI 上**：模型 `save()` 抛 `ValueError` 兜住 ORM 直写，
   序列化器 `CIExtensionSerializerMixin` 在 API 层挡成 400（否则 ValueError 会变 500）。
 - **关系不在这里建外键**：VM→宿主机、DB→主机等归 T3 统一关系表（只存 `ci_id` + 关系类型），

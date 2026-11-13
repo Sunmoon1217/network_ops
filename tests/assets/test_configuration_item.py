@@ -7,7 +7,7 @@ API 分页 / 搜索 / 过滤，以及 CI 台账不被 ``purge_configs`` 误清�
 import pytest
 from django.db import IntegrityError, transaction
 
-from assets.models import CIType, ConfigBase, ConfigurationItem, PhysicalServer
+from assets.models import CI_TYPE_CHOICES, PHYSICAL_TYPES, SOFT_TYPES, CIType, ConfigBase, ConfigurationItem, PhysicalServer
 
 CI_URL = "/api/assets/configuration-items/"
 PHY_URL = "/api/assets/physical-servers/"
@@ -115,3 +115,48 @@ def test_api_rejects_mismatched_ci_type(operator_client):
     ci = _ci(CIType.VIRTUAL_MACHINE, "vm-01")
     res = operator_client.post(PHY_URL, {"ci": ci.pk, "hostname": "wrong"}, format="json")
     assert res.status_code == 400
+
+
+def test_ci_type_only_registers_assets():
+    """CIType 只登记资产（实物 2 + 软资产 7），不混入设备内部功能 / 配置项模型名。
+
+    判据：软资产的身份来自自身全局标识，设备只是部署位置之一；Vlan / Vrf /
+    Interface / Route / ArpMac 的身份是 (设备, 名称)，强依赖所属设备，不算资产。
+    """
+    values = {value for value, _label in CI_TYPE_CHOICES}
+    assert values == PHYSICAL_TYPES | SOFT_TYPES
+    assert not PHYSICAL_TYPES & SOFT_TYPES
+    assert PHYSICAL_TYPES == {CIType.DEVICE, CIType.PHYSICAL_SERVER}
+    assert SOFT_TYPES == {
+        CIType.VIRTUAL_MACHINE,
+        CIType.DATABASE_INSTANCE,
+        CIType.APPLICATION_SERVICE,
+        CIType.SUBNET,
+        CIType.IP_ADDRESS,
+        CIType.DOMAIN,
+        CIType.LOAD_BALANCER_SERVICE,
+    }
+
+
+def test_config_model_names_are_not_ci_types():
+    """配置模型名不能当 CI 类型：域名 / LB 是归并后的软资产，不是配置行"""
+    values = {value for value, _label in CI_TYPE_CHOICES}
+    forbidden = {
+        "vlan",
+        "vrf",
+        "interface",
+        "route",
+        "arp_mac",
+        "gtm_wideip",
+        "ltm_virtual_server",
+        "ltm_pool",
+        "gtm_pool",
+        "policy",
+        "nat_rule",
+        "device_config",
+        "device_group",
+    }
+    assert not values & forbidden
+    # 域名 / 负载均衡服务用资产名，不用配置模型名
+    assert CIType.DOMAIN == "domain"
+    assert CIType.LOAD_BALANCER_SERVICE == "load_balancer_service"

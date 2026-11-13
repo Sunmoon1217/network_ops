@@ -9,6 +9,8 @@
 
 from .ci import (
     CI_TYPE_CHOICES,
+    PHYSICAL_TYPES,
+    SOFT_TYPES,
     ApplicationService,
     CIType,
     ConfigurationItem,
@@ -70,6 +72,8 @@ from .relations import (
 
 __all__ = [
     "CI_TYPE_CHOICES",
+    "PHYSICAL_TYPES",
+    "SOFT_TYPES",
     "ApplicationService",
     "CIType",
     "ConfigurationItem",

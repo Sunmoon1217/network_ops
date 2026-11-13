@@ -1,4 +1,4 @@
-"""统一配置项体系（T1）：CI 主表与 4 类 CI 专属扩展。
+"""统一配置项体系（T1）：CI 主表与 4 类 CI 专属扩展（1 类实物资产 + 3 类软资产）。
 
 从单文件 models.py 拆出；``__init__.py`` 显式 re-export，保持
 ``from assets.models import ConfigurationItem`` 等导入路径与 ``app_label`` 不变，
@@ -13,32 +13,53 @@ from django.db import models
 
 
 class CIType:
-    """配置项类型标识（字符串常量，刻意不用 Enum）。
+    """资产类型标识（字符串常量，刻意不用 Enum）。
 
     ``Enum`` 成员与同值字符串的哈希不同，作为 dict 键会查不到（见
     ``llmtools.domains.assets.nodes.NodeType`` 的同一条坑）。
 
-    现阶段只落地 4 类新增 CI 的专属扩展模型；其余类型是现有资产模型的类型词汇，
-    T4 把现有模型接入统一 CI 时按此清单路由——先集中在这里，避免各处另起名字。
+    **只登记资产**，按 ``PHYSICAL_TYPES`` / ``SOFT_TYPES`` 分两类：
+    实物资产有物理实体；软资产的身份来自自身全局标识，设备只是部署位置之一。
+
+    不进本清单的三类：
+    - **设备内部功能 / 状态**：``Vlan`` / ``Vrf`` / ``Interface`` / ``Route`` / ``ArpMac``
+      及 24 个 ``ConfigBase`` 子类的其余部分。身份是 ``(设备, 名称/编号)``，
+      强依赖所属设备、跨设备无独立身份，只作资产明细 / 证据。
+    - **DCIM 位置维度**：``DataCenter`` / ``Room`` / ``Cabinet`` 算位置，不算资产。
+    - **关系 / 元数据 / 日志**：``DeviceGroup*``、T3 关系表、字典表、时序日志等。
+
+    ``DOMAIN`` / ``LOAD_BALANCER_SERVICE`` 是**软资产类型**，不是配置模型名：
+    域名 / 负载均衡服务资产由 T4 从 ``GtmWideip`` / ``LtmVirtualServer`` 配置行
+    按归一键（FQDN / ``VIP#port``）跨设备归并生成，配置行本身不是资产实体。
     """
 
+    # 实物资产
     DEVICE = "device"
     PHYSICAL_SERVER = "physical_server"
+
+    # 软资产
     VIRTUAL_MACHINE = "virtual_machine"
     DATABASE_INSTANCE = "database_instance"
     APPLICATION_SERVICE = "application_service"
     SUBNET = "subnet"
     IP_ADDRESS = "ip_address"
-    VLAN = "vlan"
-    INTERFACE = "interface"
-    VRF = "vrf"
-    LTM_VIRTUAL_SERVER = "ltm_virtual_server"
-    LTM_POOL = "ltm_pool"
-    GTM_WIDEIP = "gtm_wideip"
-    GTM_POOL = "gtm_pool"
-    POLICY = "policy"
-    NAT_RULE = "nat_rule"
+    DOMAIN = "domain"
+    LOAD_BALANCER_SERVICE = "load_balancer_service"
 
+
+#: 资产大类分组（零迁移的常量分组，不落 ``asset_kind`` 字段）
+PHYSICAL_TYPES = frozenset({CIType.DEVICE, CIType.PHYSICAL_SERVER})
+SOFT_TYPES = frozenset(
+    {
+        CIType.VIRTUAL_MACHINE,
+        CIType.DATABASE_INSTANCE,
+        CIType.APPLICATION_SERVICE,
+        CIType.SUBNET,
+        CIType.IP_ADDRESS,
+        CIType.DOMAIN,
+        CIType.LOAD_BALANCER_SERVICE,
+    }
+)
 
 CI_TYPE_CHOICES = (
     (CIType.DEVICE, "网络设备"),
@@ -48,15 +69,8 @@ CI_TYPE_CHOICES = (
     (CIType.APPLICATION_SERVICE, "应用服务"),
     (CIType.SUBNET, "网段"),
     (CIType.IP_ADDRESS, "IP 地址"),
-    (CIType.VLAN, "VLAN"),
-    (CIType.INTERFACE, "接口"),
-    (CIType.VRF, "VRF"),
-    (CIType.LTM_VIRTUAL_SERVER, "负载均衡虚拟服务器"),
-    (CIType.LTM_POOL, "负载均衡池"),
-    (CIType.GTM_WIDEIP, "域名"),
-    (CIType.GTM_POOL, "GSLB 池"),
-    (CIType.POLICY, "安全策略"),
-    (CIType.NAT_RULE, "NAT 规则"),
+    (CIType.DOMAIN, "域名"),
+    (CIType.LOAD_BALANCER_SERVICE, "负载均衡服务"),
 )
 
 
