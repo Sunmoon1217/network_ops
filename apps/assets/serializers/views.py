@@ -363,3 +363,62 @@ class CIRelationshipSerializer(ParentClass):
             if value and value not in known:
                 raise serializers.ValidationError({field: f"CI 标识 {value} 不存在"})
         return attrs
+
+
+# 软资产归并（T4）：只读，写入只由归并链路负责
+
+
+@model(model=models.DomainAsset)
+class DomainAssetSerializer(ParentClass):
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    name = serializers.CharField(source="ci.name", read_only=True)
+
+    class Meta:
+        model = models.DomainAsset
+        fields = (
+            "id",
+            "ci_id",
+            "name",
+            "fqdn",
+            "rtypes",
+            "ttl",
+            "lb_mode",
+            "pools",
+            "fallback_ips",
+            "vips",
+            "devices",
+            "inconsistent",
+            "conflict_fields",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+@model(model=models.LoadBalancerService)
+class LoadBalancerServiceSerializer(ParentClass):
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    name = serializers.CharField(source="ci.name", read_only=True)
+
+    class Meta:
+        model = models.LoadBalancerService
+        fields = (
+            "id",
+            "ci_id",
+            "name",
+            "asset_key",
+            "vip",
+            "port",
+            "protocol",
+            "pools",
+            "member_count",
+            "profiles",
+            "rules",
+            "devices",
+            "status",
+            "inconsistent",
+            "conflict_fields",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields

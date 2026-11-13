@@ -187,13 +187,18 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 
 ### API 与契约测试
 
-- `/api/assets/domain-assets/`、`/api/assets/load-balancer-services/`：列表支持 `?search=`、
-  `?inconsistent=`、分页；详情带出关联配置行。
+- `/api/assets/domain-assets/`：只读列表 / 详情。支持 `?search=`（`fqdn` / `ci_id` / `name`）、
+  `?inconsistent=true|false`、`?device=<hostname>`、`?vip=<地址#端口>`、分页与排序。
+- `/api/assets/load-balancer-services/`：只读列表 / 详情。支持 `?search=`（`asset_key` / `vip` / `port`）、
+  `?inconsistent=`、`?device=`、`?status=`、`?port=`、分页与排序。
+- **只读**：`ReadOnlyModelViewSet`，写入只由 `sync_soft_assets` 负责（操作员 POST/PATCH/DELETE 均 405）。
+- JSON 字段不能进 `search_fields`（PG 的 jsonb 不支持 `icontains`），设备 / VIP 用
+  `devices__contains` / `vips__contains` 精确过滤。
 - 契约测试锁住：归一键唯一、跨设备去重成一条、增量 upsert 幂等（重复解析不产生新资产）、
-  列表分页不触发全量归并、配置行保持只读、扩展表不进 `ConfigBase.__subclasses__()`。
+  扩展表不进 `ConfigBase.__subclasses__()`、列表只读。
+- 待做：详情展开关联配置行（域名 → `GtmWideip` 证据链、服务 → `LtmVirtualServer`）。
 
-状态：**进行中**（扩展表 `DomainAsset` / `LoadBalancerService` 已建，归并链路与管理命令
-`sync_soft_assets` 已实现；列表 API 与前端页面未开始）。
+状态：**进行中**（扩展表、归并链路、管理命令与只读列表 API 已实现；前端页面未开始）。
 
 ## API 视图（`api/views.py`）
 

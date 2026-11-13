@@ -74,6 +74,10 @@ router.register(r"application-services", views.ApplicationServiceViewSet, basena
 # 统一关系表（T3）
 router.register(r"ci-relationships", views.CIRelationshipViewSet, basename="ci-relationship")
 
+# 软资产（T4）：只读，数据由 sync_soft_assets 归并产出
+router.register(r"domain-assets", views.DomainAssetViewSet, basename="domain-asset")
+router.register(r"load-balancer-services", views.LoadBalancerServiceViewSet, basename="load-balancer-service")
+
 urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),

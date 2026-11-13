@@ -16,6 +16,7 @@ from .models import (
     DeviceGroup,
     DeviceGroupMember,
     DeviceModel,
+    DomainAsset,
     GtmDatacenter,
     GtmPool,
     GtmServer,
@@ -23,6 +24,7 @@ from .models import (
     GtmWideip,
     Interface,
     IPAddress,
+    LoadBalancerService,
     LtmIRule,
     LtmPersist,
     LtmPool,
@@ -928,3 +930,22 @@ class CIRelationshipAdmin(admin.ModelAdmin):
     list_filter = ("relation_type", "created_at")
     search_fields = ("src_ci_id", "dst_ci_id")
     date_hierarchy = "created_at"
+
+
+# 软资产（T4）：归并产物，写入走 sync_soft_assets，admin 只用于查看
+@admin.register(DomainAsset)
+class DomainAssetAdmin(admin.ModelAdmin):
+    list_display = ("id", "fqdn", "ttl", "lb_mode", "inconsistent", "ci")
+    list_filter = ("inconsistent",)
+    search_fields = ("fqdn", "ci__ci_id")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(LoadBalancerService)
+class LoadBalancerServiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "asset_key", "vip", "port", "protocol", "member_count", "status", "inconsistent", "ci")
+    list_filter = ("inconsistent", "status")
+    search_fields = ("asset_key", "vip", "ci__ci_id")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)

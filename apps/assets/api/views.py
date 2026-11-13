@@ -969,3 +969,51 @@ class CIRelationshipViewSet(viewsets.ModelViewSet):
         if params.get("relation_type"):
             qs = qs.filter(relation_type=params["relation_type"])
         return qs
+
+
+# 软资产归并（T4）：只读接口，写入只由 sync_soft_assets 归并链路负责
+
+
+class DomainAssetViewSet(viewsets.ReadOnlyModelViewSet):
+    from assets.models import DomainAsset
+    from assets.serializers.views import DomainAssetSerializer
+
+    queryset = DomainAsset.objects.select_related("ci").all()
+    serializer_class = DomainAssetSerializer
+    # JSON 字段不能进 search_fields（PG 的 jsonb 不支持 icontains），按设备 / VIP 走精确过滤
+    search_fields = ("fqdn", "ci__ci_id", "ci__name")
+    ordering_fields = ("fqdn", "ttl", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("inconsistent") in ("true", "false"):
+            qs = qs.filter(inconsistent=params["inconsistent"] == "true")
+        if params.get("device"):
+            qs = qs.filter(devices__contains=[params["device"]])
+        if params.get("vip"):
+            qs = qs.filter(vips__contains=[params["vip"]])
+        return qs
+
+
+class LoadBalancerServiceViewSet(viewsets.ReadOnlyModelViewSet):
+    from assets.models import LoadBalancerService
+    from assets.serializers.views import LoadBalancerServiceSerializer
+
+    queryset = LoadBalancerService.objects.select_related("ci").all()
+    serializer_class = LoadBalancerServiceSerializer
+    search_fields = ("asset_key", "vip", "port", "ci__ci_id", "ci__name")
+    ordering_fields = ("vip", "port", "member_count", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("inconsistent") in ("true", "false"):
+            qs = qs.filter(inconsistent=params["inconsistent"] == "true")
+        if params.get("device"):
+            qs = qs.filter(devices__contains=[params["device"]])
+        if params.get("status"):
+            qs = qs.filter(status=params["status"])
+        if params.get("port"):
+            qs = qs.filter(port=params["port"])
+        return qs
