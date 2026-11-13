@@ -191,14 +191,22 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 
 **数据库与阿里云凭据走 docker secrets，不进 `.env` / 环境变量**（为什么不用环境变量：技能
 `container-healthchecks` 第 5 节）：`envs/secrets/db_user` / `db_password` /
-`aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`；
-`envs/container.env` 里只写 `DB_USER_FILE` / `DB_PASSWORD_FILE` 与 4 个
-`ALIYUN_*_FILE`（app / worker 由 `settings/base.py` 的 `_env_or_file()` 读，没有 `*_FILE` 时
-回退同名环境变量）。db 容器那侧由 `compose.db.yml` 的模板把同名 secret 映射成镜像认的
-`POSTGRES_USER_FILE` / `MYSQL_PASSWORD_FILE` 等。**两条别改回去**：
+`aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`。
+数据库连接参数集中在 **`envs/db.env`** 一份文件里，compose 直接用 `env_file` 加载它：
+
+- 文件里先定义一套 `DB_*`（引擎、库名、用户、`DB_HOST=db`、凭据文件路径），再用 `${}` **在同一个
+  文件内嵌套**出各镜像认的名字：`POSTGRES_DB=${DB_NAME}`、`MYSQL_DATABASE=${DB_NAME}`、
+  `POSTGRES_USER_FILE=${DB_USER_FILE}`、`MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}` 等。
+  这是 **env_file 自身的插值**（Compose 加载时展开），右侧引用的 `DB_SERVICE` / `DB_NAME` /
+  `DB_USER` 来自根 `.env`，所以后端与库名仍然只在根 `.env` 维护一份；
+- 四个应用进程与 db 容器都 `env_file: envs/db.env`：应用只认 `DB_*`（settings 的 `_env_or_file()`
+  读 `*_FILE`），db 镜像各取自己那份 `POSTGRES_*` / `MYSQL_*`，对方的变量被忽略；
+- `envs/container.env` 不再放数据库连接（它同时注入四个应用进程，放这里对 db 容器毫无意义）。
+
+**两条别改回去**：
 
 1. postgres 官方 entrypoint 规定 `POSTGRES_USER` 与 `POSTGRES_USER_FILE` 同时设置就报错退出，
-   所以模板里只给 `_FILE`；
+   所以 `envs/db.env` 里只给 `_FILE`；
 2. db 的 healthcheck 靠容器内 `sh` 读 secret，**`-U` 必须显式给**。
 
 生成 / 迁移：`bash envs/secrets/generate.sh`（默认**沿用旧值**；postgres 只在**首次初始化数据卷**

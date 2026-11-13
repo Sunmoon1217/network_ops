@@ -8,8 +8,9 @@
 
 | 文件 | 层 | 谁加载 | 放什么 |
 |------|----|--------|--------|
-| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（库名、端口、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——**唯一需要日常维护的文件** |
-| `container.env` | 容器差异层 | compose `env_file`（排在**最后**） | 只在容器成立的东西：`DB_HOST=db` / `REDIS_HOST=redis`、`*_FILE=/run/secrets/*`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START`、`PGDATA` |
+| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（`DB_ENGINE` 给宿主直跑、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——日常维护的主要文件 |
+| `container.env` | 容器差异层 | compose `env_file`（排在**最后**，只给四个应用进程） | 只在容器成立的东西：`REDIS_HOST=redis`、阿里云 `*_FILE`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START` |
+| `db.env` | **数据库连接层** | compose `env_file`（四个应用进程 + db 容器） | 一套 `DB_*`（引擎/库名/用户/凭据文件路径），再用 `${}` **嵌套**成镜像认的 `POSTGRES_*` / `MYSQL_*`；改库名/用户只改这里与根 `.env` |
 | `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`DB_HOST=127.0.0.1` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
 | `gunicorn.env` / `celery.env` | 服务层 | compose `env_file`（只给对应服务） | 每个服务自己的旋钮，与部署方式无关 |
 | `secrets/*` | 密钥 | 容器：`secrets` 挂载 `/run/secrets/*`；宿主：经 `host.env` 的相对 `*_FILE` | 数据库/阿里云凭据；只有密钥被 `.gitignore` 排除，见 `secrets/README.md` |
@@ -17,16 +18,16 @@
 `common.env` / `container.env` / `host.env` 的注入组合（compose.yml）：
 
 ```yaml
-db:
-  env_file: [envs/common.env, envs/container.env]
+db:            # 两个后端模板都是这一行
+  env_file: [envs/db.env]
 app:
-  env_file: [envs/common.env, envs/gunicorn.env, envs/container.env]
+  env_file: [envs/common.env, envs/gunicorn.env, envs/db.env, envs/container.env]
 worker:
-  env_file: [envs/common.env, envs/celery.env, envs/container.env]
+  env_file: [envs/common.env, envs/celery.env, envs/db.env, envs/container.env]
 consumer:
-  env_file: [envs/common.env, envs/container.env]
+  env_file: [envs/common.env, envs/db.env, envs/container.env]
 beat:
-  env_file: [envs/common.env, envs/celery.env, envs/container.env]
+  env_file: [envs/common.env, envs/celery.env, envs/db.env, envs/container.env]
 ```
 
 ## 加载与优先级（宿主侧）

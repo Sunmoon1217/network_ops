@@ -82,7 +82,7 @@
 
 **连接参数统一用 `DB_*`**（`DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` /
 `DB_PORT`）：settings 只认这一套名字，两种部署一致。各数据库镜像自己认的 `POSTGRES_*` /
-`MYSQL_*` 只在 `compose.db.yml` 的模板里做嵌套映射（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
+`MYSQL_*` 只在 `envs/db.env` 里用 `${}` 嵌套出来（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
 `DB_USER → MYSQL_USER`），不进 settings。容器部署不必直接改 `DB_ENGINE`：根 `.env` 的
 `DB_SERVICE` 由 compose 同时用于「选模板」和「注入四个应用进程的 `DB_ENGINE`」；宿主直跑没有
 compose，才改 `envs/common.env` 的 `DB_ENGINE`。

@@ -105,18 +105,18 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`envs/*.env` 给容器、`envs/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：db（compose.db.yml 的两个模板，postgres 镜像读 DB_NAME）+
-    app / worker（celery 双队列）/ consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）
-    ——新增服务时这个计数要跟着加。
+    当前注入方：app / worker（celery 双队列）/ consumer（访问流单写者消费者）/
+    beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
+    db 只读 envs/db.env（数据库连接参数），不读 common/container。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
     common_env = _env_file("common.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
-    # 四个应用进程在本体文件里；db 的两份模板各自注入一次
     assert compose.count("- envs/common.env") == 4
-    assert db_templates.count("- envs/common.env") == 2
+    assert db_templates.count("- envs/db.env") == 2
+    assert "- envs/common.env" not in db_templates
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -139,13 +139,15 @@ def test_each_service_only_gets_its_own_env_file():
     assert "- envs/common.env" in worker_block
     assert "- envs/container.env" in app_block
     assert "- envs/container.env" in worker_block
-    # db 由 extends 引入，env_file 写在 compose.db.yml 的模板里——两个后端都必须只读
-    # 共享层 + 容器差异层，不能把 gunicorn / celery 的服务级旋钮带进数据库容器
+    # 四个应用进程都加载 db.env（数据库连接只在那一份里维护）
+    assert "- envs/db.env" in app_block
+    assert "- envs/db.env" in worker_block
+    # db 由 extends 引入，只读 db.env；gunicorn / celery 的服务级旋钮不许串进去
     db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
+    assert db_templates.count("- envs/db.env") == 2
     for service_key in ("  postgresql:", "  mysql:"):
         db_block = db_templates.split(service_key)[1].split("\n\n")[0]
-        assert "- envs/common.env" in db_block, service_key
-        assert "- envs/container.env" in db_block, service_key
+        assert "- envs/db.env" in db_block, service_key
         assert "- envs/gunicorn.env" not in db_block, service_key
         assert "- envs/celery.env" not in db_block, service_key
 
@@ -158,10 +160,17 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
-    # 容器差异层把凭据指向 /run/secrets/*（db 与 app/worker 共用这一层）
+    # 凭据路径只在 envs/db.env 里给一次，再嵌套成镜像认的 *_FILE 名字
+    db_env = _env_file("db.env")
+    assert "DB_USER_FILE=/run/secrets/db_user" in db_env
+    assert "DB_PASSWORD_FILE=/run/secrets/db_password" in db_env
+    assert "POSTGRES_USER_FILE=${DB_USER_FILE}" in db_env
+    assert "POSTGRES_PASSWORD_FILE=${DB_PASSWORD_FILE}" in db_env
+    assert "MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}" in db_env
+    # 容器差异层不再掺和数据库连接（它同时注入四个应用进程）
     container_env = _env_file("container.env")
-    assert "DB_USER_FILE=/run/secrets/db_user" in container_env
-    assert "DB_PASSWORD_FILE=/run/secrets/db_password" in container_env
+    assert "DB_USER_FILE=" not in container_env
+    assert "DB_PASSWORD_FILE=" not in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
     # consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
@@ -181,7 +190,6 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     pg_block = db_templates.split("  postgresql:")[1].split("\n\n")[0]
     mysql_block = db_templates.split("  mysql:")[1]
     assert "- db_user" in pg_block and "- db_password" in pg_block
-    assert "MYSQL_PASSWORD_FILE: /run/secrets/db_password" in mysql_block
     assert "- db_password" in mysql_block
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量

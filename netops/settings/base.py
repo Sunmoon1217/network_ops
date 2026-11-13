@@ -86,7 +86,8 @@ CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 # 数据库后端：postgresql（默认）/ mysql。**连接参数统一用 DB_***（DB_ENGINE / DB_NAME /
 # DB_USER / DB_PASSWORD / DB_HOST / DB_PORT），两种部署同一套名字；各数据库镜像自己认的
-# POSTGRES_* / MYSQL_* 只在 compose.db.yml 的模板里做嵌套映射，不进 settings。
+# POSTGRES_* / MYSQL_* 只在 envs/db.env 里用 ${} 嵌套出来（compose 的 env_file 加载），
+# 不进 settings。
 #
 # MySQL 驱动用 mysqlclient（C 扩展，显著快于纯 Python 的 PyMySQL）。它在 PyPI **没有**
 # cp312 manylinux 轮子、只能从 sdist 编译，所以镜像侧配套两处：dockerfile.venv 用两阶段

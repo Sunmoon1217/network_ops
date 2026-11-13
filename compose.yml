@@ -25,14 +25,6 @@ x-app-base: &app-base
   image: ${VENV_IMAGE:-network-ops-venv:latest}
   init: true
 
-# 四个应用进程共用：数据库后端跟随根 .env 的 DB_SERVICE（容器里覆盖 envs/common.env 的
-# DB_ENGINE，宿主直跑则直接读 common.env）。库名同样从 DB_NAME 嵌套下来，避免和 db 容器
-# 各自一份值。端口刻意不在这里给——settings/base.py 按引擎取默认（postgresql 5432 / mysql 3306），
-# 少一个必须同步的变量。
-x-db-env: &db-env
-  DB_ENGINE: "${DB_SERVICE:-postgresql}"
-  DB_NAME: "${DB_NAME:-netops}"
-
 services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
   code-init:
@@ -80,9 +72,9 @@ services:
     env_file:
       - envs/common.env
       - envs/gunicorn.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
-    environment: *db-env
     volumes:
       - code:/app:ro
       - repo:/configs
@@ -108,9 +100,9 @@ services:
     env_file:
       - envs/common.env
       - envs/celery.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
-    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:
@@ -129,9 +121,9 @@ services:
     entrypoint: ["/app/entrypoint/consumer.sh"]
     env_file:
       - envs/common.env
+      - envs/db.env
       - envs/container.env
     secrets: *db-secrets
-    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:
@@ -151,9 +143,9 @@ services:
     env_file:
       - envs/common.env
       - envs/celery.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
-    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:

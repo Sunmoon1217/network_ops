@@ -7,7 +7,7 @@
 
 | 文件 | 容器内路径 | 谁读 |
 |------|-----------|------|
-| `db_user` | `/run/secrets/db_user` | db（compose.db.yml 里映射成 postgres 镜像的 `POSTGRES_USER_FILE`；mysql 的用户名走 `MYSQL_USER` 环境变量，不用文件）、app / worker（`settings/base.py` 的 `_env_or_file("DB_USER")` 读 `DB_USER_FILE`） |
+| `db_user` | `/run/secrets/db_user` | db（envs/db.env 里嵌套成 postgres 镜像的 `POSTGRES_USER_FILE`；mysql 的用户名走 `MYSQL_USER` 环境变量，不用文件）、app / worker（`settings/base.py` 的 `_env_or_file("DB_USER")` 读 `DB_USER_FILE`） |
 | `db_password` | `/run/secrets/db_password` | 同上（app 侧是 `DB_PASSWORD_FILE`；镜像侧映射成 `POSTGRES_PASSWORD_FILE` / `MYSQL_PASSWORD_FILE`） |
 
 **两个数据库后端共用这两个文件**（PG 与 MySQL 的凭据是同一个人工轮换的两项，不按后端分叉）。

@@ -1,11 +1,9 @@
 # 数据库后端模板：**只被 compose.yml 的 `db` 服务 extends 引用**，不要用 `-f` 传本文件
 # ——一旦当 `-f` 传，下面的 postgresql / mysql 会变成两个真实服务，`up` 会把两个库都起起来。
 #
-# 变量分层：根 `.env` 只维护一套 **DB_***（DB_SERVICE / DB_NAME / DB_USER / DB_IMAGE_* /
-# DB_PORT_*），模板里再**嵌套**成各镜像认的名字：
-#   DB_NAME → POSTGRES_DB（pg） / MYSQL_DATABASE（mysql）
-#   DB_USER → MYSQL_USER（mysql；pg 的用户名在 db_user secret 里，镜像走 POSTGRES_USER_FILE）
-# 端口分开命名是必须的：两个后端的宿主映射端口不可能共用一个值。
+# 两个模板都只做三件事：选镜像、挂数据卷/端口、`env_file: envs/db.env`。
+# **连接参数不在这里写**：db.env 里已经把一套 DB_* 用 ${} 嵌套成 POSTGRES_* / MYSQL_*，
+# 两个镜像各取所需（对方的变量会被镜像忽略）。改库名/用户只改 db.env 与根 .env。
 #
 # 硬约束（Compose extends 的语义，实测）：
 #   * 只继承服务定义本身；顶层 `volumes:` / `secrets:` **不继承**，必须在本体 compose.yml 声明；
@@ -20,13 +18,7 @@ services:
     restart: unless-stopped
     init: true
     env_file:
-      - envs/common.env
-      - envs/container.env
-    environment:
-      # 嵌套：DB_* 是唯一来源，镜像只认 POSTGRES_*。
-      POSTGRES_DB: ${DB_NAME:-netops}
-      POSTGRES_USER_FILE: /run/secrets/db_user
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      - envs/db.env
     secrets:
       - db_user
       - db_password
@@ -52,17 +44,7 @@ services:
     # 「大小写不敏感的唯一键」这个跨库差异在配置里可见，而不是靠镜像默认值。
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
     env_file:
-      - envs/common.env
-      - envs/container.env
-    environment:
-      # 嵌套：DB_NAME / DB_USER → 官方镜像认的 MYSQL_DATABASE / MYSQL_USER
-      MYSQL_DATABASE: ${DB_NAME:-netops}
-      # 官方镜像没有 MYSQL_USER_FILE：用户名只能走环境变量（它不是秘密），
-      # 必须与 envs/secrets/db_user 的内容一致。
-      MYSQL_USER: ${DB_USER:-netops}
-      MYSQL_PASSWORD_FILE: /run/secrets/db_password
-      # root 复用应用密码：容器只在 internal 网络可达，轮换时改同一份 secret 即可。
-      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+      - envs/db.env
     secrets:
       - db_password
     volumes:
