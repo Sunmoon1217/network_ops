@@ -39,6 +39,13 @@ class NodeType:
     POLICY = "policy"
     NAT_RULE = "nat_rule"
     SERVER_OWNER = "server_owner"
+    # —— 统一配置项体系（T1）与软资产（T4）——
+    PHYSICAL_SERVER = "physical_server"
+    VIRTUAL_MACHINE = "virtual_machine"
+    DATABASE_INSTANCE = "database_instance"
+    APPLICATION_SERVICE = "application_service"
+    DOMAIN = "domain"
+    LOAD_BALANCER_SERVICE = "load_balancer_service"
 
 
 __all__ = ["NodeType"]

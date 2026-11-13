@@ -6,7 +6,7 @@
   按任一侧分，另一侧迟早要 import 对方的存在；
 - 边只依赖 Django 模型与 ``NodeType``，**不 import 任何实体声明**，所以放在这一层
   永远不会和 ``specs/*.py`` 互相依赖；
-- 36 条边在一屏多一点的范围，集中放能一眼看全图；等 VM / 物理机那批 IPAM 关联
+- 41 条边在一屏多一点的范围，集中放能一眼看全图；等 VM / 物理机那批 IPAM 关联
   （弱匹配或 FK，见 ``ipam_links`` 规划）落地、边数过 60 再按关系主题拆成 ``edges/`` 包。
 
 两条硬约束（写新边前先读）：
@@ -297,6 +297,45 @@ EDGES: tuple[Edge, ...] = (
         dst=NodeType.SERVICE,
         forward=lambda n: [n.translated_service] if n.translated_service else [],
         reverse=lambda svc: models.NatRule.objects.filter(translated_service=svc),
+    ),
+    # —— 软资产（T4）：域名 / LB 服务是归并产物，部署与证据链回指配置行 ——
+    Edge(
+        name="load_balancer_services",
+        src=NodeType.DOMAIN,
+        dst=NodeType.LOAD_BALANCER_SERVICE,
+        # vips 与 asset_key 同一套 `地址#端口` 口径（soft_asset_sync.lb_asset_key）
+        forward=lambda d: models.LoadBalancerService.objects.filter(asset_key__in=d.vips),
+        reverse=lambda lb: models.DomainAsset.objects.filter(vips__contains=[lb.asset_key]),
+    ),
+    Edge(
+        name="wideips",
+        src=NodeType.DOMAIN,
+        dst=NodeType.GTM_WIDEIP,
+        # fqdn 归一化时小写去尾点，wideip.name 是原始写法
+        forward=lambda d: models.GtmWideip.objects.filter(name__iexact=d.fqdn),
+        reverse=lambda w: models.DomainAsset.objects.filter(fqdn__iexact=(w.name or "").rstrip(".")),
+    ),
+    Edge(
+        name="devices",
+        src=NodeType.DOMAIN,
+        dst=NodeType.DEVICE,
+        forward=lambda d: models.Device.objects.filter(hostname__in=d.devices),
+        reverse=lambda device: models.DomainAsset.objects.filter(devices__contains=[device.hostname]),
+    ),
+    Edge(
+        name="devices",
+        src=NodeType.LOAD_BALANCER_SERVICE,
+        dst=NodeType.DEVICE,
+        forward=lambda lb: models.Device.objects.filter(hostname__in=lb.devices),
+        reverse=lambda device: models.LoadBalancerService.objects.filter(devices__contains=[device.hostname]),
+    ),
+    Edge(
+        name="virtual_servers",
+        src=NodeType.LOAD_BALANCER_SERVICE,
+        dst=NodeType.LTM_VIRTUAL_SERVER,
+        # 证据链：归一键 = VIP#端口，配置行按地址 + 端口反查（跨设备，同一服务多台都有）
+        forward=lambda lb: models.LtmVirtualServer.objects.filter(vs_address=lb.vip, vs_port=lb.port),
+        reverse=lambda v: models.LoadBalancerService.objects.filter(asset_key=f"{v.vs_address}#{v.vs_port}" if v.vs_port else v.vs_address),
     ),
 )
 

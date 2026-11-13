@@ -10,6 +10,7 @@
 | ``slb.py`` | LTM / GTM 全部表 |
 | ``firewall.py`` | 地址簿 / 服务簿 / 安全策略 / NAT 规则 |
 | ``owners.py`` | 服务器负责人（唯一没有 device 外键的表） |
+| ``ci.py`` | 统一配置项与软资产（T1/T4）：物理机 / 虚拟机 / 数据库实例 / 应用服务 / 域名 / LB 服务 |
 | ``_helpers.py`` | MAC 归一化（``arp_mac`` 的 ``extra_search`` 与 ``locate`` 共用） |
 
 新增一张表：在对应子域的 ``BUNDLE`` 里加一条 spec，需要挂到图上就在 ``../edges.py``
@@ -32,10 +33,10 @@ from llmtools.registry import EDGES, SPEC, Edge, EntitySpec, register_edge, regi
 
 from ..edges import EDGES as DOMAIN_EDGES
 from ..nodes import NodeType
-from . import firewall, ipam, owners, slb
+from . import ci, firewall, ipam, owners, slb
 
 #: 合并顺序 = 原先单文件里的声明顺序（``SPEC`` 的插入顺序会进错误提示与返回结果）
-_SUBDOMAINS = (ipam, slb, firewall, owners)
+_SUBDOMAINS = (ipam, slb, firewall, owners, ci)
 
 
 def _merge_entities() -> dict[str, EntitySpec]:

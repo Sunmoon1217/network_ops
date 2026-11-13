@@ -99,7 +99,7 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 
 现状：资产域为实体注册表形态，2026-11 从单文件拆成四层——`domains/assets/nodes.py`（`NodeType`，
 零 import 的公共词汇）、`domains/assets/specs/`（实体声明，按子域分 `ipam` / `slb` / `firewall` /
-`owners`，各自导出 `BUNDLE`）、`domains/assets/edges.py`（36 条关系边，不属于任何子域）、
+`owners` / `ci`，各自导出 `BUNDLE`）、`domains/assets/edges.py`（41 条关系边，不属于任何子域）、
 `specs/__init__.py`（合并 + 启动期校验 + `register()`）。拆分的两个硬约束：**边只依赖模型与
 `NodeType`、不 import 实体声明**（避免环）；**`node_type` 撞名与「同 src 边名重复」由
 `specs/__init__` 在 import 期断言**（`edge_named` 只取第一条命中，重名会静默串台）。

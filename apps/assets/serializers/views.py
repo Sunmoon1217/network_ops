@@ -323,21 +323,33 @@ class CIExtensionSerializerMixin:
 @model(model=models.PhysicalServer)
 class PhysicalServerSerializer(CIExtensionSerializerMixin, ParentClass):
     EXPECTED_CI_TYPE = models.CIType.PHYSICAL_SERVER
+    # MCP 侧用 ci_id 做业务键锚点（hostname 不唯一）；ci_name 是 CI 主表的名称
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    ci_name = serializers.CharField(source="ci.name", read_only=True)
 
 
 @model(model=models.VirtualMachine)
 class VirtualMachineSerializer(CIExtensionSerializerMixin, ParentClass):
     EXPECTED_CI_TYPE = models.CIType.VIRTUAL_MACHINE
+    # MCP 侧用 ci_id 做业务键锚点（hostname 不唯一）；ci_name 是 CI 主表的名称
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    ci_name = serializers.CharField(source="ci.name", read_only=True)
 
 
 @model(model=models.DatabaseInstance)
 class DatabaseInstanceSerializer(CIExtensionSerializerMixin, ParentClass):
     EXPECTED_CI_TYPE = models.CIType.DATABASE_INSTANCE
+    # MCP 侧用 ci_id 做业务键锚点（hostname 不唯一）；ci_name 是 CI 主表的名称
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    ci_name = serializers.CharField(source="ci.name", read_only=True)
 
 
 @model(model=models.ApplicationService)
 class ApplicationServiceSerializer(CIExtensionSerializerMixin, ParentClass):
     EXPECTED_CI_TYPE = models.CIType.APPLICATION_SERVICE
+    # MCP 侧用 ci_id 做业务键锚点（hostname 不唯一）；ci_name 是 CI 主表的名称
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    ci_name = serializers.CharField(source="ci.name", read_only=True)
 
 
 # 统一关系表（T3）：只登记直接关系，两端 ci_id 的存在性与自环在录入时校验
