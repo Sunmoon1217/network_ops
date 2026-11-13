@@ -1,0 +1,72 @@
+# 产品功能开发列表（AI 增强的资产与关系中枢）
+
+> 来源：《AI 增强的资产与关系中枢：升级规划与能力蓝图》（2026-10 内部方案稿，HTML 方案稿原文由用户提供）。
+> 核心定位：**资产与关系的权威源 + 运营流程起点**；监控/日志是增强入口不是替代；AI 不独立成模块，以 MCP/工具网关嵌入各环节。
+> 数据权威分工：平台 = 资产/关系/配置意图权威；Zabbix = 运行时状态权威；MCP/工具网关只封装、不存数。
+
+## 现状基线（截至 2026-11，已完成）
+
+- [x] 网络设备/网络配置/IPAM/防火墙/LTM-GTM 全套资产模型 + REST API（`apps/assets/models.py` 43 模型）+ Excel 导入
+- [x] 配置采集解析入库管道（`apps/ingest/`：每设备 git 仓库 → TTP 解析 → Saver；Celery 三阶段）
+- [x] 分析域（`apps/analysis/`）：路径追踪、访问流、互联网资产分析、分组查询（firewall_groups/lb_chain/ltm_groups/gslb_clusters/group_merge）
+- [x] 运行态巡检雏形：queue/celery/redis 三 monitor（`apps/analysis/{queue,celery,redis}_monitor.py` + `/api/analysis/queue-status/`）
+- [x] 阿里云接入雏形（`apps/cloud/`：client/products/response + AliyunVPC 等 8 模型；无 api/）
+- [x] MCP（骨架已合入 develop@daad7d3；2026-11 在 feature/mcp-server 续做接线+治理，待合并）：`netops/mcp_server.py`（根注册表 + `with_tool_lifecycle`）+ `netops/mcp_gateway.py`（Token 鉴权 / 限流 / 审计身份）+ `apps/assets/mcp/tools.py` 设备库三工具
+
+## 阶段一：补信息基础（数据层，其余一切的前提）
+
+| # | 任务 | 要点 | 模块指针 | 状态 |
+|---|------|------|----------|------|
+| T1 | 统一配置项体系 | ci_id / 类型 / 生命周期 / 标签；新增**物理机、虚拟机、数据库实例、应用服务** CI 类型；公共属性上收、专属属性留类型扩展 | `apps/assets/models.py` + 迁移 | 未开始 |
+| T2 | 业务归属 | 业务系统、负责人/团队、部门、环境（生产/测试/灾备）、服务级别 | assets 新模型；`ServerOwner` 演进；`device_import.py` 扩展 | 未开始 |
+| T3 | 统一关系表 | 六类跨类型关系：runs_on / depends_on / deployed_on / connected_to / located_in / member_of；**只存 ci_id + 关系类型**；上级归属只存最近一跳；现有专用外键/M2M 保留为强约束 | assets 新关系模型 | 未开始 |
+| T4 | 网络设备纳入统一 CI | 补 ci_id、业务归属、监控与日志引用 | `apps/assets/models.py` | 未开始 |
+| T5 | Zabbix 标签锚点 | 监控主机标签写入 ci_id（AI 与联动的基础锚点） | 运维动作，T15 前置 | 未开始 |
+
+## 阶段二：做强自身功能
+
+| # | 任务 | 要点 | 模块指针 | 状态 |
+|---|------|------|----------|------|
+| T6 | 统一资产目录 | 多类型资源统一检索/筛选/导出/批量维护，按类型/业务/环境/位置多维浏览 | assets api + 前端 | 未开始 |
+| T7 | 关系图谱与业务视图 | 任意 CI 上下游、多跳链路可视化；按业务/部门/环境聚合；"谁依赖谁"与影响路径 | `apps/analysis/`（path_tracer 基础）+ 新关系 API + 前端 | 未开始 |
+| T8 | 资产健康与数据质量治理 | 孤儿资源/缺负责人/未登记 IP/过期未退役识别；多源对账（云/自动发现/监控/日志）；漂移冲突清单与闭环 | 新管理命令 + API | 未开始 |
+| T9 | 容量与成本视图 | 机柜 U 位/机房空间、IP 利用率（SubnetUsageLog）、云规格分布、低负载闲置识别、扩容/采购依据 | assets IPAM + cloud | 未开始 |
+| T10 | AI 基础设施 | MCP 工具网关三件套（**鉴权/限流/审计**）+ Dify 工作流 + 向量库（手册/预案/历史故障）+ 按角色字段级脱敏 | `netops/mcp_server.py`、`netops/mcp_gateway.py`、core（McpToolCall ✅）、Redis 限流 | 进行中（网关三件套 ✅ 2026-11；Dify/向量库/脱敏 未做） |
+
+## 阶段三：查询与混合云增强
+
+| # | 任务 | 要点 | 模块指针 | 状态 |
+|---|------|------|----------|------|
+| T11 | 统一查询与排障入口 | 资产详情页聚合：属性+关系+归属+监控摘要+日志入口；告警一键看上下文 | 前端详情页 + analysis | 未开始 |
+| T12 | SLS 日志集成 | CI ↔ SLS Project/Logstore/查询模板登记；详情页直查日志；从日志提取 IP/主机名反哺数据质量 | cloud（aliyun-sls SDK 依赖已有） | 未开始 |
+| T13 | 混合云资源管理 | 云资源入 CI、云内关系（VPC⊃VSwitch⊃ECS/SLB）、云-本地专线/VPN 关系、云清单与成本视图 | `apps/cloud/`（models + api 待建） | 未开始（雏形 ✅） |
+| T14 | 首批 AI 场景 | 自然语言查询、日志摘要、关系推断（Dify 工作流消费 MCP 工具） | MCP 工具域 + Dify | 未开始 |
+
+## 阶段四：Zabbix 联动与 AI 深化
+
+| # | 任务 | 要点 | 模块指针 | 状态 |
+|---|------|------|----------|------|
+| T15 | Zabbix 通用联动 | 自动纳管（按类型路由到实例、ci_id 写标签）、告警富化（携带负责人/业务/位置/最近变更）、状态回写（独立监控状态字段+定时对账）、统一视图与跨域影响分析 | 新 zabbix 接入模块 | 未开始 |
+| T16 | 多 Zabbix 实例治理 | CI↔实例↔host_id 映射、孤儿主机/缺失监控/状态不一致对账、实例职责边界（类型/机房/业务/环境） | 同上 | 未开始 |
+| T17 | 按资源类型运行时增强 | 网络设备（接口/邻居/流量→动态拓扑）、物理机（硬件→机房健康）、虚拟机（runs_on→宿主机影响分析）、数据库（depends_on→应用影响）、应用（业务健康度/SLA）、云（混合云联动） | 同上 | 未开始 |
+| T18 | AI 深化 | 告警语义级二次收敛、根因诊断、影响面报告、容量趋势预测、云成本优化建议 | Dify + 向量库 + MCP | 未开始 |
+
+## MCP 工具域路线（T10/T14 的工具面，近期可执行）
+
+- [x] 骨架：`netops/mcp_server.py` 根单例 + `@mcp.tool()` import 即注册（对齐 Django admin 惯用法）
+- [x] assets 域：`search_devices` / `get_device` / `list_device_groups`（`apps/assets/mcp/tools.py`）
+- [x] **接线**（2026-11）：`netops/asgi.py` 挂 `/mcp`（django-mcp 的 SSE `mount_mcp_server`，不是 streamable_http）+ `McpGatewayMiddleware` Token 鉴权（复用 core.Token，Bearer / X-API-Key，无匿名）+ nginx `/mcp` 段（`proxy_buffering off`、3600s，tests/deploy 契约锁定）+ `MCP_ENABLED` 开关
+- [x] **治理**（2026-11）：`McpToolCall` 审计表（core，工具执行包装写入）+ Redis 限流（`MCP_RATE_LIMIT_PER_MINUTE`，故障 fail-open）+ 工具清单对账测试（`tests/mcp/test_tool_registry.py` 快照）
+- [ ] ingest 域：`config_*`（配置历史/diff/parser 清单，config_repo 现成能力直接包）
+- [ ] analysis 域：关系遍历、影响路径、路径追踪
+- [ ] cloud 域：`cloud_*`（VPC/VSwitch/SLB 清单、混合云关系）
+- [ ] zabbix 域：读先行（告警/状态/对账）→ 写（纳管/回写，**operator + 审计 + SDK Resolve() 人工确认**）
+
+## 硬约束与坑（蓝图点名 + 本仓实测）
+
+1. **AI 能力上限 = 数据质量 × ci_id 锚点 × SLS 查询模板 × 网关权限设计**——底层设施可先行，数据补齐必须同步。
+2. 写工具规矩：operator 角色 + 审计先行 + `Resolve()` 对话式确认；敏感字段（账号密码）永不出工具输出。
+3. 部署三件：`pyproject/uv.lock` 变更须**重建 Dockerfile.base**；`GUNICORN_WORKERS=1`（旧协议 MCP 会话绑 worker）；nginx `/mcp` 长连接（关缓冲、调大 read timeout）。
+4. 工具名是全局平面命名空间：按域前缀（`config_*`/`cloud_*`/`zabbix_*`）防撞名。
+5. 输出契约用 TypedDict（否则无结构化输出）；`DeviceInfo` 与 `DeviceSerializer` 字段一一对应，序列化器改动要同步。
+6. 新域接入两步：`apps/<域>/mcp/tools.py` 顶层 `@mcp.tool()` → 调用方（asgi/测试）import；`netops/mcp_server.py` 严禁反向 import 域工具模块（防循环）。

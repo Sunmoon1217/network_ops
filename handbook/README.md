@@ -22,6 +22,7 @@
 | [`docs-domain.md`](docs-domain.md) | 文档转换规则（md / 自包含 html / pdf）与 Dify 知识库推送 |
 | [`llmtools.md`](llmtools.md) | MCP 工具子系统：注册表、查询计划编译、域接入契约、生命周期约束 |
 | [`cloud.md`](cloud.md) | 阿里云接入：客户端封装、产品语义映射、云资源缓存 |
+| [`roadmap.md`](roadmap.md) | 产品路线图：四阶段 18 项开发任务（含模块指针与状态）、MCP 工具域路线、硬约束 |
 
 ## 注释规范（什么时候写注释、什么时候写文档）
 

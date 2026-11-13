@@ -69,6 +69,7 @@ network_ops/
 | 文档转换规则与 Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
 | MCP 工具子系统 | [`handbook/llmtools.md`](handbook/llmtools.md) |
 | 阿里云接入 | [`handbook/cloud.md`](handbook/cloud.md) |
+| 产品路线图（四阶段 18 项 + MCP 工具域路线） | [`handbook/roadmap.md`](handbook/roadmap.md) |
 
 ## 知识库（跨会话共享的实测结论）
 
@@ -91,7 +92,6 @@ network_ops/
 | `uv-package-and-lockfile` | uv 不读 pip 配置（只有 `UV_DEFAULT_INDEX` 有效）、`uv.lock` 固化 registry、依赖层镜像的重建时机 |
 | `ttp-template-gotchas` | 模板按 **XML** 解析（注释里的尖括号会炸）、`re()` 可内联正则、**单条命中给 dict / 多条给 list**、内置 `IPV6` 不含点号 |
 | `frontend-types` | 具名类型进 `src/shared/types/` + barrel、撞名语义化改名、`.ts` / `.d.ts` 分工 |
-| `product-roadmap` | **项目本地**技能：产品功能开发列表（四阶段 18 项 + MCP 路线 + 硬约束） |
 
 ## 环境搭建
 
@@ -144,6 +144,9 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 > 只写本项目自己的约定（路径、服务、旋钮、契约）。第三方实测行为在 `.dsh/skills`，部署侧
 > 硬要求与代价在 [`handbook/deploy.md`](handbook/deploy.md)，这里只留「会被踩坏的那一句」。
 
+- **新需求先查路线图**：接到新需求 / 想加新功能，先对照 [`handbook/roadmap.md`](handbook/roadmap.md)
+  判断是否属于既有规划（四阶段 T1–T18 或 MCP 工具域路线）——属于则按对应任务实施并回写状态，
+  不属于再确认是否偏离蓝图定位（资产与关系的权威源 + 运营流程起点），避免脱离规划随意加功能。
 - **settings 分层**：可被环境变量影响的配置**只在 `base.py` 定义一遍**；三个环境文件只放硬差异
   （`dev.py` 空壳；`container.py` 两条 host 必填守卫；`prod.py` `DEBUG=False` 硬覆盖 + 5 项守卫）。
   环境旋钮唯一 `DJANGO_ENV`（不设 → dev，白名单，拼错拒启动），`DJANGO_SETTINGS_MODULE` 恒为
