@@ -338,3 +338,28 @@ class DatabaseInstanceSerializer(CIExtensionSerializerMixin, ParentClass):
 @model(model=models.ApplicationService)
 class ApplicationServiceSerializer(CIExtensionSerializerMixin, ParentClass):
     EXPECTED_CI_TYPE = models.CIType.APPLICATION_SERVICE
+
+
+# 统一关系表（T3）：只登记直接关系，两端 ci_id 的存在性与自环在录入时校验
+
+
+@model(model=models.CIRelationship)
+class CIRelationshipSerializer(ParentClass):
+    relation_type_display = serializers.CharField(source="get_relation_type_display", read_only=True)
+
+    class Meta:
+        model = models.CIRelationship
+        fields = ("id", "src_ci_id", "dst_ci_id", "relation_type", "relation_type_display", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate(self, attrs: dict) -> dict:
+        src = attrs.get("src_ci_id", getattr(self.instance, "src_ci_id", None))
+        dst = attrs.get("dst_ci_id", getattr(self.instance, "dst_ci_id", None))
+        if src and dst and src == dst:
+            raise serializers.ValidationError({"dst_ci_id": "关系两端不能是同一个 CI"})
+        wanted = {value for value in (src, dst) if value}
+        known = set(models.ConfigurationItem.objects.filter(ci_id__in=wanted).values_list("ci_id", flat=True))
+        for field, value in (("src_ci_id", src), ("dst_ci_id", dst)):
+            if value and value not in known:
+                raise serializers.ValidationError({field: f"CI 标识 {value} 不存在"})
+        return attrs

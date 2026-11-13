@@ -5,6 +5,7 @@ from .models import (
     ApplicationService,
     ArpMac,
     Cabinet,
+    CIRelationship,
     ConfigurationItem,
     DatabaseInstance,
     DataCenter,
@@ -918,3 +919,12 @@ class ApplicationServiceAdmin(admin.ModelAdmin):
     search_fields = ("service_type", "url_path", "ci__ci_id", "ci__name")
     list_select_related = ("ci",)
     autocomplete_fields = ("ci",)
+
+
+# 统一关系表（T3）：两端是 ci_id 字符串，不是外键，列表直接按标识扫读
+@admin.register(CIRelationship)
+class CIRelationshipAdmin(admin.ModelAdmin):
+    list_display = ("id", "src_ci_id", "relation_type", "dst_ci_id", "created_at")
+    list_filter = ("relation_type", "created_at")
+    search_fields = ("src_ci_id", "dst_ci_id")
+    date_hierarchy = "created_at"

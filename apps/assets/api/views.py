@@ -941,3 +941,31 @@ class ApplicationServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationServiceSerializer
     search_fields = ("service_type", "url_path", "ci__name", "ci__ci_id")
     ordering_fields = ("service_type", "created_at")
+
+
+# 统一关系表（T3）：按 CI 查上下游，正反向都走索引
+
+
+class CIRelationshipViewSet(viewsets.ModelViewSet):
+    from assets.models import CIRelationship
+    from assets.serializers.views import CIRelationshipSerializer
+
+    queryset = CIRelationship.objects.all()
+    serializer_class = CIRelationshipSerializer
+    search_fields = ("src_ci_id", "dst_ci_id")
+    ordering_fields = ("src_ci_id", "dst_ci_id", "relation_type", "created_at")
+
+    def get_queryset(self):
+        from django.db.models import Q
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("src_ci_id"):
+            qs = qs.filter(src_ci_id=params["src_ci_id"])
+        if params.get("dst_ci_id"):
+            qs = qs.filter(dst_ci_id=params["dst_ci_id"])
+        if params.get("ci_id"):
+            qs = qs.filter(Q(src_ci_id=params["ci_id"]) | Q(dst_ci_id=params["ci_id"]))
+        if params.get("relation_type"):
+            qs = qs.filter(relation_type=params["relation_type"])
+        return qs

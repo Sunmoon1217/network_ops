@@ -62,6 +62,11 @@ from .network import (
     Vlan,
     Vrf,
 )
+from .relations import (
+    CI_RELATION_CHOICES,
+    CIRelationship,
+    CIRelationType,
+)
 
 __all__ = [
     "CI_TYPE_CHOICES",
@@ -115,4 +120,7 @@ __all__ = [
     "Vendor",
     "Vlan",
     "Vrf",
+    "CI_RELATION_CHOICES",
+    "CIRelationType",
+    "CIRelationship",
 ]

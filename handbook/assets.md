@@ -72,6 +72,28 @@ API（`/api/assets/`）：`configuration-items/`（列表支持 `?ci_type=`、`s
 `physical-servers/`、`virtual-machines/`、`database-instances/`、`application-services/`。
 列表分页走全局 `StandardPagination`，统一检索直接在主表上做，不需要把配置链全量算进内存。
 
+## 统一关系表（T3）
+
+T3 只做**跨类型关系的录入与查询**，不物化传递闭包、不替代现有外键 / M2M。
+
+| 模型 | 作用 |
+|------|------|
+| `CIRelationship` | 一条直接关系：`src_ci_id --[relation_type]--> dst_ci_id` + 时间戳 |
+| `CIRelationType` | 六类关系词汇：`runs_on` / `depends_on` / `deployed_on` / `connected_to` / `located_in` / `member_of` |
+
+几条约定：
+
+- **两端存 `ci_id` 字符串，不建外键**：关系两端可以是任意 CI 类型（含 T4 才接入统一 CI 的现有资产
+  模型），用 FK 会把类型绑死。引用完整性由序列化器在录入时校验 `ci_id` 存在，数据库层只约束
+  `(src, dst, type)` 唯一与禁止自环；代价是 CI 删除后可能留孤儿行，批量清理等 T4 之后补。
+- **上级归属只存最近一跳**：VM `runs_on` 物理机、物理机 `located_in` 机柜，只存这两条，
+  不额外存 VM `located_in` 机柜。多跳遍历是 T7 关系图谱的事，别加 `depth` / `path` 字段。
+- **现有专用外键 / M2M 保留为强约束**：`Interface.vrf`、`Policy.services` 等照旧，本表只补跨类型弱关联。
+- 刻意不继承 `ConfigBase`，避免被 `purge_configs` 枚举清理；契约测试 `tests/assets/test_ci_relationship.py` 锁住。
+
+API：`/api/assets/ci-relationships/`（列表支持 `?ci_id=` 命中任一端、`?src_ci_id=`、`?dst_ci_id=`、
+`?relation_type=`、`search`、分页）。写入走全局 `IsOperatorOrReadOnly`。
+
 ## API 视图（`api/views.py`）
 
 - **堆叠组备机没有自己的配置记录**，查询统一回退到组内主设备（`resolve_config_owner`）。

@@ -71,6 +71,9 @@ router.register(r"virtual-machines", views.VirtualMachineViewSet, basename="virt
 router.register(r"database-instances", views.DatabaseInstanceViewSet, basename="database-instance")
 router.register(r"application-services", views.ApplicationServiceViewSet, basename="application-service")
 
+# 统一关系表（T3）
+router.register(r"ci-relationships", views.CIRelationshipViewSet, basename="ci-relationship")
+
 urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),
