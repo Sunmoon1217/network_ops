@@ -41,7 +41,9 @@ class Command(BaseCommand):
         parser.add_argument("--update-password", action="store_true", help="同名账号已存在时也重置它的密码")
 
     def handle(self, *args, **options):
-        user_model = cast(User, get_user_model())
+        # get_user_model() 返回的是**类**；cast 成 User 实例会走 Manager 的实例描述符
+        # （BaseManager.__get__ 的 instance 参数只接受 Options），所以这里标成 type[User]。
+        user_model = cast(type[User], get_user_model())
         manager = user_model.objects
         username = options["username"]
         explicit_password = options["password"]
