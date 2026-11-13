@@ -154,8 +154,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `from . import ...`（半初始化时会炸）。细节：[`handbook/settings.md`](handbook/settings.md)。
 - **数据库后端二选一**：`DB_ENGINE=postgresql|mysql`（默认 PG；其它值拒启动），变量名沿用
   `POSTGRES_*`。MySQL 走 `docker compose -f compose.yml -f compose.mysql.yml`，驱动 mysqlclient
-  靠 `dockerfile.venv` 两阶段构建编译。跨库差异（GIN 只在 PG、`Service` 唯一键在 MySQL 用函数
-  索引、JSON 成员查询在 MySQL 无索引、DDL 不可回滚）见 [`handbook/deploy.md`](handbook/deploy.md)。
+  靠 `dockerfile.venv` 两阶段构建编译。跨库差异（GIN 只在 PG、MySQL 用多值索引、`Service`
+  唯一键在 MySQL 用函数索引、DDL 不可回滚）见 [`handbook/deploy.md`](handbook/deploy.md)。
 - **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 所有模型在单文件 `apps/assets/models.py`；`analysis` 相反是 `models/` 包
