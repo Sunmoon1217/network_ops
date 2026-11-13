@@ -328,9 +328,19 @@ target label（不含 host / ifname），前端一次请求拿全。缓存未生
   180s）与管理命令 `python manage.py refresh_link_cache [--check]`；beat 启动时先同步刷一次
   （失败不阻塞，下个周期重试）。TTL `DASHBOARD_LINK_CACHE_TTL`（默认 600s）大于刷新周期，
   Zabbix 抖动时还能读到上一份。
-- **失败隔离**：单条链路失败只 warning、其余照常；全部失败才抛 `LinkCollectionError`
-  （Celery 记 FAILURE / 管理命令非零退出）。全挂时**不逐条 warning**——异常消息里带每个
-  target 的原因摘要、`from None` 去掉异常链，worker 日志只留一行可定位的 traceback。
+- **失败隔离**：单条链路失败只 warning、其余照常；全部失败抛 `LinkCollectionError`（消息里
+  带每个 target 的原因摘要、`from None` 去掉异常链），全挂时**不再逐条 warning**。
+  - 管理命令：异常照旧上抛 → 非零退出（`refresh_link_cache` 的 `CommandError`）。
+  - Celery 任务：`refresh_link_cache_task` **捕获 `LinkCollectionError`**，记一条 `ERROR`
+    并返回 `{"status": "failed", "error": ...}`，**不 raise**——外部源整体不可用时 worker
+    日志不再打整段 traceback（180s 一轮会刷屏），下个周期自动重试；Redis / `conf/links.json`
+    这类真实故障仍上抛，Celery 记 FAILURE、traceback 保留。
+- **缓存未生成时的降级**：`read_link_cache()` 返回 `None` 时，读接口用
+  `empty_link_payload()` 下发「静态 meta + `points: []` + `refreshed_at: null`」空壳——
+  **不写 Redis、不造 0 值曲线**（全 0 会把 Zabbix 全挂伪装成零流量）。meta 来自
+  `conf/links.json`（`LinkConfig.meta()`，静态部分用 `lru_cache` 缓存），前端据此仍能拿到
+  panels / scopes / targets 画出空图框并显示「暂无链路采样数据」，而不是整块折线图消失；
+  `refreshed_at` 为空且前端仍保留旧图时提示「数据未更新，显示上一次结果」，避免热重启后的静默陈旧。
 - **前端**：`LinkBandwidthWidget` 不再硬编码 `SCOPE_LABELS` / `SUBJECT_LABELS`，label、分组、
   停用过滤都来自响应 `meta`；全量取（3 小时窗口约几十 KB），新数据到达前保留旧值，
   `LineCharts` 用 `replaceMerge` 清掉已删除的 series。

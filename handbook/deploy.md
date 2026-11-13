@@ -123,11 +123,26 @@ venv / code 镜像并重跑 `code-init`**（技能 `docker-compose-behavior` 第
 celery 侧只有一个 `CELERY_LOGLEVEL`——`--concurrency` 刻意不暴露（同设备并发会写坏数据，
 见 [`ingest.md`](ingest.md)「并发」）。
 
-**beat 的启动钩子**（`entrypoint/beat.sh`）：先 `python manage.py refresh_link_cache`
-同步刷一次链路缓存（失败只警告、不阻塞启动，下个周期重试），再
-`exec celery -A netops beat --schedule=/tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid`。
+**beat 的启动钩子**（`entrypoint/beat.sh`，`scripts/deploy-host.sh` 的 `cmd_beat` 同构）：
+
+1. `python manage.py refresh_link_cache` —— **同步**刷一次链路缓存（失败只警告、不阻塞启动）；
+2. `python manage.py collect_dashboard` —— **投递**一次设备组 + Autotask 采集（异步，worker 消费）。
+   为什么必须补这一次：Celery 的 interval 条目在**首次加入时**把 `last_run_at` 记为「加入时刻」
+   （`celery.beat.Entry`），第一次发送要等满一个周期。Autotask 默认 600s，不补投的话 beat 起来
+   后前 10 分钟大屏没有工单 / SLB / 巡检数据——这不是调度没生效。
+3. `manage.py shell -c "...print(app.conf.beat_schedule)"` 打印**生效调度**（条目名 / 任务 / 周期）。
+   日志里「没有某条任务」时先看这一行：条目不在 = beat 读到的代码还是旧的（code 卷没重铺或容器
+   没重启），不是调度写错。
+4. `exec celery -A netops beat --schedule=/tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid`。
+
 `/app` 是只读 code 卷，celery 默认往 cwd 写 schedule 会直接 EROFS；beat **单实例**，
-不能 scale（会重复调度）。
+不能 scale（会重复调度）。**换代码后只重启 `beat` 不够**：code 卷没重铺时它读到的还是旧
+settings，必须先 `docker compose up -d code-init` 再重启 `beat`。
+
+两条启动路径（`entrypoint/beat.sh` 与 `scripts/deploy-host.sh` 的 `cmd_beat`）必须同构，
+由 `tests/deploy/test_beat_startup_hooks.py` 对账：同步刷链路缓存 → 补投两个采集源 →
+打印生效调度 → `exec celery beat`，且每步都有 `|| echo` 兜底（`set -e` 下失败不阻塞启动）。
+漏掉补投会让大屏空 10 分钟，而调度条目测试全绿——这类脚本级回归只有这条契约能拦住。
 
 ## 启动三步（`entrypoint/app.sh`）
 

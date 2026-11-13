@@ -7,7 +7,8 @@
 
 缓存 value 是「完整窗口结果 + 脱敏展示字段」，同步的读接口只 ``GET`` 这一个 key，
 所以不存在读放大，也不需要处理同步 / 异步混用。Zabbix 抖动时保留上一份缓存
-（TTL 大于刷新周期），全部链路失败才抛 :class:`LinkCollectionError` 让 Celery 记 FAILURE。
+（TTL 大于刷新周期）；全部链路失败抛 :class:`LinkCollectionError`——管理命令非零退出，
+Celery 任务捕获它只记一条 ERROR 并返回 ``status=failed``（不 raise，避免 180s 一轮刷屏）。
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
+from functools import lru_cache
 from logging import getLogger
 from typing import Any
 
@@ -85,8 +87,9 @@ async def build_link_payload(
             scope_data[target.subject] = value if previous is None else max(previous, value)
 
     # 全部失败才抛；单条失败只 warning（其余线路照常显示）。
-    # 全挂时**不再逐条 warning**：异常消息里已带每个 target 的原因，Celery 记 FAILURE 时
-    # traceback 就只剩这一行；``from None`` 去掉 asyncio 的异常链，避免 180s 一轮刷屏。
+    # 全挂时**不再逐条 warning**：异常消息里已带每个 target 的原因；``from None`` 去掉
+    # asyncio 的异常链。管理命令照旧非零退出，Celery 任务捕获它只记一条 ERROR、返回
+    # status=failed（不 raise，避免 180s 一轮刷屏），下个周期自动重试。
     if enabled and len(failures) == len(enabled):
         detail = "; ".join(f"{target.scope}/{target.subject}: {type(exc).__name__}: {exc}" for target, exc in failures)
         raise LinkCollectionError(f"全部 {len(failures)} 条链路采集失败 —— {detail}") from None
@@ -136,3 +139,18 @@ def read_link_cache(*, client=None) -> dict[str, Any] | None:
         logger.warning("链路缓存内容不是合法 JSON")
         return None
     return payload if isinstance(payload, dict) else None
+
+
+@lru_cache(maxsize=1)
+def _static_link_meta() -> dict[str, Any]:
+    """展示字段随版本走、不依赖 Zabbix：缓存起来避免每个大屏请求都读文件 + 校验。"""
+    return load_links_config().meta()
+
+
+def empty_link_payload() -> dict[str, Any]:
+    """缓存未生成时的空壳：只带静态 meta，**不造任何数值点**。
+
+    读接口用它保证前端永远拿得到 panels / scopes / targets，冷启动时能画出空图框；
+    ``refreshed_at=None`` 表示「还没采到过」，前端据此提示数据未更新。
+    """
+    return {**_static_link_meta(), "points": [], "refreshed_at": None}
