@@ -191,7 +191,7 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 
 **数据库与阿里云凭据走 docker secrets，不进 `.env` / 环境变量**（为什么不用环境变量：技能
 `container-healthchecks` 第 5 节）：`envs/secrets/db_user` / `db_password` /
-`aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`。
+`{prod,test}_{ak,sk}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`。
 数据库连接参数集中在 **`envs/db.env`** 一份文件里，compose 直接用 `env_file` 加载它：
 
 - `envs/common.env` 里定义部署无关的 `DB_ENGINE` / `DB_NAME` / `DB_USER`，并在同一文件内嵌套出

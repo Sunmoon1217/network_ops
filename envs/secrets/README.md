@@ -16,10 +16,10 @@
 
 | 文件 | 容器内路径 | 谁读 |
 |------|-----------|------|
-| `aliyun_prod_access_key_id` | `/run/secrets/aliyun_prod_access_key_id` | app / worker（`settings/base.py` 的 `_env_or_file()`） |
-| `aliyun_prod_access_key_secret` | `/run/secrets/aliyun_prod_access_key_secret` | 同上 |
-| `aliyun_test_access_key_id` | `/run/secrets/aliyun_test_access_key_id` | 同上 |
-| `aliyun_test_access_key_secret` | `/run/secrets/aliyun_test_access_key_secret` | 同上 |
+| `prod_ak` | `/run/secrets/prod_ak` | app / worker（`settings/base.py` 的 `_env_or_file()`） |
+| `prod_sk` | `/run/secrets/prod_sk` | 同上 |
+| `test_ak` | `/run/secrets/test_ak` | 同上 |
+| `test_sk` | `/run/secrets/test_sk` | 同上 |
 
 > 阿里云 AK/Secret **不是随机生成的**：`generate.sh` 从**环境变量或根 `.env`** 读取
 > `ALIYUN_{PROD,TEST}_ACCESS_KEY_{ID,SECRET}` 后写入这四个文件；读不到就建空文件（compose 要求

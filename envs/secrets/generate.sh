@@ -3,15 +3,16 @@
 # 生成 docker secrets 文件：
 #   envs/secrets/db_user       → 容器内 /run/secrets/db_user
 #   envs/secrets/db_password   → 容器内 /run/secrets/db_password
-#   envs/secrets/aliyun_{prod,test}_access_key_{id,secret} → /run/secrets/同名
+#   envs/secrets/{prod,test}_{ak,sk} → /run/secrets/同名
 #
 # 数据库密码可以本地随机生成；阿里云 AK/SK **不能**——先从环境变量或根 .env 读取，
 # 读不到就写空文件（compose 要求文件存在），运行期调用云 API 会因空凭据失败直到填入。
 #
 # 谁用它们：
-#   * db 容器     —— postgres 官方镜像的 DB_USER_FILE / DB_PASSWORD_FILE
-#   * app / worker —— netops/settings.py 的 _env_or_file() 读同一套 *_FILE 变量
-# 这两个文件**不入库**（.gitignore 已排除），权限是 600。
+#   * db 容器     —— envs/db.env 把 DB_USER_FILE / DB_PASSWORD_FILE 嵌套成镜像认的
+#                    POSTGRES_USER_FILE / MYSQL_PASSWORD_FILE
+#   * app / worker —— settings/base.py 的 _env_or_file() 读 DB_*_FILE / ALIYUN_*_FILE
+# 全部**不入库**（.gitignore 已排除），权限是 600。
 #
 # 用法：
 #   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 DB_USER / DB_PASSWORD
@@ -130,10 +131,10 @@ write_secret db_user "$user"
 write_secret db_password "$password"
 
 # 阿里云 AK/SK：来源优先级 环境变量 > 根 .env；缺省写空文件
-write_optional_secret aliyun_prod_access_key_id "$(pick ALIYUN_PROD_ACCESS_KEY_ID)"
-write_optional_secret aliyun_prod_access_key_secret "$(pick ALIYUN_PROD_ACCESS_KEY_SECRET)"
-write_optional_secret aliyun_test_access_key_id "$(pick ALIYUN_TEST_ACCESS_KEY_ID)"
-write_optional_secret aliyun_test_access_key_secret "$(pick ALIYUN_TEST_ACCESS_KEY_SECRET)"
+write_optional_secret prod_ak "$(pick ALIYUN_PROD_ACCESS_KEY_ID)"
+write_optional_secret prod_sk "$(pick ALIYUN_PROD_ACCESS_KEY_SECRET)"
+write_optional_secret test_ak "$(pick ALIYUN_TEST_ACCESS_KEY_ID)"
+write_optional_secret test_sk "$(pick ALIYUN_TEST_ACCESS_KEY_SECRET)"
 
 cat <<'EOF'
 

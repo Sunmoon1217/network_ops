@@ -13,10 +13,10 @@ x-secrets: &db-secrets
 x-app-secrets: &app-secrets
   - db_user
   - db_password
-  - aliyun_prod_access_key_id
-  - aliyun_prod_access_key_secret
-  - aliyun_test_access_key_id
-  - aliyun_test_access_key_secret
+  - prod_ak
+  - prod_sk
+  - test_ak
+  - test_sk
 
 # app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
 # 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
@@ -224,11 +224,11 @@ secrets:
     file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}
   db_password:
     file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}
-  aliyun_prod_access_key_id:
-    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/aliyun_prod_access_key_id}
-  aliyun_prod_access_key_secret:
-    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/aliyun_prod_access_key_secret}
-  aliyun_test_access_key_id:
-    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/aliyun_test_access_key_id}
-  aliyun_test_access_key_secret:
-    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/aliyun_test_access_key_secret}
+  prod_ak:
+    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/prod_ak}
+  prod_sk:
+    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/prod_sk}
+  test_ak:
+    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/test_ak}
+  test_sk:
+    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/test_sk}
