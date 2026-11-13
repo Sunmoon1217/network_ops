@@ -53,8 +53,8 @@ const router = createRouter({
         { path: 'subnets', name: 'asset-subnets', component: () => import('@netops/views/ipam/index.vue') },
         { path: 'subnets/create', name: 'asset-subnet-create', component: () => import('@netops/views/ipam/forms/SubnetForm.vue'), meta: { requiresOperator: true } },
         { path: 'subnets/:id/edit', name: 'asset-subnet-edit', component: () => import('@netops/views/ipam/forms/SubnetForm.vue'), meta: { requiresOperator: true } },
-        { path: 'load-balancer', name: 'asset-load-balancer', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '负载均衡（资产）' } },
-        { path: 'domain', name: 'asset-domain', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '域名（资产）' } },
+        { path: 'load-balancer', name: 'asset-load-balancer', component: () => import('@netops/views/asset/load-balancer.vue'), meta: { title: '负载均衡（资产）' } },
+        { path: 'domain', name: 'asset-domain', component: () => import('@netops/views/asset/domain.vue'), meta: { title: '域名（资产）' } },
         { path: 'link', name: 'asset-link', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '链路信息' } },
         // 应用服务：应用系统、数据库实例
         { path: 'application', name: 'asset-application', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '应用系统' } },
