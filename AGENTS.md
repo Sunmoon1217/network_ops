@@ -37,7 +37,7 @@ network_ops/
 ├── netops/          # settings/（base 集中 env 动态项 + dev/container/prod）、urls、asgi、lifespan、views、schema（外部 DTO 基类）
 ├── apps/
 │   ├── core/        # 用户与认证、Task/Stage、运维命令（ensure_superuser / migrate_if_needed / queue_*）
-│   ├── assets/      # 网络域模型（models/ 包，按域分文件）+ 序列化器 + API + Excel 导入
+│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API + Excel 导入
 │   ├── ingest/      # 采集/解析/入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo + collectors/（外部数据源）
 │   ├── analysis/    # 只读消费侧：路径追踪、访问流、互联网资产、监控、大屏供数；models/ 是包
 │   ├── cloud/       # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
@@ -160,9 +160,10 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `from . import ...`（半初始化时会炸）。细节：[`handbook/settings.md`](handbook/settings.md)。
 - **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
-- **模型分域**：`assets` 与 `analysis` 都用 `models/` 包（按域分文件 + `__init__.py` 显式
-  re-export；`from assets.models import X` 与 `app_label` 保持不变、历史迁移不受影响）。
-  `assets` 现有模型集中在 `models/__init__.py`，CI 基础层在 `models/ci.py`，后续按域继续拆。
+- **模型包入口**：`assets` 与 `analysis` 都用 `models/` 包，`__init__.py` **只做 re-export、
+  不写模型定义**。`assets` 的模型定义在 `network.py`（历史网络域模型）与 `ci.py`（统一配置项），
+  `analysis` 在 `access_flow` / `internet_analysis` / `dashboard`。`from assets.models import X`
+  与 `app_label` 保持不变、历史迁移不受影响；新增内聚模块独立成子文件，`__init__.py` 不写实现。
   **不能同时留 `models.py` 与 `models/`**（包优先，单文件被静默忽略）。细节：[`handbook/assets.md`](handbook/assets.md)。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
