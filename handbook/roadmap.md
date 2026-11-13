@@ -24,7 +24,7 @@
 | T1 统一配置项体系 | **做**，去掉「生命周期」：保留 ci_id / 类型 / 标签 / 公共属性上收 + 新增 1 类实物资产（物理机）与 3 类软资产（虚拟机 / 数据库实例 / 应用服务）。资产分类边界见 [`assets.md`](assets.md) |
 | T2 业务归属 | **跳过**（本轮跳过、T3 先行；业务系统 / 负责人 / 部门 / 环境 / 服务级别作为录入字段，不接流程） |
 | T3 统一关系表 | **做**（六类关系登记与查询，只存 ci_id + 关系类型） |
-| T4 现有资产纳入统一 CI | **做**（登记已有独立资产表 + **域名 / 负载均衡服务从配置行归并**；域名 / LB 优先归并、其余软资产优先手工录入；DCIM 算位置不进 CI、设备内部功能只作明细不进 CI） |
+| T4 现有资产纳入统一 CI | **做**（现有 43 张模型零改动；**新增 `DomainAsset` / `LoadBalancerService` 两张 `_CIExtension` 扩展表**承载域名 / LB 归并结果，归一键 FQDN / `VIP#port`、跨设备去重、增量 upsert、列表 SQL 分页；域名 / LB 优先归并、其余软资产优先人工录入；DCIM 算位置不进 CI、设备内部功能只作明细不进 CI）。方案见 [`assets.md`](assets.md)「软资产归并（T4）」 |
 | T5 Zabbix 标签锚点 | **后续阶段做**（监控主机标签写入 ci_id，为自动纳管铺路，T15 前置） |
 | T6 统一资产目录 | **做**（检索 / 筛选 / 导出 / 批量维护中的录入与查询部分） |
 | T7 关系图谱与业务视图 | **做**（只读视图） |
@@ -59,7 +59,7 @@
 | T1 | 统一配置项体系 | ci_id / 类型 / 标签（**现阶段去生命周期**，见范围边界）；新增**物理机（实物）、虚拟机 / 数据库实例 / 应用服务（软资产）** CI 类型；公共属性上收、专属属性留类型扩展 | `apps/assets/models/ci.py` + 0031 迁移 | 已完成（主表 + 4 类扩展；`CIType` 收敛为 9 类资产，资产分类边界见 [`assets.md`](assets.md)） |
 | T2 | 业务归属 | 业务系统、负责人/团队、部门、环境（生产/测试/灾备）、服务级别 | assets 新模型；`ServerOwner` 演进；`device_import.py` 扩展 | 暂缓（本轮跳过，T3 先行） |
 | T3 | 统一关系表 | 六类跨类型关系：runs_on / depends_on / deployed_on / connected_to / located_in / member_of；**只存 ci_id + 关系类型**；上级归属只存最近一跳；现有专用外键/M2M 保留为强约束 | `apps/assets/models/relations.py` + 0032 迁移 | 已完成（六类关系登记与查询） |
-| T4 | 现有资产纳入统一 CI | ① 登记已有独立资产表：`Device` / `IPAddress` / `Subnet` + T1 的 4 类扩展；② **域名 / 负载均衡服务从配置行归并**（`GtmWideip` / `LtmVirtualServer` → `DOMAIN` / `LOAD_BALANCER_SERVICE`，归一键 FQDN / `VIP#port`，跨设备去重）；③ 补 ci_id、监控与日志引用。**DCIM 算位置维度、不进 CI**；设备内部功能（Vlan/Vrf/Interface/Route/ArpMac 等）只作明细不进 CI | assets api + 归并与前端 | 未开始 |
+| T4 | 现有资产纳入统一 CI | ① **现有 43 张模型零改动**：配置行保持权威、DCIM 算位置维度不进 CI、设备内部功能（Vlan/Vrf/Interface/Route/ArpMac 等）只作资产明细；② **新增 2 张 `_CIExtension` 扩展表**：`DomainAsset`（`DOMAIN`，归一键 FQDN）与 `LoadBalancerService`（`LOAD_BALANCER_SERVICE`，归一键 `VIP#port`），承载 `GtmWideip` / `LtmVirtualServer` 的跨设备归并结果，增量 upsert、列表读主表 SQL 分页（换页零全量重算）；③ 补 ci_id、监控与日志引用；④ 存量资产（`Device` / `IPAddress` / `Subnet`）登记进 CI 主表还是由 T6 union 接入，开工时定。完整方案见 [`assets.md`](assets.md)「软资产归并（T4）」 | `apps/assets/models/` 新增子模块（2 张扩展表）+ 归并命令 / 信号 + api | 未开始（方案已定，未建表） |
 | T5 | Zabbix 标签锚点 | 监控主机标签写入 ci_id（AI 与联动的基础锚点） | 运维动作，T15 前置 | 未开始 |
 
 ## 阶段二：做强自身功能

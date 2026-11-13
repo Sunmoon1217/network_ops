@@ -68,10 +68,11 @@ T3 统一关系表、T6 统一资产目录的基础。
 | 来源 | 类型 | 做法 |
 |---|---|---|
 | 人工登记 / 独立资产表 | 虚拟机、数据库实例、应用服务（T1 已建）、`IPAddress`、`Subnet` | 已经是资产实体，直接登记进 CI 主表 |
-| 从配置行归并 | 域名（`DOMAIN`）、负载均衡服务（`LOAD_BALANCER_SERVICE`） | `GtmWideip` / `LtmVirtualServer` 是**某台设备上的一条配置行**，不是资产；T4 按归一键（FQDN 小写去尾点 / `VIP#port`，IPv6 用 `#`）跨设备归并成一条资产，设备退居「部署位置」多值 |
+| 从配置行归并 | 域名（`DOMAIN`）、负载均衡服务（`LOAD_BALANCER_SERVICE`） | `GtmWideip` / `LtmVirtualServer` 是**某台设备上的一条配置行**，不是资产；T4 按归一键（FQDN 小写去尾点 / `VIP#port`，IPv6 用 `#`）跨设备归并成一条资产，设备退居「部署位置」多值。落地形态见下文「软资产归并（T4）」 |
 
 所以域名 / LB **不是**给配置行加个 `ci_id` 就算完 —— 那样一个域名会变成 N 条资产。
-配置行只在资产详情 / 展开时查，资产列表在主表上做 SQL 分页。
+归并结果要有专属扩展表落库（不能每次请求实时算），配置行只在资产详情 / 展开时查，
+资产列表在主表上做 SQL 分页。
 
 几条容易踩的：
 
@@ -108,8 +109,8 @@ T3 只做**跨类型关系的录入与查询**，不物化传递闭包、不替�
 
 几条约定：
 
-- **两端存 `ci_id` 字符串，不建外键**：关系两端可以是任意 CI 类型（含 T4 才接入统一 CI 的现有资产
-  模型），用 FK 会把类型绑死。引用完整性由序列化器在录入时校验 `ci_id` 存在，数据库层只约束
+- **两端存 `ci_id` 字符串，不建外键**：关系两端可以是任意 CI 类型（含 T4 归并出的域名 / 负载均衡
+  服务资产），用 FK 会把类型绑死。引用完整性由序列化器在录入时校验 `ci_id` 存在，数据库层只约束
   `(src, dst, type)` 唯一与禁止自环；代价是 CI 删除后可能留孤儿行，批量清理等 T4 之后补。
 - **上级归属只存最近一跳**：VM `runs_on` 物理机、物理机 `located_in` 机柜，只存这两条，
   不额外存 VM `located_in` 机柜。多跳遍历是 T7 关系图谱的事，别加 `depth` / `path` 字段。
@@ -118,6 +119,63 @@ T3 只做**跨类型关系的录入与查询**，不物化传递闭包、不替�
 
 API：`/api/assets/ci-relationships/`（列表支持 `?ci_id=` 命中任一端、`?src_ci_id=`、`?dst_ci_id=`、
 `?relation_type=`、`search`、分页）。写入走全局 `IsOperatorOrReadOnly`。
+
+## 软资产归并（T4）
+
+T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」归并成「一条独立资产」。
+`GtmWideip`（`(device, name, rtype)` 唯一）与 `LtmVirtualServer`（`(device, name)` 唯一）
+都是 `ConfigBase` 子类、一设备一行、跨设备重复；归并后的资产一行一个 FQDN / 一个 `VIP#port`，
+设备退居「部署位置」多值。
+
+**现有 43 张模型零改动**：配置行保持权威、不动不删；DCIM 算位置维度不进 CI；
+设备内部功能（Vlan / Vrf / Interface / Route / ArpMac 等）只作资产明细，不进 CI。
+存量资产（`Device` / `IPAddress` / `Subnet`）是登记进 CI 主表、还是由 T6 统一检索 union 接入，
+留到 T4 开工时定。
+
+### 为什么必须有专属扩展表
+
+| 做法 | 结论 |
+|---|---|
+| 只在 `ConfigurationItem` 插一条，专属字段塞 `tags` / JSON | 不行：违背蓝图「公共属性上收、**专属属性留类型扩展**」，T1 已用 `_CIExtension` 确立同一模式 |
+| 不落表，每次请求从配置行实时归并 | 不行：等于 `apps/analysis/api/ltm_groups.py` 的 `_build_rows` 全量算完再切页，换页重新计算全量 |
+| **新增 2 张 `_CIExtension` 扩展表 + 归并结果落库** | **采用**：列表读主表 + 扩展表做 SQL 分页，详情 / 关联从扩展表取 |
+
+这不是「复制配置」，粒度不同：配置行按 `(device, name)`、跨设备重复；资产按归一键跨设备去重，
+是更高一层的实体。配置行只在详情 / 展开时作为证据反查。
+
+### 两张扩展表
+
+| 模型 | `ci_type` | 归一键 | 专属字段（归并产出） |
+|---|---|---|---|
+| `DomainAsset` | `DOMAIN` | FQDN 小写去尾点 | 记录类型、TTL、负载算法、池、回退 IP、关联 VIP、部署设备列表、配置一致性 |
+| `LoadBalancerService` | `LOAD_BALANCER_SERVICE` | `VIP#port`（IPv6 用 `#`，与前端 `types/lb.ts` 同约定） | VIP、端口、协议、关联池、成员数、Profile / iRule、部署设备列表、状态、配置一致性 |
+
+主表只放公共属性（`ci_id` / `ci_type` / `name` / `description` / `tags` / `monitor_status`），
+专属字段一律留扩展表；两者一对一（`_CIExtension`，见上文「统一配置项体系（T1）」）。
+`ci_id` 由主表生成、稳定不变，归一键只用来定位 / 去重，不作为主键。
+
+### 归并链路
+
+1. 数据源：`GtmWideip` / `LtmVirtualServer` 及其从属的 `GtmPool` / `LtmPoolMember` 等。
+2. 按归一键分组、跨设备去重；同名配置在各设备上取值不同时，沿用 `group_merge` 的
+   `inconsistent` / `conflict_fields` 口径标注，取主机名序第一台的值。
+3. 增量 upsert 到 `ConfigurationItem` + 对应扩展表；配置行不动不删。
+4. 列表读主表 + `select_related` 扩展表，`StandardPagination` SQL 分页 → **换页零全量重算**；
+   详情 / 展开才反查配置行作证据。
+5. 触发时机**待定**：配置解析入库后信号增量刷新，或管理命令全量重建（项目已有
+   `rebuild_access_flows` 先例）。两者可并存：日常增量、异常时全量对账。
+
+写入只由归并链路负责；人工只允许补登记 / 改标注，不直接改归并产出的配置字段。
+域名 / LB 优先归并，其余软资产优先人工录入（见「资产分类边界」）。
+
+### API 与契约测试
+
+- `/api/assets/domain-assets/`、`/api/assets/load-balancer-services/`：列表支持 `?search=`、
+  `?inconsistent=`、分页；详情带出关联配置行。
+- 契约测试锁住：归一键唯一、跨设备去重成一条、增量 upsert 幂等（重复解析不产生新资产）、
+  列表分页不触发全量归并、配置行保持只读、扩展表不进 `ConfigBase.__subclasses__()`。
+
+状态：**未开始**（本轮只补方案，未建表、未写归并代码）。
 
 ## API 视图（`api/views.py`）
 
