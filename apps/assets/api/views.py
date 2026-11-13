@@ -61,6 +61,7 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+
 @api_view(["GET"])
 def overview(request):
     """资产管理概览统计"""
@@ -880,3 +881,63 @@ class SubnetUsageLogViewSet(viewsets.ModelViewSet):
         if subnet_id:
             qs = qs.filter(subnet_id=subnet_id)
         return qs
+
+
+# 统一配置项体系（T1）：全站序列化器在 assets.serializers.views，与解析入库 / MCP 共用同一套字段口径
+
+
+class ConfigurationItemViewSet(viewsets.ModelViewSet):
+    from assets.models import ConfigurationItem
+    from assets.serializers.views import ConfigurationItemSerializer
+
+    queryset = ConfigurationItem.objects.all()
+    serializer_class = ConfigurationItemSerializer
+    search_fields = ("ci_id", "name", "description")
+    ordering_fields = ("ci_type", "name", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ci_type = self.request.query_params.get("ci_type")
+        if ci_type:
+            qs = qs.filter(ci_type=ci_type)
+        return qs
+
+
+class PhysicalServerViewSet(viewsets.ModelViewSet):
+    from assets.models import PhysicalServer
+    from assets.serializers.views import PhysicalServerSerializer
+
+    queryset = PhysicalServer.objects.select_related("ci").all()
+    serializer_class = PhysicalServerSerializer
+    search_fields = ("hostname", "serial_number", "ci__name", "ci__ci_id")
+    ordering_fields = ("hostname", "created_at")
+
+
+class VirtualMachineViewSet(viewsets.ModelViewSet):
+    from assets.models import VirtualMachine
+    from assets.serializers.views import VirtualMachineSerializer
+
+    queryset = VirtualMachine.objects.select_related("ci").all()
+    serializer_class = VirtualMachineSerializer
+    search_fields = ("hostname", "host_name", "ci__name", "ci__ci_id")
+    ordering_fields = ("hostname", "created_at")
+
+
+class DatabaseInstanceViewSet(viewsets.ModelViewSet):
+    from assets.models import DatabaseInstance
+    from assets.serializers.views import DatabaseInstanceSerializer
+
+    queryset = DatabaseInstance.objects.select_related("ci").all()
+    serializer_class = DatabaseInstanceSerializer
+    search_fields = ("engine", "version", "host_name", "ci__name", "ci__ci_id")
+    ordering_fields = ("engine", "created_at")
+
+
+class ApplicationServiceViewSet(viewsets.ModelViewSet):
+    from assets.models import ApplicationService
+    from assets.serializers.views import ApplicationServiceSerializer
+
+    queryset = ApplicationService.objects.select_related("ci").all()
+    serializer_class = ApplicationServiceSerializer
+    search_fields = ("service_type", "url_path", "ci__name", "ci__ci_id")
+    ordering_fields = ("service_type", "created_at")

@@ -33,6 +33,40 @@
 | `NatRule` | 三个匹配维度 `blank=True` | 不同厂商能提供的信息差别很大（cisco 的 nat group 只有 host/public_ip，完全给不出 service） |
 | `Subnet.network` 及同类 CIDR 字段 | `max_length=45` | IPv6 CIDR 全展开最长 43 字符（`ffff:...:ffff/128`），18 只够 IPv4 |
 
+## 统一配置项体系（T1）
+
+现阶段目标是**资产信息的录入与查询**（见 [`roadmap.md`](roadmap.md)「现阶段目标与范围边界」），
+不含生命周期管理。这一层给所有资产一个跨类型的统一身份与查询入口，是 T2 业务归属、
+T3 统一关系表、T6 统一资产目录的基础。
+
+| 模型 | 作用 |
+|------|------|
+| `ConfigurationItem` | 主表：`ci_id` / `ci_type` / `name` / `description` / `tags` / `monitor_status` + 时间戳；公共属性上收在这里 |
+| `PhysicalServer` / `VirtualMachine` / `DatabaseInstance` / `ApplicationService` | 4 类新增 CI 的专属属性，一对一挂主表（`_CIExtension` 抽象基类） |
+
+几条容易踩的：
+
+- **`ci_id` 是稳定锚点，不是主键也不是名字**：格式 `CI-<12位hex>`，创建时生成、之后永不改；
+  T15 自动纳管会把它写进 Zabbix 主机标签，改名等于锚点失效。类型**不**编进标识，纳管按
+  `ci_type` 字段路由实例。序列化器与 admin 都把它设为只读。
+- **CI 台账刻意不继承 `ConfigBase`**：`purge_configs` 靠 `ConfigBase.__subclasses__()` 枚举清理
+  配置解析产物（见 [`ingest.md`](ingest.md)），CI 是人工录入 / 导入维护的台账，不能被一并清掉。
+  契约测试 `tests/assets/test_configuration_item.py` 锁住这条。
+- **`monitor_status` 是 T15 状态回写的预留落点**：与业务状态分离，现阶段只是空字段、只读，
+  不接任何回写 / 对账逻辑。T2 的业务归属字段（负责人 / 业务 / 部门 / 环境）是告警富化的数据源，
+  字段命名要按「能直接塞进告警上下文」来定。
+- **`ci_type` 类型词汇集中在 `CIType`**（字符串常量，不用 `Enum`——同值字符串与 Enum 成员哈希不同，
+  作为 dict 键会查不到）。现阶段只落地 4 类新增 CI；其余类型是现有资产模型的类型词汇，
+  T4 接入统一 CI 时按此清单路由。
+- **扩展模型必须挂在匹配类型的 CI 上**：模型 `save()` 抛 `ValueError` 兜住 ORM 直写，
+  序列化器 `CIExtensionSerializerMixin` 在 API 层挡成 400（否则 ValueError 会变 500）。
+- **关系不在这里建外键**：VM→宿主机、DB→主机等归 T3 统一关系表（只存 `ci_id` + 关系类型），
+  扩展模型里只留 `host_name` 之类的名字字段，避免每加一类资产都回改字段。
+
+API（`/api/assets/`）：`configuration-items/`（列表支持 `?ci_type=`、`search`、分页）、
+`physical-servers/`、`virtual-machines/`、`database-instances/`、`application-services/`。
+列表分页走全局 `StandardPagination`，统一检索直接在主表上做，不需要把配置链全量算进内存。
+
 ## API 视图（`api/views.py`）
 
 - **堆叠组备机没有自己的配置记录**，查询统一回退到组内主设备（`resolve_config_owner`）。

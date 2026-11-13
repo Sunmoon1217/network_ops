@@ -64,6 +64,13 @@ router.register(r"tags", views.TagViewSet, basename="tag")
 router.register(r"subnets", views.SubnetViewSet, basename="subnet")
 router.register(r"ip-addresses", views.IPAddressViewSet, basename="ip-address")
 
+# 统一配置项体系（T1）
+router.register(r"configuration-items", views.ConfigurationItemViewSet, basename="configuration-item")
+router.register(r"physical-servers", views.PhysicalServerViewSet, basename="physical-server")
+router.register(r"virtual-machines", views.VirtualMachineViewSet, basename="virtual-machine")
+router.register(r"database-instances", views.DatabaseInstanceViewSet, basename="database-instance")
+router.register(r"application-services", views.ApplicationServiceViewSet, basename="application-service")
+
 urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),

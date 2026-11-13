@@ -1,10 +1,12 @@
-
 from django.contrib import admin
 
 from .models import (
     AddressBook,
+    ApplicationService,
     ArpMac,
     Cabinet,
+    ConfigurationItem,
+    DatabaseInstance,
     DataCenter,
     Device,
     DeviceAccount,
@@ -29,6 +31,7 @@ from .models import (
     LtmVirtualServer,
     NatRule,
     NtpConfig,
+    PhysicalServer,
     Policy,
     Room,
     Route,
@@ -42,6 +45,7 @@ from .models import (
     Tag,
     Topology,
     Vendor,
+    VirtualMachine,
     Vlan,
     Vrf,
 )
@@ -870,3 +874,47 @@ class ServerOwnerAdmin(admin.ModelAdmin):
     list_filter = ("status", "created_at")
     search_fields = ("ip", "hostname", "owner")
     date_hierarchy = "created_at"
+
+
+# 统一配置项体系（T1）：ci_id 只读，按类型过滤；扩展模型列表直接显示所属 CI
+
+
+@admin.register(ConfigurationItem)
+class ConfigurationItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci_id", "ci_type", "name", "monitor_status", "created_at")
+    list_filter = ("ci_type", "created_at")
+    search_fields = ("ci_id", "name", "description")
+    readonly_fields = ("ci_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+
+
+@admin.register(PhysicalServer)
+class PhysicalServerAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "hostname", "mgmt_ip", "cpu_cores", "memory_gb")
+    search_fields = ("hostname", "serial_number", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(VirtualMachine)
+class VirtualMachineAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "hostname", "mgmt_ip", "vcpu", "memory_gb", "host_name")
+    search_fields = ("hostname", "host_name", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(DatabaseInstance)
+class DatabaseInstanceAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "engine", "version", "port", "host_name")
+    search_fields = ("engine", "version", "host_name", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(ApplicationService)
+class ApplicationServiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "service_type", "port", "url_path")
+    search_fields = ("service_type", "url_path", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)

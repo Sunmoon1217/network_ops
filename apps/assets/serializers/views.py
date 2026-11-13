@@ -278,3 +278,63 @@ class SubnetUsageLogSerializer(ParentClass):
 @model(model=models.ServerOwner)
 class ServerOwnerSerializer(ParentClass):
     pass
+
+
+# 统一配置项体系（T1）：现阶段只做信息录入与查询，不做生命周期管理
+
+
+@model(model=models.ConfigurationItem)
+class ConfigurationItemSerializer(ParentClass):
+    ci_type_display = serializers.CharField(source="get_ci_type_display", read_only=True)
+
+    class Meta:
+        model = models.ConfigurationItem
+        fields = (
+            "id",
+            "ci_id",
+            "ci_type",
+            "ci_type_display",
+            "name",
+            "description",
+            "tags",
+            "monitor_status",
+            "created_at",
+            "updated_at",
+        )
+        # ci_id 由服务端生成且不可变；monitor_status 是 T15 状态回写的预留字段，不开放录入
+        read_only_fields = ("id", "ci_id", "monitor_status", "created_at", "updated_at")
+
+
+class CIExtensionSerializerMixin:
+    """扩展模型录入校验：所属 CI 的 ci_type 必须匹配。
+
+    不在这里挡住，就会落到模型 ``save()`` 抛 ValueError，DRF 不认识它、直接变 500。
+    """
+
+    EXPECTED_CI_TYPE = ""
+
+    def validate(self, attrs: dict) -> dict:
+        ci = attrs.get("ci")
+        if ci is not None and ci.ci_type != self.EXPECTED_CI_TYPE:
+            raise serializers.ValidationError({"ci": f"配置项类型须为 {self.EXPECTED_CI_TYPE}，当前为 {ci.ci_type}"})
+        return attrs
+
+
+@model(model=models.PhysicalServer)
+class PhysicalServerSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.PHYSICAL_SERVER
+
+
+@model(model=models.VirtualMachine)
+class VirtualMachineSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.VIRTUAL_MACHINE
+
+
+@model(model=models.DatabaseInstance)
+class DatabaseInstanceSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.DATABASE_INSTANCE
+
+
+@model(model=models.ApplicationService)
+class ApplicationServiceSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.APPLICATION_SERVICE
