@@ -1,0 +1,68 @@
+# 数据库后端模板：**只被 compose.yml 的 `db` 服务 extends 引用**，不要用 `-f` 传本文件
+# ——一旦当 `-f` 传，下面的 postgresql / mysql 会变成两个真实服务，`up` 会把两个库都起起来。
+#
+# 用法：根 `.env` 里 `DB_SERVICE=postgresql|mysql` 选一个，`docker compose up -d` 即可。
+#
+# 硬约束（Compose extends 的语义，实测）：
+#   * 只继承服务定义本身；顶层 `volumes:` / `secrets:` **不继承**，必须在本体 compose.yml 声明；
+#   * `depends_on` / `links` / `volumes_from` **不继承**，别写在这里；
+#   * YAML 锚点不能跨文件，所以 secrets 在这里写成显式列表（与 compose.yml 的 *db-secrets 等价）；
+#   * 插值仍在加载时做，所以 `image: ${...}` 读的是根 `.env` / shell。
+
+services:
+  postgresql:
+    image: ${DB_IMAGE:-timescale/timescaledb:2.27.1-pg16}
+    container_name: netops-db
+    restart: unless-stopped
+    init: true
+    env_file:
+      - envs/common.env
+      - envs/container.env
+    secrets:
+      - db_user
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - internal
+    healthcheck:
+      # -U 不能省：healthcheck 由 docker 以镜像默认用户 root 执行，不带会刷 role "root" does not exist
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_user)\" -d \"$${POSTGRES_DB:-netops}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4-oracle}
+    container_name: netops-db
+    restart: unless-stopped
+    init: true
+    # 显式钉住字符集与排序规则：默认已是 utf8mb4 / utf8mb4_0900_ai_ci，写出来是为了让
+    # 「大小写不敏感的唯一键」这个跨库差异在配置里可见，而不是靠镜像默认值。
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    env_file:
+      - envs/common.env
+      - envs/container.env
+    environment:
+      MYSQL_DATABASE: ${POSTGRES_DB:-netops}
+      # 官方镜像没有 MYSQL_USER_FILE：用户名只能走环境变量（它不是秘密），
+      # 必须与 envs/secrets/db_user 的内容一致。
+      MYSQL_USER: ${MYSQL_USER:-netops}
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+      # root 复用应用密码：容器只在 internal 网络可达，轮换时改同一份 secret 即可。
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$(cat /run/secrets/db_password)\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

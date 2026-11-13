@@ -1,6 +1,7 @@
 # 部署与容器化
 
-compose 起 **db(TimescaleDB) / redis / code-init（一次性）/ app / worker / consumer / beat / nginx**，
+compose 起 **db（PostgreSQL/TimescaleDB 或 MySQL，由根 `.env` 的 `DB_SERVICE` 选）/ redis /
+code-init（一次性）/ app / worker / consumer / beat / nginx**，
 nginx 是统一入口。本文档收「部署侧的硬要求与代价」；构建顺序、分层取舍、`uv sync` 参数、
 冒烟清单契约见 `entrypoint/README.md`。第三方软件的实测行为（compose 插值、挂载属主、容器里
 git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名。
@@ -205,22 +206,37 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 
 ## MySQL 后端（可选部署形态）
 
-默认仍是 PostgreSQL（TimescaleDB 镜像）。MySQL 作为**可选部署形态**由覆盖层提供，不改主 compose：
+默认仍是 PostgreSQL（TimescaleDB 镜像）。换后端只改根 `.env` 一行，不用改 compose、也不用多带 `-f`：
 
-```bash
-docker compose -f compose.yml -f compose.mysql.yml up -d
+```dotenv
+DB_SERVICE=mysql          # postgresql（默认）/ mysql
 ```
 
-覆盖层只做四件事：换 `db` 的镜像（`MYSQL_IMAGE`，默认 `mysql:8.4-oracle`）、换数据卷
-（`network-ops-mysqldata` → `/var/lib/mysql`）、换 healthcheck（`mysqladmin ping`）、给四个应用
-进程注入 `DB_ENGINE=mysql` 与 `POSTGRES_PORT=3306`。`ports` / `volumes` / `secrets` 用了
-`!override`——Compose 对这几个字段默认是**追加**，不加会把 `5432:5432` 和
-`/var/lib/postgresql/data` 一起留着。
+`compose.yml` 里的 `db` 服务用 **`extends`** 引入 `compose.db.yml` 的同名模板：
 
-官方 mysql 镜像**没有 `MYSQL_USER_FILE`**：用户名走 `MYSQL_USER`（不是秘密），密码仍走
-`envs/secrets/db_password`（root 暂时复用同一份，不新增轮换流程）。
+```yaml
+db:
+  extends:
+    file: compose.db.yml
+    service: ${DB_SERVICE:-postgresql}
+```
 
-**不能复用 PG 的数据卷**：换后端等于换一套库，`network-ops-pgdata` 里的数据不会出现在 MySQL 里。
+模板文件里只有 `postgresql` / `mysql` 两份**服务定义**，不是两个服务——最终模型里 `db` 只有一个，
+`up -d` 不会把两个库都起起来。四个应用进程的 `DB_ENGINE` 由 `x-db-env` 锚点跟随同一个
+`${DB_SERVICE}` 注入，所以容器里不需要另改 `envs/common.env`（宿主直跑才读它）。
+
+三条硬约束（都是 `extends` 的语义，实测过）：
+
+1. **`compose.db.yml` 不能再用 `-f` 传**——一旦当 `-f` 传，两个模板会变成真实服务，两个库都会起；
+2. 顶层 `volumes:` / `secrets:` **不继承**，`compose.yml` 里必须声明两套卷（未引用的不会被创建）；
+3. `depends_on` / `links` / `volumes_from` **不继承**，模板里不要写。
+
+官方 mysql 镜像**没有 `MYSQL_USER_FILE`**：用户名走 `MYSQL_USER`（不是秘密），密码走
+`envs/secrets/db_password`（root 复用同一份，不新增轮换流程）。两个后端共用
+`envs/secrets/db_user` / `db_password`。
+
+**不能复用 PG 的数据卷**：换后端等于换一套库（`network-ops-pgdata` ↔ `network-ops-mysqldata`），
+数据不会互通。
 
 跨库差异（2026-11 在 MySQL 8.4.13 上实测，`-n auto` 全量 769 项通过）：
 

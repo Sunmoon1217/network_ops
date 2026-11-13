@@ -25,6 +25,8 @@ from django.test import Client
 NGINX_CONF_DIR = settings.BASE_DIR / "nginx" / "conf.d"
 # compose 文件已由 docker-compose.yml 改名为 compose.yml（2776e46）
 COMPOSE_FILE = settings.BASE_DIR / "compose.yml"
+# 数据库后端模板（只被 compose.yml 的 db extends，不当 -f 传）
+COMPOSE_DB_FILE = settings.BASE_DIR / "compose.db.yml"
 
 
 def _env_file(name: str) -> str:
@@ -103,14 +105,18 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`envs/*.env` 给容器、`envs/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：db（postgres 镜像读 POSTGRES_DB）+ app / worker（celery 双队列）/
-    consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
+    当前注入方：db（compose.db.yml 的两个模板，postgres 镜像读 POSTGRES_DB）+
+    app / worker（celery 双队列）/ consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）
+    ——新增服务时这个计数要跟着加。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
     common_env = _env_file("common.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
-    assert compose.count("- envs/common.env") == 5
+    # 四个应用进程在本体文件里；db 的两份模板各自注入一次
+    assert compose.count("- envs/common.env") == 4
+    assert db_templates.count("- envs/common.env") == 2
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -133,12 +139,15 @@ def test_each_service_only_gets_its_own_env_file():
     assert "- envs/common.env" in worker_block
     assert "- envs/container.env" in app_block
     assert "- envs/container.env" in worker_block
-    # db 只读共享层 + 容器差异层（没有服务级文件）
-    db_block = compose.split("  db:")[1].split("  redis:")[0]
-    assert "- envs/common.env" in db_block
-    assert "- envs/container.env" in db_block
-    assert "- envs/gunicorn.env" not in db_block
-    assert "- envs/celery.env" not in db_block
+    # db 由 extends 引入，env_file 写在 compose.db.yml 的模板里——两个后端都必须只读
+    # 共享层 + 容器差异层，不能把 gunicorn / celery 的服务级旋钮带进数据库容器
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
+    for service_key in ("  postgresql:", "  mysql:"):
+        db_block = db_templates.split(service_key)[1].split("\n\n")[0]
+        assert "- envs/common.env" in db_block, service_key
+        assert "- envs/container.env" in db_block, service_key
+        assert "- envs/gunicorn.env" not in db_block, service_key
+        assert "- envs/celery.env" not in db_block, service_key
 
 
 def test_db_credentials_come_from_secrets_not_plaintext_env():
@@ -155,16 +164,25 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     assert "POSTGRES_PASSWORD_FILE=/run/secrets/db_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
-    # db / consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
-    # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
+    # consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
+    # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加；
+    # db 本身由 extends 引入，凭据在 compose.db.yml 的模板里显式列出（锚点不能跨文件）
     assert "file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}" in compose
     assert "file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}" in compose
-    assert compose.count("secrets: *db-secrets") == 2
+    assert compose.count("secrets: *db-secrets") == 1
     assert compose.count("secrets: *app-secrets") == 3
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
     for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
         block = compose.split(anchor)[1].split("\n\n")[0]
         assert "- db_user" in block and "- db_password" in block, anchor
+
+    # 两个数据库模板都要拿到凭据：PG 用 user+password，MySQL 的用户名走环境变量、只挂 password
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
+    pg_block = db_templates.split("  postgresql:")[1].split("\n\n")[0]
+    mysql_block = db_templates.split("  mysql:")[1]
+    assert "- db_user" in pg_block and "- db_password" in pg_block
+    assert "MYSQL_PASSWORD_FILE: /run/secrets/db_password" in mysql_block
+    assert "- db_password" in mysql_block
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
     assert "${POSTGRES_PASSWORD:-" not in compose

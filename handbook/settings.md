@@ -82,7 +82,9 @@
 
 **变量名沿用 `POSTGRES_*`**：它们在本项目已经是「数据库连接」的事实标准名，被 prod / container
 守卫、compose 的 secrets 文件名与 `tests/deploy` 的契约断言绑定；换后端只换 `DB_ENGINE`，
-不改名（MySQL 下 `POSTGRES_USER` 就是 MySQL 账号，别被名字骗到）。
+不改名（MySQL 下 `POSTGRES_USER` 就是 MySQL 账号，别被名字骗到）。容器部署不必直接改
+`DB_ENGINE`：根 `.env` 的 `DB_SERVICE` 由 compose 同时用于「选 `compose.db.yml` 的模板」和
+「注入四个应用进程的 `DB_ENGINE`」；宿主直跑没有 compose，才改 `envs/common.env` 的 `DB_ENGINE`。
 
 MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
 `pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段

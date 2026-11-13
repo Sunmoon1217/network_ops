@@ -25,6 +25,12 @@ x-app-base: &app-base
   image: ${VENV_IMAGE:-network-ops-venv:latest}
   init: true
 
+# 四个应用进程共用：数据库后端跟随根 .env 的 DB_SERVICE（容器里覆盖 envs/common.env 的
+# DB_ENGINE，宿主直跑则直接读 common.env）。端口刻意不在这里给——settings/base.py 按引擎
+# 取默认（postgresql 5432 / mysql 3306），少一个必须同步的变量。
+x-db-env: &db-env
+  DB_ENGINE: "${DB_SERVICE:-postgresql}"
+
 services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
   code-init:
@@ -39,26 +45,12 @@ services:
     networks:
       - internal
 
+  # 数据库：具体用哪个后端由根 .env 的 DB_SERVICE 决定（模板见 compose.db.yml）。
+  # 只有 `db` 这一个服务——模板不会变成服务，所以 up 只起一个库。
   db:
-    image: ${DB_IMAGE:-timescale/timescaledb:2.27.1-pg16}
-    container_name: netops-db
-    restart: unless-stopped
-    init: true
-    env_file:
-      - envs/common.env
-      - envs/container.env
-    secrets: *db-secrets
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_user)\" -d \"$${POSTGRES_DB:-netops}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    extends:
+      file: compose.db.yml
+      service: ${DB_SERVICE:-postgresql}
 
   redis:
     image: redis:8.8.0
@@ -88,6 +80,7 @@ services:
       - envs/gunicorn.env
       - envs/container.env
     secrets: *app-secrets
+    environment: *db-env
     volumes:
       - code:/app:ro
       - repo:/configs
@@ -115,6 +108,7 @@ services:
       - envs/celery.env
       - envs/container.env
     secrets: *app-secrets
+    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:
@@ -135,6 +129,7 @@ services:
       - envs/common.env
       - envs/container.env
     secrets: *db-secrets
+    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:
@@ -156,6 +151,7 @@ services:
       - envs/celery.env
       - envs/container.env
     secrets: *app-secrets
+    environment: *db-env
     volumes_from:
       - app:ro
     depends_on:
@@ -198,9 +194,13 @@ networks:
     driver: bridge
 
 volumes:
+  # 两个后端各一套数据卷（extends 模板里只引用其中一个；未引用到的不会被创建）
   postgres_data:
     driver: local
     name: network-ops-pgdata
+  mysql_data:
+    driver: local
+    name: network-ops-mysqldata
   redis_data:
     driver: local
     name: network-ops-redis

@@ -70,7 +70,7 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 
 | 位置 | 谁读 | 放什么 |
 |------|------|--------|
-| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `REDIS_PORT`）、镜像 tag、secrets 文件路径 |
+| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `MYSQL_HOST_PORT` / `REDIS_PORT`）、数据库后端 `DB_SERVICE`、镜像 tag、secrets 文件路径 |
 | `envs/*.env`（本目录） | **容器进程**（env_file）与**宿主进程**（load_dotenv） | 上表各层 |
 | `envs/secrets/*` | 容器进程（`/run/secrets/*`）与宿主进程（相对 `*_FILE`） | 密钥 |
 | `conf/*.json`（项目根） | **进程直接读文件**（如 ingest 的 `link_config`） | 平台自身的结构化配置（链路清单与展示 label）；**入库、随版本走**，单值项可被同名环境变量覆盖 |
@@ -79,7 +79,8 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 
 1. **compose 的 `${VAR}` 只读根目录的 `.env`**，不会读 `envs/*.env`。要在 compose 文件里
    插值的变量（宿主映射端口等）必须留在根 `.env`；反过来，给进程用的变量放这里就够了。
-   注意根 `.env` 的 `POSTGRES_PORT` 是**宿主映射端口**，与 `common.env` 的容器端口是两码事。
+   注意根 `.env` 的 `POSTGRES_PORT` / `MYSQL_HOST_PORT` 是**宿主映射端口**；容器内端口固定
+   （PG 5432 / MySQL 3306），由 `settings/base.py` 按 `DB_ENGINE` 取默认，`common.env` 里不写。
 2. 同一个变量同时出现在 `environment:` 与 `env_file` 时 **`environment` 优先**。
 3. 多个 `env_file` 按顺序合并，**后面的覆盖前面的**（本目录里各层互补，正常不会撞；
    `container.env` 排最后就是利用这条保证容器差异一定生效）。
