@@ -7,8 +7,8 @@
 
 | 文件 | 容器内路径 | 谁读 |
 |------|-----------|------|
-| `db_user` | `/run/secrets/db_user` | db（postgres 的 `POSTGRES_USER_FILE`；mysql 的用户名走 `MYSQL_USER` 环境变量，不用文件）、app / worker（`settings/base.py` 的 `_env_or_file()`） |
-| `db_password` | `/run/secrets/db_password` | 同上（`POSTGRES_PASSWORD_FILE` / `MYSQL_PASSWORD_FILE`） |
+| `db_user` | `/run/secrets/db_user` | db（compose.db.yml 里映射成 postgres 镜像的 `POSTGRES_USER_FILE`；mysql 的用户名走 `MYSQL_USER` 环境变量，不用文件）、app / worker（`settings/base.py` 的 `_env_or_file("DB_USER")` 读 `DB_USER_FILE`） |
+| `db_password` | `/run/secrets/db_password` | 同上（app 侧是 `DB_PASSWORD_FILE`；镜像侧映射成 `POSTGRES_PASSWORD_FILE` / `MYSQL_PASSWORD_FILE`） |
 
 **两个数据库后端共用这两个文件**（PG 与 MySQL 的凭据是同一个人工轮换的两项，不按后端分叉）。
 
@@ -30,7 +30,7 @@
 ## 生成
 
 ```bash
-bash env/secrets/generate.sh            # 沿用 .env 里的 POSTGRES_USER / POSTGRES_PASSWORD（默认）
+bash env/secrets/generate.sh            # 沿用 .env 里的 DB_USER / DB_PASSWORD（默认）
 bash env/secrets/generate.sh --random   # 生成随机强密码（**只适用于全新的数据卷**）
 bash env/secrets/generate.sh --force    # 覆盖已存在的文件
 ```
@@ -46,14 +46,14 @@ bash env/secrets/generate.sh --force    # 覆盖已存在的文件
 ## 其他
 
 - 权限：脚本用 `umask 077` + `chmod 600`，文件默认只有当前用户可读写。
-- 指向这两个文件的 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` 写在 `envs/container.env`
+- 指向这两个文件的 `DB_USER_FILE` / `DB_PASSWORD_FILE` 写在 `envs/container.env`
   （容器差异层，db / app / worker / consumer 共用）里，值就是 `/run/secrets/*`——见 `envs/README.md`。
 - 路径可改：compose 里 `secrets.*.file` 用的是 `${DB_USER_SECRET_FILE:-./envs/secrets/db_user}`
   这类写法，也可以指到别处（例如 `/etc/netops/secrets/...`）。
-- `POSTGRES_DB`（库名）不算密钥，在 `envs/common.env` 里。
+- `DB_NAME`（库名）不算密钥，在 `envs/common.env` 里。
 - redis 密码**没有**走 secrets：redis 官方镜像没有 `*_FILE` 机制，`REDIS_PASSWORD` 仍是
   环境变量（留空即不启用）。
 - 宿主机直跑 Django 时默认不用 secrets：读取链路统一在 `settings/base.py`
-  （`*_FILE > 同名环境变量 > 默认值`）——`export POSTGRES_PASSWORD=<值>` 即可。
+  （`*_FILE > 同名环境变量 > 默认值`）——`export DB_PASSWORD=<值>` 即可。
   想与容器**共用同一份密钥文件**，取消 `envs/host.env` 里 `*_FILE` 的注释行
   （相对路径按 `BASE_DIR` 解析，见 `envs/README.md`「密钥」一节）。

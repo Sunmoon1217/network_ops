@@ -5,12 +5,12 @@
 #   envs/secrets/db_password   → 容器内 /run/secrets/db_password
 #
 # 谁用它们：
-#   * db 容器     —— postgres 官方镜像的 POSTGRES_USER_FILE / POSTGRES_PASSWORD_FILE
+#   * db 容器     —— postgres 官方镜像的 DB_USER_FILE / DB_PASSWORD_FILE
 #   * app / worker —— netops/settings.py 的 _env_or_file() 读同一套 *_FILE 变量
 # 这两个文件**不入库**（.gitignore 已排除），权限是 600。
 #
 # 用法：
-#   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 POSTGRES_USER / POSTGRES_PASSWORD
+#   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 DB_USER / DB_PASSWORD
 #   bash envs/secrets/generate.sh --random   # 生成随机强密码（**只适用于全新的数据卷**）
 #   bash envs/secrets/generate.sh --force    # 覆盖已存在的文件
 #
@@ -34,7 +34,7 @@ usage() {
 生成数据库凭据的 docker secrets 文件（envs/secrets/db_user、envs/secrets/db_password）
 
 用法：
-  bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 POSTGRES_USER / POSTGRES_PASSWORD
+  bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 DB_USER / DB_PASSWORD
   bash envs/secrets/generate.sh --random   # 生成随机强密码（只适用于全新的数据卷）
   bash envs/secrets/generate.sh --force    # 覆盖已存在的文件
 EOF
@@ -85,16 +85,16 @@ write_secret() {
 umask 077
 mkdir -p "$SECRETS_DIR"
 
-user=$(env_value POSTGRES_USER)
+user=$(env_value DB_USER)
 [ -n "$user" ] || user=netops
 
 if [ "$MODE" = random ]; then
     password=$(random_secret)
     echo "使用随机密码（请确认数据卷是新的，或之后进库 ALTER USER 改密码）"
 else
-    password=$(env_value POSTGRES_PASSWORD)
+    password=$(env_value DB_PASSWORD)
     [ -n "$password" ] || password=netops_password
-    echo "沿用 .env 里的 POSTGRES_USER / POSTGRES_PASSWORD（没有就用默认值）"
+    echo "沿用 .env 里的 DB_USER / DB_PASSWORD（没有就用默认值）"
 fi
 
 write_secret db_user "$user"

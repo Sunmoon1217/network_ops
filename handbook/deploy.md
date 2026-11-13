@@ -169,7 +169,7 @@ Redis 里的 `access_flow:heartbeat` 键，TTL 300s；beat 额外等 `redis: ser
 
 | 服务 | 探针 | 不能省的参数 |
 |------|------|--------------|
-| db | `pg_isready -U "$$(cat /run/secrets/db_user)" -d "$${POSTGRES_DB:-netops}"` | **`-U` 不能省**：healthcheck 由 docker 以镜像默认用户 root 执行，不带 `-U` 会刷 `role "root" does not exist` 而容器照样 healthy |
+| db | `pg_isready -U "$$(cat /run/secrets/db_user)" -d "$${DB_NAME:-netops}"` | **`-U` 不能省**：healthcheck 由 docker 以镜像默认用户 root 执行，不带 `-U` 会刷 `role "root" does not exist` 而容器照样 healthy |
 | redis | `redis-cli ping` | — |
 | nginx | `curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/` | **`--noproxy '*'` 不能省**；别用 busybox `wget`（不认 `no_proxy`）；`-f` 让 4xx/5xx 也算失败；探 80 还能发现「conf.d 没挂进来」（没有 server 块 nginx 照样启动） |
 
@@ -192,12 +192,13 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 **数据库与阿里云凭据走 docker secrets，不进 `.env` / 环境变量**（为什么不用环境变量：技能
 `container-healthchecks` 第 5 节）：`envs/secrets/db_user` / `db_password` /
 `aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`；
-`envs/container.env` 里只写 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` 与 4 个
-`ALIYUN_*_FILE`（db 由 postgres 官方镜像读，app / worker 由 `settings/base.py` 的
-`_env_or_file()` 读，没有 `*_FILE` 时回退同名环境变量）。**两条别改回去**：
+`envs/container.env` 里只写 `DB_USER_FILE` / `DB_PASSWORD_FILE` 与 4 个
+`ALIYUN_*_FILE`（app / worker 由 `settings/base.py` 的 `_env_or_file()` 读，没有 `*_FILE` 时
+回退同名环境变量）。db 容器那侧由 `compose.db.yml` 的模板把同名 secret 映射成镜像认的
+`POSTGRES_USER_FILE` / `MYSQL_PASSWORD_FILE` 等。**两条别改回去**：
 
 1. postgres 官方 entrypoint 规定 `POSTGRES_USER` 与 `POSTGRES_USER_FILE` 同时设置就报错退出，
-   所以只留 `_FILE`；
+   所以模板里只给 `_FILE`；
 2. db 的 healthcheck 靠容器内 `sh` 读 secret，**`-U` 必须显式给**。
 
 生成 / 迁移：`bash envs/secrets/generate.sh`（默认**沿用旧值**；postgres 只在**首次初始化数据卷**

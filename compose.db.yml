@@ -1,7 +1,11 @@
 # 数据库后端模板：**只被 compose.yml 的 `db` 服务 extends 引用**，不要用 `-f` 传本文件
 # ——一旦当 `-f` 传，下面的 postgresql / mysql 会变成两个真实服务，`up` 会把两个库都起起来。
 #
-# 用法：根 `.env` 里 `DB_SERVICE=postgresql|mysql` 选一个，`docker compose up -d` 即可。
+# 变量分层：根 `.env` 只维护一套 **DB_***（DB_SERVICE / DB_NAME / DB_USER / DB_IMAGE_* /
+# DB_PORT_*），模板里再**嵌套**成各镜像认的名字：
+#   DB_NAME → POSTGRES_DB（pg） / MYSQL_DATABASE（mysql）
+#   DB_USER → MYSQL_USER（mysql；pg 的用户名在 db_user secret 里，镜像走 POSTGRES_USER_FILE）
+# 端口分开命名是必须的：两个后端的宿主映射端口不可能共用一个值。
 #
 # 硬约束（Compose extends 的语义，实测）：
 #   * 只继承服务定义本身；顶层 `volumes:` / `secrets:` **不继承**，必须在本体 compose.yml 声明；
@@ -11,20 +15,25 @@
 
 services:
   postgresql:
-    image: ${DB_IMAGE:-timescale/timescaledb:2.27.1-pg16}
+    image: ${DB_IMAGE_POSTGRES:-timescale/timescaledb:2.27.1-pg16}
     container_name: netops-db
     restart: unless-stopped
     init: true
     env_file:
       - envs/common.env
       - envs/container.env
+    environment:
+      # 嵌套：DB_* 是唯一来源，镜像只认 POSTGRES_*。
+      POSTGRES_DB: ${DB_NAME:-netops}
+      POSTGRES_USER_FILE: /run/secrets/db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     secrets:
       - db_user
       - db_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${DB_PORT_POSTGRES:-5432}:5432"
     networks:
       - internal
     healthcheck:
@@ -35,7 +44,7 @@ services:
       retries: 5
 
   mysql:
-    image: ${MYSQL_IMAGE:-mysql:8.4-oracle}
+    image: ${DB_IMAGE_MYSQL:-mysql:8.4-oracle}
     container_name: netops-db
     restart: unless-stopped
     init: true
@@ -46,10 +55,11 @@ services:
       - envs/common.env
       - envs/container.env
     environment:
-      MYSQL_DATABASE: ${POSTGRES_DB:-netops}
+      # 嵌套：DB_NAME / DB_USER → 官方镜像认的 MYSQL_DATABASE / MYSQL_USER
+      MYSQL_DATABASE: ${DB_NAME:-netops}
       # 官方镜像没有 MYSQL_USER_FILE：用户名只能走环境变量（它不是秘密），
       # 必须与 envs/secrets/db_user 的内容一致。
-      MYSQL_USER: ${MYSQL_USER:-netops}
+      MYSQL_USER: ${DB_USER:-netops}
       MYSQL_PASSWORD_FILE: /run/secrets/db_password
       # root 复用应用密码：容器只在 internal 网络可达，轮换时改同一份 secret 即可。
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
@@ -58,7 +68,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
-      - "${MYSQL_HOST_PORT:-3306}:3306"
+      - "${DB_PORT_MYSQL:-3306}:3306"
     networks:
       - internal
     healthcheck:

@@ -105,7 +105,7 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`envs/*.env` 给容器、`envs/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：db（compose.db.yml 的两个模板，postgres 镜像读 POSTGRES_DB）+
+    当前注入方：db（compose.db.yml 的两个模板，postgres 镜像读 DB_NAME）+
     app / worker（celery 双队列）/ consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）
     ——新增服务时这个计数要跟着加。
     """
@@ -160,8 +160,8 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
 
     # 容器差异层把凭据指向 /run/secrets/*（db 与 app/worker 共用这一层）
     container_env = _env_file("container.env")
-    assert "POSTGRES_USER_FILE=/run/secrets/db_user" in container_env
-    assert "POSTGRES_PASSWORD_FILE=/run/secrets/db_password" in container_env
+    assert "DB_USER_FILE=/run/secrets/db_user" in container_env
+    assert "DB_PASSWORD_FILE=/run/secrets/db_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
     # consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
@@ -185,10 +185,10 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     assert "- db_password" in mysql_block
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
-    assert "${POSTGRES_PASSWORD:-" not in compose
-    assert "${POSTGRES_USER:-" not in compose
-    assert "\nPOSTGRES_PASSWORD:" not in compose
-    assert "\nPOSTGRES_USER:" not in compose
+    assert "${DB_PASSWORD:-" not in compose
+    assert "${DB_USER:-" not in compose
+    assert "\nDB_PASSWORD:" not in compose
+    assert "\nDB_USER:" not in compose
 
 
 def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
@@ -202,15 +202,15 @@ def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
     secret = tmp_path / "db_password"
     secret.write_text("s3cret\n", encoding="utf-8")
 
-    monkeypatch.setenv("POSTGRES_PASSWORD", "plain")
-    monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(secret))
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "s3cret"
+    monkeypatch.setenv("DB_PASSWORD", "plain")
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(secret))
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "s3cret"
 
-    monkeypatch.delenv("POSTGRES_PASSWORD_FILE")
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "plain"
+    monkeypatch.delenv("DB_PASSWORD_FILE")
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "plain"
 
-    monkeypatch.delenv("POSTGRES_PASSWORD")
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "default"
+    monkeypatch.delenv("DB_PASSWORD")
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "default"
 
 
 def test_env_or_file_resolves_relative_path_against_base_dir(monkeypatch):
@@ -225,8 +225,8 @@ def test_env_or_file_resolves_relative_path_against_base_dir(monkeypatch):
     secret.parent.mkdir(exist_ok=True)
     secret.write_text("s3cret\n", encoding="utf-8")
     try:
-        monkeypatch.setenv("POSTGRES_PASSWORD_FILE", "tmp/pytest-relative-secret")
-        assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "s3cret"
+        monkeypatch.setenv("DB_PASSWORD_FILE", "tmp/pytest-relative-secret")
+        assert project_settings._env_or_file("DB_PASSWORD", "default") == "s3cret"
     finally:
         secret.unlink(missing_ok=True)
 
@@ -237,9 +237,9 @@ def test_env_or_file_fails_loudly_on_unreadable_secret(tmp_path, monkeypatch):
 
     from netops import settings as project_settings
 
-    monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(tmp_path / "missing"))
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(tmp_path / "missing"))
     with pytest.raises(ImproperlyConfigured):
-        project_settings._env_or_file("POSTGRES_PASSWORD", "default")
+        project_settings._env_or_file("DB_PASSWORD", "default")
 
 
 def test_env_list_parsing(monkeypatch):

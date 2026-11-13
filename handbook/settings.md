@@ -44,7 +44,7 @@
 1. `NETOPS_SKIP_DOTENV=1` → 全部跳过（`tests/deploy` 用它拿纯净默认值，不吃本机实例）；
 2. `load_dotenv(envs/common.env)`；
 3. `DJANGO_ENV != container` 时再 `load_dotenv(envs/host.env)`——容器里代码卷也带着 `envs/`，
-   不做这一步区分会把宿主的 `POSTGRES_HOST=127.0.0.1` 泄进容器。
+   不做这一步区分会把宿主的 `DB_HOST=127.0.0.1` 泄进容器。
 
 `load_dotenv` 全程 `override=False`，所以 compose `env_file` 注入的值与手工 `export` 都赢过文件。
 目录约定与逐文件职责见 [`envs/README.md`](../envs/README.md)。
@@ -69,22 +69,23 @@
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `DB_ENGINE` | `postgresql` | `postgresql` / `mysql`，其它值**拒绝启动**；MySQL 的默认端口因此变成 3306 |
-| `POSTGRES_DB` | `netops` | 库名 |
-| `POSTGRES_USER` / `POSTGRES_USER_FILE` | `netops` | 走凭据链 |
-| `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
-| `POSTGRES_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
-| `POSTGRES_PORT` | `5432`（MySQL 下 `3306`） | 容器内固定为后端默认端口 |
+| `DB_NAME` | `netops` | 库名 |
+| `DB_USER` / `DB_USER_FILE` | `netops` | 走凭据链 |
+| `DB_PASSWORD` / `DB_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
+| `DB_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
+| `DB_PORT` | `5432`（MySQL 下 `3306`） | 容器内固定为后端默认端口 |
 | `REDIS_HOST` | `127.0.0.1` | 容器注入 `redis`；container / prod 必填 |
 | `REDIS_PORT` / `REDIS_DB` | `6379` / `0` | |
 | `REDIS_PASSWORD` | 空 | 非空时拼进 `REDIS_URL`；redis 官方镜像没有 `*_FILE` 机制，密码只走环境变量 |
 
 `CELERY_BROKER_URL` 与 `CELERY_RESULT_BACKEND` 都等于 `REDIS_URL`。
 
-**变量名沿用 `POSTGRES_*`**：它们在本项目已经是「数据库连接」的事实标准名，被 prod / container
-守卫、compose 的 secrets 文件名与 `tests/deploy` 的契约断言绑定；换后端只换 `DB_ENGINE`，
-不改名（MySQL 下 `POSTGRES_USER` 就是 MySQL 账号，别被名字骗到）。容器部署不必直接改
-`DB_ENGINE`：根 `.env` 的 `DB_SERVICE` 由 compose 同时用于「选 `compose.db.yml` 的模板」和
-「注入四个应用进程的 `DB_ENGINE`」；宿主直跑没有 compose，才改 `envs/common.env` 的 `DB_ENGINE`。
+**连接参数统一用 `DB_*`**（`DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` /
+`DB_PORT`）：settings 只认这一套名字，两种部署一致。各数据库镜像自己认的 `POSTGRES_*` /
+`MYSQL_*` 只在 `compose.db.yml` 的模板里做嵌套映射（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
+`DB_USER → MYSQL_USER`），不进 settings。容器部署不必直接改 `DB_ENGINE`：根 `.env` 的
+`DB_SERVICE` 由 compose 同时用于「选模板」和「注入四个应用进程的 `DB_ENGINE`」；宿主直跑没有
+compose，才改 `envs/common.env` 的 `DB_ENGINE`。
 
 MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
 `pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段
@@ -172,8 +173,8 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | 环境 | 硬覆盖 | 守卫（缺即 `ImproperlyConfigured`） |
 |------|--------|-----------------------------------|
 | `dev` | 无 | 无 |
-| `container` | 无 | `POSTGRES_HOST`、`REDIS_HOST` 必须由 `envs/container.env` 注入 |
-| `prod` | `DEBUG = False` | `DJANGO_SECRET_KEY`、`DJANGO_ALLOWED_HOSTS`（非空且不含 `*`）、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST` |
+| `container` | 无 | `DB_HOST`、`REDIS_HOST` 必须由 `envs/container.env` 注入 |
+| `prod` | `DEBUG = False` | `DJANGO_SECRET_KEY`、`DJANGO_ALLOWED_HOSTS`（非空且不含 `*`）、`DB_HOST`、`DB_PASSWORD(_FILE)`、`REDIS_HOST` |
 
 两条设计取舍：
 

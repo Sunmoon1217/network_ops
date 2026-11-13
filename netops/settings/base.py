@@ -84,9 +84,9 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "*")
 # Host」时才需要声明（外层 LB 改写 Host、TLS 提前终结）。值带 scheme，逗号分隔。
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
-# 数据库后端：postgresql（默认）/ mysql。**只换后端，不换变量名**——POSTGRES_* 在本项目
-# 已是「数据库连接」的事实标准名：prod / container 守卫、compose 的 secrets 文件名、
-# tests/deploy 的契约断言全绑在它上面；改名是一次独立的机械改动，不混在这里。
+# 数据库后端：postgresql（默认）/ mysql。**连接参数统一用 DB_***（DB_ENGINE / DB_NAME /
+# DB_USER / DB_PASSWORD / DB_HOST / DB_PORT），两种部署同一套名字；各数据库镜像自己认的
+# POSTGRES_* / MYSQL_* 只在 compose.db.yml 的模板里做嵌套映射，不进 settings。
 #
 # MySQL 驱动用 mysqlclient（C 扩展，显著快于纯 Python 的 PyMySQL）。它在 PyPI **没有**
 # cp312 manylinux 轮子、只能从 sdist 编译，所以镜像侧配套两处：dockerfile.venv 用两阶段
@@ -98,7 +98,7 @@ _DB_BACKENDS = {
     "postgresql": "django.db.backends.postgresql",
     "mysql": "django.db.backends.mysql",
 }
-# 端口默认值按后端给：MySQL 不沿用 5432，否则没设 POSTGRES_PORT 时会静默连错端口。
+# 端口默认值按后端给：MySQL 不沿用 5432，否则没设 DB_PORT 时会静默连错端口。
 _DB_PORTS = {"postgresql": "5432", "mysql": "3306"}
 
 if DB_ENGINE not in _DB_BACKENDS:
@@ -107,18 +107,18 @@ if DB_ENGINE not in _DB_BACKENDS:
     raise ImproperlyConfigured(f"DB_ENGINE 只支持 {sorted(_DB_BACKENDS)}，当前是 {DB_ENGINE!r}")
 
 
-# 默认值是宿主本机语义（dev 无 env 即此值）；容器由 envs/container.env 注入 HOST=db
-# 与 *_FILE=/run/secrets/*，prod.py 守卫要求 HOST 必填。
+# 默认值是宿主本机语义（dev 无 env 即此值）；容器由 envs/container.env 注入 DB_HOST=db
+# 与 *_FILE=/run/secrets/*，prod.py 守卫要求 DB_HOST 必填。
 # 写 127.0.0.1 而不是 localhost：Windows 上 localhost 优先解析成 ::1，而 PostgreSQL / Redis
 # 通常只监听 IPv4，psycopg2 与 redis-py 会逐个地址回退——每次连接白等约 10s（实测 10.03s
 # vs 0.03s）。pytest 一个会话要建两三条连接，setup 就被拖成 40s 级。
 _DATABASE = {
     "ENGINE": _DB_BACKENDS[DB_ENGINE],
-    "NAME": os.environ.get("POSTGRES_DB", "netops"),
-    "USER": _env_or_file("POSTGRES_USER", "netops"),
-    "PASSWORD": _env_or_file("POSTGRES_PASSWORD", "netops_password"),
-    "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
-    "PORT": int(os.environ.get("POSTGRES_PORT", _DB_PORTS[DB_ENGINE])),
+    "NAME": os.environ.get("DB_NAME", "netops"),
+    "USER": _env_or_file("DB_USER", "netops"),
+    "PASSWORD": _env_or_file("DB_PASSWORD", "netops_password"),
+    "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
+    "PORT": int(os.environ.get("DB_PORT", _DB_PORTS[DB_ENGINE])),
 }
 if DB_ENGINE == "mysql":
     # utf8mb4 才能存四字节字符（中文之外还有 emoji）。不显式给的话字符集取决于服务端

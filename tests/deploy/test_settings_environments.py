@@ -16,8 +16,8 @@ from django.core.exceptions import ImproperlyConfigured
 PROD_REQUIRED = {
     "DJANGO_SECRET_KEY": "test-secret-key-for-prod",
     "DJANGO_ALLOWED_HOSTS": "netops.example.com",
-    "POSTGRES_HOST": "db.internal",
-    "POSTGRES_PASSWORD": "s3cret",
+    "DB_HOST": "db.internal",
+    "DB_PASSWORD": "s3cret",
     "REDIS_HOST": "redis.internal",
 }
 
@@ -28,10 +28,10 @@ _MANAGED_KEYS = (
     "DJANGO_LOG_LEVEL",
     "DB_ENGINE",
     *PROD_REQUIRED,
-    "POSTGRES_PASSWORD_FILE",
-    "POSTGRES_USER",
-    "POSTGRES_DB",
-    "POSTGRES_PORT",
+    "DB_PASSWORD_FILE",
+    "DB_USER",
+    "DB_NAME",
+    "DB_PORT",
     "REDIS_PORT",
     "REDIS_DB",
     "REDIS_PASSWORD",
@@ -78,7 +78,7 @@ def test_dev_is_default(monkeypatch):
 
 def test_container_overrides_via_injection(monkeypatch):
     """container 的差异靠 env 注入表达：HOST=db/redis 覆盖 base 的本机默认。"""
-    m = _dispatch(monkeypatch, "container", POSTGRES_HOST="db", REDIS_HOST="redis")
+    m = _dispatch(monkeypatch, "container", DB_HOST="db", REDIS_HOST="redis")
     assert m.DATABASES["default"]["HOST"] == "db"    # 注入值胜过 base 默认
     assert m.REDIS_HOST == "redis"
     assert m.DEBUG is True                            # 未设 DJANGO_DEBUG 时默认开
@@ -86,14 +86,14 @@ def test_container_overrides_via_injection(monkeypatch):
 
 def test_django_debug_env_dynamic(monkeypatch):
     """DJANGO_DEBUG 是 base 的 env 动态项：container 分发下设 0 即关闭。"""
-    m = _dispatch(monkeypatch, "container", POSTGRES_HOST="db", REDIS_HOST="redis", DJANGO_DEBUG="0")
+    m = _dispatch(monkeypatch, "container", DB_HOST="db", REDIS_HOST="redis", DJANGO_DEBUG="0")
     assert m.DEBUG is False
 
 
-@pytest.mark.parametrize("missing", ["POSTGRES_HOST", "REDIS_HOST"])
+@pytest.mark.parametrize("missing", ["DB_HOST", "REDIS_HOST"])
 def test_container_rejects_missing_host(monkeypatch, missing):
     """container 守卫：两个 host 由 env_file 注入，缺一个启动即拒（不退 base 默认）。"""
-    hosts = {"POSTGRES_HOST": "db", "REDIS_HOST": "redis"}
+    hosts = {"DB_HOST": "db", "REDIS_HOST": "redis"}
     hosts.pop(missing)
     with pytest.raises(ImproperlyConfigured, match=missing):
         _dispatch(monkeypatch, "container", **hosts)
@@ -104,7 +104,7 @@ def test_container_reports_all_missing_at_once(monkeypatch):
     with pytest.raises(ImproperlyConfigured) as exc:
         _dispatch(monkeypatch, "container")
     message = str(exc.value)
-    assert "POSTGRES_HOST" in message
+    assert "DB_HOST" in message
     assert "REDIS_HOST" in message
     assert "共 2 个" in message
 
@@ -116,7 +116,7 @@ def test_unknown_django_env_rejected(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 数据库后端：DB_ENGINE 只换 ENGINE 与默认端口，变量名沿用 POSTGRES_*
+# 数据库后端：DB_ENGINE 只换 ENGINE 与默认端口，连接参数统一用 DB_*
 # ---------------------------------------------------------------------------
 
 
@@ -139,8 +139,8 @@ def test_db_engine_mysql_switches_backend_and_port(monkeypatch):
 
 
 def test_db_engine_mysql_keeps_explicit_port(monkeypatch):
-    """POSTGRES_PORT 显式给出时胜过按后端的默认值。"""
-    m = _dispatch(monkeypatch, DB_ENGINE="mysql", POSTGRES_PORT="3307")
+    """DB_PORT 显式给出时胜过按后端的默认值。"""
+    m = _dispatch(monkeypatch, DB_ENGINE="mysql", DB_PORT="3307")
     assert m.DATABASES["default"]["PORT"] == 3307
 
 
@@ -160,8 +160,8 @@ def test_db_engine_rejects_unknown(monkeypatch):
     [
         ("DJANGO_SECRET_KEY", "DJANGO_SECRET_KEY"),
         ("DJANGO_ALLOWED_HOSTS", "DJANGO_ALLOWED_HOSTS"),
-        ("POSTGRES_HOST", "POSTGRES_HOST"),
-        ("POSTGRES_PASSWORD", "POSTGRES_PASSWORD"),
+        ("DB_HOST", "DB_HOST"),
+        ("DB_PASSWORD", "DB_PASSWORD"),
         ("REDIS_HOST", "REDIS_HOST"),
     ],
 )
@@ -213,10 +213,10 @@ def test_credential_chain_file_env_default(monkeypatch, tmp_path):
     secret = tmp_path / "pg_password"
     secret.write_text("from-file\n", encoding="utf-8")   # 尾换行必须被 strip
 
-    m = _dispatch(monkeypatch, POSTGRES_PASSWORD_FILE=str(secret))
+    m = _dispatch(monkeypatch, DB_PASSWORD_FILE=str(secret))
     assert m.DATABASES["default"]["PASSWORD"] == "from-file"
 
-    m = _dispatch(monkeypatch, POSTGRES_PASSWORD="from-env")
+    m = _dispatch(monkeypatch, DB_PASSWORD="from-env")
     assert m.DATABASES["default"]["PASSWORD"] == "from-env"
 
     m = _dispatch(monkeypatch)  # 都不设 → base 默认值

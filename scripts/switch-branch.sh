@@ -21,7 +21,7 @@ DB_NAME="netops_$(echo "$BRANCH_NAME" | tr '/' '_' | tr '-' '_')"
 # 写入 .env.db
 cat > /home/sunmoon/projects/network_ops/.env.db << EOF
 # 分支: $BRANCH_NAME
-POSTGRES_DB=$DB_NAME
+DB_NAME=$DB_NAME
 EOF
 
 echo "已切换到 $BRANCH_NAME"
