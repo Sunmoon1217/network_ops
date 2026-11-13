@@ -1,24 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useLayoutStore } from '@netops/stores/layout'
 import { IconLayoutSide } from '@/assets/menu-icons'
 import { menuOptions, findTopGroup, firstPath } from '@netops/layout/menu'
 
-const router = useRouter()
 const route = useRoute()
 const layoutStore = useLayoutStore()
 const collapsed = computed(() => layoutStore.collapsed)
 
 // 侧栏只放一级分组，当前分组由路由反查
 const activeGroup = computed(() => findTopGroup(route.path)?.index)
-
-const handleSelect = (index: string) => {
-  const item = menuOptions.find((entry) => entry.index === index)
-  if (!item) return
-  const path = firstPath(item)
-  if (path) router.push(path)
-}
 </script>
 
 <template>
@@ -33,11 +25,20 @@ const handleSelect = (index: string) => {
       :default-active="activeGroup"
       :collapse="collapsed"
       class="app-menu"
-      @select="handleSelect"
     >
-      <el-menu-item v-for="item in menuOptions" :key="item.index" :index="item.index">
+      <el-menu-item
+        v-for="item in menuOptions"
+        :key="item.index"
+        :index="item.index"
+        class="nav-item"
+      >
         <el-icon><component :is="item.icon?.()?.children?.default" /></el-icon>
         <template #title><span>{{ item.label }}</span></template>
+        <router-link
+          :to="firstPath(item) ?? item.index"
+          class="nav-link-overlay"
+          :aria-label="item.label"
+        />
       </el-menu-item>
     </el-menu>
 
@@ -59,6 +60,13 @@ const handleSelect = (index: string) => {
   width: 100%;
   flex: 1;
   border-right: none;
+}
+/* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
+.app-nav :deep(.nav-item) { position: relative; }
+.app-nav :deep(.nav-link-overlay) {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 .nav-logo {
   display: flex;

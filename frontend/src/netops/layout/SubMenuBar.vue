@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { findTopGroup } from '@netops/layout/menu'
 import MenuNode from '@netops/layout/MenuNode.vue'
 
 const route = useRoute()
-const router = useRouter()
 
 // 当前路由归属的一级分组 → 渲染它下面的递归子菜单
 const children = computed(() => findTopGroup(route.path)?.children ?? [])
-
-const handleSelect = (index: string) => {
-  if (index.startsWith('/')) router.push(index)
-}
 </script>
 
 <template>
@@ -22,7 +17,6 @@ const handleSelect = (index: string) => {
       mode="horizontal"
       :default-active="route.path"
       class="sub-menu"
-      @select="handleSelect"
     >
       <MenuNode v-for="item in children" :key="item.index" :item="item" />
     </el-menu>
