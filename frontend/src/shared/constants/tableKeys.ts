@@ -41,6 +41,10 @@ export const TABLE_KEYS = {
   routingTable: 'config.routing-table', // 路由表 预留
   arpMac: 'config.arp-mac', // ARP/MAC 预留
 
+  // ── asset ────────────────────────────────────────────────
+  assetDomains: 'asset.domains', // 域名资产（/asset/domain）
+  assetLoadBalancers: 'asset.load-balancers', // 负载均衡资产（/asset/load-balancer）
+
   // ── ipam ─────────────────────────────────────────────────
   ipamSubnets: 'ipam.subnets', // 网段（/ipam/subnets）预留
   ipamAddresses: 'ipam.ip-addresses', // IP 地址 预留

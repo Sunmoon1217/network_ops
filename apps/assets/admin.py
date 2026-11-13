@@ -1,10 +1,14 @@
-
 from django.contrib import admin
 
 from .models import (
     AddressBook,
+    ApplicationService,
     ArpMac,
     Cabinet,
+    CIObjectLink,
+    CIRelationship,
+    ConfigurationItem,
+    DatabaseInstance,
     DataCenter,
     Device,
     DeviceAccount,
@@ -13,6 +17,7 @@ from .models import (
     DeviceGroup,
     DeviceGroupMember,
     DeviceModel,
+    DomainAsset,
     GtmDatacenter,
     GtmPool,
     GtmServer,
@@ -20,6 +25,7 @@ from .models import (
     GtmWideip,
     Interface,
     IPAddress,
+    LoadBalancerService,
     LtmIRule,
     LtmPersist,
     LtmPool,
@@ -29,6 +35,7 @@ from .models import (
     LtmVirtualServer,
     NatRule,
     NtpConfig,
+    PhysicalServer,
     Policy,
     Room,
     Route,
@@ -42,6 +49,7 @@ from .models import (
     Tag,
     Topology,
     Vendor,
+    VirtualMachine,
     Vlan,
     Vrf,
 )
@@ -870,3 +878,92 @@ class ServerOwnerAdmin(admin.ModelAdmin):
     list_filter = ("status", "created_at")
     search_fields = ("ip", "hostname", "owner")
     date_hierarchy = "created_at"
+
+
+# 统一配置项体系（T1）：ci_id 只读，按类型过滤；扩展模型列表直接显示所属 CI
+
+
+@admin.register(ConfigurationItem)
+class ConfigurationItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci_id", "ci_type", "name", "monitor_status", "created_at")
+    list_filter = ("ci_type", "created_at")
+    search_fields = ("ci_id", "name", "description")
+    readonly_fields = ("ci_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+
+
+@admin.register(PhysicalServer)
+class PhysicalServerAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "hostname", "mgmt_ip", "cpu_cores", "memory_gb")
+    search_fields = ("hostname", "serial_number", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(VirtualMachine)
+class VirtualMachineAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "hostname", "mgmt_ip", "vcpu", "memory_gb", "host_name")
+    search_fields = ("hostname", "host_name", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(DatabaseInstance)
+class DatabaseInstanceAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "engine", "version", "port", "host_name")
+    search_fields = ("engine", "version", "host_name", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(ApplicationService)
+class ApplicationServiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "ci", "service_type", "port", "url_path")
+    search_fields = ("service_type", "url_path", "ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+# 统一关系表（T3）：两端是 ci_id 字符串，不是外键，列表直接按标识扫读
+@admin.register(CIRelationship)
+class CIRelationshipAdmin(admin.ModelAdmin):
+    list_display = ("id", "src_ci_id", "relation_type", "dst_ci_id", "created_at")
+    list_filter = ("relation_type", "created_at")
+    search_fields = ("src_ci_id", "dst_ci_id")
+    date_hierarchy = "created_at"
+
+
+# 软资产（T4）：归并产物，写入走 sync_soft_assets，admin 只用于查看
+@admin.register(DomainAsset)
+class DomainAssetAdmin(admin.ModelAdmin):
+    list_display = ("id", "fqdn", "ttl", "lb_mode", "inconsistent", "ci")
+    list_filter = ("inconsistent",)
+    search_fields = ("fqdn", "ci__ci_id")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+@admin.register(LoadBalancerService)
+class LoadBalancerServiceAdmin(admin.ModelAdmin):
+    list_display = ("id", "asset_key", "vip", "port", "protocol", "member_count", "status", "inconsistent", "ci")
+    list_filter = ("inconsistent", "status")
+    search_fields = ("asset_key", "vip", "ci__ci_id")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+
+
+# 存量资产登记（T4）：映射只由 register_assets 维护，admin 只用于核对
+@admin.register(CIObjectLink)
+class CIObjectLinkAdmin(admin.ModelAdmin):
+    list_display = ("id", "source_type", "source_id", "ci")
+    list_filter = ("source_type",)
+    search_fields = ("ci__ci_id", "ci__name")
+    list_select_related = ("ci",)
+    autocomplete_fields = ("ci",)
+    readonly_fields = ("ci", "source_type", "source_id", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

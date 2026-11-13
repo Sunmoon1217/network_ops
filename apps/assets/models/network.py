@@ -1,3 +1,10 @@
+"""网络域历史资产模型（原单文件 ``assets/models.py`` 的内容）。
+
+T1 拆分时把这段原样搬进来，一字未改：模型之间 35 处跨类直接引用
+（``ForeignKey(DataCenter, ...)`` 等）都还在同一个模块里，不会有循环 import。
+将来若按域细分，从这里分出去即可；``__init__.py`` 只做 re-export。
+"""
+
 import re
 from typing import TYPE_CHECKING
 

@@ -278,3 +278,147 @@ class SubnetUsageLogSerializer(ParentClass):
 @model(model=models.ServerOwner)
 class ServerOwnerSerializer(ParentClass):
     pass
+
+
+# 统一配置项体系（T1）：现阶段只做信息录入与查询，不做生命周期管理
+
+
+@model(model=models.ConfigurationItem)
+class ConfigurationItemSerializer(ParentClass):
+    ci_type_display = serializers.CharField(source="get_ci_type_display", read_only=True)
+
+    class Meta:
+        model = models.ConfigurationItem
+        fields = (
+            "id",
+            "ci_id",
+            "ci_type",
+            "ci_type_display",
+            "name",
+            "description",
+            "tags",
+            "monitor_status",
+            "created_at",
+            "updated_at",
+        )
+        # ci_id 由服务端生成且不可变；monitor_status 是 T15 状态回写的预留字段，不开放录入
+        read_only_fields = ("id", "ci_id", "monitor_status", "created_at", "updated_at")
+
+
+class CIExtensionSerializerMixin:
+    """扩展模型录入校验：所属 CI 的 ci_type 必须匹配。
+
+    不在这里挡住，就会落到模型 ``save()`` 抛 ValueError，DRF 不认识它、直接变 500。
+    """
+
+    EXPECTED_CI_TYPE = ""
+
+    def validate(self, attrs: dict) -> dict:
+        ci = attrs.get("ci")
+        if ci is not None and ci.ci_type != self.EXPECTED_CI_TYPE:
+            raise serializers.ValidationError({"ci": f"配置项类型须为 {self.EXPECTED_CI_TYPE}，当前为 {ci.ci_type}"})
+        return attrs
+
+
+@model(model=models.PhysicalServer)
+class PhysicalServerSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.PHYSICAL_SERVER
+
+
+@model(model=models.VirtualMachine)
+class VirtualMachineSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.VIRTUAL_MACHINE
+
+
+@model(model=models.DatabaseInstance)
+class DatabaseInstanceSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.DATABASE_INSTANCE
+
+
+@model(model=models.ApplicationService)
+class ApplicationServiceSerializer(CIExtensionSerializerMixin, ParentClass):
+    EXPECTED_CI_TYPE = models.CIType.APPLICATION_SERVICE
+
+
+# 统一关系表（T3）：只登记直接关系，两端 ci_id 的存在性与自环在录入时校验
+
+
+@model(model=models.CIRelationship)
+class CIRelationshipSerializer(ParentClass):
+    relation_type_display = serializers.CharField(source="get_relation_type_display", read_only=True)
+
+    class Meta:
+        model = models.CIRelationship
+        fields = ("id", "src_ci_id", "dst_ci_id", "relation_type", "relation_type_display", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate(self, attrs: dict) -> dict:
+        src = attrs.get("src_ci_id", getattr(self.instance, "src_ci_id", None))
+        dst = attrs.get("dst_ci_id", getattr(self.instance, "dst_ci_id", None))
+        if src and dst and src == dst:
+            raise serializers.ValidationError({"dst_ci_id": "关系两端不能是同一个 CI"})
+        wanted = {value for value in (src, dst) if value}
+        known = set(models.ConfigurationItem.objects.filter(ci_id__in=wanted).values_list("ci_id", flat=True))
+        for field, value in (("src_ci_id", src), ("dst_ci_id", dst)):
+            if value and value not in known:
+                raise serializers.ValidationError({field: f"CI 标识 {value} 不存在"})
+        return attrs
+
+
+# 软资产归并（T4）：只读，写入只由归并链路负责
+
+
+@model(model=models.DomainAsset)
+class DomainAssetSerializer(ParentClass):
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    name = serializers.CharField(source="ci.name", read_only=True)
+
+    class Meta:
+        model = models.DomainAsset
+        fields = (
+            "id",
+            "ci_id",
+            "name",
+            "fqdn",
+            "rtypes",
+            "ttl",
+            "lb_mode",
+            "pools",
+            "fallback_ips",
+            "vips",
+            "devices",
+            "inconsistent",
+            "conflict_fields",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+@model(model=models.LoadBalancerService)
+class LoadBalancerServiceSerializer(ParentClass):
+    ci_id = serializers.CharField(source="ci.ci_id", read_only=True)
+    name = serializers.CharField(source="ci.name", read_only=True)
+
+    class Meta:
+        model = models.LoadBalancerService
+        fields = (
+            "id",
+            "ci_id",
+            "name",
+            "asset_key",
+            "vip",
+            "port",
+            "protocol",
+            "pools",
+            "member_count",
+            "profiles",
+            "rules",
+            "devices",
+            "status",
+            "inconsistent",
+            "conflict_fields",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields

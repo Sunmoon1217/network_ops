@@ -61,6 +61,7 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+
 @api_view(["GET"])
 def overview(request):
     """资产管理概览统计"""
@@ -879,4 +880,140 @@ class SubnetUsageLogViewSet(viewsets.ModelViewSet):
         subnet_id = self.request.query_params.get("subnet")
         if subnet_id:
             qs = qs.filter(subnet_id=subnet_id)
+        return qs
+
+
+# 统一配置项体系（T1）：全站序列化器在 assets.serializers.views，与解析入库 / MCP 共用同一套字段口径
+
+
+class ConfigurationItemViewSet(viewsets.ModelViewSet):
+    from assets.models import ConfigurationItem
+    from assets.serializers.views import ConfigurationItemSerializer
+
+    queryset = ConfigurationItem.objects.all()
+    serializer_class = ConfigurationItemSerializer
+    search_fields = ("ci_id", "name", "description")
+    ordering_fields = ("ci_type", "name", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ci_type = self.request.query_params.get("ci_type")
+        if ci_type:
+            qs = qs.filter(ci_type=ci_type)
+        return qs
+
+
+class PhysicalServerViewSet(viewsets.ModelViewSet):
+    from assets.models import PhysicalServer
+    from assets.serializers.views import PhysicalServerSerializer
+
+    queryset = PhysicalServer.objects.select_related("ci").all()
+    serializer_class = PhysicalServerSerializer
+    search_fields = ("hostname", "serial_number", "ci__name", "ci__ci_id")
+    ordering_fields = ("hostname", "created_at")
+
+
+class VirtualMachineViewSet(viewsets.ModelViewSet):
+    from assets.models import VirtualMachine
+    from assets.serializers.views import VirtualMachineSerializer
+
+    queryset = VirtualMachine.objects.select_related("ci").all()
+    serializer_class = VirtualMachineSerializer
+    search_fields = ("hostname", "host_name", "ci__name", "ci__ci_id")
+    ordering_fields = ("hostname", "created_at")
+
+
+class DatabaseInstanceViewSet(viewsets.ModelViewSet):
+    from assets.models import DatabaseInstance
+    from assets.serializers.views import DatabaseInstanceSerializer
+
+    queryset = DatabaseInstance.objects.select_related("ci").all()
+    serializer_class = DatabaseInstanceSerializer
+    search_fields = ("engine", "version", "host_name", "ci__name", "ci__ci_id")
+    ordering_fields = ("engine", "created_at")
+
+
+class ApplicationServiceViewSet(viewsets.ModelViewSet):
+    from assets.models import ApplicationService
+    from assets.serializers.views import ApplicationServiceSerializer
+
+    queryset = ApplicationService.objects.select_related("ci").all()
+    serializer_class = ApplicationServiceSerializer
+    search_fields = ("service_type", "url_path", "ci__name", "ci__ci_id")
+    ordering_fields = ("service_type", "created_at")
+
+
+# 统一关系表（T3）：按 CI 查上下游，正反向都走索引
+
+
+class CIRelationshipViewSet(viewsets.ModelViewSet):
+    from assets.models import CIRelationship
+    from assets.serializers.views import CIRelationshipSerializer
+
+    queryset = CIRelationship.objects.all()
+    serializer_class = CIRelationshipSerializer
+    search_fields = ("src_ci_id", "dst_ci_id")
+    ordering_fields = ("src_ci_id", "dst_ci_id", "relation_type", "created_at")
+
+    def get_queryset(self):
+        from django.db.models import Q
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("src_ci_id"):
+            qs = qs.filter(src_ci_id=params["src_ci_id"])
+        if params.get("dst_ci_id"):
+            qs = qs.filter(dst_ci_id=params["dst_ci_id"])
+        if params.get("ci_id"):
+            qs = qs.filter(Q(src_ci_id=params["ci_id"]) | Q(dst_ci_id=params["ci_id"]))
+        if params.get("relation_type"):
+            qs = qs.filter(relation_type=params["relation_type"])
+        return qs
+
+
+# 软资产归并（T4）：只读接口，写入只由 sync_soft_assets 归并链路负责
+
+
+class DomainAssetViewSet(viewsets.ReadOnlyModelViewSet):
+    from assets.models import DomainAsset
+    from assets.serializers.views import DomainAssetSerializer
+
+    queryset = DomainAsset.objects.select_related("ci").all()
+    serializer_class = DomainAssetSerializer
+    # JSON 字段不能进 search_fields（PG 的 jsonb 不支持 icontains），按设备 / VIP 走精确过滤
+    search_fields = ("fqdn", "ci__ci_id", "ci__name")
+    ordering_fields = ("fqdn", "ttl", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("inconsistent") in ("true", "false"):
+            qs = qs.filter(inconsistent=params["inconsistent"] == "true")
+        if params.get("device"):
+            qs = qs.filter(devices__contains=[params["device"]])
+        if params.get("vip"):
+            qs = qs.filter(vips__contains=[params["vip"]])
+        return qs
+
+
+class LoadBalancerServiceViewSet(viewsets.ReadOnlyModelViewSet):
+    from assets.models import LoadBalancerService
+    from assets.serializers.views import LoadBalancerServiceSerializer
+
+    queryset = LoadBalancerService.objects.select_related("ci").all()
+    serializer_class = LoadBalancerServiceSerializer
+    search_fields = ("asset_key", "vip", "port", "ci__ci_id", "ci__name")
+    ordering_fields = ("vip", "port", "member_count", "created_at", "updated_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        if params.get("inconsistent") in ("true", "false"):
+            qs = qs.filter(inconsistent=params["inconsistent"] == "true")
+        if params.get("device"):
+            qs = qs.filter(devices__contains=[params["device"]])
+        if params.get("status"):
+            qs = qs.filter(status=params["status"])
+        if params.get("port"):
+            qs = qs.filter(port=params["port"])
         return qs

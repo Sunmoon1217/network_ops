@@ -8,6 +8,12 @@
 
 网络运维管理平台：Django REST 后端 + Vue 3 前端。
 
+**现阶段目标**：资产**信息录入与查询**平台，不是资产全生命周期管理系统。做信息录入（配置解析入库 /
+Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详情聚合）；不做生命周期管理（新增 / 变更 / 退役
+流程、状态机、审批）、数据质量治理闭环。现阶段其他平台联动**只做查询（只读）**；**Zabbix 联动是后续
+阶段的写侧例外**，做监控平台统一管理（自动纳管、告警富化、状态回写），不属于「只做查询」限制。范围
+边界与任务裁剪见 [`handbook/roadmap.md`](handbook/roadmap.md)「现阶段目标与范围边界」。
+
 - 后端：数据模型 + REST API；设备配置解析入库（`ingest/parsers` TTP + `savers`）；
   `ingest/collectors/` 接 Zabbix / Autotask 给总览大屏供数。
 - 前端：Vite **双入口**（`index.html` 主站 / `dashboard.html` 大屏），构建产物可由 Django 直接托管（开发调试）。
@@ -31,7 +37,7 @@ network_ops/
 ├── netops/          # settings/（base 集中 env 动态项 + dev/container/prod）、urls、asgi、lifespan、views、schema（外部 DTO 基类）
 ├── apps/
 │   ├── core/        # 用户与认证、Task/Stage、运维命令（ensure_superuser / migrate_if_needed / queue_*）
-│   ├── assets/      # 网络域模型（单文件 models.py）+ 序列化器 + API + Excel 导入
+│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API + Excel 导入
 │   ├── ingest/      # 采集/解析/入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo + collectors/（外部数据源）
 │   ├── analysis/    # 只读消费侧：路径追踪、访问流、互联网资产、监控、大屏供数；models/ 是包
 │   ├── cloud/       # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
@@ -119,6 +125,7 @@ uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status          # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog         # 积压明细（--json / --limit）
 uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
+uv run python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]   # GTM/LTM → 软资产
 uv run python manage.py rebuild_access_flows --device <H> [--sync]
 ./scripts/deploy-host.sh deploy | status      # 宿主部署：app / worker / consumer 三进程
 
@@ -160,9 +167,12 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   索引、`Service` 唯一键在 MySQL 用函数索引、DDL 不可回滚）见 [`handbook/deploy.md`](handbook/deploy.md)。
 - **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
-- **模型集中**：`assets` 所有模型在单文件 `apps/assets/models.py`；`analysis` 相反是 `models/` 包
-  （`access_flow` / `internet_analysis` / `dashboard` + `__init__.py` re-export）——不能同时留
-  `models.py` 与 `models/`（包优先，单文件被静默忽略）。
+- **模型包入口**：`assets` 与 `analysis` 都用 `models/` 包，`__init__.py` **只做 re-export、
+  不写模型定义**，并用 `__all__` 声明公开名字（**不要**用文件级 `noqa: F401` 抑制 re-export，
+  那会把整个文件的未使用导入检查一起关掉）。`assets` 的模型定义在 `network.py`（历史网络域模型）与 `ci.py`（统一配置项），
+  `analysis` 在 `access_flow` / `internet_analysis` / `dashboard`。`from assets.models import X`
+  与 `app_label` 保持不变、历史迁移不受影响；新增内聚模块独立成子文件，`__init__.py` 不写实现。
+  **不能同时留 `models.py` 与 `models/`**（包优先，单文件被静默忽略）。细节：[`handbook/assets.md`](handbook/assets.md)。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
   `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`。

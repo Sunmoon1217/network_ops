@@ -64,6 +64,20 @@ router.register(r"tags", views.TagViewSet, basename="tag")
 router.register(r"subnets", views.SubnetViewSet, basename="subnet")
 router.register(r"ip-addresses", views.IPAddressViewSet, basename="ip-address")
 
+# 统一配置项体系（T1）
+router.register(r"configuration-items", views.ConfigurationItemViewSet, basename="configuration-item")
+router.register(r"physical-servers", views.PhysicalServerViewSet, basename="physical-server")
+router.register(r"virtual-machines", views.VirtualMachineViewSet, basename="virtual-machine")
+router.register(r"database-instances", views.DatabaseInstanceViewSet, basename="database-instance")
+router.register(r"application-services", views.ApplicationServiceViewSet, basename="application-service")
+
+# 统一关系表（T3）
+router.register(r"ci-relationships", views.CIRelationshipViewSet, basename="ci-relationship")
+
+# 软资产（T4）：只读，数据由 sync_soft_assets 归并产出
+router.register(r"domain-assets", views.DomainAssetViewSet, basename="domain-asset")
+router.register(r"load-balancer-services", views.LoadBalancerServiceViewSet, basename="load-balancer-service")
+
 urlpatterns = [
     path("assets/", include(router.urls)),
     path("assets/overview/", views.overview, name="assets-overview"),

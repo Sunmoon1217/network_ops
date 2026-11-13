@@ -122,6 +122,11 @@ def run_storage_stage(self, stage_id):
             total_updated += updated
 
         _update_stage_status(stage_id, "success", output_data={"created": total_created, "updated": total_updated})
+
+        # 配置行已更新 → 请求刷新软资产（信号内合并到事务提交后执行）
+        from assets.signals import request_soft_asset_sync
+
+        request_soft_asset_sync("存储阶段完成")
     except Exception as e:
         logger.exception("Storage stage %s failed", stage_id)
         _update_stage_status(stage_id, "failed", error_message=str(e))
@@ -188,6 +193,11 @@ def run_config_storage(self, config_id):
             total_updated += updated
 
         logger.info("Config storage completed: +%d ~%d", total_created, total_updated)
+
+        # 批量导入链：storage 是最后一环，之后刷新软资产
+        from assets.signals import request_soft_asset_sync
+
+        request_soft_asset_sync(f"批量导入存储完成: DeviceConfig {config_id}")
     except Exception:
         logger.exception("Config storage failed: %s", config_id)
         raise
