@@ -1,14 +1,16 @@
-# env/secrets/
+# envs/secrets/
 
-数据库凭据放这里，走 **docker secrets**（放在 `env/` 下是为了和 `env/*.env` 这类「给容器的配置」聚在一起；
+数据库凭据放这里，走 **docker secrets**（放在 `envs/` 下是为了和 `envs/*.env` 这类「给容器的配置」聚在一起；
 它俩的区别只在**密钥文件被 `.gitignore` 排除**，并且只读挂给需要的容器）（compose 在非 swarm 模式下就是把文件只读挂到容器内的
 `/run/secrets/<name>`），不再放进 `.env`、也不再进容器环境变量——环境变量会被
 `docker inspect`、`/proc/1/environ` 看到，而 secret 文件只有挂它的容器读得到。
 
 | 文件 | 容器内路径 | 谁读 |
 |------|-----------|------|
-| `postgres_user` | `/run/secrets/postgres_user` | db（postgres 官方镜像的 `POSTGRES_USER_FILE`）、app / worker（`settings/base.py` 的 `_env_or_file()`） |
-| `postgres_password` | `/run/secrets/postgres_password` | 同上（`POSTGRES_PASSWORD_FILE`） |
+| `db_user` | `/run/secrets/db_user` | db（postgres 的 `POSTGRES_USER_FILE`；mysql 的用户名走 `MYSQL_USER` 环境变量，不用文件）、app / worker（`settings/base.py` 的 `_env_or_file()`） |
+| `db_password` | `/run/secrets/db_password` | 同上（`POSTGRES_PASSWORD_FILE` / `MYSQL_PASSWORD_FILE`） |
+
+**两个数据库后端共用这两个文件**（PG 与 MySQL 的凭据是同一个人工轮换的两项，不按后端分叉）。
 
 阿里云 API 凭据（生产/测试两套）：
 
@@ -46,7 +48,7 @@ bash env/secrets/generate.sh --force    # 覆盖已存在的文件
 - 权限：脚本用 `umask 077` + `chmod 600`，文件默认只有当前用户可读写。
 - 指向这两个文件的 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` 写在 `envs/container.env`
   （容器差异层，db / app / worker / consumer 共用）里，值就是 `/run/secrets/*`——见 `envs/README.md`。
-- 路径可改：compose 里 `secrets.*.file` 用的是 `${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}`
+- 路径可改：compose 里 `secrets.*.file` 用的是 `${DB_USER_SECRET_FILE:-./envs/secrets/db_user}`
   这类写法，也可以指到别处（例如 `/etc/netops/secrets/...`）。
 - `POSTGRES_DB`（库名）不算密钥，在 `envs/common.env` 里。
 - redis 密码**没有**走 secrets：redis 官方镜像没有 `*_FILE` 机制，`REDIS_PASSWORD` 仍是

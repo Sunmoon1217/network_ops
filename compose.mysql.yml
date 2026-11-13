@@ -9,7 +9,7 @@
 # 与 PostgreSQL 的差异（运维需要知道的）：
 #   * 数据目录 /var/lib/mysql，卷名 network-ops-mysqldata（与 postgres_data 互不干扰）；
 #   * 官方 mysql 镜像**没有** MYSQL_USER_FILE，用户名只能走环境变量（它不是秘密）；
-#     密码仍走 secrets，复用 postgres_password——同一套轮换流程，名字是历史原因；
+#     密码仍走 secrets，与 PG 共用 db_user / db_password——两个后端同一套轮换流程；
 #   * 8.4 默认 caching_sha2_password，mysqlclient 由 libmariadb3 自带的插件支持，
 #     不需要额外启动参数；
 #   * MySQL 的 DDL 不能回滚，迁移失败会留下半套 schema（见 handbook/deploy.md）。
@@ -34,20 +34,20 @@ services:
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
     environment:
       MYSQL_DATABASE: ${POSTGRES_DB:-netops}
-      # 必须与 envs/secrets/postgres_user 的内容一致（官方镜像不支持 MYSQL_USER_FILE）
+      # 必须与 envs/secrets/db_user 的内容一致（官方镜像不支持 MYSQL_USER_FILE）
       MYSQL_USER: ${MYSQL_USER:-netops}
-      MYSQL_PASSWORD_FILE: /run/secrets/postgres_password
-      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/postgres_password
-    # !override：清掉基础层的 postgres 端口映射 / 数据卷 / postgres_user 密钥，
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+    # !override：清掉基础层的 postgres 端口映射 / 数据卷 / db_user 密钥，
     # 否则会同时保留 5432→5432 与 /var/lib/postgresql/data 两个挂载。
     ports: !override
       - "${MYSQL_HOST_PORT:-3306}:3306"
     volumes: !override
       - mysql_data:/var/lib/mysql
     secrets: !override
-      - postgres_password
+      - db_password
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$(cat /run/secrets/postgres_password)\" --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$(cat /run/secrets/db_password)\" --silent"]
       interval: 10s
       timeout: 5s
       retries: 10

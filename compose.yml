@@ -6,13 +6,13 @@
 name: network_ops
 
 x-secrets: &db-secrets
-  - postgres_user
-  - postgres_password
+  - db_user
+  - db_password
 
 # app / worker 需要数据库凭据 + 阿里云 API 凭据（aliyun SDK 调用）
 x-app-secrets: &app-secrets
-  - postgres_user
-  - postgres_password
+  - db_user
+  - db_password
   - aliyun_prod_access_key_id
   - aliyun_prod_access_key_secret
   - aliyun_test_access_key_id
@@ -55,7 +55,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/postgres_user)\" -d \"$${POSTGRES_DB:-netops}\""]
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_user)\" -d \"$${POSTGRES_DB:-netops}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -226,10 +226,10 @@ volumes:
     name: network-ops-static
 
 secrets:
-  postgres_user:
-    file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}
-  postgres_password:
-    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}
+  db_user:
+    file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}
+  db_password:
+    file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}
   aliyun_prod_access_key_id:
     file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/aliyun_prod_access_key_id}
   aliyun_prod_access_key_secret:

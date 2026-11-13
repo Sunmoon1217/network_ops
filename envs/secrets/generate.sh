@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # 生成数据库凭据的 docker secrets 文件：
-#   envs/secrets/postgres_user       → 容器内 /run/secrets/postgres_user
-#   envs/secrets/postgres_password   → 容器内 /run/secrets/postgres_password
+#   envs/secrets/db_user       → 容器内 /run/secrets/db_user
+#   envs/secrets/db_password   → 容器内 /run/secrets/db_password
 #
 # 谁用它们：
 #   * db 容器     —— postgres 官方镜像的 POSTGRES_USER_FILE / POSTGRES_PASSWORD_FILE
@@ -19,7 +19,7 @@
 # 想要真正换密码，要么 --random + 删 postgres_data 卷重建，要么进库 `ALTER USER ...`。
 #
 # 注意：这里对 .env 的解析是**简化版**（去行内注释、去成对引号、$$ → $）。
-# 密码里带空格、引号等复杂字符时，请直接手工创建 envs/secrets/postgres_password。
+# 密码里带空格、引号等复杂字符时，请直接手工创建 envs/secrets/db_password。
 
 set -eu
 
@@ -31,7 +31,7 @@ FORCE=0
 
 usage() {
     cat <<'EOF'
-生成数据库凭据的 docker secrets 文件（envs/secrets/postgres_user、envs/secrets/postgres_password）
+生成数据库凭据的 docker secrets 文件（envs/secrets/db_user、envs/secrets/db_password）
 
 用法：
   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 POSTGRES_USER / POSTGRES_PASSWORD
@@ -97,13 +97,13 @@ else
     echo "沿用 .env 里的 POSTGRES_USER / POSTGRES_PASSWORD（没有就用默认值）"
 fi
 
-write_secret postgres_user "$user"
-write_secret postgres_password "$password"
+write_secret db_user "$user"
+write_secret db_password "$password"
 
 cat <<'EOF'
 
 下一步：
   docker compose up -d db            # 首次部署：数据卷会按这份凭据初始化
   docker compose up -d --build app worker
-查看（可选）：cat envs/secrets/postgres_password
+查看（可选）：cat envs/secrets/db_password
 EOF

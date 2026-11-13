@@ -48,7 +48,7 @@ beat:
 - 容器：`container.env` 给绝对路径 `/run/secrets/*`（compose 挂载）；
 - 宿主：默认不设 `*_FILE`、走同名环境变量或 base 默认值（开发语义）；取消 `host.env`
   里对应注释行即可与容器**共用同一份** `envs/secrets/*`——相对路径（如
-  `envs/secrets/postgres_user`）由 `base.py` 按 `BASE_DIR` 解析。
+  `envs/secrets/db_user`）由 `base.py` 按 `BASE_DIR` 解析。
 
 ## `MIGRATE_ON_START` 与初始管理员
 

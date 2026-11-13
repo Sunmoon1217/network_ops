@@ -151,20 +151,20 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
 
     # 容器差异层把凭据指向 /run/secrets/*（db 与 app/worker 共用这一层）
     container_env = _env_file("container.env")
-    assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in container_env
-    assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in container_env
+    assert "POSTGRES_USER_FILE=/run/secrets/db_user" in container_env
+    assert "POSTGRES_PASSWORD_FILE=/run/secrets/db_password" in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
     # db / consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
     # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
-    assert "file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}" in compose
-    assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}" in compose
+    assert "file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}" in compose
+    assert "file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}" in compose
     assert compose.count("secrets: *db-secrets") == 2
     assert compose.count("secrets: *app-secrets") == 3
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
     for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
         block = compose.split(anchor)[1].split("\n\n")[0]
-        assert "- postgres_user" in block and "- postgres_password" in block, anchor
+        assert "- db_user" in block and "- db_password" in block, anchor
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
     assert "${POSTGRES_PASSWORD:-" not in compose
@@ -181,7 +181,7 @@ def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
     """
     from netops import settings as project_settings
 
-    secret = tmp_path / "postgres_password"
+    secret = tmp_path / "db_password"
     secret.write_text("s3cret\n", encoding="utf-8")
 
     monkeypatch.setenv("POSTGRES_PASSWORD", "plain")
