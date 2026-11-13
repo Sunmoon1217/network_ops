@@ -6,17 +6,17 @@
 name: network_ops
 
 x-secrets: &db-secrets
-  - postgres_user
-  - postgres_password
+  - db_user
+  - db_password
 
 # app / worker 需要数据库凭据 + 阿里云 API 凭据（aliyun SDK 调用）
 x-app-secrets: &app-secrets
-  - postgres_user
-  - postgres_password
-  - aliyun_prod_access_key_id
-  - aliyun_prod_access_key_secret
-  - aliyun_test_access_key_id
-  - aliyun_test_access_key_secret
+  - db_user
+  - db_password
+  - prod_ak
+  - prod_sk
+  - test_ak
+  - test_sk
 
 # app / worker / consumer 用 venv 镜像 + 从 code 镜像挂载代码（跨沙箱传输场景）。
 # 代码镜像（Dockerfile.code，busybox + 代码）由内网开发机构建后 scp 到服务器，
@@ -39,26 +39,12 @@ services:
     networks:
       - internal
 
+  # 数据库：具体用哪个后端由根 .env 的 DB_SERVICE 决定（模板见 compose.db.yml）。
+  # 只有 `db` 这一个服务——模板不会变成服务，所以 up 只起一个库。
   db:
-    image: timescale/timescaledb:2.27.1-pg16
-    container_name: netops-db
-    restart: unless-stopped
-    init: true
-    env_file:
-      - envs/common.env
-      - envs/container.env
-    secrets: *db-secrets
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/postgres_user)\" -d \"$${POSTGRES_DB:-netops}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    extends:
+      file: compose.db.yml
+      service: ${DB_SERVICE:-postgresql}
 
   redis:
     image: redis:8.8.0
@@ -69,7 +55,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
     networks:
       - internal
     healthcheck:
@@ -86,6 +72,7 @@ services:
     env_file:
       - envs/common.env
       - envs/gunicorn.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
     volumes:
@@ -113,6 +100,7 @@ services:
     env_file:
       - envs/common.env
       - envs/celery.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
     volumes_from:
@@ -133,6 +121,7 @@ services:
     entrypoint: ["/app/entrypoint/consumer.sh"]
     env_file:
       - envs/common.env
+      - envs/db.env
       - envs/container.env
     secrets: *db-secrets
     volumes_from:
@@ -154,6 +143,7 @@ services:
     env_file:
       - envs/common.env
       - envs/celery.env
+      - envs/db.env
       - envs/container.env
     secrets: *app-secrets
     volumes_from:
@@ -198,9 +188,13 @@ networks:
     driver: bridge
 
 volumes:
+  # 两个后端各一套数据卷（extends 模板里只引用其中一个；未引用到的不会被创建）
   postgres_data:
     driver: local
     name: network-ops-pgdata
+  mysql_data:
+    driver: local
+    name: network-ops-mysqldata
   redis_data:
     driver: local
     name: network-ops-redis
@@ -226,15 +220,15 @@ volumes:
     name: network-ops-static
 
 secrets:
-  postgres_user:
-    file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}
-  postgres_password:
-    file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}
-  aliyun_prod_access_key_id:
-    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/aliyun_prod_access_key_id}
-  aliyun_prod_access_key_secret:
-    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/aliyun_prod_access_key_secret}
-  aliyun_test_access_key_id:
-    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/aliyun_test_access_key_id}
-  aliyun_test_access_key_secret:
-    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/aliyun_test_access_key_secret}
+  db_user:
+    file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}
+  db_password:
+    file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}
+  prod_ak:
+    file: ${ALIYUN_PROD_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/prod_ak}
+  prod_sk:
+    file: ${ALIYUN_PROD_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/prod_sk}
+  test_ak:
+    file: ${ALIYUN_TEST_ACCESS_KEY_ID_SECRET_FILE:-./envs/secrets/test_ak}
+  test_sk:
+    file: ${ALIYUN_TEST_ACCESS_KEY_SECRET_SECRET_FILE:-./envs/secrets/test_sk}

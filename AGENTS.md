@@ -152,6 +152,12 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   环境旋钮唯一 `DJANGO_ENV`（不设 → dev，白名单，拼错拒启动），`DJANGO_SETTINGS_MODULE` 恒为
   `netops.settings`。`base.py` 与三个环境文件**禁止** `from netops.settings import ...` /
   `from . import ...`（半初始化时会炸）。细节：[`handbook/settings.md`](handbook/settings.md)。
+- **数据库后端二选一**：连接参数统一 `DB_*`（`DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_HOST` /
+  `DB_PORT`，默认 PG、其它 ENGINE 值拒启动）；镜像认的 `POSTGRES_*` / `MYSQL_*` 由
+  `envs/db.env` 用 `${}` 嵌套（compose 以 env_file 加载，应用进程与 db 共用同一份）。容器侧切换只改根 `.env` 的 `DB_SERVICE`（`db` 服务 extends
+  模板，同值注入四个应用进程）；**`compose.db.yml` 只当 extends 模板，不能当 `-f` 传**。
+  驱动 mysqlclient 靠 `dockerfile.venv` 两阶段构建编译。跨库差异（GIN 只在 PG、MySQL 用多值
+  索引、`Service` 唯一键在 MySQL 用函数索引、DDL 不可回滚）见 [`handbook/deploy.md`](handbook/deploy.md)。
 - **`.env` / `envs/*.env` 里含 `$` 或 `#` 的值一律用单引号**（compose 会插值 `$`，`#` 前有空格即
   注释，双引号不保护 `$`）。技能 `docker-compose-behavior`。
 - **模型集中**：`assets` 所有模型在单文件 `apps/assets/models.py`；`analysis` 相反是 `models/` 包

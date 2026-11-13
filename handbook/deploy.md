@@ -1,6 +1,7 @@
 # 部署与容器化
 
-compose 起 **db(TimescaleDB) / redis / code-init（一次性）/ app / worker / consumer / beat / nginx**，
+compose 起 **db（PostgreSQL/TimescaleDB 或 MySQL，由根 `.env` 的 `DB_SERVICE` 选）/ redis /
+code-init（一次性）/ app / worker / consumer / beat / nginx**，
 nginx 是统一入口。本文档收「部署侧的硬要求与代价」；构建顺序、分层取舍、`uv sync` 参数、
 冒烟清单契约见 `entrypoint/README.md`。第三方软件的实测行为（compose 插值、挂载属主、容器里
 git、健康检查、nginx resolver、uv）在 `.dsh/skills`，本文只点名。
@@ -168,7 +169,7 @@ Redis 里的 `access_flow:heartbeat` 键，TTL 300s；beat 额外等 `redis: ser
 
 | 服务 | 探针 | 不能省的参数 |
 |------|------|--------------|
-| db | `pg_isready -U "$$(cat /run/secrets/postgres_user)" -d "$${POSTGRES_DB:-netops}"` | **`-U` 不能省**：healthcheck 由 docker 以镜像默认用户 root 执行，不带 `-U` 会刷 `role "root" does not exist` 而容器照样 healthy |
+| db | `pg_isready -U "$$(cat /run/secrets/db_user)" -d "$${DB_NAME:-netops}"` | **`-U` 不能省**：healthcheck 由 docker 以镜像默认用户 root 执行，不带 `-U` 会刷 `role "root" does not exist` 而容器照样 healthy |
 | redis | `redis-cli ping` | — |
 | nginx | `curl -fsS -m 3 --noproxy '*' -o /dev/null http://127.0.0.1/` | **`--noproxy '*'` 不能省**；别用 busybox `wget`（不认 `no_proxy`）；`-f` 让 4xx/5xx 也算失败；探 80 还能发现「conf.d 没挂进来」（没有 server 块 nginx 照样启动） |
 
@@ -189,19 +190,79 @@ worker / consumer 只是 `app: service_started`；beat 等 `code-init` 完成 + 
 healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 
 **数据库与阿里云凭据走 docker secrets，不进 `.env` / 环境变量**（为什么不用环境变量：技能
-`container-healthchecks` 第 5 节）：`envs/secrets/postgres_user` / `postgres_password` /
-`aliyun_{prod,test}_access_key_{id,secret}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`；
-`envs/container.env` 里只写 `POSTGRES_USER_FILE` / `POSTGRES_PASSWORD_FILE` 与 4 个
-`ALIYUN_*_FILE`（db 由 postgres 官方镜像读，app / worker 由 `settings/base.py` 的
-`_env_or_file()` 读，没有 `*_FILE` 时回退同名环境变量）。**两条别改回去**：
+`container-healthchecks` 第 5 节）：`envs/secrets/db_user` / `db_password` /
+`{prod,test}_{ak,sk}` 由 compose 顶层 `secrets:` 只读挂到 `/run/secrets/*`。
+数据库连接参数集中在 **`envs/db.env`** 一份文件里，compose 直接用 `env_file` 加载它：
+
+- `envs/common.env` 里定义部署无关的 `DB_ENGINE` / `DB_NAME` / `DB_USER`，并在同一文件内嵌套出
+  `POSTGRES_DB=${DB_NAME}`、`MYSQL_DATABASE=${DB_NAME}`、`MYSQL_USER=${DB_USER}`；
+  `envs/db.env` 只补容器特有的凭据路径并嵌套 `POSTGRES_USER_FILE=${DB_USER_FILE}`、
+  `MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}`；`DB_HOST=db` 在 `container.env`（db 容器自己不读它）。
+  这是 **env_file 自身的插值**（Compose 加载时展开）：`DB_ENGINE` 的右侧 `DB_SERVICE` 来自
+  根 `.env`，而 `DB_NAME` / `DB_USER` 与镜像名同文件定义，与部署方式无关的这三项只在
+  `common.env` 出现一次；
+- 四个应用进程与 db 容器都 `env_file: envs/db.env`：应用只认 `DB_*`（settings 的 `_env_or_file()`
+  读 `*_FILE`），db 镜像各取自己那份 `POSTGRES_*` / `MYSQL_*`，对方的变量被忽略；
+- `envs/container.env` 不再放数据库连接（它同时注入四个应用进程，放这里对 db 容器毫无意义）。
+
+**两条别改回去**：
 
 1. postgres 官方 entrypoint 规定 `POSTGRES_USER` 与 `POSTGRES_USER_FILE` 同时设置就报错退出，
-   所以只留 `_FILE`；
+   所以 `envs/db.env` 里只给 `_FILE`；
 2. db 的 healthcheck 靠容器内 `sh` 读 secret，**`-U` 必须显式给**。
 
 生成 / 迁移：`bash envs/secrets/generate.sh`（默认**沿用旧值**；postgres 只在**首次初始化数据卷**
 时应用凭据，换值不改库里已有密码——详见 `envs/secrets/README.md`）。密钥不入库（`.gitignore`）、
 不进构建上下文（`.dockerignore`）；redis 密码仍是环境变量（官方镜像没有 `*_FILE` 机制）。
+
+## MySQL 后端（可选部署形态）
+
+默认仍是 PostgreSQL（TimescaleDB 镜像）。换后端只改根 `.env` 一行，不用改 compose、也不用多带 `-f`：
+
+```dotenv
+DB_SERVICE=mysql          # postgresql（默认）/ mysql
+```
+
+`compose.yml` 里的 `db` 服务用 **`extends`** 引入 `compose.db.yml` 的同名模板：
+
+```yaml
+db:
+  extends:
+    file: compose.db.yml
+    service: ${DB_SERVICE:-postgresql}
+```
+
+模板文件里只有 `postgresql` / `mysql` 两份**服务定义**，不是两个服务——最终模型里 `db` 只有一个，
+`up -d` 不会把两个库都起起来。四个应用进程的 `DB_ENGINE` 由 `x-db-env` 锚点跟随同一个
+`${DB_SERVICE}` 决定（写在 `envs/common.env` 的 `DB_ENGINE` 里）；库名/账号也在 common.env，
+宿主直跑读同一份。
+
+三条硬约束（都是 `extends` 的语义，实测过）：
+
+1. **`compose.db.yml` 不能再用 `-f` 传**——一旦当 `-f` 传，两个模板会变成真实服务，两个库都会起；
+2. 顶层 `volumes:` / `secrets:` **不继承**，`compose.yml` 里必须声明两套卷（未引用的不会被创建）；
+3. `depends_on` / `links` / `volumes_from` **不继承**，模板里不要写。
+
+官方 mysql 镜像**没有 `MYSQL_USER_FILE`**：用户名走 `MYSQL_USER`（不是秘密），密码走
+`envs/secrets/db_password`（root 复用同一份，不新增轮换流程）。两个后端共用
+`envs/secrets/db_user` / `db_password`。
+
+**不能复用 PG 的数据卷**：换后端等于换一套库（`network-ops-pgdata` ↔ `network-ops-mysqldata`），
+数据不会互通。
+
+跨库差异（2026-11 在 MySQL 8.4.13 上实测，`-n auto` 全量 769 项通过）：
+
+| 项 | PostgreSQL | MySQL | 处理 |
+|----|-----------|-------|------|
+| `AccessFlow.device_ids` / `policy_ids` 的索引 | `GinIndex` | JSON 列不能直接建索引（3152） | 建表不带索引，按后端补建（`operator.0002`）：PG 用 `CREATE INDEX ... USING gin`，MySQL 8.0.17+ 用多值索引 `((CAST(col AS UNSIGNED ARRAY)))`。20 万行实测：MySQL 全表扫描 160 ms → 1.3 ms，写入约 +50%；PG 顺序扫描 47 ms → GIN 1.5 ms |
+| `Service` 五列自然键 | 3108 字节没问题 | 超 InnoDB 3072 字节上限（1071） | 按后端分建：PG 普通唯一约束，MySQL 函数唯一索引 `(device_id, MD5(CONCAT_WS(...)))`（`assets.0029`） |
+| 大小写 | 唯一键与 `exact` 区分大小写 | `utf8mb4_0900_ai_ci` 不区分 | 已知差异：普通唯一键会把 `SW-01` / `sw-01` 判重；上面那个函数索引按字节哈希，仍区分 |
+| DDL 回滚 | 迁移失败可回滚 | DDL 隐式提交，回滚不了 | 迁移失败会留半套 schema；MySQL 部署以「删库重建」为恢复手段，见下 |
+| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | 代码本来就不用返回值，无影响 |
+
+MySQL 侧要求 **8.0.17+**（多值索引；函数索引只要 8.0.13，Django 6.1 的下限是 8.0.11）。迁移失败（MySQL 上不可回滚）
+的处理：停止 app → `DROP DATABASE netops` → 重建空库 → 重跑 `migrate_if_needed`；MySQL 只面向
+新部署，不接受从 PG 迁移数据。
 
 ## 镜像
 

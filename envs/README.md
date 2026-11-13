@@ -8,26 +8,40 @@
 
 | 文件 | 层 | 谁加载 | 放什么 |
 |------|----|--------|--------|
-| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（库名、端口、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——**唯一需要日常维护的文件** |
-| `container.env` | 容器差异层 | compose `env_file`（排在**最后**） | 只在容器成立的东西：`POSTGRES_HOST=db` / `REDIS_HOST=redis`、`*_FILE=/run/secrets/*`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START`、`PGDATA` |
-| `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`POSTGRES_HOST=127.0.0.1` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
+| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（`DB_ENGINE`/`DB_NAME`/`DB_USER` 及镜像认的 `POSTGRES_DB`/`MYSQL_DATABASE`/`MYSQL_USER`、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——日常维护的主要文件 |
+| `container.env` | 容器差异层 | compose `env_file`（排在**最后**，只给四个应用进程） | 只在容器成立的东西：`DB_HOST=db` / `REDIS_HOST=redis`、阿里云 `*_FILE`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START` |
+| `db.env` | **数据库凭据层（仅容器）** | compose `env_file`（四个应用进程 + db 容器） | docker secrets 的文件路径，并 `${}` 嵌套成镜像认的 `POSTGRES_*_FILE` / `MYSQL_*_FILE`；库名/账号在 `common.env`，`DB_HOST` 在 `container.env` |
+| `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`DB_ENGINE` / `DB_HOST=127.0.0.1` / `DB_NAME` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
 | `gunicorn.env` / `celery.env` | 服务层 | compose `env_file`（只给对应服务） | 每个服务自己的旋钮，与部署方式无关 |
 | `secrets/*` | 密钥 | 容器：`secrets` 挂载 `/run/secrets/*`；宿主：经 `host.env` 的相对 `*_FILE` | 数据库/阿里云凭据；只有密钥被 `.gitignore` 排除，见 `secrets/README.md` |
 
 `common.env` / `container.env` / `host.env` 的注入组合（compose.yml）：
 
 ```yaml
-db:
-  env_file: [envs/common.env, envs/container.env]
+db:            # 两个后端模板都是这一行
+  env_file: [envs/db.env]
 app:
-  env_file: [envs/common.env, envs/gunicorn.env, envs/container.env]
+  env_file: [envs/common.env, envs/gunicorn.env, envs/db.env, envs/container.env]
 worker:
-  env_file: [envs/common.env, envs/celery.env, envs/container.env]
+  env_file: [envs/common.env, envs/celery.env, envs/db.env, envs/container.env]
 consumer:
-  env_file: [envs/common.env, envs/container.env]
+  env_file: [envs/common.env, envs/db.env, envs/container.env]
 beat:
-  env_file: [envs/common.env, envs/celery.env, envs/container.env]
+  env_file: [envs/common.env, envs/celery.env, envs/db.env, envs/container.env]
 ```
+
+## 同名变量（故意的，别当冲突处理）
+
+| 变量 | 出现处 | 为什么同名 | 谁看得到 |
+|------|--------|-----------|----------|
+| `DB_HOST` | `container.env`（容器=`db`）与 `host.env`（宿主=`127.0.0.1`） | 容器走 compose 服务名，宿主走本机地址，**值本来就不同** | 互斥：容器只读 env_file 组合，宿主只 `load_dotenv(common+host)` |
+| `REDIS_HOST` | `container.env`（`redis`）与 `host.env`（`127.0.0.1`） | 同上 | 同上 |
+| `REDIS_PORT` | `common.env`（容器内端口） | 宿主映射已改名 `REDIS_HOST_PORT`，不再同名 | — |
+
+**`DB_ENGINE` / `DB_NAME` / `DB_USER` 不在此表**：它们与部署方式无关，收敛在 `common.env` 里只定义一次
+（`DB_ENGINE=${DB_SERVICE:-postgresql}`，镜像名在同一文件内嵌套）。
+
+`envs/example/*` 与 `envs/*` 的同名是**模板与实例**的关系（实例不入库）。
 
 ## 加载与优先级（宿主侧）
 
@@ -36,7 +50,7 @@ beat:
 1. `NETOPS_SKIP_DOTENV=1` → 全部跳过（tests/deploy 用它拿到纯净默认值，不吃本机 envs/ 实例）；
 2. `load_dotenv(envs/common.env)`；
 3. `DJANGO_ENV ≠ container` 时再 `load_dotenv(envs/host.env)`——容器里代码卷也带着
-   `envs/`，不区分会把宿主值（`POSTGRES_HOST=127.0.0.1` 等）泄进容器。
+   `envs/`，不区分会把宿主值（`DB_HOST=127.0.0.1` 等）泄进容器。
 
 `load_dotenv` 全程 `override=False`：**真实进程环境永远优先**（compose 注入的值、手工
 `export` 的值都赢过文件），文件只是兜底——想临时覆盖某个值，直接 export 即可，不用改文件。
@@ -48,7 +62,7 @@ beat:
 - 容器：`container.env` 给绝对路径 `/run/secrets/*`（compose 挂载）；
 - 宿主：默认不设 `*_FILE`、走同名环境变量或 base 默认值（开发语义）；取消 `host.env`
   里对应注释行即可与容器**共用同一份** `envs/secrets/*`——相对路径（如
-  `envs/secrets/postgres_user`）由 `base.py` 按 `BASE_DIR` 解析。
+  `envs/secrets/db_user`）由 `base.py` 按 `BASE_DIR` 解析。
 
 ## `MIGRATE_ON_START` 与初始管理员
 
@@ -70,7 +84,7 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 
 | 位置 | 谁读 | 放什么 |
 |------|------|--------|
-| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `POSTGRES_PORT` / `REDIS_PORT`）、镜像 tag、secrets 文件路径 |
+| `.env`（项目根） | **compose 自己**（`${VAR}` 插值） | 宿主映射端口（`NGINX_PORT` / `DB_PORT_POSTGRES` / `DB_PORT_MYSQL` / `REDIS_HOST_PORT`）、数据库后端 `DB_SERVICE` / `DB_NAME` / `DB_USER`、镜像 tag、secrets 文件路径 |
 | `envs/*.env`（本目录） | **容器进程**（env_file）与**宿主进程**（load_dotenv） | 上表各层 |
 | `envs/secrets/*` | 容器进程（`/run/secrets/*`）与宿主进程（相对 `*_FILE`） | 密钥 |
 | `conf/*.json`（项目根） | **进程直接读文件**（如 ingest 的 `link_config`） | 平台自身的结构化配置（链路清单与展示 label）；**入库、随版本走**，单值项可被同名环境变量覆盖 |
@@ -79,7 +93,8 @@ migrate 加锁），所以多副本同时启动不会互相竞争；其它后端
 
 1. **compose 的 `${VAR}` 只读根目录的 `.env`**，不会读 `envs/*.env`。要在 compose 文件里
    插值的变量（宿主映射端口等）必须留在根 `.env`；反过来，给进程用的变量放这里就够了。
-   注意根 `.env` 的 `POSTGRES_PORT` 是**宿主映射端口**，与 `common.env` 的容器端口是两码事。
+   注意根 `.env` 的 `DB_PORT` / `MYSQL_HOST_PORT` 是**宿主映射端口**；容器内端口固定
+   （PG 5432 / MySQL 3306），由 `settings/base.py` 按 `DB_ENGINE` 取默认，`common.env` 里不写。
 2. 同一个变量同时出现在 `environment:` 与 `env_file` 时 **`environment` 优先**。
 3. 多个 `env_file` 按顺序合并，**后面的覆盖前面的**（本目录里各层互补，正常不会撞；
    `container.env` 排最后就是利用这条保证容器差异一定生效）。

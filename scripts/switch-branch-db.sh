@@ -10,7 +10,7 @@ DB_NAME="netops_$(echo "$BRANCH_NAME" | tr '/' '_' | tr '-' '_')"
 
 # 生成 .env.db
 cat > .env.db << EOF
-POSTGRES_DB=$DB_NAME
+DB_NAME=$DB_NAME
 EOF
 
 echo "切换到 $BRANCH_NAME，数据库: $DB_NAME"

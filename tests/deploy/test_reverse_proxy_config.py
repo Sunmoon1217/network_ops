@@ -25,6 +25,8 @@ from django.test import Client
 NGINX_CONF_DIR = settings.BASE_DIR / "nginx" / "conf.d"
 # compose 文件已由 docker-compose.yml 改名为 compose.yml（2776e46）
 COMPOSE_FILE = settings.BASE_DIR / "compose.yml"
+# 数据库后端模板（只被 compose.yml 的 db extends，不当 -f 传）
+COMPOSE_DB_FILE = settings.BASE_DIR / "compose.db.yml"
 
 
 def _env_file(name: str) -> str:
@@ -103,14 +105,19 @@ def test_app_and_worker_share_the_django_runtime_env_file():
     环境变量按「谁读」分三处（`.env` 给 compose 插值、`envs/*.env` 给容器、`envs/secrets/*`
     给凭据），所以这条契约现在守的是「文件内容 + 所有运行时服务都注入它」，而不是锚点。
 
-    当前注入方：db（postgres 镜像读 POSTGRES_DB）+ app / worker（celery 双队列）/
-    consumer（访问流单写者消费者）/ beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
+    当前注入方：app / worker（celery 双队列）/ consumer（访问流单写者消费者）/
+    beat（大屏链路缓存调度）——新增服务时这个计数要跟着加。
+    db 只读 envs/db.env（数据库连接参数），不读 common/container。
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
     common_env = _env_file("common.env")
 
     assert "DJANGO_CSRF_TRUSTED_ORIGINS=" in common_env
-    assert compose.count("- envs/common.env") == 5
+    assert compose.count("- envs/common.env") == 4
+    # db 的两个模板也要读 common.env（库名/账号在里面），外加只给容器的 db.env
+    assert db_templates.count("- envs/common.env") == 2
+    assert db_templates.count("- envs/db.env") == 2
 
 
 def test_each_service_only_gets_its_own_env_file():
@@ -133,12 +140,32 @@ def test_each_service_only_gets_its_own_env_file():
     assert "- envs/common.env" in worker_block
     assert "- envs/container.env" in app_block
     assert "- envs/container.env" in worker_block
-    # db 只读共享层 + 容器差异层（没有服务级文件）
-    db_block = compose.split("  db:")[1].split("  redis:")[0]
-    assert "- envs/common.env" in db_block
-    assert "- envs/container.env" in db_block
-    assert "- envs/gunicorn.env" not in db_block
-    assert "- envs/celery.env" not in db_block
+    # 四个应用进程都加载 db.env（数据库连接只在那一份里维护）
+    assert "- envs/db.env" in app_block
+    assert "- envs/db.env" in worker_block
+    # db 由 extends 引入，只读 db.env；gunicorn / celery 的服务级旋钮不许串进去
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
+    assert db_templates.count("- envs/db.env") == 2
+    for service_key in ("  postgresql:", "  mysql:"):
+        db_block = db_templates.split(service_key)[1].split("\n\n")[0]
+        assert "- envs/common.env" in db_block, service_key
+        assert "- envs/db.env" in db_block, service_key
+        assert "- envs/gunicorn.env" not in db_block, service_key
+        assert "- envs/celery.env" not in db_block, service_key
+
+
+def test_db_deployment_independent_vars_live_once_in_common_env():
+    """`DB_ENGINE` / `DB_NAME` / `DB_USER` 与部署方式无关 → 只在 common.env 定义一次，
+    镜像认的名字在同一文件内用 ${} 嵌套；层文件（container/host/db.env）不再重复。"""
+    common = _env_file("common.env")
+    assert "DB_ENGINE=${DB_SERVICE:-postgresql}" in common
+    assert "POSTGRES_DB=${DB_NAME}" in common
+    assert "MYSQL_DATABASE=${DB_NAME}" in common
+    assert "MYSQL_USER=${DB_USER}" in common
+
+    for name in ("container.env", "host.env", "db.env"):
+        for line in _env_file(name).splitlines():
+            assert not line.startswith(("DB_ENGINE=", "DB_NAME=", "DB_USER=")), f"{name}: {line}"
 
 
 def test_db_credentials_come_from_secrets_not_plaintext_env():
@@ -149,28 +176,43 @@ def test_db_credentials_come_from_secrets_not_plaintext_env():
     """
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
-    # 容器差异层把凭据指向 /run/secrets/*（db 与 app/worker 共用这一层）
+    # 凭据路径只在 envs/db.env 里给一次，再嵌套成镜像认的 *_FILE 名字
+    db_env = _env_file("db.env")
+    assert "DB_USER_FILE=/run/secrets/db_user" in db_env
+    assert "DB_PASSWORD_FILE=/run/secrets/db_password" in db_env
+    assert "POSTGRES_USER_FILE=${DB_USER_FILE}" in db_env
+    assert "POSTGRES_PASSWORD_FILE=${DB_PASSWORD_FILE}" in db_env
+    assert "MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}" in db_env
+    # 容器差异层不再掺和数据库连接（它同时注入四个应用进程）
     container_env = _env_file("container.env")
-    assert "POSTGRES_USER_FILE=/run/secrets/postgres_user" in container_env
-    assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in container_env
+    assert "DB_USER_FILE=" not in container_env
+    assert "DB_PASSWORD_FILE=" not in container_env
 
     # compose 声明了这两个 secret，并挂给全部需要数据库的服务：
-    # db / consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
-    # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加
-    assert "file: ${POSTGRES_USER_SECRET_FILE:-./envs/secrets/postgres_user}" in compose
-    assert "file: ${POSTGRES_PASSWORD_SECRET_FILE:-./envs/secrets/postgres_password}" in compose
-    assert compose.count("secrets: *db-secrets") == 2
+    # consumer 只拿数据库凭据（*db-secrets），app / worker / beat 拿 *app-secrets
+    # （数据库凭据 + 阿里云 API 凭据的超集）——新增服务时跟着加；
+    # db 本身由 extends 引入，凭据在 compose.db.yml 的模板里显式列出（锚点不能跨文件）
+    assert "file: ${DB_USER_SECRET_FILE:-./envs/secrets/db_user}" in compose
+    assert "file: ${DB_PASSWORD_SECRET_FILE:-./envs/secrets/db_password}" in compose
+    assert compose.count("secrets: *db-secrets") == 1
     assert compose.count("secrets: *app-secrets") == 3
     # 两个锚点都必须包含数据库凭据（app-secrets 是超集，漏掉就是凭据缺失）
     for anchor in ("x-secrets: &db-secrets", "x-app-secrets: &app-secrets"):
         block = compose.split(anchor)[1].split("\n\n")[0]
-        assert "- postgres_user" in block and "- postgres_password" in block, anchor
+        assert "- db_user" in block and "- db_password" in block, anchor
+
+    # 两个数据库模板都要拿到凭据：PG 用 user+password，MySQL 的用户名走环境变量、只挂 password
+    db_templates = COMPOSE_DB_FILE.read_text(encoding="utf-8")
+    pg_block = db_templates.split("  postgresql:")[1].split("\n\n")[0]
+    mysql_block = db_templates.split("  mysql:")[1]
+    assert "- db_user" in pg_block and "- db_password" in pg_block
+    assert "- db_password" in mysql_block
 
     # 不再有从 .env 插值的明文凭据，也没有直接写死的明文变量
-    assert "${POSTGRES_PASSWORD:-" not in compose
-    assert "${POSTGRES_USER:-" not in compose
-    assert "\nPOSTGRES_PASSWORD:" not in compose
-    assert "\nPOSTGRES_USER:" not in compose
+    assert "${DB_PASSWORD:-" not in compose
+    assert "${DB_USER:-" not in compose
+    assert "\nDB_PASSWORD:" not in compose
+    assert "\nDB_USER:" not in compose
 
 
 def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
@@ -181,18 +223,18 @@ def test_env_or_file_prefers_the_secret_file(tmp_path, monkeypatch):
     """
     from netops import settings as project_settings
 
-    secret = tmp_path / "postgres_password"
+    secret = tmp_path / "db_password"
     secret.write_text("s3cret\n", encoding="utf-8")
 
-    monkeypatch.setenv("POSTGRES_PASSWORD", "plain")
-    monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(secret))
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "s3cret"
+    monkeypatch.setenv("DB_PASSWORD", "plain")
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(secret))
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "s3cret"
 
-    monkeypatch.delenv("POSTGRES_PASSWORD_FILE")
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "plain"
+    monkeypatch.delenv("DB_PASSWORD_FILE")
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "plain"
 
-    monkeypatch.delenv("POSTGRES_PASSWORD")
-    assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "default"
+    monkeypatch.delenv("DB_PASSWORD")
+    assert project_settings._env_or_file("DB_PASSWORD", "default") == "default"
 
 
 def test_env_or_file_resolves_relative_path_against_base_dir(monkeypatch):
@@ -207,8 +249,8 @@ def test_env_or_file_resolves_relative_path_against_base_dir(monkeypatch):
     secret.parent.mkdir(exist_ok=True)
     secret.write_text("s3cret\n", encoding="utf-8")
     try:
-        monkeypatch.setenv("POSTGRES_PASSWORD_FILE", "tmp/pytest-relative-secret")
-        assert project_settings._env_or_file("POSTGRES_PASSWORD", "default") == "s3cret"
+        monkeypatch.setenv("DB_PASSWORD_FILE", "tmp/pytest-relative-secret")
+        assert project_settings._env_or_file("DB_PASSWORD", "default") == "s3cret"
     finally:
         secret.unlink(missing_ok=True)
 
@@ -219,9 +261,9 @@ def test_env_or_file_fails_loudly_on_unreadable_secret(tmp_path, monkeypatch):
 
     from netops import settings as project_settings
 
-    monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(tmp_path / "missing"))
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(tmp_path / "missing"))
     with pytest.raises(ImproperlyConfigured):
-        project_settings._env_or_file("POSTGRES_PASSWORD", "default")
+        project_settings._env_or_file("DB_PASSWORD", "default")
 
 
 def test_env_list_parsing(monkeypatch):

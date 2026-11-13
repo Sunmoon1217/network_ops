@@ -1,0 +1,62 @@
+# 数据库后端模板：**只被 compose.yml 的 `db` 服务 extends 引用**，不要用 `-f` 传本文件
+# ——一旦当 `-f` 传，下面的 postgresql / mysql 会变成两个真实服务，`up` 会把两个库都起起来。
+#
+# 两个模板都只做三件事：选镜像、挂数据卷/端口、`env_file: envs/db.env`。
+# **连接参数不在这里写**：db.env 里已经把一套 DB_* 用 ${} 嵌套成 POSTGRES_* / MYSQL_*，
+# 两个镜像各取所需（对方的变量会被镜像忽略）。改库名/用户只改 db.env 与根 .env。
+#
+# 硬约束（Compose extends 的语义，实测）：
+#   * 只继承服务定义本身；顶层 `volumes:` / `secrets:` **不继承**，必须在本体 compose.yml 声明；
+#   * `depends_on` / `links` / `volumes_from` **不继承**，别写在这里；
+#   * YAML 锚点不能跨文件，所以 secrets 在这里写成显式列表（与 compose.yml 的 *db-secrets 等价）；
+#   * 插值仍在加载时做，所以 `image: ${...}` 读的是根 `.env` / shell。
+
+services:
+  postgresql:
+    image: ${DB_IMAGE_POSTGRES:-timescale/timescaledb:2.27.1-pg16}
+    container_name: netops-db
+    restart: unless-stopped
+    init: true
+    env_file:
+      - envs/common.env
+      - envs/db.env
+    secrets:
+      - db_user
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT_POSTGRES:-5432}:5432"
+    networks:
+      - internal
+    healthcheck:
+      # -U 不能省：healthcheck 由 docker 以镜像默认用户 root 执行，不带会刷 role "root" does not exist
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_user)\" -d \"$${POSTGRES_DB:-netops}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: ${DB_IMAGE_MYSQL:-mysql:8.4-oracle}
+    container_name: netops-db
+    restart: unless-stopped
+    init: true
+    # 显式钉住字符集与排序规则：默认已是 utf8mb4 / utf8mb4_0900_ai_ci，写出来是为了让
+    # 「大小写不敏感的唯一键」这个跨库差异在配置里可见，而不是靠镜像默认值。
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    env_file:
+      - envs/common.env
+      - envs/db.env
+    secrets:
+      - db_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "${DB_PORT_MYSQL:-3306}:3306"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$(cat /run/secrets/db_password)\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

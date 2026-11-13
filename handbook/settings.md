@@ -44,7 +44,7 @@
 1. `NETOPS_SKIP_DOTENV=1` → 全部跳过（`tests/deploy` 用它拿纯净默认值，不吃本机实例）；
 2. `load_dotenv(envs/common.env)`；
 3. `DJANGO_ENV != container` 时再 `load_dotenv(envs/host.env)`——容器里代码卷也带着 `envs/`，
-   不做这一步区分会把宿主的 `POSTGRES_HOST=127.0.0.1` 泄进容器。
+   不做这一步区分会把宿主的 `DB_HOST=127.0.0.1` 泄进容器。
 
 `load_dotenv` 全程 `override=False`，所以 compose `env_file` 注入的值与手工 `export` 都赢过文件。
 目录约定与逐文件职责见 [`envs/README.md`](../envs/README.md)。
@@ -68,16 +68,28 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `POSTGRES_DB` | `netops` | 库名 |
-| `POSTGRES_USER` / `POSTGRES_USER_FILE` | `netops` | 走凭据链 |
-| `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
-| `POSTGRES_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
-| `POSTGRES_PORT` | `5432` | 容器内固定 5432 |
+| `DB_ENGINE` | `postgresql` | `postgresql` / `mysql`，其它值**拒绝启动**；MySQL 的默认端口因此变成 3306 |
+| `DB_NAME` | `netops` | 库名 |
+| `DB_USER` / `DB_USER_FILE` | `netops` | 走凭据链 |
+| `DB_PASSWORD` / `DB_PASSWORD_FILE` | `netops_password` | 走凭据链；prod 必须给出其一 |
+| `DB_HOST` | `127.0.0.1` | 容器注入 `db`；container / prod 必填 |
+| `DB_PORT` | `5432`（MySQL 下 `3306`） | 容器内固定为后端默认端口 |
 | `REDIS_HOST` | `127.0.0.1` | 容器注入 `redis`；container / prod 必填 |
 | `REDIS_PORT` / `REDIS_DB` | `6379` / `0` | |
 | `REDIS_PASSWORD` | 空 | 非空时拼进 `REDIS_URL`；redis 官方镜像没有 `*_FILE` 机制，密码只走环境变量 |
 
 `CELERY_BROKER_URL` 与 `CELERY_RESULT_BACKEND` 都等于 `REDIS_URL`。
+
+**连接参数统一用 `DB_*`**（`DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` /
+`DB_PORT`）：settings 只认这一套名字，两种部署一致。各数据库镜像自己认的 `POSTGRES_*` /
+`MYSQL_*` 在 `envs/common.env` 里用 `${}` 嵌套出来（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
+`DB_USER → MYSQL_USER`），不进 settings。`DB_ENGINE` / `DB_NAME` / `DB_USER` **只在 common.env
+定义一次**（两种部署一致）：容器侧 `DB_ENGINE=${DB_SERVICE:-postgresql}` 由根 `.env` 的
+`DB_SERVICE` 决定，宿主直跑同名变量不设时取默认 `postgresql`，也可 `export DB_SERVICE=mysql`。
+
+MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
+`pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段
+构建解决，运行阶段只保留 `libmariadb3`。跨库差异清单见 [`deploy.md`](deploy.md) 的「MySQL 后端」。
 
 两个 `HOST` 的默认值写 `127.0.0.1` 而不是 `localhost`：Windows 上 `localhost` 优先解析成
 `::1`，而本机的 PostgreSQL / Redis 通常只监听 IPv4，驱动会逐个地址回退——每次连接白等
@@ -161,8 +173,8 @@
 | 环境 | 硬覆盖 | 守卫（缺即 `ImproperlyConfigured`） |
 |------|--------|-----------------------------------|
 | `dev` | 无 | 无 |
-| `container` | 无 | `POSTGRES_HOST`、`REDIS_HOST` 必须由 `envs/container.env` 注入 |
-| `prod` | `DEBUG = False` | `DJANGO_SECRET_KEY`、`DJANGO_ALLOWED_HOSTS`（非空且不含 `*`）、`POSTGRES_HOST`、`POSTGRES_PASSWORD(_FILE)`、`REDIS_HOST` |
+| `container` | 无 | `DB_HOST`、`REDIS_HOST` 必须由 `envs/container.env` 注入 |
+| `prod` | `DEBUG = False` | `DJANGO_SECRET_KEY`、`DJANGO_ALLOWED_HOSTS`（非空且不含 `*`）、`DB_HOST`、`DB_PASSWORD(_FILE)`、`REDIS_HOST` |
 
 两条设计取舍：
 

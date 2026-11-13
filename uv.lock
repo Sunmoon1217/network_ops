@@ -1158,6 +1158,16 @@ wheels = [
 ]
 
 [[package]]
+name = "mysqlclient"
+version = "2.3.1"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/02/25/520ec75f668df783ee115b4d15d6d5a9ab0cf4033ac65376301f8e5a7df0/mysqlclient-2.3.1.tar.gz", hash = "sha256:c07e1b83b530fd6c5888259f36afad1980d21fcb33ba97384650dd23c8f73ea8" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/f3/73/39caf4a87544410e559e21a99e35044048dac6a7592a8c2ee38a2e3b8a07/mysqlclient-2.3.1-cp312-cp312-win_amd64.whl", hash = "sha256:1008dc952b6e501b442c78e918ce7216aa0496308e3bcbca63dd3d10608f4b7e" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/8b/06/0aff6fe8a397e55f2c4a18d625b3034bdd1e268d67be0928eea52dd4af03/mysqlclient-2.3.1-cp312-cp312-win_arm64.whl", hash = "sha256:0f91115b30a5a9b9deb7f265a6d10859e28099ab1f748430451c284150281997" },
+]
+
+[[package]]
 name = "nest-asyncio2"
 version = "1.7.4"
 source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
@@ -1189,6 +1199,7 @@ dependencies = [
     { name = "gunicorn" },
     { name = "markdown" },
     { name = "mcp" },
+    { name = "mysqlclient" },
     { name = "openpyxl" },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
@@ -1240,6 +1251,7 @@ requires-dist = [
     { name = "gunicorn", specifier = ">=26.2.0" },
     { name = "markdown", specifier = ">=3.11.2" },
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "mysqlclient", specifier = ">=2.2.1" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
     { name = "pydantic", specifier = ">=2.14.2" },
