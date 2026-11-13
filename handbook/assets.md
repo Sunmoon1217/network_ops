@@ -2,8 +2,10 @@
 
 ## 模型
 
-全部模型集中在单文件 `apps/assets/models.py`（没有 models 子目录），这样「一张表在哪」
-不需要再翻包。配置解析产物都继承 `ConfigBase`，`purge_configs` 用
+模型用 `apps/assets/models/` 包：历史模型集中在 `__init__.py`，统一配置项体系（T1）独立在
+`ci.py`，由 `__init__.py` 显式 re-export——`from assets.models import X` 与 `app_label` 不变，
+历史迁移照样对得上（与 `analysis/models/` 同一套做法）。**不能同时留 `models.py` 与 `models/`**
+（包优先，单文件被静默忽略）。配置解析产物都继承 `ConfigBase`，`purge_configs` 用
 `ConfigBase.__subclasses__()` 运行时枚举它们（当前 24 个子类，其中 22 个已配 Saver）。
 
 | 领域 | 模型 |
