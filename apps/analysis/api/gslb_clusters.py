@@ -21,7 +21,7 @@
 - 列表型字段（池 monitor、成员 monitor 合集）取并集去重，不算冲突。
 
 URL 前缀 ``/api/analysis/`` 是本接口新开的独立前缀：合并口径与返回结构都带上了
-cluster 维度，刻意不混进 ``/api/lb-chain/gslb/``（旧接口 / 旧页面零影响）。
+cluster 维度，刻意不混进 ``/api/analysis/lb-chain/gslb/``（旧接口 / 旧页面零影响）。
 """
 
 from __future__ import annotations

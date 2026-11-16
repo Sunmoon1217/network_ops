@@ -286,7 +286,7 @@ def _get_cached_or_404(device):
 
 @api_view(["GET"])
 def internet_analysis(request):
-    """读取缓存的分析结果: GET /api/internet-analysis/?device=<id>
+    """读取缓存的分析结果: GET /api/analysis/internet-analysis/?device=<id>
 
     这里不触发分析——分析要遍历 GTM/LTM 多张表并在内存里做关联，只在手动
     调用 analyze 接口时执行；平时查询直接返回上一次的结果。
@@ -303,7 +303,7 @@ def internet_analysis(request):
 
 @api_view(["POST"])
 def internet_analysis_run(request):
-    """立即分析并刷新缓存: POST /api/internet-analysis/analyze/?device=<id>"""
+    """立即分析并刷新缓存: POST /api/analysis/internet-analysis/analyze/?device=<id>"""
     device, error = _resolve_device(request)
     if error:
         return error
@@ -525,7 +525,7 @@ def build_owner_map(result: dict) -> dict[str, str]:
 
 @api_view(["GET"])
 def internet_analysis_export(request):
-    """导出缓存的分析结果为 xlsx: GET /api/internet-analysis/export/?device=<id>
+    """导出缓存的分析结果为 xlsx: GET /api/analysis/internet-analysis/export/?device=<id>
 
     与查询接口一致，只读缓存；没分析过就提示先执行分析，不在这里顺手算一遍。
     """

@@ -159,5 +159,5 @@ def test_self_service_endpoints_stay_authenticated(normal_user):
 @pytest.mark.django_db
 def test_overview_is_read_gated(normal_user):
     """overview 也走全局权限：匿名 401、普通用户可读"""
-    assert APIClient().get("/api/assets/overview/").status_code == 401
-    assert _auth_client(normal_user).get("/api/assets/overview/").status_code == 200
+    assert APIClient().get("/api/analysis/overview/").status_code == 401
+    assert _auth_client(normal_user).get("/api/analysis/overview/").status_code == 200

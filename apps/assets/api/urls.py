@@ -54,7 +54,6 @@ router.register(r"load-balancer-services", views.LoadBalancerServiceViewSet, bas
 
 urlpatterns = [
     path("assets/", include(router.urls)),
-    # 总览 / Excel 导入 / 模板下载都不在本文件了：
-    #   overview 是跨 assets+configs 的聚合，随拆分迁 analysis.api.urls（/api/assets/overview/ 不变）
-    #   import-* 随 device_import.py 迁 ingest.api.urls（URL 与 name 同样不变）
+    # 只放资产域自己的资源。overview 在 analysis（/api/analysis/overview/）、
+    # Excel 导入在 ingest（/api/ingest/import-*）、配置行家族在 configs（/api/configs/）。
 ]

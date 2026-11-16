@@ -5,7 +5,7 @@
  * 预先格式化成 `*_display` 字符串数组，前端表格直接消费、不再逐条展开。
  */
 
-/** 访问策略列表行（`/api/assets/policies/`） */
+/** 访问策略列表行（`/api/configs/policies/`） */
 export interface PolicyItem {
   id: number
   device: number
@@ -49,7 +49,7 @@ export interface FlowContext {
 }
 
 /**
- * 访问流列表行（`/api/access-flows/`）。
+ * 访问流列表行（`/api/analysis/access-flows/`）。
  *
  * 键是**十个字段**（地址每侧 ip + prefix + range_end 三段，服务 protocol + port +
  * port2 三段，**action 一位**），全非空参与唯一约束；同五元组的 allow 行与 deny 行

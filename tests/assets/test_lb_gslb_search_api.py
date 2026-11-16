@@ -33,9 +33,9 @@ def test_virtual_server_search_covers_address_pool_and_hostname(client):
     LtmVirtualServer.objects.create(device=slb_a, name="vs_web", vs_address="192.0.2.10", pool="pool_web")
     LtmVirtualServer.objects.create(device=slb_b, name="vs_api", vs_address="198.51.100.20", pool="pool_api")
 
-    assert client.get("/api/assets/ltm-virtual-servers/", {"search": "192.0.2"}).json()["count"] == 1
-    assert client.get("/api/assets/ltm-virtual-servers/", {"search": "pool_api"}).json()["count"] == 1
-    assert client.get("/api/assets/ltm-virtual-servers/", {"search": "slb-edge-02"}).json()["count"] == 1
+    assert client.get("/api/configs/ltm-virtual-servers/", {"search": "192.0.2"}).json()["count"] == 1
+    assert client.get("/api/configs/ltm-virtual-servers/", {"search": "pool_api"}).json()["count"] == 1
+    assert client.get("/api/configs/ltm-virtual-servers/", {"search": "slb-edge-02"}).json()["count"] == 1
 
 
 @pytest.mark.django_db
@@ -44,7 +44,7 @@ def test_ltm_pool_search_covers_mode(client):
     LtmPool.objects.create(device=slb, name="pool_web", mode="round-robin")
     LtmPool.objects.create(device=slb, name="pool_db", mode="least-connections")
 
-    assert client.get("/api/assets/ltm-pools/", {"search": "least-conn"}).json()["count"] == 1
+    assert client.get("/api/configs/ltm-pools/", {"search": "least-conn"}).json()["count"] == 1
 
 
 @pytest.mark.django_db
@@ -53,9 +53,9 @@ def test_wideip_search_covers_rtype_and_hostname(client):
     GtmWideip.objects.create(device=gslb, name="www.example.com", rtype="A", lb_mode="global-availability")
     GtmWideip.objects.create(device=gslb, name="mail.example.com", rtype="AAAA", lb_mode="round-robin")
 
-    assert client.get("/api/assets/gtm-wideips/", {"search": "AAAA"}).json()["count"] == 1
-    assert client.get("/api/assets/gtm-wideips/", {"search": "gslb-dns"}).json()["count"] == 2
-    assert client.get("/api/assets/gtm-wideips/", {"search": "www.example"}).json()["count"] == 1
+    assert client.get("/api/configs/gtm-wideips/", {"search": "AAAA"}).json()["count"] == 1
+    assert client.get("/api/configs/gtm-wideips/", {"search": "gslb-dns"}).json()["count"] == 2
+    assert client.get("/api/configs/gtm-wideips/", {"search": "www.example"}).json()["count"] == 1
 
 
 @pytest.mark.django_db
@@ -64,7 +64,7 @@ def test_gtm_pool_search_covers_fallback_ip(client):
     GtmPool.objects.create(device=gslb, name="pool_us", fallback_ip="203.0.113.1")
     GtmPool.objects.create(device=gslb, name="pool_eu", fallback_ip="203.0.113.2")
 
-    assert client.get("/api/assets/gtm-pools/", {"search": "203.0.113.1"}).json()["count"] == 1
+    assert client.get("/api/configs/gtm-pools/", {"search": "203.0.113.1"}).json()["count"] == 1
 
 
 @pytest.mark.django_db
@@ -75,7 +75,7 @@ def test_ltm_and_gtm_lists_can_filter_by_device(client):
     LtmVirtualServer.objects.create(device=slb_a, name="vs_a", vs_address="192.0.2.1")
     LtmVirtualServer.objects.create(device=slb_b, name="vs_b", vs_address="192.0.2.2")
 
-    payload = client.get("/api/assets/ltm-virtual-servers/", {"device": slb_a.pk}).json()
+    payload = client.get("/api/configs/ltm-virtual-servers/", {"device": slb_a.pk}).json()
 
     assert payload["count"] == 1
     assert payload["results"][0]["name"] == "vs_a"

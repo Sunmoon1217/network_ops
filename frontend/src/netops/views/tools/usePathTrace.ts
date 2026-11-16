@@ -33,7 +33,7 @@ export const usePathTrace = () => {
     error.value = ''
     result.value = null
     try {
-      const resp = await api.get('/api/trace/', {
+      const resp = await api.get('/api/analysis/trace/', {
         params: { src: srcIp.value, dst: dstIp.value, port: dstPort.value },
       })
       result.value = resp.data

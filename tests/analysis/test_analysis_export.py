@@ -19,8 +19,8 @@ from assets.models import Device, ServerOwner
 from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 from core.models import User
 
-EXPORT_URL = "/api/internet-analysis/export/"
-ANALYZE_URL = "/api/internet-analysis/analyze/"
+EXPORT_URL = "/api/analysis/internet-analysis/export/"
+ANALYZE_URL = "/api/analysis/internet-analysis/analyze/"
 
 
 def _api() -> APIClient:

@@ -1,4 +1,4 @@
-"""``/api/assets/overview/`` 的响应契约（Home 页一次拿全所有卡片与图表数据）。
+"""``/api/analysis/overview/`` 的响应契约（Home 页一次拿全所有卡片与图表数据）。
 
 这个端点 2026-11-16 从 ``assets/api/views.py`` 迁到 ``analysis/api/overview.py``——因为它是
 assets + configs 的跨域聚合，留在 assets 会让叶子节点往上够。**迁的是实现位置，不是契约**：
@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from assets.models import Device
 from configs.models import Vlan
 
-OVERVIEW_URL = "/api/assets/overview/"
+OVERVIEW_URL = "/api/analysis/overview/"
 
 #: 响应顶层字段全清单（41 个）。分组的注释与视图里的分段保持一致。
 EXPECTED_KEYS = {

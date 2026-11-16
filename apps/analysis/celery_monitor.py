@@ -16,7 +16,7 @@ active / reserved / scheduled），回答三个问题：
   由前端按 ``ok``/``workers`` 空名单如实展示；
 - 任务的 ``args``/``kwargs`` 原样透传字符串（json 反序列化后的 repr 不可靠且可能很大），
   这里对超长内容截断，避免把整份配置塞进响应；
-- 本模块**只读**：不 revoke、不 terminate、不改任何任务状态（cancel 走 /api/tasks/<id>/cancel/）。
+- 本模块**只读**：不 revoke、不 terminate、不改任何任务状态（cancel 走 /api/core/tasks/<id>/cancel/）。
 
 Redis 不可达 / broker 无应答时**不抛异常**：返回 ``ok=False`` + ``error``（与
 ``queue_monitor`` 同款哲学——监控自身炸掉比被监控对象炸掉更没意义）。

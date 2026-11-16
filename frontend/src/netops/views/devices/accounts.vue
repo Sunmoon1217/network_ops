@@ -15,7 +15,7 @@ const filterDevice = ref<number | ''>('')
 
 const fetchAll = () =>
   fetchData(() =>
-    api.get('/api/assets/device-accounts/', { params: pageParams({ device: filterDevice.value || undefined }) })
+    api.get('/api/configs/device-accounts/', { params: pageParams({ device: filterDevice.value || undefined }) })
   )
 
 const authTypeLabel: Record<string, string> = { password: '密码', 'ssh-key': 'SSH密钥', both: '双因素' }

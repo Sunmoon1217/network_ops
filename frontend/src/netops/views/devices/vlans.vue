@@ -13,7 +13,7 @@ const { data: vlans, loading, search, page, pageSize, total, fetchData, refetch,
 const filterDevice = ref<number | ''>('')
 
 const fetchAll = () =>
-  fetchData(() => api.get('/api/assets/vlans/', { params: pageParams({ device: filterDevice.value || undefined }) }))
+  fetchData(() => api.get('/api/configs/vlans/', { params: pageParams({ device: filterDevice.value || undefined }) }))
 
 watch(filterDevice, resetAndFetch)
 onMounted(fetchAll)

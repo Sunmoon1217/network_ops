@@ -1,4 +1,4 @@
-"""资产总览的跨域聚合（``/api/assets/overview/``）。
+"""资产总览的跨域聚合（``/api/analysis/overview/``）。
 
 Home 页的一次请求要同时看**资产**（机柜 / 设备 / 网段）与**配置行**（接口 / VLAN /
 路由 / 策略 / NAT / SLB / GTM / ARP）的分布。这是全项目唯一在读取侧同时消费两个域的
@@ -7,9 +7,8 @@ Home 页的一次请求要同时看**资产**（机柜 / 设备 / 网段）与**
 assets``，最自然的落点就是 analysis（它本来就有 dashboard / lb-chain / 设备组合并这些
 跨域只读聚合）。
 
-**URL 与 name 保持拆分前的 ``/api/assets/overview/``（``assets-overview``）**：路由跟着
-view 走、不跟 app 走，前端 ``views/Home.vue`` 与已有反解零改动（同 ``access-flows``
-从 ingest 迁入时的做法）。
+**URL 是 ``/api/analysis/overview/``（``assets-overview``）**：总览读的是 assets + configs
+两个域的分布，故归 analysis 前缀；name 保留 ``assets-overview``（前端按业务名反解，不跟 URL 走）。
 
 口径就是「按字段分组计数」：只读、无缓存、无写操作。单个 count 走索引，68 次查询在
 内网毫秒级；真成瓶颈时再谈缓存，别提前加。

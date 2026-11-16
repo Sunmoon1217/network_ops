@@ -18,8 +18,8 @@ from assets.models import Device
 from configs.models import Route, Vrf
 from core.models import User
 
-RAW_URL = "/api/trace/route-collect-raw/"
-API_URL = "/api/trace/route-collect/"
+RAW_URL = "/api/analysis/trace/route-collect-raw/"
+API_URL = "/api/analysis/trace/route-collect/"
 
 RAW_TEXT = """C    10.1.1.0/24 is directly connected, GigabitEthernet0/1
 S    10.2.0.0/16 [1/0] via 10.1.1.254

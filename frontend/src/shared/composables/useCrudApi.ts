@@ -7,7 +7,7 @@ import type { Fetcher } from '@/types'
  * 列表页数据获取 + 服务端分页的组合式函数。
  *
  * 约定：页面在自己的 fetcher 里用 `pageParams()` 拼装分页 / 搜索参数，
- * 例如 `fetchData(() => api.get('/api/assets/vlans/', { params: pageParams({ device }) }))`。
+ * 例如 `fetchData(() => api.get('/api/configs/vlans/', { params: pageParams({ device }) }))`。
  *
  * 分页、搜索由服务端完成（后端已启用 PageNumberPagination + SearchFilter），
  * 因此不要再对返回结果做本地过滤，否则只会过滤当前页。

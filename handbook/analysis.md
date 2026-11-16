@@ -187,8 +187,8 @@ GSLB 设备
 索引匹配，避免逐条查库。
 
 **结果不实时计算**：分析成本不低而结果变化不频繁，只在手动触发
-`POST /api/internet-analysis/analyze/` 时重算并写入 `InternetAnalysis` 缓存表；
-`GET /api/internet-analysis/` 与导出接口都只读缓存。
+`POST /api/analysis/internet-analysis/analyze/` 时重算并写入 `InternetAnalysis` 缓存表；
+`GET /api/analysis/internet-analysis/` 与导出接口都只读缓存。
 
 ### 三个容易踩的点
 

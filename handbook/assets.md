@@ -261,7 +261,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 Excel 批量导入（导入器 `ingest/device_import.py` + 接口 `ingest/api/imports.py`）已随域拆分
 迁到 **ingest**：它最后一步要写 Git 配置仓库、投递采集链，留在 assets 会形成
 `assets → ingest` 的反向依赖。**落库目标仍是本域模型**（Device / DeviceGroup / Cabinet /
-DeviceConfig 等），方向是 `ingest → assets` ✓。URL 与 name 都没变
-（`/api/assets/import-devices/`、`import-devices`）。
+DeviceConfig 等），方向是 `ingest → assets` ✓。URL 是 `/api/ingest/import-devices/`、
+name 是 `import-devices`（接口与导入器同域，不再借用 assets 前缀）。
 
 细节见 [`ingest.md`](ingest.md)「Excel 批量导入」。

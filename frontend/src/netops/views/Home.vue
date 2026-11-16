@@ -12,7 +12,7 @@ const loading = ref(true)
 
 onMounted(async () => {
   try {
-    const resp = await api.get('/api/assets/overview/')
+    const resp = await api.get('/api/analysis/overview/')
     data.value = resp.data
   } finally {
     loading.value = false

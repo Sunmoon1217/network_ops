@@ -306,8 +306,10 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 - 端点搬家但**路径字符串不变**（`/api/assets/devices/` 搬走也还是这个路径）；
 - 范本：analysis 从 ingest 拆出时沿用了 `/api/trace/`、`/api/internet-analysis/`
-  （见 `netops/urls.py` 注释「URL 前缀沿用拆分前的 /api/trace/、/api/internet-analysis/（前端零改动）」）；
-- `netops/urls.py` 里多个 app 的 `include` 可以挂在同一前缀下，不冲突。
+  （当时 `netops/urls.py` 注释写的是「URL 前缀沿用拆分前、前端零改动」）；
+  **2026-11 起不再沿用**：前缀已按域收口（`/api/analysis/trace/` 等），见 `handbook/api.md`——
+  换 URL 时前端 `shared/api/*.ts` 必须同一次提交改完；
+- `netops/urls.py` 里多个 app 的 `include` 可以挂在同一前缀下，不冲突（当前已是「一个域一个前缀」）。
 
 ## 与 `AGENTS.md` 的关系
 

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @api_view(["GET"])
 def path_trace(request):
-    """路径追踪: GET /api/trace/?src=&dst=&port="""
+    """路径追踪: GET /api/analysis/trace/?src=&dst=&port="""
     src_ip = request.query_params.get("src", "").strip()
     dst_ip = request.query_params.get("dst", "").strip()
     dst_port = request.query_params.get("port", "").strip()
@@ -63,7 +63,7 @@ def path_trace(request):
 def route_collect(request):
     """路由采集: 从外部服务获取路由表，TTP 解析后保存
 
-    POST /api/trace/route-collect/
+    POST /api/analysis/trace/route-collect/
     Body: {
         "device_id": 1,
         "api_url": "http://10.0.0.1/api/routing-table",
@@ -178,7 +178,7 @@ def route_collect(request):
 
 @api_view(["POST"])
 def route_collect_raw(request):
-    """路由采集（直接提交文本）: POST /api/trace/route-collect-raw/
+    """路由采集（直接提交文本）: POST /api/analysis/trace/route-collect-raw/
     Body: {"device_id": 1, "raw_text": "...", "vrf_name": "default"}
     """
     device_id = request.data.get("device_id")
@@ -245,7 +245,7 @@ def route_collect_raw(request):
 
 @api_view(["GET"])
 def route_list(request):
-    """路由列表: GET /api/trace/routes/?device_id=&vrf=&protocol="""
+    """路由列表: GET /api/analysis/trace/routes/?device_id=&vrf=&protocol="""
     from configs.models import Route
 
     qs = Route.objects.select_related("vrf", "vrf__device").all()
@@ -278,7 +278,7 @@ def route_list(request):
 
 @api_view(["GET"])
 def dns_query(request):
-    """DNS 查询: GET /api/trace/dns-query/?domain=&type=&server="""
+    """DNS 查询: GET /api/analysis/trace/dns-query/?domain=&type=&server="""
     domain = request.query_params.get("domain", "").strip()
     record_type = request.query_params.get("type", "A").strip().upper()
     dns_server = request.query_params.get("server", "").strip()

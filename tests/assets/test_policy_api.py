@@ -10,7 +10,7 @@ import pytest
 from assets.models import Device
 from configs.models import AddressBook, Policy, Service
 
-URL = "/api/assets/policies/"
+URL = "/api/configs/policies/"
 
 
 def _device(hostname: str) -> Device:

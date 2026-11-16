@@ -130,9 +130,10 @@ from assets.serializers.views import VlanSerializer   # → 改成 configs.seria
 | REST 端点 | **26 个** | `api/urls.py` 的 `device-configs`、`device-accounts`、`vlans`、`vrfs`、`interfaces`、`snmp/ntp/syslog-configs`、`ltm-*` 7 个、`gtm-*` 5 个、`address-books`、`services`、`policies`、`nat-rules`、`routes`、`arp-mac` |
 | views | 对应 ViewSet | 含 `DeviceConfigViewSet`（内嵌 `resolve_config_owner` 调用，见下节），随迁 |
 
-「URL 前缀不变」适用到底：`netops/urls.py` 把 `configs.api.urls` 挂在与现状相同的
+「URL 前缀不变」只适用于拆分当次：`netops/urls.py` 把 `configs.api.urls` 挂在与当时相同的
 `/api/` 路径段下（多 app 共用前缀已验证可行），`basename` 与 `permission_classes`
-照抄，前端零改动。
+照抄，前端零改动。**2026-11 收口例外**：这些 URL 已从 `/api/assets/` 挪到 `/api/configs/`，
+见 `handbook/api.md`。
 
 ## resolve_config_owner 迁 configs
 
@@ -481,8 +482,8 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 1 | `Task.device` 保留 FK 还是改 JSON | **已落地**：方案 C（多态引用），见 [`../tasks.md`](../tasks.md) §作用目标 |
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
 | 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
-| 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
-| 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **已落地（切片 9，2026-11-16）**：整个端点迁 `analysis/api/overview.py`——它是 assets + configs 的只读聚合，只能落在两者之上；**URL 与 name 原样保留**，前端零改动。configs 单侧统计不做拆接口（`analysis` 已在矩阵里允许同时读两个域，再拆成两个接口只会让前端多一次请求）。 |
+| 4 | `analysis/api/ingest/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
+| 5 | `assets/api/views.py` 的 `overview`（`/api/analysis/overview/`）跨域聚合 | **已落地（切片 9，2026-11-16）**：整个端点迁 `analysis/api/overview.py`——它是 assets + configs 的只读聚合，只能落在两者之上；**URL 与 name 原样保留**，前端零改动。configs 单侧统计不做拆接口（`analysis` 已在矩阵里允许同时读两个域，再拆成两个接口只会让前端多一次请求）。 |
 | 6 | `assets/services/existing_asset_registry.py`（存量资产登记）是否随 Excel 导入迁 ingest | **已定：留在 assets（2026-11-16）**。实测它只被 `manage.py register_assets`（assets 自己的命令）与 `tests/assets/test_existing_asset_registry.py` 调用，**与 ingest 导入链路无关**（本条原先的「只被 ingest 调用」是误记）。它读 `Device` / `IPAddress` / `Subnet`、写 `ConfigurationItem` / `CIObjectLink`，四个模型全是 assets 自家；搬去 ingest 等于让上层域持有叶子域的台账同步，纯亏。 |
 
 ## 建议的最小验证切片
@@ -586,7 +587,7 @@ failures 修了两处：`PolicySerializer` 的展示字段随合并丢了（已�
 |---|---|
 | admin | 26 个 `@admin.register`（含 `DeviceConfigAdmin`）从 `assets/admin.py` 迁 `configs/admin.py`；`DEVICE_FILTER` 同口径另立一份，列表/搜索/筛选逐字照抄 |
 | API ViewSet | 26 个 ViewSet 迁 `configs/api/views.py`；类体内的局部模型/序列化器 import 上提到模块头 |
-| 路由 | 新建 `configs/api/urls.py`（自己的 `SimpleRouter`，`path("assets/", …)`），`netops/urls.py` 与 assets 并列挂载；`basename` 原样，反解结果不变（`/api/assets/vlans/` 等） |
+| 路由 | 新建 `configs/api/urls.py`（自己的 `SimpleRouter`，`path("assets/", …)`），`netops/urls.py` 与 assets 并列挂载；`basename` 原样，反解结果不变（`/api/configs/vlans/` 等） |
 | `resolve_config_owner` | `ingest/config_owner.py` 迁 `configs/config_owner.py`；ingest 的 pipeline / purge_configs、analysis 注释、测试同步改路径 |
 | 实测 | `configs` admin 注册数 = 26；`reverse("vlan-list")` 等仍是 `/api/assets/...`；全量 **846 passed, 66 subtests** |
 
@@ -685,7 +686,7 @@ VLAN / 路由 / 策略 / NAT / SLB / GTM / ARP 的分布）。切片 4 把 26 �
 
 **实测**：`tests/core/test_permissions.py` + `tests/core/test_layering.py` 16 passed；
 `tests/analysis/test_overview_api.py` 2 passed（字段清单与实测响应完全一致）；
-`reverse("assets-overview")` = `/api/assets/overview/`，`resolve()` 落在
+`reverse("assets-overview")` = `/api/analysis/overview/`，`resolve()` 落在
 `analysis.api.overview`；全量 **854 passed, 66 subtests passed**（851 基线 + 3 条新增）；
 `manage.py check` 干净；OpenAPI schema 的 warnings / errors 计数（11 / 273）与 develop 基线
 **完全一致**——`api_view` 的 serializer 推断告警是这类函数视图的既有现象，不是本次引入。

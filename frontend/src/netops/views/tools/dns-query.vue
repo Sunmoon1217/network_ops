@@ -44,7 +44,7 @@ const querySingle = async (name: string) => {
       const promises = servers.map(async server => {
         const t0 = performance.now()
         try {
-          const r = await api.get('/api/trace/dns-query/', { params: { domain: name, type: recordType.value, server: server.trim() } })
+          const r = await api.get('/api/analysis/trace/dns-query/', { params: { domain: name, type: recordType.value, server: server.trim() } })
           return { server: server.trim(), records: r.data.records || [], error: r.data.error, time: Math.round(performance.now() - t0) }
         } catch (e: any) {
           return { server: server.trim(), records: [], error: e.response?.data?.error || '查询失败', time: Math.round(performance.now() - t0) }
@@ -54,7 +54,7 @@ const querySingle = async (name: string) => {
       results.value = responses.map(r => ({ ...r }))
     } else {
       const t0 = performance.now()
-      const resp = await api.get('/api/trace/dns-query/', { params: { domain: name, type: recordType.value } })
+      const resp = await api.get('/api/analysis/trace/dns-query/', { params: { domain: name, type: recordType.value } })
       const time = Math.round(performance.now() - t0)
       results.value = [{ server: '默认', records: resp.data.records || [], error: resp.data.error, time }]
       if (resp.data.error && !resp.data.records?.length) error.value = resp.data.error
@@ -84,7 +84,7 @@ const queryBatch = async (names: string[]) => {
           if (server !== '默认') params.server = server
           const t0 = performance.now()
           try {
-            const r = await api.get('/api/trace/dns-query/', { params })
+            const r = await api.get('/api/analysis/trace/dns-query/', { params })
             const time = Math.round(performance.now() - t0)
             const records = r.data.records || []
             if (records.length > 0) {

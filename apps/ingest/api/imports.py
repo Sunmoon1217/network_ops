@@ -3,8 +3,8 @@
 随 ``device_import.py`` 一起迁 ingest——它读的 ``IMPORT_SHEETS`` 就是那个模块的表，
 放在一起才不会出现「接口在本域、导入器在别域」的跨域引用。
 
-URL 前缀仍是 ``/api/assets/``（与 ``configs/api/urls.py`` 同一手法：两个 include 都写
-``assets/`` 段，Django 按顺序尝试、命中即止），``name`` 也照抄，前端与反解零改动。
+URL 是 ``/api/ingest/import-devices/`` 与 ``/api/ingest/import-template/``：接口与它读的
+导入器同域，不再借用 assets 前缀（路由表见 ``handbook/api.md``）。
 """
 
 import logging

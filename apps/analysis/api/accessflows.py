@@ -1,4 +1,4 @@
-"""``/api/access-flows/``：访问流（策略展开结果）的只读查询。
+"""``/api/analysis/access-flows/``：访问流（策略展开结果）的只读查询。
 
 只读——AccessFlow 是派生数据，唯一的写入口是 access_flow_consumer（单写者）；
 要改数据就重建源头的策略，再 ``rebuild_access_flows``。

@@ -181,7 +181,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
   `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`。
-- **五条 Celery 链**：① 阶段式工作流（`/api/tasks/` 唯一入口，采集→解析→存储由 `Stage` 回写推进）；
+- **五条 Celery 链**：① 阶段式工作流（`/api/core/tasks/` 唯一入口，采集→解析→存储由 `Stage` 回写推进）；
   ② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；③ 访问流重建
   （`ACCESS_FLOW_TASK` 投独立队列 → 单写者 consumer）；④ 大屏落库（beat 投
   `ingest.collect_dashboard` → `DASHBOARD_WRITE_TASK` → `analysis.write_dashboard` 唯一写库）；
@@ -277,7 +277,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `configs.mapping` 归一（键别名 + 字段别名，纯函数、幂等、**无厂商维度**）→ Saver 按
   `(device_type, key)` 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`
   （模板方法），值语义与结构级差异留 Saver。契约测试 `tests/ingest/test_parser_contract.py` +
-  `test_mapping.py`；清单接口 `/api/parsers/mapping/`。
+  `test_mapping.py`；清单接口 `/api/ingest/parsers/mapping/`。
 - **解析器模板管理页面**以**模板文件**为中心单表展示，解析器降级为「关联解析器」列。
 - **`parsers/tmpls/running/` 的模板不在 `ParserFactory` 注册表内**（`route.ttp` / `arp.ttp` /
   `mac.ttp` / `lldp.ttp` / `h3c_route.ttp`），由路径追踪 / 路由采集接口按名称动态调用——
@@ -286,7 +286,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   ③ **单条命中给 `dict`、多条给 `list`**，消费方两种都要兼容；④ 内置 `IPV6` 不含点号。
 - **F5 池成员端口分隔符有两种**：普通串 / IPv4 用冒号，名字是 IPv6 字面量时用一个点号——
   `f5_ltm.ttp` 两条备选行，端口必须限纯数字，否则冒号那条会贪婪切开 IPv6 成员。
-- **互联网资产分析走缓存**：只有 `POST /api/internet-analysis/analyze/` 才计算，查询与导出只读
+- **互联网资产分析走缓存**：只有 `POST /api/analysis/internet-analysis/analyze/` 才计算，查询与导出只读
   `InternetAnalysis`（未分析过 404）。
 - **`ingest` 的 app label 是 `operator`**：migrate 时用 `operator`；拆分只动 Python 路径、
   **不动 label**（迁移历史挂在它上面）。
