@@ -1,6 +1,7 @@
 # 域分层：依赖矩阵与职责边界
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：实施中（2026-11-16 起）。步骤 1（core 去业务依赖）已落地；
+> configs 拆分 / ingest 收窄 / 外部连接收归 core 未动。**
 > 代码里的依赖方向在落地前仍以 `AGENTS.md` 现有描述为准。
 
 本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**，
@@ -62,6 +63,15 @@ core 的其余模型（`User` / `Token` / `UserPreference`）只依赖 `settings
 **但 core 对 ingest 有 4 处**：`core/api/serializers.py:195`（`start_task`）、
 `core/api/views.py:72`（`cancel_task`）、以及两处注释。加上上面那行外键，
 core 传递依赖 `ingest → assets`。
+
+> **2026-11-16 更新：这 4 处已清零。** `task-framework.md` 步骤 1 把控制函数下沉到
+> `core/tasks.py`，调用方改道，注释同步改掉。现在 core 对 ingest 的 import 是 0。
+>
+> **同时实测出原文漏数的两处 core → analysis**：
+> `core/management/commands/queue_status.py:25`、`queue_backlog.py:26` 都
+> `from analysis.queue_monitor import ...`。按本表「例外与豁免」登记为运维工具例外
+> （精确到「文件 + 模块」），由 `tests/core/test_layering.py` 的 AST 断言守住，
+> 且例外失效会被 `test_operational_exceptions_are_still_needed` 抓出来。
 
 ## 分层总图
 
@@ -138,6 +148,7 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 | 位置 | 例外 | 理由 |
 |---|---|---|
 | `scripts/purge_configs.py` | 迁出 app，改为独立运维脚本 | 跨域**运维工具**，脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
+| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.queue_monitor`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
 | `ingest/access_flow_trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
 | `ingest/collectors/dashboard.py` | 不 import analysis，用任务名 | 同上 |
 

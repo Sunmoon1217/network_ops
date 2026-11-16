@@ -1,7 +1,9 @@
 # core 承载通用任务机制
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：实施中（2026-11-16 起）。步骤 1 已落地，步骤 2 / 3 未动。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
+> 进度与实测差异见文末 §「实施进度」——**别拿本文当现状**，现状看
+> [`../ingest.md`](../ingest.md)。
 
 ## 结论先行
 
@@ -335,3 +337,39 @@ core 的 API 层不解释 `target_type`，但 `TaskViewSet` 的过滤、admin �
 | 1 | `Task.device` 方案 A / B / C | 已定为 C（多态引用），A 为过渡态；含 RunPython 数据迁移 |
 | 2 | 业务词汇注册表的具体形态 | 已定（2026-11-16）：字段去 `choices` + `core/task_types.py` 注册表（词汇 / display / first_stage / handler 四合一）；~~choices 运行时注册~~ 不可行（迁移漂移） |
 | 3 | `target_type` 的取值约定 | 已定：自由字符串，与词汇同表登记；display 同表反查 |
+
+## 实施进度
+
+### 步骤 1 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 通用机制 | `apps/core/tasks.py`：`create_task` / `dispatch` / `cancel` |
+| 词汇注册表 | `apps/core/task_types.py`：`register_task_type` / `register_stage` / `label_for` / `first_stage_of` / `handler_for` / `*_choices` |
+| 业务域注册 | `apps/ingest/apps.py` 的 `ready()` 登记 5 个 task_type + 3 个 stage handler |
+| 调用方改道 | `core/api/serializers.py`（建任务）、`core/api/views.py`（取消）、`ingest/signals.py`（推进） |
+| ingest 侧残留 | `ingest/workflow.py` 只剩 `submit_config_job`（批量导入的旁路链） |
+
+与提案的差异（实测修正，后续步骤按这里写的为准）：
+
+1. **`create_task` 内部反查 `first_stage`，调用方不传**。原文让 serializer 写
+   `first_stage=task_types.first_stage_of(...)`，等于把「谁是第一个阶段」这个问题
+   又推回 API 层；现在 core 的 API 只说「建一个 collect_config 任务」。
+2. **`register_stage` 当场校验 `handler.delay`**。注册表是唯一 resolve 点，
+   接错对象（比如传了普通函数）会在启动时炸，而不是等第一次投递。
+3. **serializer 新增 `validate_task_type`**：未知类型返回 400。否则 `LookupError`
+   会被 `create()` 的 `except` 吞成 503，客户端写错词看起来像服务端挂了。
+4. **新发现的第 5、6 处 core 反向依赖**：`core/management/commands/queue_status.py`、
+   `queue_backlog.py` import `analysis.queue_monitor`——原文只数了 core→ingest 的 4 处。
+   按 `layering.md`「运维工具豁免」登记为**精确例外**（文件 + 模块），并由
+   `tests/core/test_layering.py::test_operational_exceptions_are_still_needed` 防白名单腐化。
+5. **验证方式从 grep 升级成 AST 断言**：`tests/core/test_layering.py` 扫
+   `apps/core/**` 的绝对 import，新增的反向依赖直接红。
+
+### 步骤 2 / 3 — 未开始
+
+- 步骤 2（去 `choices`）：`tests/core/test_task_types.py::test_model_choices_agree_with_registry`
+  是当前的锁；摘掉 `choices` 后这条要改成「注册表覆盖历史词汇」。
+- 步骤 3（`Task.device` 方案 C）：
+  `tests/core/test_layering.py::test_known_debt_task_device_fk_still_points_at_assets`
+  是那条债的记号，落地时删。

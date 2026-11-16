@@ -8,11 +8,17 @@
 
 | 链 | 入口 | 任务 | 说明 |
 |----|------|------|------|
-| 阶段式工作流 | `/api/tasks/` → `workflow.start_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
+| 阶段式工作流 | `/api/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
 | 配置导入 | `assets.api.views._import_configs` → `workflow.submit_config_job` | `run_config_parsing` → `run_config_storage`（celery chain，两者都 `.si(config_id)`） | Excel 里的配置文件批量导入，走 DeviceConfig |
 | 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
 ## 阶段推进与取消
+
+**通用任务控制在 core**：建任务 / 投递阶段 / 取消是 `core.tasks` 的
+`create_task` / `dispatch` / `cancel`，那三个函数不认识任何业务词汇——任务类型到
+「第一个阶段是什么」的映射、以及阶段名到 celery 任务的映射，都由本域在
+`ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
+「下一个阶段是什么」是链路知识，留在这里。
 
 `signals.on_stage_complete` 监听 `core.Stage` 的 post_save，按
 `_NEXT_STAGE = {"collection": "parsing", "parsing": "storage"}` 推进：
@@ -20,7 +26,7 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 
 - **阶段失败必须收尾 Task**：否则任务永远挂在「运行中」，前端只看到一个不动的进度，
   失败原因只留在 Stage 上。
-- **取消的语义**：`workflow.cancel_task` 里的 `revoke(terminate=True)` 只是尽力而为
+- **取消的语义**：`core.tasks.cancel` 里的 `revoke(terminate=True)` 只是尽力而为
   （要求 worker 在线、broker 可达）。**真正保证链条停下的是信号里的
   「`task.status == "cancelled"` 就不再推进」**——即使撤不掉正在跑的那一次，
   它也会在下一个阶段边界停住。信号里也顺带避免 storage 完成后把 cancelled 改回 success。
