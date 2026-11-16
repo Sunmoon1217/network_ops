@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db import models
 from django.utils import timezone
 
 from core import task_types
@@ -59,18 +58,25 @@ def create_task(
     task_type: str,
     *,
     params: dict[str, Any] | None = None,
-    device: models.Model | None = None,
+    target_type: str = "",
+    target_id: int | None = None,
+    target_label: str = "",
     first_stage: str | None = None,
 ) -> Task:
     """创建任务并投递第一个阶段——任务工作流的唯一入口。
 
     ``first_stage`` 缺省由注册表按 ``task_type`` 反查，所以调用方（core 的 API 层）
     不必知道「采集任务的第一个阶段叫 collection」。
+
+    ``target_type`` / ``target_id`` 是**软引用**的作用目标（见 ``design/task-framework.md``
+    §①）：core 不校验、不 join，只负责存；类型与名字的解析归业务域。
     """
     stage_type = first_stage or task_types.first_stage_of(task_type)
     task = Task.objects.create(
         task_type=task_type,
-        device=device,
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
         params=params or {},
         status="running",
         started_at=timezone.now(),

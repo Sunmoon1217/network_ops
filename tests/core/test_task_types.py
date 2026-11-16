@@ -97,6 +97,25 @@ def test_admin_filters_read_the_registry():
     assert ("parsing", "配置解析") in stage_filter.lookups(request, stage_admin)
 
 
+def test_assets_registers_device_target():
+    """「设备」这个作用目标由 assets 在 ``ready()`` 里登记——core 自己不认识这个词。"""
+    assert task_types.device_field_target_type() == "device"
+    assert task_types.target_label_for("device") == "设备"
+    assert ("device", "设备") in task_types.target_type_choices()
+
+
+@pytest.mark.django_db
+def test_device_target_resolves_hostname():
+    """软引用靠 resolver 补回外键的校验能力：目标不存在必须返回 None（而不是空串）。"""
+    from assets.models import Device
+
+    device = Device.objects.create(hostname="_t_target_dev", device_type="switch")
+
+    assert task_types.resolve_target_label("device", device.pk) == "_t_target_dev"
+    assert task_types.resolve_target_label("device", device.pk + 999) is None
+    assert task_types.resolve_target_label("no_such_type", device.pk) is None
+
+
 def test_register_stage_rejects_non_celery_handler():
     """handler 没有 ``.delay()`` 就是接错对象了（比如传了普通函数），当场报错。"""
     with pytest.raises(TypeError, match="celery"):

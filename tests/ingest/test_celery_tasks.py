@@ -20,7 +20,7 @@ def test_collection_failure_marks_task_as_failure(eager_celery):
     from assets.models import Device
 
     device = Device.objects.create(hostname="celery-fail-no-conn", device_type="switch")
-    task = Task.objects.create(task_type="collect_config", device=device)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
     stage = Stage.objects.create(task=task, stage_type="collection")
 
     result = run_collection_stage.delay(stage.pk)
@@ -37,7 +37,7 @@ def test_parsing_failure_marks_task_as_failure(eager_celery):
     from assets.models import Device
 
     device = Device.objects.create(hostname="celery-fail-no-collection", device_type="switch")
-    task = Task.objects.create(task_type="collect_config", device=device)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
     stage = Stage.objects.create(task=task, stage_type="parsing")
 
     result = run_parsing_stage.delay(stage.pk)
@@ -74,7 +74,7 @@ def test_storage_stage_writes_every_matched_saver(eager_celery):
     from assets.models import Device, Interface, Vlan
 
     device = Device.objects.create(hostname="celery-store-ok", device_type="switch")
-    task = Task.objects.create(task_type="collect_config", device=device)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
     _stage_with_parsed_data(
         task,
         {
@@ -105,7 +105,7 @@ def test_storage_failure_marks_task_as_failure(eager_celery, monkeypatch):
     monkeypatch.setattr(InterfaceSaver, "save", _boom)
 
     device = Device.objects.create(hostname="celery-store-fail", device_type="switch")
-    task = Task.objects.create(task_type="collect_config", device=device)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
     _stage_with_parsed_data(task, {"interfaces": [{"interface": "GE0/1"}]})
     storage = Stage.objects.create(task=task, stage_type="storage")
 

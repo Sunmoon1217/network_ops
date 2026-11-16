@@ -47,6 +47,14 @@ class StageTypeFilter(VocabularyListFilter):
         return task_types.stage_type_choices()
 
 
+class TargetTypeFilter(VocabularyListFilter):
+    title = "作用目标类型"
+    parameter_name = "target_type"
+
+    def vocabulary(self):
+        return task_types.target_type_choices()
+
+
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
     # 密码哈希不进列表（无管理价值还平白暴露一列），改看 username / 联系方式
@@ -126,7 +134,7 @@ class TaskAdmin(admin.ModelAdmin):
         "id",
         "task_type",
         "status",
-        "device",
+        "target",
         "celery_task_id",
         "created_at",
         "started_at",
@@ -134,15 +142,20 @@ class TaskAdmin(admin.ModelAdmin):
     )
     list_filter = (
         TaskTypeFilter,
+        TargetTypeFilter,
         "status",
-        ("device", admin.RelatedOnlyFieldListFilter),
         "created_at",
     )
-    search_fields = ("device__hostname", "celery_task_id", "error_message")
-    autocomplete_fields = ("device",)
-    list_select_related = ("device",)
+    # 作用目标是软引用，名字在 target_label 里（建任务时记下），不需要 join 业务表
+    search_fields = ("target_label", "celery_task_id", "error_message")
     date_hierarchy = "created_at"
     inlines = (StageInline,)
+
+    @admin.display(description="作用目标")
+    def target(self, obj):
+        if not obj.target_id:
+            return "—"
+        return f"{obj.target_label or '?'}（{obj.target_type}#{obj.target_id}）"
 
 
 @admin.register(Stage)
@@ -159,7 +172,7 @@ class StageAdmin(admin.ModelAdmin):
         "completed_at",
     )
     list_filter = (StageTypeFilter, "status", "created_at")
-    search_fields = ("task__device__hostname", "task__celery_task_id", "error_message")
+    search_fields = ("task__target_label", "task__celery_task_id", "error_message")
     autocomplete_fields = ("task",)
     list_select_related = ("task",)
     date_hierarchy = "created_at"

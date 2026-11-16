@@ -28,6 +28,19 @@ def _update_stage_status(stage_id, status, output_data=None, error_message=""):
     stage.save()
 
 
+def _task_device(task):
+    """按软引用取任务的作用设备：类型不是设备、或设备已被删 → ``None``。
+
+    ``core.Task`` 不再有 ``device`` 外键（core 不依赖 assets），所以「从任务反查设备」
+    是业务域自己的事：认 ``target_type == "device"``，再按 ``target_id`` 查一次。
+    """
+    from assets.models import Device
+
+    if task.target_type != "device" or not task.target_id:
+        return None
+    return Device.objects.filter(pk=task.target_id).first()
+
+
 @shared_task(bind=True, name="ingest.run_collection_stage")
 def run_collection_stage(self, stage_id):
     """采集阶段 - 通过连接设备获取配置"""
@@ -36,7 +49,7 @@ def run_collection_stage(self, stage_id):
         from core.models import Stage
 
         stage = Stage.objects.get(id=stage_id)
-        device = stage.task.device
+        device = _task_device(stage.task)
         if not device:
             raise ValueError("任务无关联设备")
 
@@ -65,7 +78,7 @@ def run_parsing_stage(self, stage_id):
 
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
-        device = task.device
+        device = _task_device(task)
         if device is None:
             raise ValueError("任务未关联设备，无法解析")
 
@@ -102,7 +115,7 @@ def run_storage_stage(self, stage_id):
 
         stage = Stage.objects.get(id=stage_id)
         task = stage.task
-        device = task.device
+        device = _task_device(task)
         if device is None:
             raise ValueError("任务未关联设备，无法入库")
 

@@ -150,7 +150,11 @@ class StageSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    device_hostname = serializers.CharField(source="device.hostname", read_only=True)
+    # 前端契约不变（``device`` 是数字、``device_hostname`` 是字符串），但底层已由外键改成
+    # ``target_type`` + ``target_id`` 的软引用：读走 ``Task`` 的兼容 property，
+    # 写在 ``validate()`` 里折算成 ``target_*``。
+    device = serializers.IntegerField(required=False, allow_null=True, help_text="作用目标是设备时的设备 ID")
+    device_hostname = serializers.CharField(read_only=True)
     task_type_display = serializers.CharField(source="get_task_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     progress = serializers.IntegerField(read_only=True)
@@ -203,12 +207,38 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"未知的任务类型 {value!r}，可选：{[key for key, _ in task_types.task_type_choices()]}")
         return value
 
+    def validate(self, attrs):
+        """把 ``device`` 折算成软引用：类型与名字都来自注册表。
+
+        校验目标是否存在也放在这里（而不是 ``create()``）：视图把 ``save()`` 的任何异常
+        兜成 503，若在这里放过非法设备，客户端会被误导成「服务端挂了」。
+        """
+        from core import task_types
+
+        device_id = attrs.get("device")
+        if device_id is None:
+            return attrs
+
+        target_type = task_types.device_field_target_type()
+        label = task_types.resolve_target_label(target_type, device_id) if target_type else None
+        if label is None:
+            raise serializers.ValidationError({"device": f"设备 {device_id} 不存在"})
+
+        # 名字一并记下：列表展示不再回查业务表（也避免 N+1）
+        attrs["target_type"] = target_type
+        attrs["target_id"] = device_id
+        attrs["target_label"] = label
+        return attrs
+
     def create(self, validated_data):
         """建任务即投递第一个阶段，第一个阶段由注册表按 ``task_type`` 反查。"""
         from core.tasks import create_task
 
+        validated_data.pop("device", None)  # 已折算成 target_*
         return create_task(
             task_type=validated_data["task_type"],
-            device=validated_data.get("device"),
-            params=validated_data.get("params") or {},
+            params=validated_data.pop("params", None) or {},
+            target_type=validated_data.pop("target_type", ""),
+            target_id=validated_data.pop("target_id", None),
+            target_label=validated_data.pop("target_label", ""),
         )

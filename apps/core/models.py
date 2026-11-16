@@ -96,10 +96,14 @@ class UserPreference(models.Model):
 class Task(models.Model):
     """任务主记录。
 
-    ``task_type`` 是**自由字符串**，这里刻意不声明 ``choices``：词表属于业务域，由它们
-    在 ``core.task_types`` 注册表里登记（见 ``handbook/design/task-framework.md``）。
-    ``choices`` 是字段的类属性、会写进迁移，运行时注册注定与迁移状态漂移——所以词汇
-    不放这里，显示名改由 ``get_task_type_display()`` 反查注册表。
+    **作用目标是软引用**：``target_type`` + ``target_id`` 指向任意业务实体（设备、设备组、
+    站点…），``target_label`` 是建任务时记下的名字。core 因此不认识任何业务模型，
+    也不会被业务表的删除级联带走（见 ``handbook/design/task-framework.md`` §①）。
+
+    ``task_type`` 同样是**自由字符串**，这里刻意不声明 ``choices``：词表属于业务域，由它们
+    在 ``core.task_types`` 注册表里登记。``choices`` 是字段的类属性、会写进迁移，运行时
+    注册注定与迁移状态漂移——所以词汇不放这里，显示名改由 ``get_task_type_display()``
+    反查注册表。
     """
 
     STATUS_CHOICES = (
@@ -113,7 +117,9 @@ class Task(models.Model):
     celery_task_id = models.CharField(max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID")
     task_type = models.CharField(max_length=50, verbose_name="任务类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
-    device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备")
+    target_type = models.CharField(max_length=50, blank=True, default="", verbose_name="作用目标类型")
+    target_id = models.BigIntegerField(null=True, blank=True, verbose_name="作用目标ID")
+    target_label = models.CharField(max_length=255, blank=True, default="", verbose_name="作用目标名称")
     params = models.JSONField(default=dict, verbose_name="任务参数")
     result = models.JSONField(null=True, blank=True, verbose_name="任务结果")
     error_message = models.TextField(blank=True, default="", verbose_name="错误信息")
@@ -130,6 +136,10 @@ class Task(models.Model):
         verbose_name = "任务"
         verbose_name_plural = verbose_name
         ordering = ("-created_at",)
+        indexes = (
+            # 软引用没有外键索引；按目标查任务（列表过滤、purge 清理）走这个复合索引
+            models.Index(fields=("target_type", "target_id"), name="task_target_idx"),
+        )
 
     def __str__(self):
         return f"{self.get_task_type_display()} - {self.get_status_display()}"
@@ -141,6 +151,24 @@ class Task(models.Model):
         这样 ``__str__`` / admin / 序列化器都不用改，且 core 里不出现任何业务词汇。
         """
         return task_types.label_for(self.task_type)
+
+    @property
+    def device(self) -> int | None:
+        """**历史契约**：作用目标是设备时返回设备 ID，否则 ``None``。
+
+        ``Task`` 已经没有 ``device`` 外键了（core 不依赖 assets），但前端还在读
+        ``device`` / ``device_hostname`` 这两个键，所以留一对只读的兼容视图：
+        哪个 target_type 填它们由注册表说明（``feeds_device_fields``），core 不硬编码
+        ``"device"`` 这个词。
+        """
+        device_type = task_types.device_field_target_type()
+        return self.target_id if device_type and self.target_type == device_type else None
+
+    @property
+    def device_hostname(self) -> str:
+        """**历史契约**：作用目标是设备时返回建任务时记下的设备名，否则空串。"""
+        device_type = task_types.device_field_target_type()
+        return self.target_label if device_type and self.target_type == device_type else ""
 
     @property
     def current_stage(self):

@@ -30,7 +30,9 @@ def test_chain_from_parsing_to_storage_completes_task(eager_celery):
     device = _switch("_t_wf_ok")
     task = Task.objects.create(
         task_type="collect_config",
-        device=device,
+        target_type="device",
+        target_id=device.pk,
+        target_label=device.hostname,
         status="running",
         started_at=timezone.now(),
     )
@@ -64,7 +66,7 @@ def test_start_task_dispatches_collection_stage(eager_celery):
 
     from core.tasks import create_task
 
-    task = create_task("collect_config", device=device)
+    task = create_task("collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
 
     task.refresh_from_db()
     assert task.started_at is not None
@@ -83,7 +85,7 @@ def test_cancelled_task_is_not_advanced():
     真正兜底的是信号里的这个检查。
     """
     device = _switch("_t_wf_cancel")
-    task = Task.objects.create(task_type="collect_config", device=device, status="cancelled")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="cancelled")
     stage = Stage.objects.create(task=task, stage_type="collection")
 
     stage.status = "success"
@@ -99,7 +101,7 @@ def test_cancel_task_marks_cancelled():
     from core.tasks import cancel
 
     device = _switch("_t_wf_cancel2")
-    task = Task.objects.create(task_type="collect_config", device=device, status="running")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="running")
 
     cancel(task)
 

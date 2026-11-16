@@ -110,7 +110,7 @@ def test_covers_every_configbase_subclass():
 @pytest.mark.django_db
 def test_workflow_records_are_kept_unless_flagged():
     device = _device("_t_purge_d")
-    task = Task.objects.create(task_type="collect_config", device=device, status="failed")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="failed")
     Stage.objects.create(task=task, stage_type="collection", status="failed")
 
     output = _run("--device", device.hostname, "--yes")
@@ -122,7 +122,7 @@ def test_workflow_records_are_kept_unless_flagged():
 @pytest.mark.django_db
 def test_with_workflow_removes_task_and_stage():
     device = _device("_t_purge_e")
-    task = Task.objects.create(task_type="collect_config", device=device, status="failed")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="failed")
     Stage.objects.create(task=task, stage_type="collection", status="failed")
     Stage.objects.create(task=task, stage_type="parsing", status="success")
 

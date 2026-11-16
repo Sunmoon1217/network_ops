@@ -3,14 +3,14 @@
 对应 ``handbook/design/layering.md`` 的依赖矩阵第一行（core 对所有业务域都是 ✗）。
 这条约束靠人眼守不住——一次「顺手 import 一下」就回来了，所以用 AST 扫一遍源码。
 
-只扫**运行期真的会执行**的 import：``TYPE_CHECKING`` 里的注解 import 与模型上的字符串
-引用（``ForeignKey("assets.Device")``）不在此列，后者是已知遗留债，单独有用例标出。
+只扫**运行期真的会执行**的 import：``TYPE_CHECKING`` 里的注解 import 不在此列。
+模型层的同类约束由 ``test_core_models_have_no_cross_domain_foreign_key`` 守——字符串外键
+（``ForeignKey("assets.Device")``）不是 import，AST 扫不到，但一样会把 core 绑死在上层域上。
 运维工具例外见 ``OPERATIONAL_EXCEPTIONS``——精确到「文件 + 模块」，且例外失效会报错。
 """
 
 import ast
 from pathlib import Path
-from typing import Any
 
 CORE_DIR = Path(__file__).resolve().parents[2] / "apps" / "core"
 PROJECT_ROOT = CORE_DIR.parent.parent
@@ -73,16 +73,28 @@ def test_operational_exceptions_are_still_needed():
     )
 
 
-def test_known_debt_task_device_fk_still_points_at_assets():
-    """已知遗留债：``Task.device`` 仍是到 ``assets.Device`` 的外键。
+def test_core_models_have_no_cross_domain_foreign_key():
+    """core 的模型上不许再挂业务域外键。
 
-    ``task-framework.md`` 步骤 3（方案 C：``target_type`` + ``target_id``）落地时，
-    这条用例要删掉——它存在只是为了让「分层没做完」这件事在测试里也留个记号。
+    曾经的 ``Task.device → assets.Device`` 是 ``task-framework.md`` 步骤 3（方案 C）要消掉的
+    债：外键一挂，core 就永远依赖 assets，字符串引用又不会被 AST 扫到。现在作用目标改成了
+    ``target_type`` / ``target_id`` 软引用，这条用例守着「不许再挂回去」。
     """
+    from django.apps import apps as django_apps
+
+    offenders = [
+        f"{model._meta.label}.{field.name} → {related._meta.label}"
+        for model in django_apps.get_app_config("core").get_models()
+        for field in model._meta.get_fields()
+        if (related := getattr(field, "related_model", None)) is not None and related._meta.app_label in DOMAIN_APPS
+    ]
+
+    assert not offenders, "core 模型出现跨域外键（应改软引用或由业务域注册解析）：\n" + "\n".join(offenders)
+
+
+def test_task_device_field_is_gone():
+    """``Task.device`` 已由软引用取代：字段还在就说明方案 C 没落干净。"""
     from core.models import Task
 
-    # getattr 而非直接属性链：``related_model`` 在类型存根里被标成可能为 None
-    field: Any = Task._meta.get_field("device")
-    related: Any = field.related_model
-    assert related is not None, "Task.device 已经没有外键目标了？方案 C 落地后请删掉本用例"
-    assert related._meta.label_lower == "assets.device"
+    assert "device" not in {field.name for field in Task._meta.get_fields()}
+    assert {"target_type", "target_id", "target_label"} <= {field.name for field in Task._meta.get_fields()}

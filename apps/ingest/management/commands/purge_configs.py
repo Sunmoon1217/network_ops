@@ -160,8 +160,8 @@ class Command(BaseCommand):
                 (
                     "工作流记录（Stage 先删，Task 再删）",
                     [
-                        (Stage, Stage.objects.filter(task__device_id__in=owner_ids)),
-                        (Task, Task.objects.filter(device_id__in=owner_ids)),
+                        (Stage, Stage.objects.filter(task__target_type="device", task__target_id__in=owner_ids)),
+                        (Task, Task.objects.filter(target_type="device", target_id__in=owner_ids)),
                     ],
                 )
             )

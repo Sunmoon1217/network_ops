@@ -12,6 +12,7 @@ from rest_framework import status as http_status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from core import task_types
 from core.models import Stage, Task
 
 from .serializers import StageSerializer, TaskSerializer
@@ -25,19 +26,31 @@ class TaskViewSet(
     mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """任务：列表 / 详情 / 新建（即投递采集阶段） / 取消。"""
+    """任务：列表 / 详情 / 新建（即投递首个阶段） / 取消。"""
 
-    queryset = Task.objects.select_related("device").prefetch_related("stages").all()
+    queryset = Task.objects.prefetch_related("stages").all()
     serializer_class = TaskSerializer
-    search_fields = ("device__hostname",)
+    # 作用目标的名字在 target_label 里（建任务时记下），不必 join 业务表
+    search_fields = ("target_label",)
     ordering_fields = ("created_at", "started_at", "completed_at", "status")
 
     def get_queryset(self):
-        """手工过滤：项目只启用了 SearchFilter / OrderingFilter，精确过滤按惯例在这里做。"""
+        """手工过滤：项目只启用了 SearchFilter / OrderingFilter，精确过滤按惯例在这里做。
+
+        ``device=<id>`` 保持旧契约：翻译成「作用目标是设备」的软引用查询；「哪个 type
+        算设备」由注册表说明，core 里不出现 ``"device"`` 这个词。
+        """
         qs = super().get_queryset()
         device = self.request.query_params.get("device")
         if device:
-            qs = qs.filter(device_id=device)
+            device_type = task_types.device_field_target_type()
+            if device_type:
+                qs = qs.filter(target_type=device_type, target_id=device)
+            else:
+                qs = qs.none()  # 没有业务域声明设备类型，按设备过滤必然无结果
+        target_type = self.request.query_params.get("target_type")
+        if target_type:
+            qs = qs.filter(target_type=target_type)
         task_status = self.request.query_params.get("status")
         if task_status:
             qs = qs.filter(status=task_status)
@@ -79,9 +92,9 @@ class TaskViewSet(
 class StageViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """阶段：只读。用于按任务/类型/状态排查某一步卡在哪里。"""
 
-    queryset = Stage.objects.select_related("task", "task__device").all()
+    queryset = Stage.objects.select_related("task").all()
     serializer_class = StageSerializer
-    search_fields = ("task__device__hostname", "error_message")
+    search_fields = ("task__target_label", "error_message")
     ordering_fields = ("created_at", "started_at", "completed_at", "status")
 
     def get_queryset(self):
