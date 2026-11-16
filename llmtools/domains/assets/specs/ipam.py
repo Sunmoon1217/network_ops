@@ -6,6 +6,7 @@
 
 from assets import models
 from assets.serializers import views as s
+from configs import models as cm
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType
@@ -64,7 +65,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.VLAN: EntitySpec(
         node_type=NodeType.VLAN,
         label="VLAN",
-        model=models.Vlan,
+        model=cm.Vlan,
         serializer=s.VlanSerializer,
         key="vid",
         summary=("device_hostname", "vid", "name", "description"),

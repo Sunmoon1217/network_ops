@@ -3,7 +3,6 @@
 import pytest
 
 from assets.models import (
-    ConfigBase,
     Device,
     DomainAsset,
     GtmPool,
@@ -21,6 +20,7 @@ from assets.services.soft_asset_sync import (
     sync_load_balancer_services,
     sync_soft_assets,
 )
+from configs.models import ConfigBase
 
 
 def _device(hostname: str, device_type: str) -> Device:

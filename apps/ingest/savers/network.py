@@ -19,11 +19,11 @@ class VlanSaver(BaseSaver):
 
     device_types = ["switch"]
     keys = ["vlans"]
-    model_paths = ["assets.models.Vlan"]
+    model_paths = ["configs.models.Vlan"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import Vlan
         from assets.serializers.views import VlanSerializer
+        from configs.models import Vlan
 
         rows = []
         for item in as_list(parsed_data.get("vlans")):

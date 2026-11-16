@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from configs.models import Vlan
+
 from .models import (
     AddressBook,
     ApplicationService,
@@ -50,7 +52,6 @@ from .models import (
     Topology,
     Vendor,
     VirtualMachine,
-    Vlan,
     Vrf,
 )
 

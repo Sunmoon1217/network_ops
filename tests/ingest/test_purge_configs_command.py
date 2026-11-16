@@ -12,7 +12,6 @@ from django.core.management import CommandError, call_command
 
 from analysis.models import AccessFlow, InternetAnalysis
 from assets.models import (
-    ConfigBase,
     Device,
     DeviceConfig,
     DeviceGroup,
@@ -21,6 +20,7 @@ from assets.models import (
     ServerOwner,
     Vrf,
 )
+from configs.models import ConfigBase
 from core.models import Stage, Task
 
 
@@ -89,7 +89,8 @@ def test_covers_every_configbase_subclass():
     device = _device("_t_purge_c")
     vrf = Vrf.objects.create(device=device, name="default")
     Route.objects.create(vrf=vrf, device=device, destination="10.0.0.0/24", protocol="static")
-    from assets.models import AddressBook, Interface, Vlan
+    from assets.models import AddressBook, Interface
+    from configs.models import Vlan
 
     Interface.objects.create(device=device, interface="GE0/1")
     Vlan.objects.create(device=device, vid=10)

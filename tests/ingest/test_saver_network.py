@@ -6,7 +6,8 @@
 
 import pytest
 
-from assets.models import Device, Route, SnmpConfig, Vlan, Vrf
+from assets.models import Device, Route, SnmpConfig, Vrf
+from configs.models import Vlan
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.network import SnmpConfigSaver, VlanSaver
 from ingest.savers.routing import RouteSaver

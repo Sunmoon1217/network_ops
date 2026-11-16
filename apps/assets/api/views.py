@@ -36,9 +36,9 @@ from assets.models import (
     Subnet,
     SyslogConfig,
     Vendor,
-    Vlan,
     Vrf,
 )
+from configs.models import Vlan
 
 from .serializers import (
     CabinetSerializer,

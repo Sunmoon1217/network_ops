@@ -13,7 +13,7 @@
 
 import pytest
 
-from assets.models import ConfigBase
+from configs.models import ConfigBase
 from ingest.mapping import (
     FIELD_ALIASES,
     KEY_ALIASES,

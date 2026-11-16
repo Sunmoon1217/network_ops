@@ -21,7 +21,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from analysis.models import AccessFlow, InternetAnalysis
-from assets.models import ConfigBase, Device, DeviceConfig
+from assets.models import Device, DeviceConfig
+from configs.models import ConfigBase
 from ingest.config_owner import resolve_config_owner
 
 # InternetAnalysis / AccessFlow 住在 analysis app，但**清理仍归本命令**：purge_configs

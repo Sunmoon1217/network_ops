@@ -282,6 +282,8 @@ INSTALLED_APPS = [
     "core.apps.CoreConfig",
     "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
+    # 配置域：configs → assets（Device 外键），所以排在 assets 之后
+    "configs.apps.ConfigsConfig",
     "analysis.apps.AnalysisConfig",
     "cloud.apps.CloudConfig",
     "docs.apps.DocsConfig",

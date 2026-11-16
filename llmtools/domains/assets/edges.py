@@ -17,6 +17,7 @@
 """
 
 from assets import models
+from configs import models as cm
 from llmtools.registry import Edge
 
 from .nodes import NodeType
@@ -59,7 +60,7 @@ EDGES: tuple[Edge, ...] = (
         name="vlans",
         src=NodeType.DEVICE,
         dst=NodeType.VLAN,
-        forward=_by_device(models.Vlan),
+        forward=_by_device(cm.Vlan),
         reverse=lambda v: models.Device.objects.filter(pk=v.device_id),
     ),
     Edge(

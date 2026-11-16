@@ -23,7 +23,6 @@ from .network import (
     AddressBook,
     ArpMac,
     Cabinet,
-    ConfigBase,
     DataCenter,
     Device,
     DeviceAccount,
@@ -61,7 +60,6 @@ from .network import (
     Tag,
     Topology,
     Vendor,
-    Vlan,
     Vrf,
 )
 from .registry import CI_OBJECT_CHOICES, CIObjectLink, CIObjectType
@@ -89,7 +87,6 @@ __all__ = [
     "AddressBook",
     "ArpMac",
     "Cabinet",
-    "ConfigBase",
     "DataCenter",
     "Device",
     "DeviceAccount",
@@ -127,7 +124,6 @@ __all__ = [
     "Tag",
     "Topology",
     "Vendor",
-    "Vlan",
     "Vrf",
     "CI_RELATION_CHOICES",
     "CIRelationType",

@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING
 from django.db import models
 from django.db.models import QuerySet
 
+# 拆分过渡态：``ConfigBase`` 已迁 ``configs``，其余子类仍在本模块（反向依赖随最后一批子类
+# 迁走而消失，见 ``handbook/design/assets-configs-split.md`` §建议的最小验证切片）。
+from configs.models.base import ConfigBase
+
 
 class SecurityZone(models.Model):
     name = models.CharField(max_length=50, unique=True, verbose_name="安全区名称")
@@ -326,38 +330,6 @@ class DeviceConfig(models.Model):
 
     if TYPE_CHECKING:
         device_id: int
-
-
-class ConfigBase(models.Model):
-    """配置模型基类"""
-
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, verbose_name="关联设备")
-    is_active = models.BooleanField(default=True, verbose_name="是否生效")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
-
-    if TYPE_CHECKING:
-        device_id: int
-
-    class Meta:
-        abstract = True
-
-
-class Vlan(ConfigBase):
-    """VLAN"""
-
-    vid = models.PositiveIntegerField(verbose_name="VLAN ID")
-    name = models.CharField(max_length=100, blank=True, default="", verbose_name="VLAN名称")
-    description = models.CharField(max_length=255, blank=True, default="", verbose_name="描述")
-
-    class Meta:
-        verbose_name = "VLAN"
-        verbose_name_plural = verbose_name
-        ordering = ("vid",)
-        constraints = (models.UniqueConstraint(fields=["device", "vid"], name="uni_vlan_device_vid"),)
-
-    def __str__(self):
-        return f"{self.device.hostname} - VLAN {self.vid}" + (f" ({self.name})" if self.name else "")
 
 
 class Vrf(ConfigBase):

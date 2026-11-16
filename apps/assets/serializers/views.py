@@ -13,6 +13,7 @@
 from rest_framework import serializers
 
 from assets import models
+from configs.models import Vlan
 
 from .base import DeviceRelatedSerializer, ParentClass, model
 
@@ -110,7 +111,7 @@ class DeviceConnectionSerializer(ParentClass):
     device_name = serializers.CharField(source="device.hostname", read_only=True, default="")
 
 
-@model(model=models.Vlan)
+@model(model=Vlan)
 class VlanSerializer(DeviceRelatedSerializer):
     pass
 

@@ -71,7 +71,8 @@ def test_storage_stage_writes_every_matched_saver(eager_celery):
     （**key 列表**）当成单个 key 用，``parsed_data.get(["interfaces"])`` 抛
     ``TypeError: unhashable type: 'list'``，凡是匹配到 Saver 的设备都存不进去。
     """
-    from assets.models import Device, Interface, Vlan
+    from assets.models import Device, Interface
+    from configs.models import Vlan
 
     device = Device.objects.create(hostname="celery-store-ok", device_type="switch")
     task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)

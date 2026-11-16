@@ -7,7 +7,8 @@
 import pytest
 from django.db import IntegrityError, transaction
 
-from assets.models import CI_RELATION_CHOICES, CIRelationship, CIRelationType, CIType, ConfigBase, ConfigurationItem
+from assets.models import CI_RELATION_CHOICES, CIRelationship, CIRelationType, CIType, ConfigurationItem
+from configs.models import ConfigBase
 
 CI_URL = "/api/assets/ci-relationships/"
 

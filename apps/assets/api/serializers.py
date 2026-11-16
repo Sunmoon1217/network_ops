@@ -15,9 +15,9 @@ from assets.models import (
     SnmpConfig,
     SyslogConfig,
     Vendor,
-    Vlan,
     Vrf,
 )
+from configs.models import Vlan
 
 
 class SecurityZoneSerializer(serializers.ModelSerializer):

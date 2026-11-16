@@ -28,8 +28,8 @@ from assets.models import (
     Interface,
     IPAddress,
     Vendor,
-    Vlan,
 )
+from configs.models import Vlan
 from llmtools import mcpserver as netops_mcp
 
 pytestmark = pytest.mark.django_db(transaction=True)

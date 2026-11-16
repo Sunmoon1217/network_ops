@@ -11,7 +11,8 @@
 
 import pytest
 
-from assets.models import Device, DeviceConfig, DeviceModel, Service, Vendor, Vlan, Vrf
+from assets.models import Device, DeviceConfig, DeviceModel, Service, Vendor, Vrf
+from configs.models import Vlan
 from ingest.config_repo import get_config
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import ServiceSaver
