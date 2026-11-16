@@ -20,7 +20,7 @@ const vlanOptions = ref<string[]>([])
 
 const loadVlanOptions = async () => {
   try {
-    const list = await fetchAllPages('/api/assets/vlans/', { ordering: 'vid' })
+    const list = await fetchAllPages('/api/configs/vlans/', { ordering: 'vid' })
     const vids = list.map((v: any) => String(v.vid)).filter(Boolean)
     vlanOptions.value = Array.from(new Set(vids)).sort((a, b) => Number(a) - Number(b))
   } catch {
@@ -30,7 +30,7 @@ const loadVlanOptions = async () => {
 
 const fetchAll = () =>
   fetchData(() =>
-    api.get('/api/assets/arp-mac/', {
+    api.get('/api/configs/arp-mac/', {
       params: pageParams({
         device: filterDevice.value || undefined,
         vlan: filterVlan.value || undefined,

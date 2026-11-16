@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getParsers, getParserTemplates, getParserTemplate, updateParserTemplate } from '@/api/parsers'
+import { getParsers, getParserTemplates, getParserTemplate, updateParserTemplate } from '@/api/ingest/parsers'
 import DataTable from '@/components/DataTable.vue'
 import DataColumn from '@/components/DataColumn.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'

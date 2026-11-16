@@ -10,8 +10,7 @@
 且配置入库是低频动作、数据随时可能被重新解析覆盖，实时查即可——
 真出现慢查询再考虑缓存表，别提前背上失效同步的包袱。
 
-URL 前缀 ``/api/lb-chain/`` 沿用 analysis「路由跟 view 走」的惯例挂进
-``analysis/api/urls.py``；聚合口径（GTM 成员三种形态的兼容）复用
+URL 前缀 ``/api/analysis/lb-chain/``：聚合口径（GTM 成员三种形态的兼容）复用
 ``analysis.api.analysis._parse_member_entry``，避免两处各写一份漂移。
 """
 
@@ -181,7 +180,7 @@ def _ltm_rows(page: list[LtmVirtualServer]) -> list[dict]:
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def ltm_chains(request):
-    """负载均衡关联链：GET /api/lb-chain/slb/?device=&search=&ordering=&page="""
+    """负载均衡关联链：GET /api/analysis/lb-chain/slb/?device=&search=&ordering=&page="""
     qs = _device_filter(request, LtmVirtualServer.objects.select_related("device").all())
     search = (request.query_params.get("search") or "").strip()
     if search:
@@ -374,7 +373,7 @@ def _gtm_filter_monitor(qs, monitor: str):
 @permission_classes([AllowAny])
 def gtm_chains(request):
     """域名解析关联链：
-    GET /api/lb-chain/gslb/?device=&rtype=&monitor=&search=&ordering=&page=
+    GET /api/analysis/lb-chain/gslb/?device=&rtype=&monitor=&search=&ordering=&page=
 
     - ``rtype``：WideIP 记录类型精确过滤（下拉）；
     - ``monitor``：健康检查类型过滤，池/服务器/虚拟服务器三处 monitor 命中其一即可。
@@ -416,7 +415,7 @@ def gtm_facet_values() -> dict:
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def gtm_facets(request):
-    """过滤下拉选项：GET /api/lb-chain/gslb/facets/（取值口径见 ``gtm_facet_values``）。"""
+    """过滤下拉选项：GET /api/analysis/lb-chain/gslb/facets/（取值口径见 ``gtm_facet_values``）。"""
     return Response(gtm_facet_values())
 
 
@@ -561,7 +560,7 @@ def _xlsx_response(headers: list[str], widths: tuple, rows: list[list], title: s
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def ltm_export(request):
-    """导出 SLB 扁平宽表：GET /api/lb-chain/slb/export/?device=&search=
+    """导出 SLB 扁平宽表：GET /api/analysis/lb-chain/slb/export/?device=&search=
 
     全量导出（不分页），过滤/搜索参数与列表接口同语义。
     """
@@ -582,7 +581,7 @@ def ltm_export(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def gtm_export(request):
-    """导出 GSLB 扁平宽表：GET /api/lb-chain/gslb/export/?device=&rtype=&monitor=&search="""
+    """导出 GSLB 扁平宽表：GET /api/analysis/lb-chain/gslb/export/?device=&rtype=&monitor=&search="""
     qs = _device_filter(request, GtmWideip.objects.select_related("device").all())
     rtype = (request.query_params.get("rtype") or "").strip()
     if rtype:

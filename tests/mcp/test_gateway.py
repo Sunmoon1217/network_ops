@@ -156,9 +156,9 @@ def test_non_mcp_paths_are_not_guarded(monkeypatch):
     async def app(scope, receive, send):
         seen.append(scope["path"])
 
-    _drive(mcp_gateway.McpGuardMiddleware(app), _scope("/api/devices/"))
+    _drive(mcp_gateway.McpGuardMiddleware(app), _scope("/api/assets/devices/"))
 
-    assert seen == ["/api/devices/"]
+    assert seen == ["/api/assets/devices/"]
     assert fake.counts == {}
 
 
@@ -180,8 +180,8 @@ def test_dispatch_returns_explicit_404_when_disabled(monkeypatch):
     assert django_calls == []
 
     # 其余路径照旧交给 Django
-    _drive(asgi._dispatch, _scope("/api/devices/"))
-    assert django_calls == ["/api/devices/"]
+    _drive(asgi._dispatch, _scope("/api/assets/devices/"))
+    assert django_calls == ["/api/assets/devices/"]
 
 
 def test_dispatch_hands_mcp_paths_to_the_guarded_app(monkeypatch):

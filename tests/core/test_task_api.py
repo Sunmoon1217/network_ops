@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from assets.models import Device, DeviceConnection, DeviceModel, Vendor
 from core.models import Stage, Task, User
 
-TASKS_URL = "/api/tasks/"
+TASKS_URL = "/api/core/tasks/"
 
 
 @pytest.fixture
@@ -185,8 +185,8 @@ def test_stages_endpoint_is_read_only_and_filterable(client, device):
     Stage.objects.filter(pk=collection.pk).update(status="success")
     Stage.objects.filter(pk=parsing.pk).update(status="running")
 
-    assert client.get("/api/stages/", {"task": task.pk}).json()["count"] == 2
-    assert client.get("/api/stages/", {"task": task.pk, "stage_type": "parsing"}).json()["count"] == 1
-    assert client.get("/api/stages/", {"task": task.pk, "status": "success"}).json()["count"] == 1
+    assert client.get("/api/core/stages/", {"task": task.pk}).json()["count"] == 2
+    assert client.get("/api/core/stages/", {"task": task.pk, "stage_type": "parsing"}).json()["count"] == 1
+    assert client.get("/api/core/stages/", {"task": task.pk, "status": "success"}).json()["count"] == 1
     # 只读：不提供写方法
-    assert client.post("/api/stages/", {"task": task.pk, "stage_type": "storage"}, format="json").status_code == 405
+    assert client.post("/api/core/stages/", {"task": task.pk, "stage_type": "storage"}, format="json").status_code == 405

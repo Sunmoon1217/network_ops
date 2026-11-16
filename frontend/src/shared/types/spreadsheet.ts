@@ -1,4 +1,4 @@
-/** 通用表格（xlsx 编辑与历史，/api/sheets/，后端 sheets 应用） */
+/** 通用表格（xlsx 编辑与历史，/api/docs/spreadsheets/，后端 docs 域） */
 
 /** 单元格值：JSON 标量（空单元格为 null） */
 export type SheetCellValue = string | number | boolean | null

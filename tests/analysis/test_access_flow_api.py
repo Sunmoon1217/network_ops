@@ -1,4 +1,4 @@
-"""``/api/access-flows/``：只读查询、鉴权、设备/策略过滤。"""
+"""``/api/analysis/access-flows/``：只读查询、鉴权、设备/策略过滤。"""
 
 import pytest
 from rest_framework.authtoken.models import Token as DRFToken
@@ -9,7 +9,7 @@ from analysis.policy_expand import upsert_flows
 from assets.models import Device
 from core.models import User
 
-URL = "/api/access-flows/"
+URL = "/api/analysis/access-flows/"
 
 
 def _unauthenticated_client() -> APIClient:

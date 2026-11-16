@@ -1,5 +1,5 @@
 /**
- * 负载均衡 / 域名解析关联链（`/api/lb-chain/*` 聚合接口的行结构）。
+ * 负载均衡 / 域名解析关联链（`/api/analysis/lb-chain/*` 聚合接口的行结构）。
  *
  * 两页各把一条链压成一行：LTM 是 VS → 池 → 成员，GTM 是 WideIP → 池 → 虚拟服务器。
  * 展示约定：优先显示域名 / IP，`name` 类字段全部收进 hover 弹出。
@@ -142,7 +142,7 @@ export interface GtmChainRow {
   pools: GtmChainPool[]
 }
 
-/** GSLB 过滤下拉选项（GET /api/lb-chain/gslb/facets/） */
+/** GSLB 过滤下拉选项（GET /api/analysis/lb-chain/gslb/facets/） */
 export interface GtmChainFacets {
   rtypes: string[]
   monitors: string[]

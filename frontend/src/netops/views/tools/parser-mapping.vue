@@ -57,7 +57,7 @@ const rowClassName = ({ row }: { row: ParserMappingItem }) => (row.keys_match ? 
 const fetchMapping = async () => {
   loading.value = true
   try {
-    const res = await api.get('/api/parsers/mapping/')
+    const res = await api.get('/api/ingest/parsers/mapping/')
     result.value = res.data as MappingResult
   } catch (e: any) {
     result.value = null

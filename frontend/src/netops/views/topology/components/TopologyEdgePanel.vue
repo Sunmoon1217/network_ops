@@ -54,7 +54,7 @@ const loadInterfaces = async (sourceId: string, targetId: string) => {
     if (sourceDeviceId) {
       promises.push(
         // 接口下拉需覆盖该设备全部接口，分页会截断（page_size=500 会被后端上限截断且仅返回第一页）
-        fetchAllPages('/api/assets/interfaces/', { device: sourceDeviceId })
+        fetchAllPages('/api/configs/interfaces/', { device: sourceDeviceId })
           .then(list => { sourceInterfaces.value = list })
           .catch(() => { sourceInterfaces.value = [] })
       )
@@ -63,7 +63,7 @@ const loadInterfaces = async (sourceId: string, targetId: string) => {
     }
     if (targetDeviceId) {
       promises.push(
-        fetchAllPages('/api/assets/interfaces/', { device: targetDeviceId })
+        fetchAllPages('/api/configs/interfaces/', { device: targetDeviceId })
           .then(list => { targetInterfaces.value = list })
           .catch(() => { targetInterfaces.value = [] })
       )

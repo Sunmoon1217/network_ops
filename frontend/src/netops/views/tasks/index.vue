@@ -8,7 +8,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { useCrudApi } from '@/composables/useCrudApi'
 import {
   getTasks, getTask, createTask, cancelTask, getTaskDeviceOptions,
-} from '@/api/tasks'
+} from '@/api/core/tasks'
 import type { Task, DeviceOption } from '@/types'
 import { useAuthStore } from '@netops/stores/auth'
 

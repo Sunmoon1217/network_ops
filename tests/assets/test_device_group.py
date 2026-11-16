@@ -72,8 +72,8 @@ def test_backup_config_query_redirects_to_master(api_client):
     _stack_group("stack-q", master, backup)
     DeviceConfig.objects.bulk_create([DeviceConfig(device=master, git_commit_hash="a" * 40, config_json={"interfaces": []})])
 
-    master_rows = api_client.get("/api/assets/device-configs/", {"device": master.pk}).json()["results"]
-    backup_rows = api_client.get("/api/assets/device-configs/", {"device": backup.pk}).json()["results"]
+    master_rows = api_client.get("/api/configs/device-configs/", {"device": master.pk}).json()["results"]
+    backup_rows = api_client.get("/api/configs/device-configs/", {"device": backup.pk}).json()["results"]
     master_ids = [row["id"] for row in master_rows]
     backup_ids = [row["id"] for row in backup_rows]
 

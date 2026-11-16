@@ -23,7 +23,7 @@ export interface ParserConsumer {
 }
 
 /**
- * 单个解析器的映射关系（`GET /api/parsers/mapping/` 的 parsers 元素）。
+ * 单个解析器的映射关系（`GET /api/ingest/parsers/mapping/` 的 parsers 元素）。
  * 前四个字段与 ParserItem 同义同型，故 extends 复用。
  */
 export interface ParserMappingItem extends ParserItem {
@@ -53,7 +53,7 @@ export interface MappingSummary {
     unconsumed_count: number
 }
 
-/** GET /api/parsers/mapping/ 的响应结构 */
+/** GET /api/ingest/parsers/mapping/ 的响应结构 */
 export interface MappingResult {
     summary: MappingSummary
     parsers: ParserMappingItem[]

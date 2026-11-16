@@ -268,7 +268,7 @@ def test_facets_match_legacy_gtm_endpoint(api):
     _vserver(device, "srv1", "vs1", "10.1.1.1", "80")
 
     cluster_facets = api.get(f"{BASE}facets/").data
-    legacy_facets = api.get("/api/lb-chain/gslb/facets/").data
+    legacy_facets = api.get("/api/analysis/lb-chain/gslb/facets/").data
     assert {key: cluster_facets[key] for key in ("rtypes", "monitors")} == legacy_facets
     assert cluster_facets["rtypes"] == ["A"]
     assert "http" in cluster_facets["monitors"]

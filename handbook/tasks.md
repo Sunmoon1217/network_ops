@@ -15,7 +15,7 @@
 | `apps/core/models.py` | `Task` / `Stage` 两张表 | ✗ |
 | `apps/core/tasks.py` | `create_task` / `dispatch` / `cancel` | ✗ |
 | `apps/core/task_types.py` | 词汇注册表（任务类型 / 阶段 / 作用目标） | ✗（纯 dict） |
-| `apps/core/api/` | `/api/tasks/`、`/api/stages/` 与 admin | ✗ |
+| `apps/core/api/` | `/api/core/tasks/`、`/api/core/stages/` 与 admin | ✗ |
 | `apps/<域>/apps.py` | `ready()` 里登记词汇 | ✓ |
 | `apps/<域>/tasks.py` | 阶段实现（`@shared_task`） | ✓ |
 
@@ -179,7 +179,7 @@ AddField(target_type) → AddField(target_id) → AddField(target_label)
 
 ## 前端契约
 
-`/api/tasks/` 的响应形状没变过，拆分前后一致：
+`/api/core/tasks/` 的响应形状没变过，拆分前后一致：
 
 - `device`（数字或 null）、`device_hostname`（字符串）——历史字段，语义是「作用目标是设备时」；
 - `task_type` / `stage_type` 的**原始值**与 `*_display` 显示名并存；
@@ -189,7 +189,7 @@ AddField(target_type) → AddField(target_id) → AddField(target_label)
 `device` 系列只对设备有值。按 `device=<id>` 过滤时，若没有任何域声明设备类型，结果是**空集**
 而不是全量（`views.get_queryset` 直接 `qs.none()`）。
 
-**接口不开放改状态**。`/api/tasks/` 只有列表 / 详情 / 新建 / 取消，阶段只读；`Task` / `Stage`
+**接口不开放改状态**。`/api/core/tasks/` 只有列表 / 详情 / 新建 / 取消，阶段只读；`Task` / `Stage`
 的状态由 celery 阶段任务与业务域推进信号写。放开写会让库里的记录与真实执行状态脱节——
 前端进度条说谎，`cancel()` 也无从判断「任务是否还在跑」。
 

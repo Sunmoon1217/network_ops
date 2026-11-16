@@ -29,7 +29,7 @@
 - **域只依赖它下面的域**，没有反向依赖，没有跨层。
 - **跨域调用不 import 对方的模块**，用 Celery 任务名 + `send_task`（范本见 `apps/ingest/access_flow_trigger.py`）。
 - **跨域写入走服务调用**，不直接 ORM 写对方的表；写入权归属明确写在分层文档里。
-- **URL 前缀不变**——拆分是内部结构调整，前端零改动（范本：analysis 拆分时沿用 `/api/trace/`、`/api/internet-analysis/`）。
+- **URL 前缀不变**——拆分是内部结构调整，前端零改动（范本：analysis 拆分时沿用了当时的 `/api/trace/`、`/api/internet-analysis/`；**2026-11 已改为按域收口**，见 `handbook/api.md`）。
 - **core 零业务依赖**——core 只持有各域在 `ready()` 里注册进来的对象（业务词汇、provider），
   自己不 import 任何域模块，也不认识具体业务对象。
 

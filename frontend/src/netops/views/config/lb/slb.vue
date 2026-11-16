@@ -12,7 +12,7 @@ import type { LbMemberRow, LbPoolRow, LbRootRow, LtmChainPool, LtmChainRow, LtmF
 
 const filterDevice = ref<number | ''>('')
 
-// 关联链聚合（/api/lb-chain/slb/）：每行一条 VS → 池 → 成员，
+// 关联链聚合（/api/analysis/lb-chain/slb/）：每行一条 VS → 池 → 成员，
 // 前端转成「根行（VS 自身字段）+ 展开面板（池 → 成员）」——两者各用各的列
 const {
   data: rows,

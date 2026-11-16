@@ -1,7 +1,7 @@
 """配置域 ViewSet（从 assets/api/views.py 迁入）。
 
-URL 前缀不变：`configs/api/urls.py` 与 assets 共用 `/api/assets/` 段，
-前端零改动。`DeviceConfigViewSet` 的堆叠组归属解析随 `resolve_config_owner` 归本域。
+URL 前缀 ``/api/configs/``（与 app 同名）：`DeviceConfigViewSet` 的堆叠组归属解析
+随 `resolve_config_owner` 归本域。
 """
 
 from rest_framework import viewsets

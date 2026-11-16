@@ -23,7 +23,7 @@ const protocolOptions = [
 
 const fetchAll = () =>
   fetchData(() =>
-    api.get('/api/assets/routes/', {
+    api.get('/api/configs/routes/', {
       params: pageParams({
         device: filterDevice.value || undefined,
         protocol: filterProtocol.value || undefined,

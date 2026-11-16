@@ -1,4 +1,9 @@
-"""配置域路由：与 assets 共用 /api/assets/ 前缀，basename 照抄（前端零改动）。"""
+"""配置域路由：挂在 ``/api/configs/`` 下，前缀与 app 一一对应。
+
+2026-11 之前这些资源与 assets 共用 ``/api/assets/``（拆分时为了前端零改动），
+结果 ``/api/assets/`` 变成三个 app 的杂物间、而 ``/api/configs/`` 反被 ingest 的
+配置仓库读取占着。现在按「一个顶层前缀只归一个域」收口，见 ``handbook/api.md``。
+"""
 
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
@@ -35,5 +40,5 @@ router.register(r"routes", views.RouteViewSet, basename="route")
 router.register(r"arp-mac", views.ArpMacViewSet, basename="arp-mac")
 
 urlpatterns = [
-    path("assets/", include(router.urls)),
+    path("configs/", include(router.urls)),
 ]

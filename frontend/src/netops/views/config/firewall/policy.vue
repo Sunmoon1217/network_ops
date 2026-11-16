@@ -34,7 +34,7 @@ const activeTab = ref<'policy' | 'flows'>('policy')
 const flowPolicy = ref<AccessFlowPolicyFilter | null>(null)
 
 const fetchAll = () =>
-  fetchData(() => api.get('/api/assets/policies/', { params: pageParams({ device: filterDevice.value || undefined }) }))
+  fetchData(() => api.get('/api/configs/policies/', { params: pageParams({ device: filterDevice.value || undefined }) }))
 
 /** 策略行 → 访问流标签页，并按该策略过滤命中的访问流 */
 const openFlows = (id: number, name: string, policyId: string) => {

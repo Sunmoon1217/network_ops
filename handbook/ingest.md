@@ -8,7 +8,7 @@
 
 | 链 | 入口 | 任务 | 说明 |
 |----|------|------|------|
-| 阶段式工作流 | `/api/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
+| 阶段式工作流 | `/api/core/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
 | 配置导入 | `assets.api.views._import_configs` → `workflow.submit_config_job` | `run_config_parsing` → `run_config_storage`（celery chain，两者都 `.si(config_id)`） | Excel 里的配置文件批量导入，走 DeviceConfig |
 | 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
@@ -413,7 +413,7 @@ configs，因此进入枚举集合。ARP/MAC 是可再生的设备运行数据�
   配置**全文**（`run_collection_stage` 会写 `{"config": ...}`），要清得显式加；
 - `--purge-repo` 删的是**整个**仓库，所以强制要求 `--all`；Git 历史里的原文不做重写；
 - 人工 / Excel / 运行态采集的数据不会动。注意 `Route` / `Vrf` 同时也是运行态采集接口
-  （`/api/trace/route-collect*`）的落点，与解析产物共用一张表，按表清无法区分来源；
+  （`/api/analysis/trace/route-collect*`）的落点，与解析产物共用一张表，按表清无法区分来源；
 - 堆叠组：备机不持有配置，产物记在**主设备**名下，所以 `--device <备机>` 会自动折算到
   主设备；
 - 数据库删除在一个事务里，文件系统删除不能回滚，放在事务提交之后。
@@ -485,8 +485,8 @@ python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只
 ## Excel 批量导入（`device_import.py`）
 
 外部资料 → 落库的第二个入口（第一个是采集链）。导入器在 `ingest/device_import.py`，
-两个接口（上传分发 / 模板下载）在 `ingest/api/imports.py`；**URL 与 name 沿用拆分前**
-（`/api/assets/import-devices/` / `import-devices`），前端零改动。落库目标仍是 assets 的
+两个接口（上传分发 / 模板下载）在 `ingest/api/imports.py`；URL 是
+`/api/ingest/import-devices/`、name 是 `import-devices`。落库目标仍是 assets 的
 模型（Device / DeviceGroup / Cabinet / DeviceConfig…），方向 `ingest → assets` ✓。
 
 - **`IMPORT_SHEETS` 是 Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源**：

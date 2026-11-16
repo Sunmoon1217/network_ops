@@ -227,7 +227,7 @@ class _Purge:
             self.write("    （无）")
 
         self.write("  注意：Route / Vrf 与配置解析产物共用同一张表，运行态采集接口")
-        self.write("        （/api/trace/route-collect*）写进去的行也会被一起清掉。")
+        self.write("        （/api/analysis/trace/route-collect*）写进去的行也会被一起清掉。")
 
         if not with_workflow:
             from core.models import Stage, Task

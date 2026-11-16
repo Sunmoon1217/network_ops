@@ -18,11 +18,13 @@ urlpatterns = [
     path("api/schema/openapi.yaml", SpectacularAPIView.as_view(), name="schema"),
     path("api/schema/swagger-ui/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/schema/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    # 域名一个顶层前缀：/api/core/、/api/assets/、/api/configs/、/api/ingest/、
+    # /api/analysis/（+ 独立的大屏面 /api/dashboard/）、/api/docs/。auth 与 me 留在根下。
+    # 归属规则与完整路由表见 handbook/api.md。
     path("api/", include("core.api.urls")),
     path("api/", include("assets.api.urls")),
     path("api/", include("configs.api.urls")),
     path("api/", include("ingest.api.urls")),
-    # 分析域：URL 前缀沿用拆分前的 /api/trace/、/api/internet-analysis/（前端零改动）
     path("api/", include("analysis.api.urls")),
     # 文档域（表格编辑 + 文档转换）：/api/docs/
     path("api/", include("docs.api.urls")),

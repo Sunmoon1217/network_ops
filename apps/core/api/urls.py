@@ -12,6 +12,8 @@ router.register(r"stages", views.StageViewSet, basename="stage")
 
 app_name = "core-api"  # noqa: F811
 urlpatterns = [
+    # auth / me 是横切入口（认证与「当前用户」），不属于任何业务域资源，故意留在 /api/ 根下；
+    # 域资源（tasks / stages）一律进 /api/core/，与其余域保持「一个顶层前缀一个 owner」。
     path("auth/register/", auth.register, name="register"),
     path("auth/login/", auth.login, name="login"),
     path("auth/change-password/", auth.changepassword, name="change-password"),
@@ -19,5 +21,5 @@ urlpatterns = [
     path("me/", auth.me, name="me"),
     # 前端配置（表格列宽等界面偏好）：按用户存取，语义见 preferences 模块
     path("me/preferences/", preferences.preferences, name="preferences"),
-    path("", include(router.urls)),
+    path("core/", include(router.urls)),
 ]

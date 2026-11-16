@@ -1,7 +1,26 @@
 # API 路由
 
-`netops/urls.py` 依次 include 五个应用的 urls，全部挂载在 `/api/` 下。
+`netops/urls.py` 依次 include 六个应用的 urls，全部挂在 `/api/` 下。
 其余路径交给前端 SPA（`netops/views.py` 托管 `frontend/dist`）。
+
+## 前缀归属（一个顶层前缀只归一个域）
+
+| 前缀 | 归属 app | 内容 |
+|------|----------|------|
+| `/api/auth/`、`/api/me/` | core | 认证与「当前用户」是横切入口，故意留在根下，不进 `/api/core/` |
+| `/api/core/` | core | 域资源：`tasks` / `stages` |
+| `/api/assets/` | assets | DCIM（安全区/机房/机柜）、设备、IPAM（标签/网段/IP）、拓扑、CI、软资产 |
+| `/api/configs/` | configs | 26 个配置行资源（device-configs / vlans / ltm-* / gtm-* / policies …） |
+| `/api/ingest/` | ingest | 配置仓库读取（config-repo/）、Excel 导入（import-*）、解析器（parsers/） |
+| `/api/analysis/` | analysis | 追踪 / 互联网资产 / 关联链 / 分组聚合 / 运行监控 / 资产总览 |
+| `/api/docs/` | docs | 表格编辑与文档转换 |
+| `/api/dashboard/` | analysis | 大屏供数：免认证、独立契约（`{status,message,result}`），不并入 `/api/analysis/` |
+| `/api/schema/` | — | OpenAPI 3 文档 |
+
+**为什么这样切**：2026-11 之前 `/api/assets/` 同时装着 assets、configs 的 26 个配置行、
+ingest 的 Excel 导入、analysis 的 overview——四个 app 抢一个前缀，而 `/api/configs/`
+反被 ingest 的配置仓库读取占着；analysis 域则有五种前缀并存。现在按 app 收口，
+前端 `shared/api/*.ts` 的路径与 `handbook` 里的路由表一一对得上。
 
 ## 认证约定
 
@@ -26,7 +45,7 @@
   `search_fields` / `ordering_fields`。前端统一用 `useCrudApi` + `DataPagination` 消费；
   必须全量的场景（下拉选项、前端聚合统计）用 `fetchAllPages`。
 
-## core（`core/api/urls.py`）
+## core（`core/api/urls.py`：auth / me 在根下，域资源在 `/api/core/`）
 
 | 路径 | 说明 |
 |------|------|
@@ -35,68 +54,74 @@
 | `/api/auth/logout/` | 登出 |
 | `/api/me/` | 当前用户信息 |
 | `/api/me/preferences/` | 当前用户的前端配置（表格列宽等）：GET 全量 / PUT 单条 upsert（`value=null` 即删）/ DELETE `?key=`；按用户隔离 |
-| `/api/tasks/` | 任务列表 / 新建（**新建即投递采集阶段**，是 Celery 工作流的入口） |
-| `/api/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
-| `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
-| `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
+| `/api/core/tasks/` | 任务列表 / 新建（**新建即投递采集阶段**，是 Celery 工作流的入口） |
+| `/api/core/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
+| `/api/core/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
+| `/api/core/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
 
-## assets / configs（`assets/api/urls.py` + `configs/api/urls.py`，共用前缀 `/api/assets/`）
+## assets（`assets/api/urls.py`，前缀 `/api/assets/`）
 
-DRF `SimpleRouter`（`trailing_slash=True`）。两个 app 各有一个 router，都挂在
-`path("assets/", ...)` 下——URL 解析按 include 顺序逐个尝试、命中即止，所以前缀共用不冲突
-（2026-11-16 拆分后前端零改动）。**配置行家族 26 个端点（device-configs / device-accounts /
-vlans / vrfs / interfaces / snmp·ntp·syslog-configs / ltm-* / gtm-* / address-books /
-services / policies / nat-rules / routes / arp-mac）由 `configs/api/urls.py` 提供**，
-其余资源仍在 `assets/api/urls.py`。资源列表：
+DRF `SimpleRouter`（`trailing_slash=True`）。资源列表：
 
 ```
 security-zones, datacenters, rooms, cabinets,
-vendors, device-models, devices, device-configs, device-connections, device-accounts,
+vendors, device-models, devices, device-connections,
 device-groups, device-group-members,
+topologies, subnet-usage-logs,
+tags, subnets, ip-addresses,
+configuration-items, physical-servers, virtual-machines,
+database-instances, application-services, ci-relationships,
+domain-assets, load-balancer-services
+```
+
+`domain-assets` / `load-balancer-services` 是软资产：只读，数据由 `sync_soft_assets` 归并产出。
+
+## configs（`configs/api/urls.py`，前缀 `/api/configs/`）
+
+同为 DRF `SimpleRouter`。26 个配置行资源（`ConfigBase` 的 25 个子类 + `DeviceConfig`）：
+
+```
+device-configs, device-accounts,
 vlans, vrfs, interfaces,
 snmp-configs, ntp-configs, syslog-configs,
 ltm-virtual-servers, ltm-pools, ltm-pool-members, ltm-profiles, ltm-irules, ltm-snats, ltm-persists,
 gtm-datacenters, gtm-wideips, gtm-pools, gtm-servers, gtm-vservers,
-address-books, services, policies, nat-rules,
-routes, topologies, arp-mac, subnet-usage-logs,
-tags, subnets, ip-addresses
+address-books, services, policies, nat-rules, routes, arp-mac
 ```
 
-另有函数视图：
+`basename` 与拆分前一致（`reverse("vlan-list")` 仍是 `vlan-list`），改的只有 URL 前缀。
+
+## ingest（`ingest/api/urls.py`，前缀 `/api/ingest/`）
 
 | 路径 | 说明 |
 |------|------|
-| `/api/assets/import-devices/` | Excel 导入设备。Sheet 清单 / 顺序 / 列头 / 导入函数唯一来源是 `ingest/device_import.py` 的 `IMPORT_SHEETS`（接口在 `ingest/api/imports.py`，URL 与 name 沿用拆分前）；含「设备组」Sheet：`组类型 \| 设备名(多个用逗号分隔) \| 描述`，**一行 = 一个设备组**。组名与角色不填表、由导入推：非集群第一台 = 主、第二台 = 备且组名 = 主设备 hostname；集群全部 = 成员且组名由设备名结构里的「安全区+设备类型」得到（设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`，首段 `NET` 大小写不敏感、段数 ≥ 4，安全区与类型取最后两段、类型段去尾部编号，如 `NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname。行是该组的**完整快照**，不在行里的既有成员会被摘掉 |
-| `/api/assets/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
+| `/api/ingest/import-devices/` | Excel 导入设备。Sheet 清单 / 顺序 / 列头 / 导入函数唯一来源是 `ingest/device_import.py` 的 `IMPORT_SHEETS`（接口在 `ingest/api/imports.py`，URL 与 name 沿用拆分前）；含「设备组」Sheet：`组类型 \| 设备名(多个用逗号分隔) \| 描述`，**一行 = 一个设备组**。组名与角色不填表、由导入推：非集群第一台 = 主、第二台 = 备且组名 = 主设备 hostname；集群全部 = 成员且组名由设备名结构里的「安全区+设备类型」得到（设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`，首段 `NET` 大小写不敏感、段数 ≥ 4，安全区与类型取最后两段、类型段去尾部编号，如 `NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname。行是该组的**完整快照**，不在行里的既有成员会被摘掉 |
+| `/api/ingest/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
 
-## ingest（`ingest/api/urls.py`）
+| `/api/ingest/config-repo/content/` | 获取指定 commit 的配置内容 |
+| `/api/ingest/config-repo/diff/` | 对比两个版本的配置差异 |
+| `/api/ingest/config-repo/history/` | 设备配置变更历史 |
+| `/api/ingest/config-repo/devices/` | 列出有配置的设备 |
+| `/api/ingest/parsers/` | 已注册解析器列表 |
+| `/api/ingest/parsers/mapping/` | 解析器 → 模板 → 产出键 → Saver 的映射清单与契约缺口（顶层增量字段 `key_aliases` / `field_aliases` / `savers`，`consumers` 条目附 `canonical_key` / `models`） |
+| `/api/ingest/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
+| `/api/ingest/parsers/templates/<name>/` | 模板文件内容 |
+| `/api/ingest/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
 
-| 路径 | 说明 |
-|------|------|
-| `/api/configs/git-content/` | 获取指定 commit 的配置内容 |
-| `/api/configs/git-diff/` | 对比两个版本的配置差异 |
-| `/api/configs/history/` | 设备配置变更历史 |
-| `/api/configs/devices/` | 列出有配置的设备 |
-| `/api/parsers/` | 已注册解析器列表 |
-| `/api/parsers/mapping/` | 解析器 → 模板 → 产出键 → Saver 的映射清单与契约缺口（顶层增量字段 `key_aliases` / `field_aliases` / `savers`，`consumers` 条目附 `canonical_key` / `models`） |
-| `/api/parsers/templates/` | TTP 模板文件列表（`configs/` + `running/`） |
-| `/api/parsers/templates/<name>/` | 模板文件内容 |
-| `/api/parsers/templates/<name>/update/` | 更新模板文件内容（PUT） |
-
-## analysis（`analysis/api/urls.py`，前缀沿用拆分前，前端零改动）
+## analysis（`analysis/api/urls.py`，前缀 `/api/analysis/`）
 
 | 路径 | 说明 |
 |------|------|
-| `/api/assets/overview/` | 资产 + 配置行总览聚合（Home 页一次拿全）。`assets` + `configs` 的跨域只读统计，实现在 `analysis/api/overview.py`——**路径与 name 沿用拆分前**，前端零改动 |
-| `/api/trace/` | 路径追踪 |
-| `/api/trace/route-collect/` | 路由采集 |
-| `/api/trace/route-collect-raw/` | 路由采集（原始输出） |
-| `/api/trace/routes/` | 路由列表 |
-| `/api/trace/dns-query/` | DNS 查询 |
-| `/api/internet-analysis/` | 互联网资产分析结果（**只读缓存**，未分析过返回 404） |
-| `/api/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
-| `/api/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
-| `/api/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤 |
+| `/api/analysis/overview/` | 资产 + 配置行总览聚合（Home 页一次拿全）。`assets` + `configs` 的跨域只读统计，实现在 `analysis/api/overview.py`；name 仍是 `assets-overview` |
+| `/api/analysis/trace/` | 路径追踪 |
+| `/api/analysis/trace/route-collect/` | 路由采集 |
+| `/api/analysis/trace/route-collect-raw/` | 路由采集（原始输出） |
+| `/api/analysis/trace/routes/` | 路由列表 |
+| `/api/analysis/trace/dns-query/` | DNS 查询 |
+| `/api/analysis/internet-analysis/` | 互联网资产分析结果（**只读缓存**，未分析过返回 404） |
+| `/api/analysis/internet-analysis/analyze/` | **触发分析**并刷新缓存（POST） |
+| `/api/analysis/internet-analysis/export/` | 导出缓存结果为 xlsx（只读缓存） |
+| `/api/analysis/access-flows/` | 访问流（策略展开结果）**只读**列表，`?device=` / `?policy=` 走 GIN 包含过滤 |
 | `/api/analysis/queue-status/` | 队列积压巡检（只读）：celery 队列 / Stream lag / PEL / 消费者心跳 + 告警列表，Home 页卡片 30s 轮询 |
 | `/api/analysis/redis-status/` | Redis 服务状态（只读，INFO 口径）：内存/连接/命中率/键空间/运行时长，「任务中心 → 运行监控」页轮询 |
 | `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，同页轮询 |

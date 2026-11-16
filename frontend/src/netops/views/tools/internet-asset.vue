@@ -248,7 +248,7 @@ const loadCached = async () => {
   }
   analysisLoading.value = true
   try {
-    const res = await api.get('/api/internet-analysis/', { params: { device: selectedDevice.value } })
+    const res = await api.get('/api/analysis/internet-analysis/', { params: { device: selectedDevice.value } })
     result.value = res.data as AnalysisResult
     analyzedAt.value = res.data?.analyzed_at ?? ''
   } catch (e: any) {
@@ -268,7 +268,7 @@ const runAnalysis = async () => {
   if (!selectedDevice.value) return
   analysisLoading.value = true
   try {
-    const res = await api.post('/api/internet-analysis/analyze/', null, {
+    const res = await api.post('/api/analysis/internet-analysis/analyze/', null, {
       params: { device: selectedDevice.value },
     })
     result.value = res.data as AnalysisResult
@@ -297,7 +297,7 @@ const handleExport = async () => {
   if (!selectedDevice.value) return
   exportLoading.value = true
   try {
-    const res = await api.get('/api/internet-analysis/export/', {
+    const res = await api.get('/api/analysis/internet-analysis/export/', {
       params: { device: selectedDevice.value },
       responseType: 'blob',
     })

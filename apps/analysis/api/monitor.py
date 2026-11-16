@@ -5,7 +5,7 @@
 inspect 广播），30s 轮询无压力。
 
 **只读、只报警、不干预**：背压是生产者侧的事（``access_stream.backlog``），
-取消/撤销任务走 ``/api/tasks/<id>/cancel/``；监控端绝不在这里删消息 / 清队列 /
+取消/撤销任务走 ``/api/core/tasks/<id>/cancel/``；监控端绝不在这里删消息 / 清队列 /
 revoke 任务。
 """
 

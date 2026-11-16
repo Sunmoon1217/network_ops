@@ -13,7 +13,7 @@ const { data: natRules, loading, search, page, pageSize, total, fetchData, refet
 const filterDevice = ref<number | ''>('')
 
 const fetchAll = () =>
-  fetchData(() => api.get('/api/assets/nat-rules/', { params: pageParams({ device: filterDevice.value || undefined }) }))
+  fetchData(() => api.get('/api/configs/nat-rules/', { params: pageParams({ device: filterDevice.value || undefined }) }))
 
 watch(filterDevice, resetAndFetch)
 onMounted(fetchAll)

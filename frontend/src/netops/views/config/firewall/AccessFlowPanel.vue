@@ -9,7 +9,7 @@ import api from '@/api/index'
 import type { AccessFlowItem, AccessFlowPolicyFilter, FlowAuditFlags, FlowContext } from '@/types'
 
 /**
- * 访问流面板：策略展开后的业务流审计视图（数据源 `/api/access-flows/`，只读）。
+ * 访问流面板：策略展开后的业务流审计视图（数据源 `/api/analysis/access-flows/`，只读）。
  *
  * 与「策略列表」是两个视角：这里一行 = 一条 (源, 目的, 服务, 动作) 访问流，
  * `contexts` 列展开命中它的全部设备/策略；同一行出现
@@ -47,7 +47,7 @@ const filterAction = ref<'' | 'allow' | 'deny'>('')
 
 const fetchAll = () =>
   fetchData(() =>
-    api.get('/api/access-flows/', {
+    api.get('/api/analysis/access-flows/', {
       params: pageParams({
         device: filterDevice.value || undefined,
         policy: props.policyFilter?.id,
