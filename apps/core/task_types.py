@@ -1,6 +1,6 @@
 """业务词汇注册表：任务类型、阶段类型的词汇与显示名，以及作用目标的解析。
 
-为什么要有这张表（见 ``handbook/design/task-framework.md``）：
+为什么要有这张表（见 ``handbook/tasks.md``）：
 
 - ``core`` 只提供「建任务 / 投递阶段 / 取消」这套**通用机制**，它不该认识
   ``collect_config`` / ``collection`` 这类业务词汇——那些是各业务域的语义。

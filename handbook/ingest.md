@@ -20,6 +20,8 @@
 `ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
 `core.Task.task_type` / `core.Stage.stage_type` 因此是**自由字符串**（不带 `choices`）：
 词表一旦写进迁移，就会与运行时注册永久漂移；显示名一律由注册表反查。
+机制本身（注册表 API、字段语义、新增任务类型要改哪几处）见
+[`tasks.md`](tasks.md)，本节只讲 ingest 这条链怎么用它。
 
 **任务的作用目标是软引用**：`Task.target_type` + `target_id` + `target_label`，core 侧
 没有 `device` 外键。设备由 assets 在 `ready()` 里注册（`register_target_type("device", …,

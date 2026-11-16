@@ -1,8 +1,8 @@
 # core 承载外部连接实例与 client 生命周期
 
 > **状态：提案（2026-11-16 二次评审已修正），待实施。**
-> 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制见
-> [`task-framework.md`](task-framework.md)。
+> 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制（已落地）见
+> [`../tasks.md`](../tasks.md)。
 
 ## 结论先行
 
@@ -70,7 +70,8 @@ SSH / napalm / netmiko 连接（address / port / username / password / enable_pa
 
 ### 边界一：注册范式
 
-照抄 `task-framework.md` 里 `core/task_types.py` 的既有约定——**各域在 `ready()` 里追加**：
+照抄 `core/task_types.py` 的既有约定（现状见 [`../tasks.md`](../tasks.md)）——**各域在
+`ready()` 里追加**：
 
 ```python
 # apps/ingest/apps.py（现状已有同类写法）
@@ -130,7 +131,7 @@ core/integrations/
     └── zabbix.py    从 ingest 迁入
 ```
 
-### core 最终形态（合并 task-framework 后）
+### core 最终形态（任务机制已并入后）
 
 ```
 core/
@@ -286,7 +287,7 @@ def register_providers():
 | 设计稿 | 关系 |
 |---|---|
 | [`layering.md`](layering.md) | 本方案是 core 的第三块职责（用户/认证 + 任务机制 + 外部连接实例）。依赖矩阵里 core 一行**仍是零业务依赖**——core 持有的是域交上来的 provider 对象，不 import 域 |
-| [`task-framework.md`](task-framework.md) | **范本**。`core/task_types.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
+| [`../tasks.md`](../tasks.md) | **范本**（已落地的现状文档）。`core/task_types.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
 | [`assets-configs-split.md`](assets-configs-split.md) | 无直接关系。assets 拆 configs 不触及外部连接 |
 
 **与 egest 的关系**：egest（配置下发 / 消息推送）将来做设备侧写操作时，

@@ -76,7 +76,7 @@ def test_operational_exceptions_are_still_needed():
 def test_core_models_have_no_cross_domain_foreign_key():
     """core 的模型上不许再挂业务域外键。
 
-    曾经的 ``Task.device → assets.Device`` 是 ``task-framework.md`` 步骤 3（方案 C）要消掉的
+    曾经的 ``Task.device → assets.Device`` 是 ``handbook/tasks.md``（作用目标软引用）要消掉的
     债：外键一挂，core 就永远依赖 assets，字符串引用又不会被 AST 扫到。现在作用目标改成了
     ``target_type`` / ``target_id`` 软引用，这条用例守着「不许再挂回去」。
     """

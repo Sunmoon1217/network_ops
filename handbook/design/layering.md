@@ -1,6 +1,6 @@
 # 域分层：依赖矩阵与职责边界
 
-> **状态：实施中（2026-11-16 起）。core 去业务依赖已全部落地（task-framework 步骤 1–3）；
+> **状态：实施中（2026-11-16 起）。core 去业务依赖已全部落地；
 > configs 拆分 / ingest 收窄 / 外部连接收归 core 未动。**
 > 代码里的依赖方向在落地前仍以 `AGENTS.md` 现有描述为准。
 
@@ -48,7 +48,7 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 | `apps/analysis/models/internet_analysis.py:16` | `InternetAnalysis.device → assets.Device` |
 
 `Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
-见 [`task-framework.md`](task-framework.md) §①），现在 core 侧一处也不剩。
+见 [`../tasks.md`](../tasks.md) §作用目标），现在 core 侧一处也不剩。
 
 `AccessFlow` 刻意**不挂外键**（用 `device_ids` / `policy_ids` JSON 数组 + GIN 索引），
 说明项目已经有「物化表不依赖源表外键」的成熟做法。
@@ -75,7 +75,7 @@ core 的其余模型（`User` / `Token` / `UserPreference`）只依赖 `settings
 `core/api/views.py:72`（`cancel_task`）、以及两处注释。加上那行外键，
 core 曾传递依赖 `ingest → assets`。
 
-> **2026-11-16 更新：这 4 处已清零。** `task-framework.md` 步骤 1 把控制函数下沉到
+> **2026-11-16 更新：这 4 处已清零。** 任务控制函数已下沉到
 > `core/tasks.py`，调用方改道，注释同步改掉。现在 core 对 ingest 的 import 是 0。
 >
 > **同时实测出原文漏数的两处 core → analysis**：
@@ -176,9 +176,9 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 现状的 `Task.task_type`（`collect_config` / `ansible_playbook` …）与
 `Stage.stage_type`（`collection` / `parsing` / `storage`）是**ingest 的词汇**，
 `ansible_playbook` 更是未来 egest 的词汇——core 不该知道这些。
-**2026-11-16 已落成自由字符串 + 注册表**（`task-framework.md` 步骤 2）。
+**2026-11-16 已落成自由字符串 + 注册表**。
 
-详见 [`task-framework.md`](task-framework.md)。
+详见 [`../tasks.md`](../tasks.md)。
 
 外部连接实例（Zabbix / 阿里云 / Dify 等 client）的归属见
 [`external-clients.md`](external-clients.md)。它与被管设备的连接
@@ -319,8 +319,8 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 分层是全局约束，**不要一次性全改**。建议按「先让下层变干净」的顺序：
 
-1. **core 去除业务依赖**（[`task-framework.md`](task-framework.md)）——core 变叶子后，
-   上面的拆分才有稳定的基座；
+1. **core 去除业务依赖**（✅ 2026-11-16 已落地，现状见 [`../tasks.md`](../tasks.md)）
+   ——core 变叶子后，上面的拆分才有稳定的基座；
 2. **拆 configs 域**（[`assets-configs-split.md`](assets-configs-split.md)）——迁模型、
    迁 parsers/savers、拆软资产归并；
 3. **ingest 收窄**——去掉配置语义，只留采集与编排；

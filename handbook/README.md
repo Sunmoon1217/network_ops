@@ -20,6 +20,7 @@
 | [`api.md`](api.md) | 全部 HTTP 路由 + 认证/注册约定 + 分页搜索口径 |
 | [`deploy.md`](deploy.md) | 部署与容器化：nginx/静态卷、两个数据目录、entrypoint 四步、健康检查、凭据、镜像 |
 | [`settings.md`](settings.md) | settings 分层与环境变量全表、凭据链、三个环境的守卫矩阵 |
+| [`tasks.md`](tasks.md) | core 通用任务机制：Task/Stage 字段语义、词汇注册表、作用目标软引用、接入指引、迁移手法 |
 | [`ingest.md`](ingest.md) | 配置采集/解析/入库链路：阶段推进、信号防重入、Saver 契约、批量导入 |
 | [`analysis.md`](analysis.md) | 路径追踪、策略展开、访问流链路（队列/背压/单写者/事故复盘）、监控口径 |
 | [`assets.md`](assets.md) | 资产模型与 API：查询约定、导入流程、序列化器分工 |
@@ -27,7 +28,7 @@
 | [`llmtools.md`](llmtools.md) | MCP 工具子系统：注册表、查询计划编译、域接入契约、生命周期约束 |
 | [`cloud.md`](cloud.md) | 阿里云接入：客户端封装、产品语义映射、云资源缓存 |
 | [`roadmap.md`](roadmap.md) | 产品路线图：四阶段 18 项开发任务（含模块指针与状态）、MCP 工具域路线、硬约束 |
-| [`design/`](design/README.md) | **设计提案**（尚未实施）：域分层依赖矩阵、assets/configs 拆分方案、core 通用任务机制、core 外部连接实例 |
+| [`design/`](design/README.md) | **设计提案**（尚未实施）：域分层依赖矩阵、assets/configs 拆分方案、core 外部连接实例 |
 
 ## 注释规范（什么时候写注释、什么时候写文档）
 

@@ -22,7 +22,7 @@ class OperatorConfig(AppConfig):
         """把 ingest 的任务类型 / 阶段词汇登记进 core 的注册表。
 
         方向是「业务域 → core」：core 不认识这些词，只在建任务、投递阶段、渲染
-        ``*_display`` 时按 key 反查（见 ``handbook/design/task-framework.md``）。
+        ``*_display`` 时按 key 反查（见 ``handbook/tasks.md``）。
         词汇原先硬编码在模型字段的 ``choices`` 里；``choices`` 会写进迁移、运行时追加
         必然造成迁移漂移，所以现在由这里登记词与显示名，模型字段是自由字符串。
         """

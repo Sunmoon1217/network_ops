@@ -465,7 +465,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 
 | # | 待定 | 影响 |
 |---|---|---|
-| 1 | `Task.device` 保留 FK 还是改 JSON | 已定方案 C（多态引用，见 [`task-framework.md`](task-framework.md)），A 为过渡态 |
+| 1 | `Task.device` 保留 FK 还是改 JSON | **已落地**：方案 C（多态引用），见 [`../tasks.md`](../tasks.md) §作用目标 |
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
 | 3 | `llmtools/domains/assets/` 改名成什么 | `network/`？`infra/`？（import 修复不受此影响，必须先与拆分同提交落地） |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |

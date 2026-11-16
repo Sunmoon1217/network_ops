@@ -98,7 +98,7 @@ class Task(models.Model):
 
     **作用目标是软引用**：``target_type`` + ``target_id`` 指向任意业务实体（设备、设备组、
     站点…），``target_label`` 是建任务时记下的名字。core 因此不认识任何业务模型，
-    也不会被业务表的删除级联带走（见 ``handbook/design/task-framework.md`` §①）。
+    也不会被业务表的删除级联带走（见 ``handbook/tasks.md``）。
 
     ``task_type`` 同样是**自由字符串**，这里刻意不声明 ``choices``：词表属于业务域，由它们
     在 ``core.task_types`` 注册表里登记。``choices`` 是字段的类属性、会写进迁移，运行时

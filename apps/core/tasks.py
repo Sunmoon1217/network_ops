@@ -1,7 +1,7 @@
 """通用任务机制：建任务、投递阶段、取消。
 
 这一层是**纯机制**：它只认 ``task_type`` / ``stage_type`` 两个字符串与
-``core.task_types`` 注册表，不认识任何业务词汇（见 ``handbook/design/task-framework.md``）。
+``core.task_types`` 注册表，不认识任何业务词汇（见 ``handbook/tasks.md``）。
 
 链路（状态存 PostgreSQL，Redis 只是投递通道）：
 
@@ -68,7 +68,7 @@ def create_task(
     ``first_stage`` 缺省由注册表按 ``task_type`` 反查，所以调用方（core 的 API 层）
     不必知道「采集任务的第一个阶段叫 collection」。
 
-    ``target_type`` / ``target_id`` 是**软引用**的作用目标（见 ``design/task-framework.md``
+    ``target_type`` / ``target_id`` 是**软引用**的作用目标（见 ``handbook/tasks.md``
     §①）：core 不校验、不 join，只负责存；类型与名字的解析归业务域。
     """
     stage_type = first_stage or task_types.first_stage_of(task_type)

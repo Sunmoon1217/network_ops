@@ -1,7 +1,7 @@
 """``Task.device`` 外键 → ``target_type`` / ``target_id`` / ``target_label`` 软引用（方案 C）。
 
 **顺序是这次迁移的全部意义**：先加字段 → ``RunPython`` 回填存量 → 再删外键。
-反过来的话，存量任务与设备的关联会全部丢光（见 ``handbook/design/task-framework.md`` §①）。
+反过来的话，存量任务与设备的关联会全部丢光（见 ``handbook/tasks.md`` §迁移手法）。
 
 反向迁移同样安全：Django 逆序执行时会先重建 ``device`` 列，再跑本函数的 ``backwards``，
 所以能按 ``target_*`` 写回 ``device_id``。
