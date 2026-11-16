@@ -1,7 +1,9 @@
 # assets / configs 域拆分方案
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：实施中（2026-11-16 起）。最小验证切片（`ConfigBase` + `Vlan`）已落地，
+> 其余 23 个子类 / `DeviceConfig` / parsers / savers / admin / API 未迁。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
+> 进度与实测差异见文末 §「实施进度」。
 
 ## 为什么要拆
 
@@ -483,3 +485,58 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 4. 确认表名、索引、约束、`__subclasses__()` 枚举都正确。
 
 **通过后再批量迁其余 24 张子类表 + `DeviceConfig`。** 一次迁 26 张表，出了问题不好定位。
+
+## 实施进度
+
+### 切片 1 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 新 app | `apps/configs/`（`label = "configs"`，`INSTALLED_APPS` 排在 `assets` 之后） |
+| 基类 | `configs/models/base.py` 的 `ConfigBase`；`device` 用**字符串** `"assets.Device"`，不 import assets 的模型 |
+| 首个模型 | `configs/models/network.py` 的 `Vlan` |
+| assets 侧 | `assets/models/network.py` 删掉基类与 `Vlan` 的定义，改为 `from configs.models.base import ConfigBase`；`assets/models/__init__.py` 不再导出二者 |
+| 迁移 | `assets/0036_remove_vlan_state`（`SeparateDatabaseAndState` 只删 state）→ `configs/0001_initial`（建 state + `RunSQL` 把 `assets_vlan` 改名 `configs_vlan`） |
+| 引用点 | 生产 11 处（admin / api / serializers / saver / purge_configs / llmtools）+ 测试 13 处改指 `configs.models` |
+| 工具链 | `pyproject.toml` 的 ruff `known-first-party` 补 `configs`（顺带补上同样漏掉的 `cloud`） |
+
+**实测结论**（克隆开发库 + 空库，两路径都跑了）：
+
+1. **数据完整**：迁移前 `assets_vlan` 2 行 → 迁移后 `configs_vlan` 2 行，ORM 读到的 device hostname 正确。
+2. **约束与索引随表走，不需要改名**：`uni_vlan_device_vid` 不含 app 名；`devices_vlan_pkey` /
+   `devices_vlan_vid_check` 是更早表名（`devices_vlan`）时代的历史命名，`assets_vlan_device_id_*`
+   是 FK 自动索引——RENAME 不改它们，**Django 也不按这些名字做状态比较**，所以既无漂移也无功能
+   影响。提案预留的「逐个核对并在 `SeparateDatabaseAndState` 里改索引/约束名」这一步，实测结论是
+   **核对后确认无需改**（新迁的表若显式命名了带 `assets_` 前缀的索引，仍要单独处理）。
+3. **fresh 库必须显式依赖 assets**：`configs/0001` 的 `dependencies` 指向 `assets/0036`，
+   否则从零 migrate 时外键目标表还没建。两条路径（存量升级 / fresh）都验证过。
+4. **反向可用**：`migrate configs zero` → `migrate assets 0035`，表名改回 `assets_vlan`、2 行数据仍在。
+5. **运行时枚举不受影响**：`ConfigBase.__subclasses__()` 仍是 24 个，`Vlan` 的
+   `app_label` 变成 `configs`，`purge_configs` 的枚举照常工作。
+6. **手写 state 与模型严格一致**：`makemigrations --check` 只剩 `cloud` 那 8 条既存漂移。
+
+**与提案的差异**：
+
+1. **切片期存在临时反向依赖**：其余 23 个 `ConfigBase` 子类还在 `assets/models/network.py`，
+   只能 `from configs.models.base import ConfigBase` —— 即 **assets → configs**。提案按「一次迁完」
+   写，没提这个过渡态。它会在最后一批子类迁走时消失，切片阶段**不给 assets 加分层守卫**
+   （否则等于给过渡态写一条假约束）。
+2. **`assets/models/__init__.py` 不做 re-export**。re-export 能让 47 处 import 零改动，但会把
+   「模型已经不在 assets」这件事藏起来，批量迁移时也分不清哪些是真引用。全部改指 `configs.models`。
+3. **`configs` 只是新 app 的起点，`apps.py` 暂时没有 `ready()`**：本域目前没有要在启动时注册的
+   东西（软资产信号、词汇注册都随后续步骤进来）。
+
+### 下一步（按依赖顺序）
+
+1. **迁其余 23 个子类 + `DeviceConfig`**：同一手法；子类多，迁移可以脚本生成，但
+   **每条 `assets` 侧 DeleteModel 与 `configs` 侧 CreateModel 的字段必须逐字段对齐**（照抄
+   `0023`~`0035` 之后的终态）。
+2. **迁 parsers / savers / mapping**：注意 `savers/*.py` 里 `from assets.serializers.views import *Serializer`
+   要跟着改成 `configs.serializers.views`（序列化器先合并新旧两套，见 §「序列化器：先合并新旧，再搬」）。
+3. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄。
+4. **llmtools**：`domains/assets/` 改名 + `specs/ipam.py` 的 `models.` → `cm.`（本轮已先把 `Vlan`
+   两处改成 `cm.Vlan`，可作为范本）。
+5. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
+   `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
+6. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+

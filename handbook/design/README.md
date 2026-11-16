@@ -19,7 +19,7 @@
 | 文件 | 内容 | 状态 |
 |------|------|------|
 | [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 实施中（core 去业务依赖已全部落地；configs 拆分 / ingest 收窄 / 外部连接未动） |
-| [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 提案（2026-11-16 评审修正），待实施 |
+| [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 实施中（切片 1 = `ConfigBase` + `Vlan` 已落地，2026-11-16） |
 | [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 提案（2026-11-16 评审修正），待实施 |
 
 ## 这批设计的共同前提

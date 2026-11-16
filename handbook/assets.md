@@ -11,12 +11,18 @@
 `ConfigBase`，`purge_configs` 用 `ConfigBase.__subclasses__()` 运行时枚举它们（当前 24 个子类，
 其中 22 个已配 Saver）。
 
+> **配置行正在迁往 `configs` 域**（2026-11-16 起，见
+> [`design/assets-configs-split.md`](design/assets-configs-split.md)）：`ConfigBase` 与 `Vlan`
+> 已经搬走（`from configs.models import Vlan`），其余 23 个子类仍在 `assets/models/network.py`。
+> 下表的「配置基类 / 网络」两行是**迁移中的现状**，不是终态——终态里它们全在 `configs`，
+> assets 只留 DCIM / 设备台账 / IPAM / CI 台账。
+
 | 领域 | 模型 |
 |------|------|
 | DCIM | SecurityZone, DataCenter, Room, Cabinet |
 | 设备 | Vendor, DeviceModel, Device, DeviceConnection, DeviceConfig, DeviceAccount, DeviceGroup, DeviceGroupMember |
-| 配置基类 | `ConfigBase`（被 Vrf / Interface / LTM / GTM / 防火墙等模型继承） |
-| 网络 | Vlan, Vrf, Interface, SnmpConfig, NtpConfig, SyslogConfig |
+| 配置基类 | `ConfigBase`（已迁 `configs`；被 Vrf / Interface / LTM / GTM / 防火墙等模型继承） |
+| 网络 | Vlan（已迁 `configs`）, Vrf, Interface, SnmpConfig, NtpConfig, SyslogConfig |
 | 负载均衡 LTM | LtmVirtualServer, LtmPool, LtmPoolMember, LtmProfile, LtmIRule, LtmSNAT, LtmPersist |
 | 全局负载均衡 GTM | GtmDatacenter, GtmWideip, GtmPool, GtmServer, GtmVServer |
 | 防火墙 | AddressBook, Service, Policy, NatRule |
