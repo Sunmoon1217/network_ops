@@ -1,9 +1,10 @@
 # core 承载通用任务机制
 
-> **状态：实施中（2026-11-16 起）。步骤 1 已落地，步骤 2 / 3 未动。**
+> **状态：已落地（2026-11-16，三步全完成）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
-> 进度与实测差异见文末 §「实施进度」——**别拿本文当现状**，现状看
-> [`../ingest.md`](../ingest.md)。
+> 本文保留为**决策记录**（为什么这么改、影响面、与提案的差异）；现状看
+> [`../ingest.md`](../ingest.md)。按 `design/README.md` 的规则，内容待并入
+> `handbook/` 根目录后删除本文件。
 
 ## 结论先行
 
@@ -386,8 +387,27 @@ core 的 API 层不解释 `target_type`，但 `TaskViewSet` 的过滤、admin �
    `AllValuesFieldListFilter`（按库里出现过的字符串过滤、没有中文标签）；改成注册表快照后
    选项带标签，业务域新登记的词自动出现，且不产生迁移。
 
-### 步骤 3 — 未开始
+### 步骤 3 — 已落地（2026-11-16）
 
-- `Task.device` 方案 C：
-  `tests/core/test_layering.py::test_known_debt_task_device_fk_still_points_at_assets`
-  是那条债的记号，落地时删。
+| 项 | 落点 |
+|---|---|
+| 模型 | `Task.device` 外键删除；新增 `target_type` / `target_id` / `target_label` + `(target_type, target_id)` 复合索引 |
+| 迁移 | `core/0006_task_soft_target`：**AddField → RunPython 回填 → RemoveField → AddIndex**（顺序即全部意义），回填内做计数校验；反向迁移把 `target_*` 写回 `device_id` |
+| 目标注册 | `core/task_types.register_target_type(key, label, resolver, feeds_device_fields=)`；assets 在 `ready()` 里登记 `"device"` 与 hostname resolver；`device_field_target_type()` 回答「谁填 `Task.device` 这两个历史字段」 |
+| API 契约 | `TaskSerializer` 的 `device` 仍可读可写、`device_hostname` 只读；写侧在 `validate()` 里折成 `target_*`（校验也在这里，避免被视图兜成 503） |
+| 查询 | 列表 `?device=<id>` → `target_type=device + target_id`；搜索改 `target_label`（不再 join 业务表）；admin 用 `target` 列 + `TargetTypeFilter`；`purge_configs` 按 `target_type="device"` 清理 |
+| 业务侧反查 | `ingest/tasks.py` 的 `_task_device(task)`：`target_type=="device"` 时按 `target_id` 取设备 |
+
+与提案的差异（承接上面的编号）：
+
+8. **多了一个 `target_label`**。提案只有 `target_type` + `target_id`，但那样
+   `device_hostname` 就得在序列化时回查 Device——N+1，且 core 要 import assets。改成建任务时
+   把名字记下来：列表零查询、admin 可搜索，语义上也更对（任务记录该留下当时的设备名）。
+   代价是设备改名后历史任务仍显示旧名——对任务记录这是可接受的。
+9. **`device` / `device_hostname` 的兼容放在模型 property 上**，serializer 只声明字段。
+   两个字段的取值规则（哪个 `target_type` 算设备）由注册表回答，core 里不出现 `"device"` 字面量。
+10. **校验挪到 `validate()`**。视图把 `save()` 的任何异常兜成 503，若在 `create()` 里
+    报「设备不存在」，客户端会以为服务端挂了。
+11. **数据迁移做了真实验证**：scratch 库上 0004 → 造一条只带 `device_id` 的任务 → 0006，
+    回填结果为 `('device', 1, '_mig_dev')` 且 `device_id` 列已删；再回退到 0005，
+    `device_id` 被写回 1（反向可用）。

@@ -20,6 +20,12 @@
 `ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
 `core.Task.task_type` / `core.Stage.stage_type` 因此是**自由字符串**（不带 `choices`）：
 词表一旦写进迁移，就会与运行时注册永久漂移；显示名一律由注册表反查。
+
+**任务的作用目标是软引用**：`Task.target_type` + `target_id` + `target_label`，core 侧
+没有 `device` 外键。设备由 assets 在 `ready()` 里注册（`register_target_type("device", …,
+feeds_device_fields=True)`），阶段任务要拿设备时走 `ingest/tasks.py` 的 `_task_device(task)`
+（按 `target_id` 反查，设备已删则返回 `None`）。API 的 `device` / `device_hostname`
+两个历史字段由 `Task` 的兼容 property 提供，前端零改动。
 「下一个阶段是什么」是链路知识，留在这里。
 
 `signals.on_stage_complete` 监听 `core.Stage` 的 post_save，按

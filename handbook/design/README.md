@@ -18,9 +18,9 @@
 
 | 文件 | 内容 | 状态 |
 |------|------|------|
-| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 实施中（步骤 1 已落地，2026-11-16） |
+| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 实施中（core 去业务依赖已全部落地；configs 拆分 / ingest 收窄 / 外部连接未动） |
 | [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 提案（2026-11-16 评审修正），待实施 |
-| [`task-framework.md`](task-framework.md) | core 承载通用任务机制：Task/Stage 改造、阶段推进、跨域任务编排 | 实施中（步骤 1/2 已落地，步骤 3 未动，2026-11-16） |
+| [`task-framework.md`](task-framework.md) | core 承载通用任务机制：Task/Stage 改造、阶段推进、跨域任务编排 | **已落地**（步骤 1–3 全完成，2026-11-16）；内容待并入 `handbook/` 后删除 |
 | [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 提案（2026-11-16 评审修正），待实施 |
 
 ## 这批设计的共同前提

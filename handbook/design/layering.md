@@ -1,6 +1,6 @@
 # 域分层：依赖矩阵与职责边界
 
-> **状态：实施中（2026-11-16 起）。步骤 1（core 去业务依赖）已落地；
+> **状态：实施中（2026-11-16 起）。core 去业务依赖已全部落地（task-framework 步骤 1–3）；
 > configs 拆分 / ingest 收窄 / 外部连接收归 core 未动。**
 > 代码里的依赖方向在落地前仍以 `AGENTS.md` 现有描述为准。
 
@@ -41,28 +41,39 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 `DeviceConfigViewSet` 本就随 DeviceConfig 归 configs）。细节见
 [`assets-configs-split.md`](assets-configs-split.md)。
 
-### 两处跨 app 外键（指向 assets）
+### 跨 app 外键（指向 assets）
 
 | 位置 | 目标 |
 |---|---|
-| `apps/core/models.py:115` | `Task.device → assets.Device` |
 | `apps/analysis/models/internet_analysis.py:16` | `InternetAnalysis.device → assets.Device` |
+
+`Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
+见 [`task-framework.md`](task-framework.md) §①），现在 core 侧一处也不剩。
 
 `AccessFlow` 刻意**不挂外键**（用 `device_ids` / `policy_ids` JSON 数组 + GIN 索引），
 说明项目已经有「物化表不依赖源表外键」的成熟做法。
 
-### core 对 assets 的依赖只有一行
+### core 对 assets 的依赖已是 0
 
 ```python
-# apps/core/models.py:115
+# apps/core/models.py（改造前）
 device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, ...)
+
+# apps/core/models.py（现在）
+target_type = models.CharField(max_length=50, blank=True, default="")
+target_id = models.BigIntegerField(null=True, blank=True)
+target_label = models.CharField(max_length=255, blank=True, default="")
 ```
+
+「作用目标是设备时怎么校验、怎么显示名字」由 assets 在 `ready()` 里注册进
+`core/task_types`（`register_target_type("device", ..., feeds_device_fields=True)`），
+core 自己既没有那个外键，也不认识 `"device"` 这个词。
 
 core 的其余模型（`User` / `Token` / `UserPreference`）只依赖 `settings.AUTH_USER_MODEL`。
 
 **但 core 对 ingest 有 4 处**：`core/api/serializers.py:195`（`start_task`）、
-`core/api/views.py:72`（`cancel_task`）、以及两处注释。加上上面那行外键，
-core 传递依赖 `ingest → assets`。
+`core/api/views.py:72`（`cancel_task`）、以及两处注释。加上那行外键，
+core 曾传递依赖 `ingest → assets`。
 
 > **2026-11-16 更新：这 4 处已清零。** `task-framework.md` 步骤 1 把控制函数下沉到
 > `core/tasks.py`，调用方改道，注释同步改掉。现在 core 对 ingest 的 import 是 0。
@@ -164,7 +175,8 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 现状的 `Task.task_type`（`collect_config` / `ansible_playbook` …）与
 `Stage.stage_type`（`collection` / `parsing` / `storage`）是**ingest 的词汇**，
-`ansible_playbook` 更是未来 egest 的词汇——core 不该知道这些，要改成自由字符串。
+`ansible_playbook` 更是未来 egest 的词汇——core 不该知道这些。
+**2026-11-16 已落成自由字符串 + 注册表**（`task-framework.md` 步骤 2）。
 
 详见 [`task-framework.md`](task-framework.md)。
 
