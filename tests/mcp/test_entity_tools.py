@@ -19,17 +19,8 @@ import pytest
 from mcp import Client
 
 import llmtools  # noqa: F401 — 包初始化即接线：工具挂到 llmtools.mcpserver 上
-from assets.models import (
-    ArpMac,
-    Device,
-    DeviceGroup,
-    DeviceGroupMember,
-    DeviceModel,
-    Interface,
-    IPAddress,
-    Vendor,
-)
-from configs.models import Vlan
+from assets.models import Device, DeviceGroup, DeviceGroupMember, DeviceModel, IPAddress, Vendor
+from configs.models import ArpMac, Interface, Vlan
 from llmtools import mcpserver as netops_mcp
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -206,9 +197,7 @@ def test_get_record_numeric_key_beats_primary_key():
 def test_get_record_missing_and_bad_include():
     _make_device("NET-SW01", "switch")
     assert "不存在" in _error(_call_tool("get_record", {"entity_type": "device", "key": "nope"}))
-    assert "不支持 include" in _error(
-        _call_tool("get_record", {"entity_type": "device", "key": "NET-SW01", "include": "cabinets"})
-    )
+    assert "不支持 include" in _error(_call_tool("get_record", {"entity_type": "device", "key": "NET-SW01", "include": "cabinets"}))
 
 
 def test_bundle_returns_profile_and_default_sections():

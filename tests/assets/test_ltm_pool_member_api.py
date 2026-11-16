@@ -7,7 +7,8 @@
 
 import pytest
 
-from assets.models import Device, LtmPoolMember
+from assets.models import Device
+from configs.models import LtmPoolMember
 
 URL = "/api/assets/ltm-pool-members/"
 

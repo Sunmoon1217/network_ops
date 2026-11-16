@@ -23,7 +23,7 @@ from rest_framework.response import Response
 
 from analysis.api.group_merge import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, resolve_groups
 from assets.api.serializers import _format_address_entry, _format_service_entry
-from assets.models import NatRule, Policy
+from configs.models import NatRule, Policy
 from netops.pagination import StandardPagination
 
 # 策略 / NAT 的标量比较字段（M2M 另算）
@@ -86,18 +86,14 @@ def _merge_policies(group: GroupKey) -> list[dict]:
     order = {device.pk: index for index, device in enumerate(group.devices)}
 
     by_pid: dict[str, list[Policy]] = {}
-    for policy in Policy.objects.filter(device_id__in=device_ids).prefetch_related(
-        "source_addresses", "destination_addresses", "services"
-    ):
+    for policy in Policy.objects.filter(device_id__in=device_ids).prefetch_related("source_addresses", "destination_addresses", "services"):
         by_pid.setdefault(policy.policy_id, []).append(policy)
 
     rows: list[dict] = []
     for policy_id, items in by_pid.items():
         items.sort(key=lambda policy: order.get(policy.device_id, 0))
         row_device_ids = [policy.device_id for policy in items]
-        conflict_fields = [
-            field for field in _POLICY_SCALARS if _differs([getattr(policy, field) for policy in items])
-        ]
+        conflict_fields = [field for field in _POLICY_SCALARS if _differs([getattr(policy, field) for policy in items])]
         for field in ("source_addresses", "destination_addresses", "services"):
             getter = _service_set if field == "services" else _address_set
             if _differs([getter(policy, field) for policy in items]):
@@ -146,9 +142,7 @@ def _merge_nat_rules(group: GroupKey) -> list[dict]:
     for rule_order, items in by_order.items():
         items.sort(key=lambda rule: order.get(rule.device_id, 0))
         row_device_ids = [rule.device_id for rule in items]
-        conflict_fields = [
-            field for field in _NAT_SCALARS if _differs([getattr(rule, field) for rule in items])
-        ]
+        conflict_fields = [field for field in _NAT_SCALARS if _differs([getattr(rule, field) for rule in items])]
         for field in ("source_addresses", "destination_addresses", "services"):
             getter = _service_set if field == "services" else _address_set
             if _differs([getter(rule, field) for rule in items]):

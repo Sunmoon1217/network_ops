@@ -8,16 +8,12 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from assets.device_import import IMPORT_SHEETS
-from assets.models import (
+from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceModel, Room, SecurityZone, Subnet, Vendor
+from configs.models import (
     AddressBook,
     ArpMac,
-    Cabinet,
-    DataCenter,
-    Device,
     DeviceAccount,
     DeviceConfig,
-    DeviceConnection,
-    DeviceModel,
     GtmDatacenter,
     GtmPool,
     GtmWideip,
@@ -28,17 +24,13 @@ from assets.models import (
     NatRule,
     NtpConfig,
     Policy,
-    Room,
     Route,
-    SecurityZone,
     Service,
     SnmpConfig,
-    Subnet,
     SyslogConfig,
-    Vendor,
+    Vlan,
     Vrf,
 )
-from configs.models import Vlan
 
 from .serializers import (
     CabinetSerializer,
@@ -453,7 +445,7 @@ class SyslogConfigViewSet(viewsets.ModelViewSet):
 
 
 class LtmVirtualServerViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmVirtualServer
+    from configs.models import LtmVirtualServer
 
     from .serializers import LtmVirtualServerSerializer
 
@@ -471,7 +463,7 @@ class LtmVirtualServerViewSet(viewsets.ModelViewSet):
 
 
 class LtmPoolViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmPool
+    from configs.models import LtmPool
 
     from .serializers import LtmPoolSerializer
 
@@ -489,7 +481,7 @@ class LtmPoolViewSet(viewsets.ModelViewSet):
 
 
 class LtmPoolMemberViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmPoolMember
+    from configs.models import LtmPoolMember
 
     from .serializers import LtmPoolMemberSerializer
 
@@ -507,7 +499,7 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
 
 
 class LtmProfileViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmProfile
+    from configs.models import LtmProfile
 
     from .serializers import LtmProfileSerializer
 
@@ -524,7 +516,7 @@ class LtmProfileViewSet(viewsets.ModelViewSet):
 
 
 class LtmIRuleViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmIRule
+    from configs.models import LtmIRule
 
     from .serializers import LtmIRuleSerializer
 
@@ -541,7 +533,7 @@ class LtmIRuleViewSet(viewsets.ModelViewSet):
 
 
 class LtmSNATViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmSNAT
+    from configs.models import LtmSNAT
 
     from .serializers import LtmSNATSerializer
 
@@ -558,7 +550,7 @@ class LtmSNATViewSet(viewsets.ModelViewSet):
 
 
 class LtmPersistViewSet(viewsets.ModelViewSet):
-    from assets.models import LtmPersist
+    from configs.models import LtmPersist
 
     from .serializers import LtmPersistSerializer
 
@@ -578,7 +570,7 @@ class LtmPersistViewSet(viewsets.ModelViewSet):
 
 
 class GtmDatacenterViewSet(viewsets.ModelViewSet):
-    from assets.models import GtmDatacenter
+    from configs.models import GtmDatacenter
 
     from .serializers import GtmDatacenterSerializer
 
@@ -595,7 +587,7 @@ class GtmDatacenterViewSet(viewsets.ModelViewSet):
 
 
 class GtmWideipViewSet(viewsets.ModelViewSet):
-    from assets.models import GtmWideip
+    from configs.models import GtmWideip
 
     from .serializers import GtmWideipSerializer
 
@@ -613,7 +605,7 @@ class GtmWideipViewSet(viewsets.ModelViewSet):
 
 
 class GtmPoolViewSet(viewsets.ModelViewSet):
-    from assets.models import GtmPool
+    from configs.models import GtmPool
 
     from .serializers import GtmPoolSerializer
 
@@ -631,7 +623,7 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
 
 
 class GtmServerViewSet(viewsets.ModelViewSet):
-    from assets.models import GtmServer
+    from configs.models import GtmServer
 
     from .serializers import GtmServerSerializer
 
@@ -649,7 +641,7 @@ class GtmServerViewSet(viewsets.ModelViewSet):
 
 
 class GtmVServerViewSet(viewsets.ModelViewSet):
-    from assets.models import GtmVServer
+    from configs.models import GtmVServer
 
     from .serializers import GtmVServerSerializer
 
@@ -673,7 +665,7 @@ class GtmVServerViewSet(viewsets.ModelViewSet):
 
 
 class AddressBookViewSet(viewsets.ModelViewSet):
-    from assets.models import AddressBook
+    from configs.models import AddressBook
 
     from .serializers import AddressBookSerializer
 
@@ -690,7 +682,7 @@ class AddressBookViewSet(viewsets.ModelViewSet):
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
-    from assets.models import Service
+    from configs.models import Service
 
     from .serializers import ServiceSerializer
 
@@ -707,7 +699,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
 
 class PolicyViewSet(viewsets.ModelViewSet):
-    from assets.models import Policy
+    from configs.models import Policy
 
     from .serializers import PolicySerializer
 
@@ -734,7 +726,7 @@ class PolicyViewSet(viewsets.ModelViewSet):
 
 
 class NatRuleViewSet(viewsets.ModelViewSet):
-    from assets.models import NatRule
+    from configs.models import NatRule
 
     from .serializers import NatRuleSerializer
 
@@ -811,7 +803,7 @@ class IPAddressViewSet(viewsets.ModelViewSet):
 
 
 class RouteViewSet(viewsets.ModelViewSet):
-    from assets.models import Route
+    from configs.models import Route
 
     from .serializers import RouteSerializer
 
@@ -843,7 +835,7 @@ class TopologyViewSet(viewsets.ModelViewSet):
 
 
 class ArpMacViewSet(viewsets.ModelViewSet):
-    from assets.models import ArpMac
+    from configs.models import ArpMac
 
     from .serializers import ArpMacSerializer
 

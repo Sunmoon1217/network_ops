@@ -20,18 +20,8 @@ from dataclasses import dataclass, field
 from django.db import connection, transaction
 from django.db.models import Count
 
-from assets.models import (
-    CIType,
-    ConfigurationItem,
-    DomainAsset,
-    GtmPool,
-    GtmServer,
-    GtmVServer,
-    GtmWideip,
-    LoadBalancerService,
-    LtmPoolMember,
-    LtmVirtualServer,
-)
+from assets.models import CIType, ConfigurationItem, DomainAsset, LoadBalancerService
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPoolMember, LtmVirtualServer
 
 #: 地址与端口的分隔符（IPv6 也用 ``#``，与前端 ``types/lb.ts`` 同约定）
 TARGET_SEPARATOR = "#"

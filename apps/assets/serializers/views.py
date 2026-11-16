@@ -13,6 +13,7 @@
 from rest_framework import serializers
 
 from assets import models
+from configs import models as cm
 from configs.models import Vlan
 
 from .base import DeviceRelatedSerializer, ParentClass, model
@@ -101,7 +102,7 @@ class DeviceSerializer(ParentClass):
         return obj.get_device_type_display() or ""
 
 
-@model(model=models.DeviceConfig)
+@model(model=cm.DeviceConfig)
 class DeviceConfigSerializer(ParentClass):
     device_name = serializers.CharField(source="device.hostname", read_only=True)
 
@@ -116,112 +117,112 @@ class VlanSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.Vrf)
+@model(model=cm.Vrf)
 class VrfSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.Interface)
+@model(model=cm.Interface)
 class InterfaceSerializer(DeviceRelatedSerializer):
     vrf_name = serializers.CharField(source="vrf.name", read_only=True, default="")
 
 
-@model(model=models.DeviceAccount)
+@model(model=cm.DeviceAccount)
 class DeviceAccountSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.SnmpConfig)
+@model(model=cm.SnmpConfig)
 class SnmpConfigSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.NtpConfig)
+@model(model=cm.NtpConfig)
 class NtpConfigSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.SyslogConfig)
+@model(model=cm.SyslogConfig)
 class SyslogConfigSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmVirtualServer)
+@model(model=cm.LtmVirtualServer)
 class LtmVirtualServerSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmPool)
+@model(model=cm.LtmPool)
 class LtmPoolSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmPoolMember)
+@model(model=cm.LtmPoolMember)
 class LtmPoolMemberSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmProfile)
+@model(model=cm.LtmProfile)
 class LtmProfileSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmIRule)
+@model(model=cm.LtmIRule)
 class LtmIRuleSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmSNAT)
+@model(model=cm.LtmSNAT)
 class LtmSNATSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.LtmPersist)
+@model(model=cm.LtmPersist)
 class LtmPersistSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.GtmDatacenter)
+@model(model=cm.GtmDatacenter)
 class GtmDatacenterSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.GtmWideip)
+@model(model=cm.GtmWideip)
 class GtmWideipSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.GtmPool)
+@model(model=cm.GtmPool)
 class GtmPoolSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.AddressBook)
+@model(model=cm.AddressBook)
 class AddressBookSerializer(DeviceRelatedSerializer):
     parent_name = serializers.CharField(source="parent.name", read_only=True, default="")
 
 
-@model(model=models.GtmServer)
+@model(model=cm.GtmServer)
 class GtmServerSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.GtmVServer)
+@model(model=cm.GtmVServer)
 class GtmVServerSerializer(DeviceRelatedSerializer):
     server_name = serializers.CharField(source="server.name", read_only=True, default="")
 
 
-@model(model=models.Service)
+@model(model=cm.Service)
 class ServiceSerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.Policy)
+@model(model=cm.Policy)
 class PolicySerializer(DeviceRelatedSerializer):
     pass
 
 
-@model(model=models.NatRule)
+@model(model=cm.NatRule)
 class NatRuleSerializer(DeviceRelatedSerializer):
     pass
 
@@ -254,7 +255,7 @@ class IPAddressSerializer(DeviceRelatedSerializer):
     security_zone_name = serializers.CharField(source="security_zone.name", read_only=True, default="")
 
 
-@model(model=models.Route)
+@model(model=cm.Route)
 class RouteSerializer(ParentClass):
     device_hostname = serializers.CharField(source="vrf.device.hostname", read_only=True, default="")
 
@@ -266,7 +267,7 @@ class TopologySerializer(ParentClass):
     pass
 
 
-@model(model=models.ArpMac)
+@model(model=cm.ArpMac)
 class ArpMacSerializer(DeviceRelatedSerializer):
     pass
 

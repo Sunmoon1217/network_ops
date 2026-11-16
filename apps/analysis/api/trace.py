@@ -79,7 +79,8 @@ def route_collect(request):
     if not device_id:
         return Response({"error": "device_id 必填"}, status=http_status.HTTP_400_BAD_REQUEST)
 
-    from assets.models import Device, Route, Vrf
+    from assets.models import Device
+    from configs.models import Route, Vrf
 
     try:
         device = Device.objects.get(pk=device_id)
@@ -187,7 +188,8 @@ def route_collect_raw(request):
     if not device_id or not raw_text:
         return Response({"error": "device_id 和 raw_text 必填"}, status=http_status.HTTP_400_BAD_REQUEST)
 
-    from assets.models import Device, Route, Vrf
+    from assets.models import Device
+    from configs.models import Route, Vrf
 
     try:
         device = Device.objects.get(pk=device_id)
@@ -244,7 +246,7 @@ def route_collect_raw(request):
 @api_view(["GET"])
 def route_list(request):
     """路由列表: GET /api/trace/routes/?device_id=&vrf=&protocol="""
-    from assets.models import Route
+    from configs.models import Route
 
     qs = Route.objects.select_related("vrf", "vrf__device").all()
     device_id = request.query_params.get("device_id")

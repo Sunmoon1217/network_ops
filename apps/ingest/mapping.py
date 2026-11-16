@@ -109,7 +109,7 @@ def normalize_config(config_json: dict) -> dict:
 
 
 def resolve_models(model_paths: list[str]) -> list[type]:
-    """把 ``["assets.models.Route", ...]`` 解析成模型类列表（供接口与契约测试）。
+    """把 ``["configs.models.Route", ...]`` 解析成模型类列表（供接口与契约测试）。
 
     用点路径字符串而不是在类体里直接引用模型：``savers`` 模块的 import 时机
     早于 Django app registry 就绪是不可控的（模型侧也因此都在函数内 import），

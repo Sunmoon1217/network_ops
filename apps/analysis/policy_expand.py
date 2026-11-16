@@ -152,15 +152,12 @@ def expand_policy(policy) -> list[dict]:
     action = str(policy.action or "allow").strip().lower() or "allow"
     if action not in ("allow", "deny"):
         action = "allow"
-    return [
-        {"key": (*source, *destination, *service, action), "contexts": {context_key: context}}
-        for source, destination, service in product(sources, destinations, services)
-    ]
+    return [{"key": (*source, *destination, *service, action), "contexts": {context_key: context}} for source, destination, service in product(sources, destinations, services)]
 
 
 def collect_device_flows(device) -> list[dict]:
     """一台设备的全部策略 → 按唯一键聚合后的展开结果（不含上下文摘除，那是入库的事）。"""
-    from assets.models import AddressBook, Policy
+    from configs.models import AddressBook, Policy
 
     policies = (
         Policy.objects.filter(device=device)

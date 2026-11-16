@@ -11,7 +11,8 @@
 import pytest
 from django.conf import settings
 
-from assets.models import AddressBook, Device, Interface, Policy, Service
+from assets.models import Device
+from configs.models import AddressBook, Interface, Policy, Service
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import AddressBookSaver, PolicySaver, ServiceSaver
 from ingest.savers.interface import InterfaceSaver
@@ -141,10 +142,7 @@ def test_sample_config_lands_in_db(fname, vendor, dtype):
 
     for saver, payload in payloads:
         created, updated = saver.save(device, payload)
-        assert created + updated > 0, (
-            f"{fname}: {type(saver).__name__} 收到键 {sorted(payload)} 却 0 行入库"
-            "——模板产出结构/字段与 Saver 不匹配（hillstone service 同类问题）"
-        )
+        assert created + updated > 0, f"{fname}: {type(saver).__name__} 收到键 {sorted(payload)} 却 0 行入库——模板产出结构/字段与 Saver 不匹配（hillstone service 同类问题）"
 
 
 # ---------------------------------------------------------------------------
@@ -282,9 +280,7 @@ def test_inline_config_lands_in_db(cid, vendor, dtype, cfg):
     if not payloads:
         known = KNOWN_UNCONSUMED_PRODUCTS.get(dtype, set())
         produced = {canonical_key(k) for k, v in parsed.items() if v}
-        assert produced and produced <= known, (
-            f"{cid}: 产出 {sorted(produced)} 无任何 Saver，且不在 KNOWN_UNCONSUMED_PRODUCTS"
-        )
+        assert produced and produced <= known, f"{cid}: 产出 {sorted(produced)} 无任何 Saver，且不在 KNOWN_UNCONSUMED_PRODUCTS"
         pytest.skip(f"{cid}: 全部产出键为登记在案的未消费缺口，无 Saver 可验")
 
     for saver, payload in payloads:
@@ -350,7 +346,7 @@ def test_interface_enabled_three_states(cid, vendor, template):
     is True——三处叠加的结果是**接口永远存成启用**。此测试三态逐一断言，任何一环
     回退都会红。
     """
-    from assets.models import Interface
+    from configs.models import Interface
     from ingest.savers.interface import InterfaceSaver
 
     parsed = ParserFactory.get_parser_by_keys(vendor, "switch").parse(template)
@@ -372,7 +368,7 @@ def test_cisco_interface_shutdown_two_states():
     shutdown 行——禁用接口恒存启用。修复：字面 ``shutdown`` 行插到 interface 之后
     （带 default(1) 使行可选），与四家交换机同款。
     """
-    from assets.models import Interface
+    from configs.models import Interface
     from ingest.savers.interface import InterfaceSaver
 
     cfg = """interface GigabitEthernet0/0
@@ -407,6 +403,7 @@ interface GigabitEthernet0/1
 # 状态行统一模式（禁用词 {{ enabled | set(0) | default(1) }}）的落库两态
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.django_db
 def test_f5_virtual_status_two_states_after_unify():
     """f5 virtuals 统一模式落库两态：disabled 行→status=disabled、无行→enabled。
@@ -415,7 +412,7 @@ def test_f5_virtual_status_two_states_after_unify():
     字面禁用词行（字段统一 ``enabled`` 0/1）；LtmVirtualServer.status 是 str
     字段，由 Saver 侧 ``status_enabled`` 双轨转换。
     """
-    from assets.models import LtmVirtualServer
+    from configs.models import LtmVirtualServer
     from ingest.savers.lb import LBVirtualServerSaver
 
     cfg = """ltm virtual /Common/v1 {

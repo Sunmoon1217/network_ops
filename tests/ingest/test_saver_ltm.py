@@ -10,16 +10,8 @@ F5 的模板产出一律带 ``/Common/`` 分区前缀，Saver 负责剥成叶子
 
 import pytest
 
-from assets.models import (
-    Device,
-    LtmIRule,
-    LtmPersist,
-    LtmPool,
-    LtmPoolMember,
-    LtmProfile,
-    LtmSNAT,
-    LtmVirtualServer,
-)
+from assets.models import Device
+from configs.models import LtmIRule, LtmPersist, LtmPool, LtmPoolMember, LtmProfile, LtmSNAT, LtmVirtualServer
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.lb import LBPoolSaver, LBSnatSaver, LBVirtualServerSaver
 
@@ -224,9 +216,7 @@ def test_no_common_prefix_leaks_across_ltm_columns():
         "LtmPoolMember.pool_name": LtmPoolMember.objects.filter(device=device).values_list("pool_name", flat=True),
         "LtmVirtualServer.name": LtmVirtualServer.objects.filter(device=device).values_list("name", flat=True),
         "LtmVirtualServer.pool": LtmVirtualServer.objects.filter(device=device).values_list("pool", flat=True),
-        "LtmVirtualServer.snat_pool": LtmVirtualServer.objects.filter(device=device).values_list(
-            "snat_pool", flat=True
-        ),
+        "LtmVirtualServer.snat_pool": LtmVirtualServer.objects.filter(device=device).values_list("snat_pool", flat=True),
         "LtmVirtualServer.persist": LtmVirtualServer.objects.filter(device=device).values_list("persist", flat=True),
         "LtmProfile.name": LtmProfile.objects.filter(device=device).values_list("name", flat=True),
         "LtmProfile.type": LtmProfile.objects.filter(device=device).values_list("type", flat=True),

@@ -37,10 +37,10 @@ class A10ServiceGroupSaver(BaseSaver):
 
     device_types = ["slb"]
     keys = ["service_groups"]
-    model_paths = ["assets.models.LtmPool", "assets.models.LtmPoolMember"]
+    model_paths = ["configs.models.LtmPool", "configs.models.LtmPoolMember"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmPool, LtmPoolMember
+        from configs.models import LtmPool, LtmPoolMember
 
         groups = as_list(parsed_data.get("service_groups"))
         if not groups:
@@ -107,14 +107,14 @@ class A10VirtualServerSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["virtual_server"]
     model_paths = [
-        "assets.models.LtmVirtualServer",
-        "assets.models.LtmProfile",
-        "assets.models.LtmPersist",
+        "configs.models.LtmVirtualServer",
+        "configs.models.LtmProfile",
+        "configs.models.LtmPersist",
     ]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmPersist, LtmProfile, LtmVirtualServer
         from assets.serializers.views import LtmPersistSerializer, LtmProfileSerializer
+        from configs.models import LtmPersist, LtmProfile, LtmVirtualServer
 
         servers = as_list(parsed_data.get("virtual_server"))
         if not servers:

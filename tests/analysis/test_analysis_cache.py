@@ -9,7 +9,8 @@ import pytest
 from rest_framework.test import APIClient
 
 from analysis.models import InternetAnalysis
-from assets.models import Device, GtmPool, GtmServer, GtmVServer, GtmWideip, ServerOwner
+from assets.models import Device, ServerOwner
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip
 from core.models import User
 
 LIST_URL = "/api/internet-analysis/"

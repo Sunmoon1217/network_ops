@@ -1,6 +1,61 @@
-"""配置域模型（包形式，与 ``assets/models/`` 同一套做法：定义在子模块，本文件只 re-export）。"""
+"""configs 域模型出口：配置行基类 + 25 个子类 + 配置快照。"""
 
-from .base import ConfigBase
-from .network import Vlan
+from configs.models.base import ConfigBase
+from configs.models.device_config import DeviceConfig
+from configs.models.network import (
+    AddressBook,
+    ArpMac,
+    DeviceAccount,
+    GtmDatacenter,
+    GtmPool,
+    GtmServer,
+    GtmVServer,
+    GtmWideip,
+    Interface,
+    LtmIRule,
+    LtmPersist,
+    LtmPool,
+    LtmPoolMember,
+    LtmProfile,
+    LtmSNAT,
+    LtmVirtualServer,
+    NatRule,
+    NtpConfig,
+    Policy,
+    Route,
+    Service,
+    SnmpConfig,
+    SyslogConfig,
+    Vlan,
+    Vrf,
+)
 
-__all__ = ["ConfigBase", "Vlan"]
+__all__ = [
+    "ConfigBase",
+    "DeviceConfig",
+    "Vlan",
+    "Vrf",
+    "Interface",
+    "DeviceAccount",
+    "SnmpConfig",
+    "NtpConfig",
+    "SyslogConfig",
+    "LtmVirtualServer",
+    "LtmPool",
+    "LtmPoolMember",
+    "LtmProfile",
+    "LtmIRule",
+    "LtmSNAT",
+    "LtmPersist",
+    "GtmDatacenter",
+    "GtmWideip",
+    "GtmPool",
+    "GtmServer",
+    "GtmVServer",
+    "AddressBook",
+    "Service",
+    "Policy",
+    "NatRule",
+    "Route",
+    "ArpMac",
+]

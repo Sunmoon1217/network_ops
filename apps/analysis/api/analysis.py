@@ -18,7 +18,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from analysis.models import InternetAnalysis
-from assets.models import Device, GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
+from assets.models import Device
+from configs.models import GtmPool, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 
 # 级联展开层数上限，防止 LTM 之间互相指向造成死循环
 MAX_NESTED_DEPTH = 3

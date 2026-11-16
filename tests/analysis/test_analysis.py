@@ -10,16 +10,8 @@
 import pytest
 
 from analysis.api.analysis import analyze_device
-from assets.models import (
-    Device,
-    GtmPool,
-    GtmServer,
-    GtmVServer,
-    GtmWideip,
-    LtmPool,
-    LtmPoolMember,
-    LtmVirtualServer,
-)
+from assets.models import Device
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 
 
 def _device(hostname: str, device_type: str = "gslb") -> Device:

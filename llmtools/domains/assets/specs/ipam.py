@@ -48,7 +48,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.INTERFACE: EntitySpec(
         node_type=NodeType.INTERFACE,
         label="接口",
-        model=models.Interface,
+        model=cm.Interface,
         serializer=s.InterfaceSerializer,
         key="interface",
         summary=("device_hostname", "interface", "mode", "ip_address", "enabled", "description"),
@@ -77,7 +77,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.VRF: EntitySpec(
         node_type=NodeType.VRF,
         label="VRF",
-        model=models.Vrf,
+        model=cm.Vrf,
         serializer=s.VrfSerializer,
         key="name",
         summary=("device_hostname", "name", "rd", "description"),
@@ -90,7 +90,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.ROUTE: EntitySpec(
         node_type=NodeType.ROUTE,
         label="路由",
-        model=models.Route,
+        model=cm.Route,
         serializer=s.RouteSerializer,
         key="destination",
         summary=("device_hostname", "destination", "nexthop", "interface", "protocol", "metric"),
@@ -141,7 +141,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.ARP_MAC: EntitySpec(
         node_type=NodeType.ARP_MAC,
         label="ARP/MAC",
-        model=models.ArpMac,
+        model=cm.ArpMac,
         serializer=s.ArpMacSerializer,
         key="ip_address",
         summary=("device_hostname", "ip_address", "mac_address", "vlan", "interface", "arp_type", "status"),

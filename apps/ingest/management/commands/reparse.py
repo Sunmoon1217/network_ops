@@ -23,7 +23,8 @@ import multiprocessing
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connections
 
-from assets.models import Device, DeviceConfig
+from assets.models import Device
+from configs.models import DeviceConfig
 
 
 def _run_one(config_pk: int, force_parse: bool) -> dict:

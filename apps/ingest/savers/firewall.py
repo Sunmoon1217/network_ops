@@ -31,11 +31,11 @@ class AddressBookSaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["address_books", "addresses"]
-    model_paths = ["assets.models.AddressBook"]
+    model_paths = ["configs.models.AddressBook"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import AddressBook
         from assets.serializers.views import AddressBookSerializer
+        from configs.models import AddressBook
 
         # addresses 别名已由 ingest.mapping 在 save 入口归一为 address_books
         raw = parsed_data.get("address_books")
@@ -53,9 +53,7 @@ class AddressBookSaver(BaseSaver):
         )
 
         # 父记录刚批量写完，一次把 pk 取回来；原先每本书都要再 filter().first() 查一次
-        parent_ids = dict(
-            AddressBook.objects.filter(device=device, address_type="addressbook").values_list("name", "pk")
-        )
+        parent_ids = dict(AddressBook.objects.filter(device=device, address_type="addressbook").values_list("name", "pk"))
 
         child_rows = []
         for name, body in entries:
@@ -150,11 +148,11 @@ class NatRuleSaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["nat"]
-    model_paths = ["assets.models.NatRule", "assets.models.AddressBook"]
+    model_paths = ["configs.models.NatRule", "configs.models.AddressBook"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import NatRule
         from assets.serializers.views import NatRuleSerializer
+        from configs.models import NatRule
 
         created, updated = 0, 0
         for index, rule in enumerate(as_list(parsed_data.get("nat"))):
@@ -186,7 +184,7 @@ class NatRuleSaver(BaseSaver):
 
         用 get_or_create 而不是覆盖：同名地址簿可能是人工维护的，不擅自改它的地址。
         """
-        from assets.models import AddressBook
+        from configs.models import AddressBook
 
         address = self._safe_ip(value)
         if not address:
@@ -210,10 +208,10 @@ class NatRuleSaver(BaseSaver):
 class ServiceSaver(BaseSaver):
     device_types = ["firewall"]
     keys = ["services"]
-    model_paths = ["assets.models.Service"]
+    model_paths = ["configs.models.Service"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import Service
+        from configs.models import Service
 
         entries = self._entries(parsed_data.get("services"))
         if not entries:
@@ -235,10 +233,7 @@ class ServiceSaver(BaseSaver):
                 key = (str(row.get("protocol") or "tcp"), str(row.get("port", "")), str(row.get("port2", "")))
                 want[key] = str(row.get("description") or "")  # 同自然键后行覆盖前行
 
-            existing = {
-                (item.protocol, item.port, item.port2): item
-                for item in Service.objects.filter(device=device, name=name)
-            }
+            existing = {(item.protocol, item.port, item.port2): item for item in Service.objects.filter(device=device, name=name)}
             to_create, to_update, to_delete = [], [], []
             for key, description in want.items():
                 hit = existing.get(key)
@@ -310,11 +305,11 @@ class PolicySaver(BaseSaver):
 
     device_types = ["firewall"]
     keys = ["policies", "acl", "rules"]
-    model_paths = ["assets.models.Policy", "assets.models.AddressBook", "assets.models.Service"]
+    model_paths = ["configs.models.Policy", "configs.models.AddressBook", "configs.models.Service"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import AddressBook, Policy, Service
         from assets.serializers.views import AddressBookSerializer, PolicySerializer
+        from configs.models import AddressBook, Policy, Service
 
         # acl / rules 别名已由 ingest.mapping 在 save 入口归一为 policies
         policies = parsed_data.get("policies")
@@ -380,24 +375,15 @@ class PolicySaver(BaseSaver):
             ids_by_name.setdefault(name, []).append(pk)
         missing = [name for name in service_specs if name not in ids_by_name]
         if missing:
-            Service.objects.bulk_create(
-                [Service(device=device, name=name, protocol="any") for name in missing], batch_size=500
-            )
+            Service.objects.bulk_create([Service(device=device, name=name, protocol="any") for name in missing], batch_size=500)
             ids_by_name = {}
             for pk, name in Service.objects.filter(device=device).values_list("pk", "name"):
                 ids_by_name.setdefault(name, []).append(pk)
 
-        address_ids = {
-            (name, address_type): pk
-            for name, address_type, pk in AddressBook.objects.filter(device=device).values_list(
-                "name", "address_type", "pk"
-            )
-        }
+        address_ids = {(name, address_type): pk for name, address_type, pk in AddressBook.objects.filter(device=device).values_list("name", "address_type", "pk")}
 
         # 策略本体批量落库；M2M 不放进 payload，关联表单独批量写
-        created, updated = self.bulk_upsert(
-            Policy, device, policy_rows, key_fields=("policy_id",), serializer_cls=PolicySerializer
-        )
+        created, updated = self.bulk_upsert(Policy, device, policy_rows, key_fields=("policy_id",), serializer_cls=PolicySerializer)
 
         policy_ids = dict(Policy.objects.filter(device=device).values_list("policy_id", "pk"))
         source_map: dict[int, set[int]] = {}
@@ -439,11 +425,7 @@ class PolicySaver(BaseSaver):
         # 用 attname（policy_id / addressbook_id）而不是字段名：字段名那个描述符
         # 只接受模型实例，传 pk 会报 "must be a Policy instance"
         through.objects.filter(**{f"{owner_fk.attname}__in": list(mapping)}).delete()
-        rows = [
-            through(**{owner_fk.attname: owner_id, target_fk.attname: target_id})
-            for owner_id, target_ids in mapping.items()
-            for target_id in target_ids
-        ]
+        rows = [through(**{owner_fk.attname: owner_id, target_fk.attname: target_id}) for owner_id, target_ids in mapping.items() for target_id in target_ids]
         if rows:
             through.objects.bulk_create(rows, batch_size=500)
 

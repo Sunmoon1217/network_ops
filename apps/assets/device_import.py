@@ -1,19 +1,8 @@
 import re
 from pathlib import Path
 
-from assets.models import (
-    Cabinet,
-    DataCenter,
-    Device,
-    DeviceConfig,
-    DeviceConnection,
-    DeviceGroup,
-    DeviceGroupMember,
-    DeviceModel,
-    Room,
-    SecurityZone,
-    Vendor,
-)
+from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceGroup, DeviceGroupMember, DeviceModel, Room, SecurityZone, Vendor
+from configs.models import DeviceConfig
 from ingest.config_repo import save_config
 
 # Excel「配置文件」sheet 的 config_dir 列为空时的默认目录：

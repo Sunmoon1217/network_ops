@@ -12,7 +12,8 @@ import pytest
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
-from assets.models import Device, DeviceGroup, DeviceGroupMember, GtmPool, GtmServer, GtmVServer, GtmWideip
+from assets.models import Device, DeviceGroup, DeviceGroupMember
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip
 
 BASE = "/api/analysis/gslb-clusters/"
 
@@ -34,9 +35,7 @@ def _cluster_group(name: str, devices: list[Device]) -> DeviceGroup:
 
 
 def _wideip(device, name="www.example.com", rtype="A", lb_mode="global", pools=None) -> GtmWideip:
-    return GtmWideip.objects.create(
-        device=device, name=name, rtype=rtype, lb_mode=lb_mode, pools=pools if pools is not None else ["pool_dns"]
-    )
+    return GtmWideip.objects.create(device=device, name=name, rtype=rtype, lb_mode=lb_mode, pools=pools if pools is not None else ["pool_dns"])
 
 
 def _pool(device, name="pool_dns", members=None, **kwargs) -> GtmPool:
@@ -274,9 +273,7 @@ def test_facets_match_legacy_gtm_endpoint(api):
     assert cluster_facets["rtypes"] == ["A"]
     assert "http" in cluster_facets["monitors"]
     # 单机集群：group_id 为 null，name 即设备名
-    assert cluster_facets["clusters"] == [
-        {"key": f"device-{device.id}", "name": "gtm-a", "group_id": None, "devices": ["gtm-a"]}
-    ]
+    assert cluster_facets["clusters"] == [{"key": f"device-{device.id}", "name": "gtm-a", "group_id": None, "devices": ["gtm-a"]}]
 
 
 @pytest.mark.django_db

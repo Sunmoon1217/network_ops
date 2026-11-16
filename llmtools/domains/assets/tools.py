@@ -14,6 +14,7 @@ from django.utils import timezone
 from mcp.server.mcpserver.exceptions import ToolError
 
 from assets import models
+from configs import models as cm
 from llmtools.domains.assets.specs._helpers import _mac_compact, _mac_variants
 from llmtools.entity_tools import _detect, _parse_ip
 
@@ -66,15 +67,15 @@ def locate(target: str, limit: int = 20) -> dict[str, Any]:
     mac = _mac_compact(text)
 
     registry: dict[str, Any] | None = None
-    observations = models.ArpMac.objects.none()
+    observations = cm.ArpMac.objects.none()
     devices = models.Device.objects.none()
-    interfaces = models.Interface.objects.none()
+    interfaces = cm.Interface.objects.none()
 
     if kind == "mac":
         cond = Q()
         for variant in _mac_variants(mac):
             cond |= Q(mac_address__iexact=variant)
-        observations = models.ArpMac.objects.filter(cond).select_related("device").order_by("-updated_at")
+        observations = cm.ArpMac.objects.filter(cond).select_related("device").order_by("-updated_at")
     elif kind == "ip":
         hit = models.IPAddress.objects.filter(ip_address=ip).select_related("subnet", "device").first()
         if hit is not None:
@@ -88,9 +89,9 @@ def locate(target: str, limit: int = 20) -> dict[str, Any]:
                 "description": hit.description,
                 "updated_at": hit.updated_at.isoformat(),
             }
-        observations = models.ArpMac.objects.filter(ip_address=ip).select_related("device").order_by("-updated_at")
+        observations = cm.ArpMac.objects.filter(ip_address=ip).select_related("device").order_by("-updated_at")
         devices = models.Device.objects.filter(ip_address=ip)
-        interfaces = models.Interface.objects.filter(_ip_token_q(ip))
+        interfaces = cm.Interface.objects.filter(_ip_token_q(ip))
     else:
         devices = models.Device.objects.filter(Q(hostname__icontains=text) | Q(remark__icontains=text))
 

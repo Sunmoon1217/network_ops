@@ -395,6 +395,11 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 `InternetAnalysis` / `AccessFlow` 住在 analysis app，但清理仍归本命令——它是跨域的
 运维工具（工具层允许跨域 import）。
 
+**ARP/MAC 也会被清**（2026-11-16 行为变化）：`ArpMac` 已改为继承 `ConfigBase` 并随家族迁入
+configs，因此进入枚举集合。ARP/MAC 是可再生的设备运行数据，被清可接受；契约测试
+`tests/configs/test_configbase_registry.py` 锁死 25 个子类集合（含 ArpMac），
+`DeviceConfig`（配置快照）刻意不继承基类、不在枚举内。
+
 边界（报告里也会逐条列出）：
 
 - `--with-workflow` 默认关闭：Task/Stage 是工作流历史，但 `Stage.output_data` 可能存着

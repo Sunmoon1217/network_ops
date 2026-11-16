@@ -5,8 +5,8 @@
 层级关系（池→成员、GTM server→vserver、wideip→pool）声明在 ``../edges.py``。
 """
 
-from assets import models
 from assets.serializers import views as s
+from configs import models as cm
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType
@@ -15,7 +15,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_VIRTUAL_SERVER: EntitySpec(
         node_type=NodeType.LTM_VIRTUAL_SERVER,
         label="负载均衡虚拟服务器",
-        model=models.LtmVirtualServer,
+        model=cm.LtmVirtualServer,
         serializer=s.LtmVirtualServerSerializer,
         key="name",
         summary=("device_hostname", "name", "vs_address", "vs_port", "pool", "status"),
@@ -31,7 +31,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_POOL: EntitySpec(
         node_type=NodeType.LTM_POOL,
         label="负载均衡池",
-        model=models.LtmPool,
+        model=cm.LtmPool,
         serializer=s.LtmPoolSerializer,
         key="name",
         summary=("device_hostname", "name", "mode"),
@@ -44,7 +44,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.GTM_WIDEIP: EntitySpec(
         node_type=NodeType.GTM_WIDEIP,
         label="全局负载域名",
-        model=models.GtmWideip,
+        model=cm.GtmWideip,
         serializer=s.GtmWideipSerializer,
         key="name",
         summary=("device_hostname", "name", "rtype", "lb_mode"),
@@ -58,7 +58,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_POOL_MEMBER: EntitySpec(
         node_type=NodeType.LTM_POOL_MEMBER,
         label="负载均衡池成员",
-        model=models.LtmPoolMember,
+        model=cm.LtmPoolMember,
         serializer=s.LtmPoolMemberSerializer,
         key="name",
         summary=("device_hostname", "pool_name", "name", "address", "port"),
@@ -76,7 +76,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_PROFILE: EntitySpec(
         node_type=NodeType.LTM_PROFILE,
         label="负载均衡Profile",
-        model=models.LtmProfile,
+        model=cm.LtmProfile,
         serializer=s.LtmProfileSerializer,
         key="name",
         summary=("device_hostname", "name", "type"),
@@ -93,7 +93,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_IRULE: EntitySpec(
         node_type=NodeType.LTM_IRULE,
         label="LTM iRule",
-        model=models.LtmIRule,
+        model=cm.LtmIRule,
         serializer=s.LtmIRuleSerializer,
         key="name",
         summary=("device_hostname", "name"),
@@ -106,7 +106,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_SNAT: EntitySpec(
         node_type=NodeType.LTM_SNAT,
         label="LTM SNAT",
-        model=models.LtmSNAT,
+        model=cm.LtmSNAT,
         serializer=s.LtmSNATSerializer,
         key="name",
         summary=("device_hostname", "name", "address"),
@@ -119,7 +119,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.LTM_PERSIST: EntitySpec(
         node_type=NodeType.LTM_PERSIST,
         label="LTM 会话保持",
-        model=models.LtmPersist,
+        model=cm.LtmPersist,
         serializer=s.LtmPersistSerializer,
         key="name",
         summary=("device_hostname", "name", "type"),
@@ -133,7 +133,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.GTM_DATACENTER: EntitySpec(
         node_type=NodeType.GTM_DATACENTER,
         label="GTM 数据中心",
-        model=models.GtmDatacenter,
+        model=cm.GtmDatacenter,
         serializer=s.GtmDatacenterSerializer,
         key="name",
         summary=("device_hostname", "name"),
@@ -146,7 +146,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.GTM_POOL: EntitySpec(
         node_type=NodeType.GTM_POOL,
         label="GTM 池",
-        model=models.GtmPool,
+        model=cm.GtmPool,
         serializer=s.GtmPoolSerializer,
         key="name",
         summary=("device_hostname", "name", "lb_mode", "fallback_mode", "ttl"),
@@ -159,7 +159,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.GTM_SERVER: EntitySpec(
         node_type=NodeType.GTM_SERVER,
         label="GTM 服务器",
-        model=models.GtmServer,
+        model=cm.GtmServer,
         serializer=s.GtmServerSerializer,
         key="name",
         summary=("device_hostname", "name", "datacenter", "monitor", "server_type"),
@@ -176,7 +176,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.GTM_VSERVER: EntitySpec(
         node_type=NodeType.GTM_VSERVER,
         label="GTM 虚拟服务器",
-        model=models.GtmVServer,
+        model=cm.GtmVServer,
         serializer=s.GtmVServerSerializer,
         key="name",
         summary=("device_hostname", "name", "ip_address", "port", "monitor"),

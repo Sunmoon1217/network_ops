@@ -19,15 +19,15 @@ class LBVirtualServerSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["virtuals"]
     model_paths = [
-        "assets.models.LtmVirtualServer",
-        "assets.models.LtmProfile",
-        "assets.models.LtmIRule",
-        "assets.models.LtmPersist",
+        "configs.models.LtmVirtualServer",
+        "configs.models.LtmProfile",
+        "configs.models.LtmIRule",
+        "configs.models.LtmPersist",
     ]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmIRule, LtmPersist, LtmProfile, LtmVirtualServer
         from assets.serializers.views import LtmIRuleSerializer, LtmPersistSerializer, LtmProfileSerializer
+        from configs.models import LtmIRule, LtmPersist, LtmProfile, LtmVirtualServer
 
         virtuals = as_list(parsed_data.get("virtuals"))
         if not virtuals:
@@ -135,10 +135,10 @@ class LBVirtualServerSaver(BaseSaver):
 class LBPoolSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["pools"]
-    model_paths = ["assets.models.LtmPool", "assets.models.LtmPoolMember"]
+    model_paths = ["configs.models.LtmPool", "configs.models.LtmPoolMember"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmPool, LtmPoolMember
+        from configs.models import LtmPool, LtmPoolMember
 
         pools = as_list(parsed_data.get("pools"))
         if not pools:
@@ -199,10 +199,10 @@ class LBPoolSaver(BaseSaver):
 class LBSnatSaver(BaseSaver):
     device_types = ["slb"]
     keys = ["snat_pools", "snat"]
-    model_paths = ["assets.models.LtmSNAT"]
+    model_paths = ["configs.models.LtmSNAT"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import LtmSNAT
+        from configs.models import LtmSNAT
 
         snats = as_list(parsed_data.get("snat_pools") or parsed_data.get("snat"))
         if not snats:
@@ -226,10 +226,10 @@ class LBSnatSaver(BaseSaver):
 class GTMWideipSaver(BaseSaver):
     device_types = ["gslb"]
     keys = ["wideips"]
-    model_paths = ["assets.models.GtmWideip"]
+    model_paths = ["configs.models.GtmWideip"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import GtmWideip
+        from configs.models import GtmWideip
 
         wideips = as_list(parsed_data.get("wideips"))
         if not wideips:
@@ -295,11 +295,11 @@ class GtmDatacenterSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["datacenters"]
-    model_paths = ["assets.models.GtmDatacenter"]
+    model_paths = ["configs.models.GtmDatacenter"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import GtmDatacenter
         from assets.serializers.views import GtmDatacenterSerializer
+        from configs.models import GtmDatacenter
 
         created, updated = 0, 0
         for dc in as_list(parsed_data.get("datacenters")):
@@ -317,11 +317,11 @@ class GtmServerSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["servers"]
-    model_paths = ["assets.models.GtmServer", "assets.models.GtmVServer"]
+    model_paths = ["configs.models.GtmServer", "configs.models.GtmVServer"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import GtmServer, GtmVServer
         from assets.serializers.views import GtmServerSerializer, GtmVServerSerializer
+        from configs.models import GtmServer, GtmVServer
 
         servers = as_list(parsed_data.get("servers"))
         if not servers:
@@ -383,11 +383,11 @@ class GtmPoolSaver(BaseSaver):
 
     device_types = ["gslb"]
     keys = ["pools"]
-    model_paths = ["assets.models.GtmPool"]
+    model_paths = ["configs.models.GtmPool"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import GtmPool
         from assets.serializers.views import GtmPoolSerializer
+        from configs.models import GtmPool
 
         created, updated = 0, 0
         for pool in as_list(parsed_data.get("pools")):

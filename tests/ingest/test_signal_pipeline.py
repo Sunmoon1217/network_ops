@@ -11,8 +11,8 @@
 
 import pytest
 
-from assets.models import Device, DeviceConfig, DeviceModel, Service, Vendor, Vrf
-from configs.models import Vlan
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig, Service, Vlan, Vrf
 from ingest.config_repo import get_config
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import ServiceSaver
@@ -91,9 +91,7 @@ def test_reimport_same_commit_keeps_config_json():
     original = {"vlans": [{"vlan_id": "1"}]}
     record = DeviceConfig.objects.create(device=device, git_commit_hash="aaa111", config_json=original)
 
-    _, created = DeviceConfig.objects.get_or_create(
-        device=device, git_commit_hash="aaa111", defaults={"config_json": {}}
-    )
+    _, created = DeviceConfig.objects.get_or_create(device=device, git_commit_hash="aaa111", defaults={"config_json": {}})
     record.refresh_from_db()
 
     assert created is False

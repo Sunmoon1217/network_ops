@@ -7,7 +7,8 @@
 import pytest
 from rest_framework.test import APIClient
 
-from assets.models import AddressBook, Device, DeviceGroup, DeviceGroupMember, NatRule, Policy, Service
+from assets.models import Device, DeviceGroup, DeviceGroupMember
+from configs.models import AddressBook, NatRule, Policy, Service
 
 POLICIES = "/api/analysis/firewall-groups/policies/"
 NAT_RULES = "/api/analysis/firewall-groups/nat-rules/"
@@ -39,9 +40,7 @@ def _service(device, name: str, port: str, protocol: str = "tcp") -> Service:
 
 
 def _policy(device, policy_id="100", order=10, name="allow-web", action="allow", sources=None, services=None):
-    policy = Policy.objects.create(
-        device=device, policy_id=policy_id, order=order, name=name, action=action, enabled=True
-    )
+    policy = Policy.objects.create(device=device, policy_id=policy_id, order=order, name=name, action=action, enabled=True)
     if sources:
         policy.source_addresses.set(sources)
     if services:
@@ -50,9 +49,7 @@ def _policy(device, policy_id="100", order=10, name="allow-web", action="allow",
 
 
 def _nat(device, order=1, name="snat-web", nat_type="snat", translated_source=None):
-    return NatRule.objects.create(
-        device=device, order=order, name=name, nat_type=nat_type, enabled=True, translated_source=translated_source
-    )
+    return NatRule.objects.create(device=device, order=order, name=name, nat_type=nat_type, enabled=True, translated_source=translated_source)
 
 
 @pytest.mark.django_db

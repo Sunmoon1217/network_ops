@@ -2,17 +2,7 @@
 
 import pytest
 
-from assets.models import (
-    Device,
-    DomainAsset,
-    GtmPool,
-    GtmServer,
-    GtmVServer,
-    GtmWideip,
-    LoadBalancerService,
-    LtmPoolMember,
-    LtmVirtualServer,
-)
+from assets.models import Device, DomainAsset, LoadBalancerService
 from assets.services.soft_asset_sync import (
     lb_asset_key,
     normalize_fqdn,
@@ -20,7 +10,7 @@ from assets.services.soft_asset_sync import (
     sync_load_balancer_services,
     sync_soft_assets,
 )
-from configs.models import ConfigBase
+from configs.models import ConfigBase, GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPoolMember, LtmVirtualServer
 
 
 def _device(hostname: str, device_type: str) -> Device:

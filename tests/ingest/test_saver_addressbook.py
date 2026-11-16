@@ -6,7 +6,8 @@
 
 import pytest
 
-from assets.models import AddressBook, Device
+from assets.models import Device
+from configs.models import AddressBook
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import AddressBookSaver
 

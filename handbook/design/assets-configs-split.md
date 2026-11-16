@@ -1,7 +1,7 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。最小验证切片（`ConfigBase` + `Vlan`）已落地，
-> 其余 23 个子类 / `DeviceConfig` / parsers / savers / admin / API 未迁。**
+> **状态：实施中（2026-11-16 起）。切片 1（`ConfigBase` + `Vlan`）与切片 2（其余 23 个子类 +
+> `ArpMac` 改继承 + `DeviceConfig`，共 25 张表）已落地；parsers / savers / admin / API 未迁。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -526,17 +526,39 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 3. **`configs` 只是新 app 的起点，`apps.py` 暂时没有 `ready()`**：本域目前没有要在启动时注册的
    东西（软资产信号、词汇注册都随后续步骤进来）。
 
+### 切片 2 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| ArpMac 改继承 | `assets/0037_arpmac_configbase`：删自带 device FK 的 related_name、补 `is_active`；改名同义的 created_at/updated_at 不重复添加 |
+| 模型 | 23 个子类 + ArpMac 进 `configs/models/network.py`（与 Vlan 同模块，保留类名直接引用）；`DeviceConfig` 独占 `configs/models/device_config.py`，device 改字符串引用 `assets.Device` |
+| 迁移 | `assets/0038_remove_config_state`（**SeparateDatabaseAndState，只删 state，DB 不动**）→ `configs/0002_bulk_models`（state 建 25 模型 + 31 条 `ALTER TABLE … RENAME`，含 Policy/NatRule 的 6 张 M2M 中间表） |
+| 字段对齐 | CreateModel 的字段/约束从 `assets/0037` 的 ProjectState 逐字段生成；跨模型 FK 的 `to=` 改为 `configs.*`（Vrf / GtmServer / AddressBook / Service），保留 `assets.device` |
+| 引用点 | 生产 + 测试 67 个文件的 import / 属性访问 / saver 的 `model_paths` 字符串统一改指 configs；`assets/models/__init__.py` 不再 re-export 这 25 个名字；`ingest/signals.py` 的 lazy sender 改 `configs.DeviceConfig` |
+| 契约 | 新增 `tests/configs/test_configbase_registry.py`：锁死 25 子类集合、全部 app_label=configs、DeviceConfig 不被枚举 |
+
+**实测结论**：
+1. 克隆存量库造数（Vrf + Policy）→ `migrate` → `configs_vrf` / `configs_policy` 数据完好、ORM 可读；
+   `migrate configs zero` + `migrate assets 0037` 反向后表名与数据都回到 `assets_*`。
+2. fresh 库全量 `migrate` 与 pytest 建测试库都通过：全量 **846 passed, 66 subtests**
+   （842 基线 + 4 条新契约）。
+3. `makemigrations --check` 只剩 `cloud` 那 8 条既存漂移。
+4. **两个必须踩的坑**：`assets/0038` 的 DeleteModel 若不放进 `SeparateDatabaseAndState`，
+   fresh 库会直接 DROP 表；`configs/0002` 的 CreateModel 若不做 state-only，会与历史迁移
+   已建的同名表/constraint 冲突。两边都靠 `database_operations=[]` 才对。
+
+**仍然是过渡态**：`assets/admin.py`、`assets/api/views.py`、`assets/serializers/views.py`、
+`ingest/savers/*` 等仍 import configs 的模型（合法的下层依赖），admin / API / 序列化器本身
+还没搬；`ArpMac` 并入后 `purge_configs` 会清 ARP/MAC 表（已写进 `handbook/ingest.md`）。
+
 ### 下一步（按依赖顺序）
 
-1. **迁其余 23 个子类 + `DeviceConfig`**：同一手法；子类多，迁移可以脚本生成，但
-   **每条 `assets` 侧 DeleteModel 与 `configs` 侧 CreateModel 的字段必须逐字段对齐**（照抄
-   `0023`~`0035` 之后的终态）。
-2. **迁 parsers / savers / mapping**：注意 `savers/*.py` 里 `from assets.serializers.views import *Serializer`
+1. **迁 parsers / savers / mapping**：注意 `savers/*.py` 里 `from assets.serializers.views import *Serializer`
    要跟着改成 `configs.serializers.views`（序列化器先合并新旧两套，见 §「序列化器：先合并新旧，再搬」）。
-3. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄。
-4. **llmtools**：`domains/assets/` 改名 + `specs/ipam.py` 的 `models.` → `cm.`（本轮已先把 `Vlan`
+2. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄。
+3. **llmtools**：`domains/assets/` 改名 + `specs/ipam.py` 的 `models.` → `cm.`（切片 1 已先把 `Vlan`
    两处改成 `cm.Vlan`，可作为范本）。
-5. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
+4. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
    `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
-6. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+5. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
 

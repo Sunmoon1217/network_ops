@@ -9,7 +9,8 @@ protocol/port（2026-09 修复：合并会把 udp 语义压丢、port 变成 "22
 import pytest
 from django.db import IntegrityError, transaction
 
-from assets.models import Device, Service
+from assets.models import Device
+from configs.models import Service
 from ingest.savers.firewall import ServiceSaver
 
 
@@ -106,7 +107,7 @@ def test_service_saver_keeps_devices_isolated():
 @pytest.mark.django_db
 def test_policy_saver_can_reference_same_service_on_two_devices():
     """PolicySaver 也会 get_or_create 服务，两台设备各自引用同名服务不应冲突"""
-    from assets.models import Policy
+    from configs.models import Policy
     from ingest.savers.firewall import PolicySaver
 
     saver = PolicySaver()

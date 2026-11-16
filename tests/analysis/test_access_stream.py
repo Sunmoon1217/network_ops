@@ -9,7 +9,8 @@ import pytest
 from analysis.access_stream import decode_message, encode_message, handle_message
 from analysis.management.commands.access_flow_consumer import Command as ConsumerCommand
 from analysis.policy_expand import collect_device_flows
-from assets.models import AddressBook, Device, Policy, Service
+from assets.models import Device
+from configs.models import AddressBook, Policy, Service
 
 
 def _device(hostname: str) -> Device:

@@ -7,7 +7,8 @@ virtual-server → LtmVirtualServer/LtmProfile/LtmPersist 两段映射。字段�
 
 import pytest
 
-from assets.models import Device, LtmPersist, LtmPool, LtmPoolMember, LtmProfile, LtmVirtualServer
+from assets.models import Device
+from configs.models import LtmPersist, LtmPool, LtmPoolMember, LtmProfile, LtmVirtualServer
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.a10_lb import A10ServiceGroupSaver, A10VirtualServerSaver
 

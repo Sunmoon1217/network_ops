@@ -13,8 +13,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from assets.models import Device, DeviceConfig, DeviceModel, Interface, Vendor
-from configs.models import Vlan
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig, Interface, Vlan
 
 CONFIG = "sysname E2E-SW\nvlan 10\nvlan 20\ninterface GigabitEthernet1/0/1\n port access vlan 10\n"
 

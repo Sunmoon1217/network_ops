@@ -11,7 +11,8 @@
 
 import pytest
 
-from assets.models import Device, GtmPool, GtmWideip, LtmPool, LtmVirtualServer
+from assets.models import Device
+from configs.models import GtmPool, GtmWideip, LtmPool, LtmVirtualServer
 
 
 @pytest.fixture

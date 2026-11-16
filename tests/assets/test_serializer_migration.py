@@ -50,8 +50,8 @@ def test_new_model_fields_are_superset():
 
 def test_decorator_completes_model_fields():
     """装饰器注入 fields="__all__" 后，旧版遗漏的模型字段应被补全"""
-    from assets.models import LtmVirtualServer
     from assets.serializers.views import LtmVirtualServerSerializer
+    from configs.models import LtmVirtualServer
 
     fields = set(LtmVirtualServerSerializer().fields)
     model_fields = {f.name for f in LtmVirtualServer._meta.fields}
@@ -86,7 +86,7 @@ def test_model_argument_must_be_django_model(bad_model):
 
 def test_model_argument_rejects_instance():
     """传模型实例同样要被拒绝"""
-    from assets.models import LtmPool
+    from configs.models import LtmPool
 
     with pytest.raises(TypeError, match="必须是 Django 模型类"):
 

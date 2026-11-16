@@ -15,17 +15,8 @@ from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from analysis.api.analysis import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS, analyze_device, build_path_rows
-from assets.models import (
-    Device,
-    GtmPool,
-    GtmServer,
-    GtmVServer,
-    GtmWideip,
-    LtmPool,
-    LtmPoolMember,
-    LtmVirtualServer,
-    ServerOwner,
-)
+from assets.models import Device, ServerOwner
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 from core.models import User
 
 EXPORT_URL = "/api/internet-analysis/export/"
@@ -63,12 +54,8 @@ def _gtm_vserver(device: Device, server_name: str, vs_name: str, ip: str, port: 
     return GtmVServer.objects.create(device=device, server=server, name=vs_name, ip_address=ip, port=port)
 
 
-def _ltm_virtual(
-    device: Device, name: str, ip: str, port: str, pool: str = "", rules: list[str] | None = None
-) -> LtmVirtualServer:
-    return LtmVirtualServer.objects.create(
-        device=device, name=name, vs_address=ip, vs_port=port, pool=pool, rules=rules or []
-    )
+def _ltm_virtual(device: Device, name: str, ip: str, port: str, pool: str = "", rules: list[str] | None = None) -> LtmVirtualServer:
+    return LtmVirtualServer.objects.create(device=device, name=name, vs_address=ip, vs_port=port, pool=pool, rules=rules or [])
 
 
 def _build_two_level_chain(hostname: str = "ia-exp") -> Device:

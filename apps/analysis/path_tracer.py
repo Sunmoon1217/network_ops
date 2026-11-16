@@ -6,19 +6,8 @@ VRF 判定优先级、路由链终点判定与几个会导致接口 500 的坑�
 import ipaddress
 from dataclasses import dataclass, field
 
-from assets.models import (
-    AddressBook,
-    Device,
-    Interface,
-    LtmPoolMember,
-    LtmVirtualServer,
-    NatRule,
-    Policy,
-    Route,
-    Service,
-    Subnet,
-    Vrf,
-)
+from assets.models import Device, Subnet
+from configs.models import AddressBook, Interface, LtmPoolMember, LtmVirtualServer, NatRule, Policy, Route, Service, Vrf
 
 MAX_HOPS = 50
 MAX_ADDRESSBOOK_RECURSION = 10

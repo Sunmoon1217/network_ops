@@ -6,7 +6,8 @@
 
 import pytest
 
-from assets.models import Device, DeviceAccount
+from assets.models import Device
+from configs.models import DeviceAccount
 from ingest.savers.account import DeviceAccountSaver
 
 

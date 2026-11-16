@@ -4,8 +4,8 @@
 影响面查询（「这个地址簿被哪些策略引用」）全靠那些边的 ``reverse``。
 """
 
-from assets import models
 from assets.serializers import views as s
+from configs import models as cm
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType
@@ -14,7 +14,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.ADDRESS_BOOK: EntitySpec(
         node_type=NodeType.ADDRESS_BOOK,
         label="地址簿",
-        model=models.AddressBook,
+        model=cm.AddressBook,
         serializer=s.AddressBookSerializer,
         key="name",
         summary=("device_hostname", "name", "address_type", "ip_address", "ip_netmask", "ip_start", "ip_end", "parent_name"),
@@ -31,7 +31,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.SERVICE: EntitySpec(
         node_type=NodeType.SERVICE,
         label="服务簿",
-        model=models.Service,
+        model=cm.Service,
         serializer=s.ServiceSerializer,
         key="name",
         summary=("device_hostname", "name", "protocol", "port", "port2", "description"),
@@ -50,7 +50,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.POLICY: EntitySpec(
         node_type=NodeType.POLICY,
         label="防火墙策略",
-        model=models.Policy,
+        model=cm.Policy,
         serializer=s.PolicySerializer,
         key="policy_id",
         summary=("device_hostname", "policy_id", "order", "name", "action", "enabled", "description"),
@@ -69,7 +69,7 @@ BUNDLE: dict[str, EntitySpec] = {
     NodeType.NAT_RULE: EntitySpec(
         node_type=NodeType.NAT_RULE,
         label="NAT 规则",
-        model=models.NatRule,
+        model=cm.NatRule,
         serializer=s.NatRuleSerializer,
         key="name",
         summary=("device_hostname", "order", "name", "nat_type", "enabled", "description"),

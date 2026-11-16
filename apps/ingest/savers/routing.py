@@ -3,7 +3,7 @@
 import ipaddress
 from logging import getLogger
 
-from assets.models import Vrf
+from configs.models import Vrf
 
 from .base import BaseSaver, as_list
 
@@ -13,7 +13,7 @@ logger = getLogger(__name__)
 class VrfSaver(BaseSaver):
     device_types = ["switch", "router"]
     keys = ["vrfs", "vpn_instances"]
-    model_paths = ["assets.models.Vrf"]
+    model_paths = ["configs.models.Vrf"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         # vpn_instances 别名已由 ingest.mapping 在 save 入口归一为 vrfs
@@ -53,11 +53,11 @@ class RouteSaver(BaseSaver):
 
     device_types = ["switch", "router", "firewall"]
     keys = ["static_routes"]
-    model_paths = ["assets.models.Route", "assets.models.Vrf"]
+    model_paths = ["configs.models.Route", "configs.models.Vrf"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import Route
         from assets.serializers.views import RouteSerializer
+        from configs.models import Route
 
         routes = as_list(parsed_data.get("static_routes"))
         if not routes:

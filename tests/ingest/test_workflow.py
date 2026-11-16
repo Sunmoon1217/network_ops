@@ -3,8 +3,8 @@
 import pytest
 from django.utils import timezone
 
-from assets.models import Device, DeviceConfig, DeviceModel, Vendor
-from configs.models import Vlan
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig, Vlan
 from core.models import Stage, Task
 
 

@@ -7,7 +7,8 @@
 
 import pytest
 
-from assets.models import AddressBook, Device, Policy, Service
+from assets.models import Device
+from configs.models import AddressBook, Policy, Service
 
 URL = "/api/assets/policies/"
 
@@ -17,14 +18,10 @@ def _device(hostname: str) -> Device:
 
 
 def _policy_with_refs(device: Device) -> Policy:
-    source = AddressBook.objects.create(
-        device=device, name="office", address_type="subnet", ip_address="10.0.0.0", ip_netmask=24
-    )
+    source = AddressBook.objects.create(device=device, name="office", address_type="subnet", ip_address="10.0.0.0", ip_netmask=24)
     destination = AddressBook.objects.create(device=device, name="srv", address_type="host", ip_address="10.0.0.8")
     service = Service.objects.create(device=device, name="HTTP", protocol="tcp", port="80")
-    policy = Policy.objects.create(
-        device=device, policy_id="1", order=1, name="allow-office", action="allow", enabled=True, log=True
-    )
+    policy = Policy.objects.create(device=device, policy_id="1", order=1, name="allow-office", action="allow", enabled=True, log=True)
     policy.source_addresses.set([source])
     policy.destination_addresses.set([destination])
     policy.services.set([service])
@@ -70,12 +67,8 @@ def test_list_does_not_query_per_row(django_assert_num_queries, api_client):
     """5 条策略 × 各 3 个 M2M，查询数应与 1 条时相同（prefetch 而非 N+1）"""
     device = _device("api-pol-n1")
     for index in range(5):
-        source = AddressBook.objects.create(
-            device=device, name=f"src{index}", address_type="host", ip_address=f"10.0.{index}.1"
-        )
-        policy = Policy.objects.create(
-            device=device, policy_id=str(index), order=index, name=f"rule-{index}", action="allow"
-        )
+        source = AddressBook.objects.create(device=device, name=f"src{index}", address_type="host", ip_address=f"10.0.{index}.1")
+        policy = Policy.objects.create(device=device, policy_id=str(index), order=index, name=f"rule-{index}", action="allow")
         policy.source_addresses.set([source])
 
     with django_assert_num_queries(5):
@@ -87,9 +80,7 @@ def test_list_does_not_query_per_row(django_assert_num_queries, api_client):
 def test_range_and_subnet_entries_are_formatted_by_type(api_client):
     """range 起止、subnet 前缀、addressbook 引用各自的展示格式"""
     device = _device("api-pol-fmt")
-    address = AddressBook.objects.create(
-        device=device, name="pool", address_type="range", ip_start="10.1.1.10", ip_end="10.1.1.20"
-    )
+    address = AddressBook.objects.create(device=device, name="pool", address_type="range", ip_start="10.1.1.10", ip_end="10.1.1.20")
     book = AddressBook.objects.create(device=device, name="office", address_type="addressbook")
     port_range = Service.objects.create(device=device, name="WEB", protocol="tcp", port="8000", port2="8010")
     policy = Policy.objects.create(device=device, policy_id="2", order=1, name="fmt", action="deny")

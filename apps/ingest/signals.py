@@ -69,7 +69,7 @@ def on_stage_complete(sender, instance, **kwargs):
         _processing_stage.discard(instance.pk)
 
 
-@receiver(post_save, sender="assets.DeviceConfig")
+@receiver(post_save, sender="configs.DeviceConfig")
 def on_device_config_saved(sender, instance, created, **kwargs):
     if not created or instance.pk in _processing:
         return

@@ -2,7 +2,7 @@
 
 from logging import getLogger
 
-from assets.models import Interface
+from configs.models import Interface
 
 from .base import BaseSaver, as_list
 
@@ -14,7 +14,7 @@ class InterfaceSaver(BaseSaver):
 
     device_types = ["switch", "router", "firewall"]
     keys = ["interfaces"]
-    model_paths = ["assets.models.Interface"]
+    model_paths = ["configs.models.Interface"]
 
     @staticmethod
     def _entries(raw) -> list[dict]:

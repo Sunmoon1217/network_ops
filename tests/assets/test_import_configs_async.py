@@ -9,7 +9,8 @@
 import pytest
 from openpyxl import Workbook
 
-from assets.models import Device, DeviceConfig, DeviceModel, Vendor
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig
 
 
 @pytest.fixture

@@ -33,11 +33,11 @@ class DeviceAccountSaver(BaseSaver):
 
     device_types = ["switch"]
     keys = ["local_users"]
-    model_paths = ["assets.models.DeviceAccount"]
+    model_paths = ["configs.models.DeviceAccount"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import DeviceAccount
         from assets.serializers.views import DeviceAccountSerializer
+        from configs.models import DeviceAccount
 
         created, updated = 0, 0
         for user in as_list(parsed_data.get("local_users")):

@@ -65,7 +65,7 @@ T3 统一关系表、T6 统一资产目录的基础。
 |---|---|---|
 | 实物资产 | 有物理实体 | `DEVICE`、`PHYSICAL_SERVER` |
 | 软资产 | 无物理实体，身份来自自身全局标识，设备只是部署位置之一 | `VIRTUAL_MACHINE`、`DATABASE_INSTANCE`、`APPLICATION_SERVICE`、`SUBNET`、`IP_ADDRESS`、`DOMAIN`、`LOAD_BALANCER_SERVICE` |
-| 设备内部功能 / 状态 | 身份是 `(设备, 名称/编号)`，强依赖所属设备、跨设备无独立身份 | `Vlan` / `Vrf` / `Interface` / `Route` / `ArpMac` 及 24 个 `ConfigBase` 子类的其余部分 |
+| 设备内部功能 / 状态 | 身份是 `(设备, 名称/编号)`，强依赖所属设备、跨设备无独立身份 | `Vlan` / `Vrf` / `Interface` / `Route` / `ArpMac` 及 25 个 `ConfigBase` 子类的其余部分（模型现居 `configs.models`，判据不变） |
 | 位置维度 | 不是资产，是位置 | DCIM：`DataCenter` / `Room` / `Cabinet` |
 | 关系 / 元数据 / 日志 | 不是资产 | `DeviceGroup*`、T3 关系表、字典表、时序日志等 |
 

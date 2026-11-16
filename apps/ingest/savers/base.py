@@ -60,7 +60,7 @@ class BaseSaver(ABC):
 
     device_types: list[str] = []
     keys: list[str] = []
-    # 写入的模型，如 ["assets.models.Route", "assets.models.Vrf"]（字符串避免
+    # 写入的模型，如 ["configs.models.Route", "configs.models.Vrf"]（字符串避免
     # 在类体里引用模型：savers 的 import 时机早于 app registry 就绪是不可控的）
     model_paths: list[str] = []
 
@@ -168,9 +168,7 @@ class BaseSaver(ABC):
             deduped[key_of(row)] = row
         rows = list(deduped.values())
 
-        existing = {
-            tuple(getattr(obj, field) for field in key_fields): obj for obj in model.objects.filter(device=device)
-        }
+        existing = {tuple(getattr(obj, field) for field in key_fields): obj for obj in model.objects.filter(device=device)}
 
         to_create: list = []
         to_update: list = []

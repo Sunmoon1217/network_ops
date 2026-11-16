@@ -50,11 +50,11 @@ class SnmpConfigSaver(BaseSaver):
 
     device_types = ["switch", "router"]
     keys = ["snmp"]
-    model_paths = ["assets.models.SnmpConfig"]
+    model_paths = ["configs.models.SnmpConfig"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.models import SnmpConfig
         from assets.serializers.views import SnmpConfigSerializer
+        from configs.models import SnmpConfig
 
         entries = as_list(parsed_data.get("snmp"))
         if not entries:

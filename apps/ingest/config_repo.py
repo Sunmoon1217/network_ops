@@ -149,7 +149,7 @@ def _adopt_legacy_history(device_repo: git.Repo, hostname: str) -> None:
 
 def _remap_config_hashes(hostname: str, legacy: git.Repo, legacy_fp: str, mapping: dict[str, str]) -> None:
     try:
-        from assets.models import DeviceConfig
+        from configs.models import DeviceConfig
     except ImportError:  # pragma: no cover - 非 Django 上下文
         return
     try:

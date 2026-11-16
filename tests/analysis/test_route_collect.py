@@ -14,7 +14,8 @@
 import pytest
 from rest_framework.test import APIClient
 
-from assets.models import Device, Route, Vrf
+from assets.models import Device
+from configs.models import Route, Vrf
 from core.models import User
 
 RAW_URL = "/api/trace/route-collect-raw/"

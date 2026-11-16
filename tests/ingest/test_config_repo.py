@@ -16,7 +16,8 @@ from pathlib import Path
 import git
 import pytest
 
-from assets.models import Device, DeviceConfig, DeviceModel, Vendor
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig
 from ingest import config_repo
 
 

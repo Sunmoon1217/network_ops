@@ -27,7 +27,8 @@ from analysis.policy_expand import (
     service_parts,
     upsert_flows,
 )
-from assets.models import AddressBook, Device, Policy, Service
+from assets.models import Device
+from configs.models import AddressBook, Policy, Service
 
 # ---------------------------------------------------------------------------
 # 造数据助手
@@ -54,9 +55,7 @@ def _subnet(device: Device, cidr: str) -> AddressBook:
 
 
 def _range(device: Device, start: str, end: str) -> AddressBook:
-    return AddressBook.objects.create(
-        device=device, name=f"r-{start}-{end}", address_type="range", ip_start=start, ip_end=end
-    )
+    return AddressBook.objects.create(device=device, name=f"r-{start}-{end}", address_type="range", ip_start=start, ip_end=end)
 
 
 def _group(device: Device, name: str, children: tuple[AddressBook, ...] = ()) -> AddressBook:
@@ -510,9 +509,7 @@ def test_multi_protocol_service_expands_into_two_flow_rows():
 
     device = _device("_t_svc_flow")
     parsed = ParserFactory.get_parser_by_keys("Hillstone", "firewall").parse(
-        'service "X-wrapper"\n  tcp dst 22\n  udp dst 53\nexit\n'
-        'rule id 1\n  action permit\n  src-ip 10.0.0.1\n  dst-ip 10.0.0.2\n'
-        '  service "X-wrapper"\n  name "r1"\nexit\n'
+        'service "X-wrapper"\n  tcp dst 22\n  udp dst 53\nexit\nrule id 1\n  action permit\n  src-ip 10.0.0.1\n  dst-ip 10.0.0.2\n  service "X-wrapper"\n  name "r1"\nexit\n'
     )
     assert parsed.get("services"), "样例应解析出 services（真实模板路径）"
 
@@ -533,10 +530,7 @@ def test_multi_protocol_service_expands_into_two_flow_rows():
 
     # 3) AccessFlow 展开 tcp/udp 两个组合（下游漏流修复的最终证据）
     rebuild_device(device)
-    flows = {
-        (row.protocol, row.port)
-        for row in AccessFlow.objects.filter(device_ids__contains=[device.pk])
-    }
+    flows = {(row.protocol, row.port) for row in AccessFlow.objects.filter(device_ids__contains=[device.pk])}
     assert flows == {("tcp", "22"), ("udp", "53")}
 
 
@@ -562,11 +556,11 @@ def test_policy_reference_gets_all_rows_even_when_defined_first():
         saver.save(device, payload)
 
     assert Service.objects.filter(device=device, name="DUAL").count() == 2
-    assert not Service.objects.filter(device=device, name="DUAL", protocol="any").exists(), (
-        "真行已存在时不该再建 any 占位——占位混入会让 AccessFlow 多出一个 any 组合"
-    )
+    assert not Service.objects.filter(device=device, name="DUAL", protocol="any").exists(), "真行已存在时不该再建 any 占位——占位混入会让 AccessFlow 多出一个 any 组合"
     policy = Policy.objects.get(device=device)
     assert policy.services.count() == 2
+
+
 # ------------------------------------------------------------------------------
 # action 进键：同五元组按动作分行
 # ------------------------------------------------------------------------------

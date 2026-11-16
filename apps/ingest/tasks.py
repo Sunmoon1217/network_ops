@@ -150,7 +150,7 @@ def run_storage_stage(self, stage_id):
 @shared_task(bind=True, name="ingest.run_config_parsing")
 def run_config_parsing(self, config_id):
     """异步解析 DeviceConfig"""
-    from assets.models import DeviceConfig
+    from configs.models import DeviceConfig
     from ingest.config_repo import get_config
     from ingest.parsers.factory import ParserFactory
 
@@ -185,7 +185,7 @@ def run_config_parsing(self, config_id):
 @shared_task(bind=True, name="ingest.run_config_storage")
 def run_config_storage(self, config_id):
     """异步存储 DeviceConfig 解析结果"""
-    from assets.models import DeviceConfig
+    from configs.models import DeviceConfig
 
     logger.info("Starting config storage for DeviceConfig %s", config_id)
     try:

@@ -6,8 +6,8 @@
 
 import pytest
 
-from assets.models import Device, Route, SnmpConfig, Vrf
-from configs.models import Vlan
+from assets.models import Device
+from configs.models import Route, SnmpConfig, Vlan, Vrf
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.network import SnmpConfigSaver, VlanSaver
 from ingest.savers.routing import RouteSaver
@@ -161,9 +161,7 @@ def test_duplicate_vlan_in_one_config_is_collapsed():
     """
     device = Device.objects.create(hostname="_t_vlan_dup", device_type="switch")
 
-    assert VlanSaver().save(
-        device, {"vlans": [{"vlan_id": "30", "vlan_name": "先"}, {"vlan_id": "30", "vlan_name": "后"}]}
-    ) == (
+    assert VlanSaver().save(device, {"vlans": [{"vlan_id": "30", "vlan_name": "先"}, {"vlan_id": "30", "vlan_name": "后"}]}) == (
         1,
         0,
     )

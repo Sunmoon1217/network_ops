@@ -7,7 +7,8 @@
 
 import pytest
 
-from assets.models import AddressBook, Device, NatRule
+from assets.models import Device
+from configs.models import AddressBook, NatRule
 from ingest.parsers.factory import ParserFactory
 from ingest.savers.firewall import NatRuleSaver
 

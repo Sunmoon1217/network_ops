@@ -2,8 +2,9 @@
 
 import pytest
 
-from assets.models import Device, DomainAsset, GtmPool, GtmServer, GtmVServer, GtmWideip
+from assets.models import Device, DomainAsset
 from assets.signals import request_soft_asset_sync
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip
 
 
 def _gtm(hostname: str, fqdn: str) -> None:
@@ -63,7 +64,7 @@ def test_sync_failure_does_not_propagate(django_capture_on_commit_callbacks, mon
 @pytest.mark.django_db
 def test_device_config_pipeline_requests_sync(monkeypatch):
     """同步解析入库（DeviceConfig post_save）完成后请求刷新"""
-    from assets.models import DeviceConfig
+    from configs.models import DeviceConfig
     from ingest.pipeline import PipelineResult, SaverOutcome
 
     calls: list[str] = []
@@ -82,7 +83,7 @@ def test_device_config_pipeline_requests_sync(monkeypatch):
 @pytest.mark.django_db
 def test_device_config_without_saver_outcomes_does_not_request_sync(monkeypatch):
     """没跑到任何 Saver（无解析器 / 堆叠备机）时不触发全量归并"""
-    from assets.models import DeviceConfig
+    from configs.models import DeviceConfig
     from ingest.pipeline import PipelineResult
 
     calls: list[str] = []
