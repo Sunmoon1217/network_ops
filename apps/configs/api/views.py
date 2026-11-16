@@ -66,7 +66,7 @@ from configs.serializers.views import (
 )
 
 
-class DeviceConfigViewSet(viewsets.ModelViewSet):
+class DeviceConfigViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DeviceConfig.objects.select_related("device").all()
     serializer_class = DeviceConfigSerializer
     ordering_fields = ("collected_at",)
@@ -84,7 +84,7 @@ class DeviceConfigViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class VlanViewSet(viewsets.ModelViewSet):
+class VlanViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Vlan.objects.select_related("device").all()
     serializer_class = VlanSerializer
     search_fields = ("name", "vid", "description", "device__hostname")
@@ -98,7 +98,7 @@ class VlanViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class VrfViewSet(viewsets.ModelViewSet):
+class VrfViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Vrf.objects.select_related("device").all()
     serializer_class = VrfSerializer
     search_fields = ("name", "device__hostname")
@@ -112,7 +112,7 @@ class VrfViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class InterfaceViewSet(viewsets.ModelViewSet):
+class InterfaceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Interface.objects.select_related("device", "vrf").all()
     serializer_class = InterfaceSerializer
     search_fields = ("interface", "device__hostname", "ip_address")
@@ -129,7 +129,7 @@ class InterfaceViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class DeviceAccountViewSet(viewsets.ModelViewSet):
+class DeviceAccountViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DeviceAccount.objects.select_related("device").all()
     serializer_class = DeviceAccountSerializer
     search_fields = ("username", "description", "device__hostname")
@@ -143,25 +143,25 @@ class DeviceAccountViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class SnmpConfigViewSet(viewsets.ModelViewSet):
+class SnmpConfigViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SnmpConfig.objects.select_related("device").all()
     serializer_class = SnmpConfigSerializer
     ordering_fields = ("created_at",)
 
 
-class NtpConfigViewSet(viewsets.ModelViewSet):
+class NtpConfigViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NtpConfig.objects.select_related("device").all()
     serializer_class = NtpConfigSerializer
     ordering_fields = ("created_at",)
 
 
-class SyslogConfigViewSet(viewsets.ModelViewSet):
+class SyslogConfigViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SyslogConfig.objects.select_related("device").all()
     serializer_class = SyslogConfigSerializer
     ordering_fields = ("created_at",)
 
 
-class LtmVirtualServerViewSet(viewsets.ModelViewSet):
+class LtmVirtualServerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmVirtualServer.objects.select_related("device").all()
     serializer_class = LtmVirtualServerSerializer
     search_fields = ("name", "vs_address", "vs_port", "pool", "device__hostname")
@@ -175,7 +175,7 @@ class LtmVirtualServerViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmPoolViewSet(viewsets.ModelViewSet):
+class LtmPoolViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmPool.objects.select_related("device").all()
     serializer_class = LtmPoolSerializer
     search_fields = ("name", "mode", "device__hostname")
@@ -189,7 +189,7 @@ class LtmPoolViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmPoolMemberViewSet(viewsets.ModelViewSet):
+class LtmPoolMemberViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmPoolMember.objects.select_related("device").all()
     serializer_class = LtmPoolMemberSerializer
     search_fields = ("name", "address", "pool_name", "device__hostname")
@@ -203,7 +203,7 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmProfileViewSet(viewsets.ModelViewSet):
+class LtmProfileViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmProfile.objects.select_related("device").all()
     serializer_class = LtmProfileSerializer
     search_fields = ("name", "device__hostname")
@@ -216,7 +216,7 @@ class LtmProfileViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmIRuleViewSet(viewsets.ModelViewSet):
+class LtmIRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmIRule.objects.select_related("device").all()
     serializer_class = LtmIRuleSerializer
     search_fields = ("name", "device__hostname")
@@ -229,7 +229,7 @@ class LtmIRuleViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmSNATViewSet(viewsets.ModelViewSet):
+class LtmSNATViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmSNAT.objects.select_related("device").all()
     serializer_class = LtmSNATSerializer
     search_fields = ("name", "device__hostname")
@@ -242,7 +242,7 @@ class LtmSNATViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class LtmPersistViewSet(viewsets.ModelViewSet):
+class LtmPersistViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LtmPersist.objects.select_related("device").all()
     serializer_class = LtmPersistSerializer
     search_fields = ("name", "device__hostname")
@@ -255,7 +255,7 @@ class LtmPersistViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class GtmDatacenterViewSet(viewsets.ModelViewSet):
+class GtmDatacenterViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GtmDatacenter.objects.select_related("device").all()
     serializer_class = GtmDatacenterSerializer
     search_fields = ("name", "device__hostname")
@@ -268,7 +268,7 @@ class GtmDatacenterViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class GtmWideipViewSet(viewsets.ModelViewSet):
+class GtmWideipViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GtmWideip.objects.select_related("device").all()
     serializer_class = GtmWideipSerializer
     search_fields = ("name", "rtype", "lb_mode", "device__hostname")
@@ -282,7 +282,7 @@ class GtmWideipViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class GtmPoolViewSet(viewsets.ModelViewSet):
+class GtmPoolViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GtmPool.objects.select_related("device").all()
     serializer_class = GtmPoolSerializer
     search_fields = ("name", "lb_mode", "fallback_ip", "device__hostname")
@@ -296,7 +296,7 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class GtmServerViewSet(viewsets.ModelViewSet):
+class GtmServerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GtmServer.objects.select_related("device").all()
     serializer_class = GtmServerSerializer
     search_fields = ("name", "datacenter", "device__hostname")
@@ -310,7 +310,7 @@ class GtmServerViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class GtmVServerViewSet(viewsets.ModelViewSet):
+class GtmVServerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GtmVServer.objects.select_related("device", "server").all()
     serializer_class = GtmVServerSerializer
     search_fields = ("name", "ip_address", "server__name", "device__hostname")
@@ -327,7 +327,7 @@ class GtmVServerViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class AddressBookViewSet(viewsets.ModelViewSet):
+class AddressBookViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AddressBook.objects.select_related("device", "parent").all()
     serializer_class = AddressBookSerializer
     search_fields = ("name", "device__hostname")
@@ -340,7 +340,7 @@ class AddressBookViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class ServiceViewSet(viewsets.ModelViewSet):
+class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Service.objects.select_related("device").all()
     serializer_class = ServiceSerializer
     search_fields = ("name", "protocol")
@@ -353,7 +353,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class PolicyViewSet(viewsets.ModelViewSet):
+class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
     # 列表要展示源/目的地址（AddressBook）与端口（Service），三个 M2M 用 prefetch
     # 一次取回，避免逐行查询（N+1）
     queryset = Policy.objects.select_related("device").prefetch_related("source_addresses", "destination_addresses", "services").all()
@@ -376,7 +376,7 @@ class PolicyViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class NatRuleViewSet(viewsets.ModelViewSet):
+class NatRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NatRule.objects.select_related("device").all()
     serializer_class = NatRuleSerializer
     search_fields = ("name", "source_addresses__name", "destination_addresses__name", "device__hostname")
@@ -390,7 +390,7 @@ class NatRuleViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class RouteViewSet(viewsets.ModelViewSet):
+class RouteViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Route.objects.select_related("vrf", "vrf__device").all()
     serializer_class = RouteSerializer
     search_fields = ("destination", "nexthop", "vrf__name", "vrf__device__hostname")
@@ -407,7 +407,7 @@ class RouteViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class ArpMacViewSet(viewsets.ModelViewSet):
+class ArpMacViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ArpMac.objects.select_related("device").all()
     serializer_class = ArpMacSerializer
     search_fields = ("ip_address", "mac_address", "device__hostname", "interface", "vendor")

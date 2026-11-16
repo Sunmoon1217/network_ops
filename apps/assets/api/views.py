@@ -16,21 +16,21 @@ from ..serializers.views import (
 # DCIM ViewSets
 
 
-class SecurityZoneViewSet(viewsets.ModelViewSet):
+class SecurityZoneViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SecurityZone.objects.all()
     serializer_class = SecurityZoneSerializer
     search_fields = ("name",)
     ordering_fields = ("name", "created_at")
 
 
-class DataCenterViewSet(viewsets.ModelViewSet):
+class DataCenterViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DataCenter.objects.all()
     serializer_class = DataCenterSerializer
     search_fields = ("name", "address")
     ordering_fields = ("name", "created_at")
 
 
-class RoomViewSet(viewsets.ModelViewSet):
+class RoomViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Room.objects.select_related("datacenter").all()
     serializer_class = RoomSerializer
     search_fields = ("name", "datacenter__name")
@@ -44,7 +44,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class CabinetViewSet(viewsets.ModelViewSet):
+class CabinetViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Cabinet.objects.select_related("room", "room__datacenter").all()
     serializer_class = CabinetSerializer
     search_fields = ("name", "room__name", "room__datacenter__name")
@@ -64,21 +64,21 @@ class CabinetViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class VendorViewSet(viewsets.ModelViewSet):
+class VendorViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
     search_fields = ("name",)
     ordering_fields = ("name",)
 
 
-class DeviceModelViewSet(viewsets.ModelViewSet):
+class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DeviceModel.objects.select_related("vendor").all()
     serializer_class = DeviceModelSerializer
     search_fields = ("name", "vendor__name")
     ordering_fields = ("name",)
 
 
-class DeviceGroupViewSet(viewsets.ModelViewSet):
+class DeviceGroupViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DeviceGroup
 
     from ..serializers.views import DeviceGroupSerializer
@@ -89,7 +89,7 @@ class DeviceGroupViewSet(viewsets.ModelViewSet):
     ordering_fields = ("name", "created_at")
 
 
-class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
+class DeviceGroupMemberViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DeviceGroupMember
 
     from ..serializers.views import DeviceGroupMemberSerializer
@@ -110,7 +110,7 @@ class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class DeviceViewSet(viewsets.ModelViewSet):
+class DeviceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Device.objects.select_related("idc", "cabinet", "security_zone", "device_model").all()
     serializer_class = DeviceSerializer
     search_fields = ("hostname", "ip_address")
@@ -127,7 +127,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class DeviceConnectionViewSet(viewsets.ModelViewSet):
+class DeviceConnectionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DeviceConnection.objects.select_related("device").all()
     serializer_class = DeviceConnectionSerializer
     search_fields = ("username", "device__hostname")
@@ -159,7 +159,7 @@ class DeviceConnectionViewSet(viewsets.ModelViewSet):
 # IPAM ViewSets
 
 
-class TagViewSet(viewsets.ModelViewSet):
+class TagViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Tag
 
     from ..serializers.views import TagSerializer
@@ -170,7 +170,7 @@ class TagViewSet(viewsets.ModelViewSet):
     ordering_fields = ("name", "created_at")
 
 
-class SubnetViewSet(viewsets.ModelViewSet):
+class SubnetViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Subnet
 
     from ..serializers.views import SubnetSerializer
@@ -191,7 +191,7 @@ class SubnetViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class IPAddressViewSet(viewsets.ModelViewSet):
+class IPAddressViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import IPAddress
 
     from ..serializers.views import IPAddressSerializer
@@ -215,7 +215,7 @@ class IPAddressViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class TopologyViewSet(viewsets.ModelViewSet):
+class TopologyViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Topology
 
     from ..serializers.views import TopologySerializer
@@ -226,7 +226,7 @@ class TopologyViewSet(viewsets.ModelViewSet):
     ordering_fields = ("name", "updated_at")
 
 
-class SubnetUsageLogViewSet(viewsets.ModelViewSet):
+class SubnetUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import SubnetUsageLog
 
     from ..serializers.views import SubnetUsageLogSerializer
@@ -246,7 +246,7 @@ class SubnetUsageLogViewSet(viewsets.ModelViewSet):
 # 统一配置项体系（T1）：全站序列化器在 assets.serializers.views，与解析入库 / MCP 共用同一套字段口径
 
 
-class ConfigurationItemViewSet(viewsets.ModelViewSet):
+class ConfigurationItemViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import ConfigurationItem
     from assets.serializers.views import ConfigurationItemSerializer
 
@@ -263,7 +263,7 @@ class ConfigurationItemViewSet(viewsets.ModelViewSet):
         return qs
 
 
-class PhysicalServerViewSet(viewsets.ModelViewSet):
+class PhysicalServerViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import PhysicalServer
     from assets.serializers.views import PhysicalServerSerializer
 
@@ -273,7 +273,7 @@ class PhysicalServerViewSet(viewsets.ModelViewSet):
     ordering_fields = ("hostname", "created_at")
 
 
-class VirtualMachineViewSet(viewsets.ModelViewSet):
+class VirtualMachineViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import VirtualMachine
     from assets.serializers.views import VirtualMachineSerializer
 
@@ -283,7 +283,7 @@ class VirtualMachineViewSet(viewsets.ModelViewSet):
     ordering_fields = ("hostname", "created_at")
 
 
-class DatabaseInstanceViewSet(viewsets.ModelViewSet):
+class DatabaseInstanceViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DatabaseInstance
     from assets.serializers.views import DatabaseInstanceSerializer
 
@@ -293,7 +293,7 @@ class DatabaseInstanceViewSet(viewsets.ModelViewSet):
     ordering_fields = ("engine", "created_at")
 
 
-class ApplicationServiceViewSet(viewsets.ModelViewSet):
+class ApplicationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import ApplicationService
     from assets.serializers.views import ApplicationServiceSerializer
 
@@ -306,7 +306,7 @@ class ApplicationServiceViewSet(viewsets.ModelViewSet):
 # 统一关系表（T3）：按 CI 查上下游，正反向都走索引
 
 
-class CIRelationshipViewSet(viewsets.ModelViewSet):
+class CIRelationshipViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import CIRelationship
     from assets.serializers.views import CIRelationshipSerializer
 
