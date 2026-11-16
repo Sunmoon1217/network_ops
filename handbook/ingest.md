@@ -18,6 +18,8 @@
 `create_task` / `dispatch` / `cancel`，那三个函数不认识任何业务词汇——任务类型到
 「第一个阶段是什么」的映射、以及阶段名到 celery 任务的映射，都由本域在
 `ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
+`core.Task.task_type` / `core.Stage.stage_type` 因此是**自由字符串**（不带 `choices`）：
+词表一旦写进迁移，就会与运行时注册永久漂移；显示名一律由注册表反查。
 「下一个阶段是什么」是链路知识，留在这里。
 
 `signals.on_stage_complete` 监听 `core.Stage` 的 post_save，按

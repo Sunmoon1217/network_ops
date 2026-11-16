@@ -366,10 +366,28 @@ core 的 API 层不解释 `target_type`，但 `TaskViewSet` 的过滤、admin �
 5. **验证方式从 grep 升级成 AST 断言**：`tests/core/test_layering.py` 扫
    `apps/core/**` 的绝对 import，新增的反向依赖直接红。
 
-### 步骤 2 / 3 — 未开始
+### 步骤 2 — 已落地（2026-11-16）
 
-- 步骤 2（去 `choices`）：`tests/core/test_task_types.py::test_model_choices_agree_with_registry`
-  是当前的锁；摘掉 `choices` 后这条要改成「注册表覆盖历史词汇」。
-- 步骤 3（`Task.device` 方案 C）：
+| 项 | 落点 |
+|---|---|
+| 字段去词汇 | `Task.task_type` / `Stage.stage_type` 去掉 `choices`，类属性 `TASK_TYPES` / `STAGE_TYPES` 删除；迁移 `0005_alter_stage_stage_type_alter_task_task_type`（`choices` 不进 DDL，纯状态迁移） |
+| 显示名 | 覆盖 `get_task_type_display()` / `get_stage_type_display()`，实现委托 `task_types.label_for()`；未登记的旧词回落 key |
+| admin | `core/admin.py` 的 `VocabularyListFilter` 基类 + `TaskTypeFilter` / `StageTypeFilter`，运行期读注册表快照 |
+| 契约不变 | 序列化器的 `task_type_display` / `stage_type_display` 与前端类型零改动 |
+| 锁 | `tests/core/test_task_types.py`：注册表覆盖历史词汇、字段无 `choices`、display 委托注册表；`tests/core/test_task_api.py` 新增「未注册词 → 400」 |
+
+与提案的差异（承接上面的编号）：
+
+6. **display 改在模型方法上，序列化器一行没动**。原文让 serializer 的 `*_display` 字段直接调
+   `label_for`；但 `__str__`、admin、`ingest/signals.py` 的 `instance.get_stage_type_display()`
+   都在调模型方法，只改 serializer 会留下两条反查路径。覆盖那两个方法后 core 里依然没有业务
+   词汇（只是把「查哪张表」委托出去），所有调用方零改动。
+7. **admin 必须显式给过滤器**。`choices` 摘掉后 `list_filter = ("task_type",)` 会静默退化成
+   `AllValuesFieldListFilter`（按库里出现过的字符串过滤、没有中文标签）；改成注册表快照后
+   选项带标签，业务域新登记的词自动出现，且不产生迁移。
+
+### 步骤 3 — 未开始
+
+- `Task.device` 方案 C：
   `tests/core/test_layering.py::test_known_debt_task_device_fk_still_points_at_assets`
   是那条债的记号，落地时删。
