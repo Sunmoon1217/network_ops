@@ -11,7 +11,7 @@ from django.db import IntegrityError, transaction
 
 from assets.models import Device
 from configs.models import Service
-from ingest.savers.firewall import ServiceSaver
+from configs.savers.firewall import ServiceSaver
 
 
 @pytest.mark.django_db
@@ -108,7 +108,7 @@ def test_service_saver_keeps_devices_isolated():
 def test_policy_saver_can_reference_same_service_on_two_devices():
     """PolicySaver 也会 get_or_create 服务，两台设备各自引用同名服务不应冲突"""
     from configs.models import Policy
-    from ingest.savers.firewall import PolicySaver
+    from configs.savers.firewall import PolicySaver
 
     saver = PolicySaver()
     for index, hostname in enumerate(("_t_pol_s1", "_t_pol_s2"), start=1):

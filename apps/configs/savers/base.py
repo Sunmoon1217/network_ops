@@ -54,7 +54,7 @@ def status_enabled(item: dict, *legacy_keys: str, default: bool = True) -> bool:
 class BaseSaver(ABC):
     """基类：子类定义 device_types、keys 与 model_paths 即自动注册。
 
-    ``save()`` 是模板方法，先经 ``ingest.mapping.normalize_config`` 归一键与字段，
+    ``save()`` 是模板方法，先经 ``configs.mapping.normalize_config`` 归一键与字段，
     子类 ``_save`` 只读规范字段。三个类属性的契约见 handbook/ingest.md
     """
 
@@ -80,7 +80,7 @@ class BaseSaver(ABC):
         进入；归一放在这一口而不是 pipeline，保证绕过分发直调 ``save`` 的
         调用方拿到同样的规范结构。
         """
-        from ingest.mapping import normalize_config
+        from configs.mapping import normalize_config
 
         return self._save(device, normalize_config(parsed_data))
 

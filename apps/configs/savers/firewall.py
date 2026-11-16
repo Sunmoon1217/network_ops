@@ -37,7 +37,7 @@ class AddressBookSaver(BaseSaver):
         from configs.models import AddressBook
         from configs.serializers.views import AddressBookSerializer
 
-        # addresses 别名已由 ingest.mapping 在 save 入口归一为 address_books
+        # addresses 别名已由 configs.mapping 在 save 入口归一为 address_books
         raw = parsed_data.get("address_books")
         if not raw:
             return (0, 0)
@@ -298,7 +298,7 @@ class ServiceSaver(BaseSaver):
 class PolicySaver(BaseSaver):
     """防火墙策略保存器。
 
-    三类原始键与字段差异已在 ``BaseSaver.save`` 入口由 ``ingest.mapping`` 归一；
+    三类原始键与字段差异已在 ``BaseSaver.save`` 入口由 ``configs.mapping`` 归一；
     这里只处理**值语义**（permit→allow、enable/disable→bool）与 hillstone 的
     分列地址（``-ip`` / ``-addr`` / ``-range`` / ``-host``，约定见 handbook/ingest.md）
     """
@@ -311,7 +311,7 @@ class PolicySaver(BaseSaver):
         from configs.models import AddressBook, Policy, Service
         from configs.serializers.views import AddressBookSerializer, PolicySerializer
 
-        # acl / rules 别名已由 ingest.mapping 在 save 入口归一为 policies
+        # acl / rules 别名已由 configs.mapping 在 save 入口归一为 policies
         policies = parsed_data.get("policies")
         if not policies:
             return (0, 0)
@@ -403,7 +403,7 @@ class PolicySaver(BaseSaver):
 
         # 策略落库后重建该设备的访问流：投递即返回，展开与入库走独立队列 + 单写者
         # consumer（见 handbook/analysis.md）。broker 不可达只告警不抛——入库已成功，可手工补。
-        from ingest.access_flow_trigger import request_rebuild
+        from configs.access_flow_trigger import request_rebuild
 
         request_rebuild(device.pk)
         return (created, updated)

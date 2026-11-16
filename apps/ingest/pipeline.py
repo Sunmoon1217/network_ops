@@ -92,7 +92,7 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
         logger.warning("DeviceConfig %s: %s", device_config.pk, result.skipped)
         return {}
 
-    from ingest.parsers.factory import ParserFactory
+    from configs.parsers.factory import ParserFactory
 
     try:
         parser = ParserFactory.get_parser(device)
@@ -113,15 +113,13 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
 
 def _dispatch_savers(device, config_json: dict, result: PipelineResult) -> None:
     """按顶层 key 找到 Saver 并逐个执行；单个失败只记录，不中断其余"""
-    from ingest.savers.registry import build_saver_payloads
+    from configs.savers.registry import build_saver_payloads
 
     for saver, payload in build_saver_payloads(device.device_type, config_json):
         outcome = SaverOutcome(keys=list(payload))
         try:
             outcome.created, outcome.updated = saver.save(device, payload)
-            logger.info(
-                "设备 %s [%s] 保存完成: +%d ~%d", device.hostname, outcome.label, outcome.created, outcome.updated
-            )
+            logger.info("设备 %s [%s] 保存完成: +%d ~%d", device.hostname, outcome.label, outcome.created, outcome.updated)
         except Exception as e:
             outcome.error = str(e)
             logger.error("设备 %s [%s] 保存失败: %s", device.hostname, outcome.label, e, exc_info=True)

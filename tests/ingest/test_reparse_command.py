@@ -128,7 +128,7 @@ def test_reparse_saver_failure_raises_command_error(monkeypatch, h3c_model):
     monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     _make_config("rp-sw-07", h3c_model)
 
-    from ingest.savers import registry
+    from configs.savers import registry
 
     def _boom(self, device, parsed_data):
         raise RuntimeError("模拟 Saver 故障")
@@ -141,7 +141,7 @@ def test_reparse_saver_failure_raises_command_error(monkeypatch, h3c_model):
             saver.save = _boom.__get__(saver, type(saver))
         return savers
 
-    monkeypatch.setattr("ingest.savers.registry.get_savers_for_config", _patched)
+    monkeypatch.setattr("configs.savers.registry.get_savers_for_config", _patched)
 
     with pytest.raises(CommandError, match="Saver 执行失败"):
         _run("--device", "rp-sw-07")
@@ -208,7 +208,7 @@ def test_reparse_parallel_reports_saver_failure(monkeypatch):
     _make_config("rp-par-fail-1", model)
     _make_config("rp-par-fail-2", model)
 
-    from ingest.savers import registry
+    from configs.savers import registry
 
     def _boom(self, device, parsed_data):
         raise RuntimeError("模拟 Saver 故障")
@@ -221,7 +221,7 @@ def test_reparse_parallel_reports_saver_failure(monkeypatch):
             saver.save = _boom.__get__(saver, type(saver))
         return savers
 
-    monkeypatch.setattr("ingest.savers.registry.get_savers_for_config", _patched)
+    monkeypatch.setattr("configs.savers.registry.get_savers_for_config", _patched)
 
     with pytest.raises(CommandError, match="Saver 执行失败"):
         _run("--all", "--workers", "2")

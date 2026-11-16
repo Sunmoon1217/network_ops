@@ -9,13 +9,12 @@ from pathlib import Path
 from django.conf import settings
 from django.test import TestCase
 
-import ingest
-from ingest.parsers.factory import ParserFactory
+from configs import parsers
+from configs.parsers.factory import ParserFactory
 
-# 模板目录基于 ingest 包定位、数据目录基于项目根：都不依赖测试文件自身位置。
-# 原先两者都用 Path(__file__).parent.parent，测试目录一挪动就失效；
-# 其中 DATA_DIR 本来就是错的（指向 apps/ingest/data/configs），靠 exists() 静默跳过。
-TMPLS_DIR = Path(ingest.__file__).resolve().parent / "parsers" / "tmpls"
+# 模板目录基于 configs.parsers 包定位（解析器与模板已随拆分迁入 configs）、
+# 数据目录基于项目根：都不依赖测试文件自身位置。
+TMPLS_DIR = Path(parsers.__file__).resolve().parent / "tmpls"
 DATA_DIR = Path(settings.BASE_DIR) / "data" / "configs"
 
 REGISTERED_PARSERS = ParserFactory.available_parsers()
@@ -134,8 +133,7 @@ class F5PoolMemberSeparatorTest(TestCase):
 
     def test_colon_and_dot_separator_both_parse(self):
         members = self._members(
-            "        /Common/node_a:80 {\n            address 10.0.0.1\n        }\n"
-            "        /Common/2001:db8::1.8080 {\n            address 2001:db8::1\n        }\n"
+            "        /Common/node_a:80 {\n            address 10.0.0.1\n        }\n        /Common/2001:db8::1.8080 {\n            address 2001:db8::1\n        }\n"
         )
         assert [(m["name"], m["port"]) for m in members] == [
             ("/Common/node_a", "80"),

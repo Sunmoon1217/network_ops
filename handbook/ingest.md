@@ -125,9 +125,9 @@ dict 与 dict 合并字段会把两条独立规则揉成一条；消费方本就
 不抛会让 Celery 把失败任务记成 `SUCCESS`，`AsyncResult` / Flower 的失败告警与重试
 全部失效。
 
-## Saver 基类（`savers/base.py`）
+## Saver 基类（`configs/savers/base.py`）
 
-`BaseSaver.save` 是模板方法：先 `ingest.mapping.normalize_config` 归一键与字段，
+`BaseSaver.save` 是模板方法：先 `configs.mapping.normalize_config` 归一键与字段，
 再交给子类 `_save`。归一放在这一口而不是 pipeline，是为了让**绕过分发直调 `save`**
 的调用方（命令重跑、测试）拿到同样的规范结构。
 
@@ -169,7 +169,7 @@ F5 配置里对象名普遍带 `/Common/` 分区前缀，库里存末段（`_lea
 `member_status` 等 str（`enabled/disabled`、`enable/disable`）。都没有时用 `default`，
 给手工 payload 兜底。
 
-## 负载均衡 Saver 的约定（`savers/lb.py`）
+## 负载均衡 Saver 的约定（`configs/savers/lb.py`）
 
 - **`virtuals` 里的 profiles / rules / persist 是设备级清单**（`LtmProfile` /
   `LtmIRule` / `LtmPersist` 没有指向 virtual server 的外键），所以在
@@ -191,7 +191,7 @@ rules    -> {"name": ["/Common/irule_redirect"]}
 persist  -> {"name": "/Common/cookie"}
 ```
 
-## A10 SLB Saver（`savers/a10_lb.py`）
+## A10 SLB Saver（`configs/savers/a10_lb.py`）
 
 A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 各消费 A10 自己的顶层键
 （`service_groups` / `virtual_server`），不与 F5 的 `pools` / `virtuals` 冲突：
@@ -218,7 +218,7 @@ A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 
 - `servers`（slb server 节点清单）没有对应 `Ltm*` 模型，与 F5 `nodes` 一样保持「产出
   无消费」，落在 `KNOWN_UNCONSUMED_PRODUCTS`。
 
-## 防火墙 Saver 的映射约定（`savers/firewall.py`）
+## 防火墙 Saver 的映射约定（`configs/savers/firewall.py`）
 
 ### AddressBookSaver
 
@@ -277,7 +277,7 @@ src 行单独成行：`port` 照落端口值、`description` 标注 `src: ...` �
 ### PolicySaver
 
 三种原始键（`policies` / `acl`(cisco) / `rules`(hillstone)）与字段差异已在
-`BaseSaver.save` 入口由 `ingest.mapping` 归一，Saver 内部只处理**值语义**与
+`BaseSaver.save` 入口由 `configs.mapping` 归一，Saver 内部只处理**值语义**与
 hillstone 的结构级特征。
 
 hillstone 的地址按来源分列：
@@ -309,7 +309,7 @@ A10/slb、Cisco/firewall、F5/gslb、F5/slb、H3C/switch、H3C/router、
 Hillstone/firewall、Huawei/switch、Maipu/switch、Ruijie/switch
 ```
 
-Saver 实现（`savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
+Saver 实现（`configs/savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
 LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、
 GtmServerSaver、GtmPoolSaver、A10ServiceGroupSaver、A10VirtualServerSaver、AddressBookSaver、
 ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver。

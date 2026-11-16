@@ -1,8 +1,8 @@
-"""访问流（AccessFlow）重建任务的**投递触点**——ingest 侧唯一与 analysis 解耦的接缝。
+"""访问流（AccessFlow）重建任务的**投递触点**——configs 侧与 analysis 解耦的接缝。
 
-链路的触发方是 ``PolicySaver``（策略落库后要重建该设备的访问流），但任务本体
-``analysis.rebuild_access_flows`` 住在 analysis——依赖方向是 **analysis → ingest 单向，
-ingest 不许 import analysis**。所以这里不 import 任务对象，而是按
+链路的触发方是 ``PolicySaver``（策略落库后要重建该设备的访问流），它随解析/写入链路
+从 ingest 迁到 configs；任务本体 ``analysis.rebuild_access_flows`` 仍住在 analysis。
+依赖方向是 **analysis → configs 单向，configs 不许 import analysis**。所以这里不 import 任务对象，而是按
 ``settings.ACCESS_FLOW_TASK`` 的**任务名字符串** send_task：
 
 - celery 的消息本来就只有 ``{"task": <名字>, "args": [...]}``，worker 收到后拿名字查
@@ -35,6 +35,4 @@ def request_rebuild(device_id: int) -> None:
     try:
         current_app.send_task(settings.ACCESS_FLOW_TASK, args=[device_id])
     except Exception:
-        logger.warning(
-            "投递 AccessFlow 重建失败（可用 rebuild_access_flows 手工补）: device=%s", device_id, exc_info=True
-        )
+        logger.warning("投递 AccessFlow 重建失败（可用 rebuild_access_flows 手工补）: device=%s", device_id, exc_info=True)

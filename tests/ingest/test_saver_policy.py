@@ -8,8 +8,8 @@ import pytest
 
 from assets.models import Device
 from configs.models import AddressBook, Policy, Service
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import PolicySaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import PolicySaver
 
 HILLSTONE_RULE = """rule id 9
   action permit

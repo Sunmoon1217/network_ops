@@ -1,5 +1,5 @@
 # 导入厂商解析器以触发 @ParserFactory.register 装饰器
-from ingest.parsers.factory import (
+from configs.parsers.factory import (
     A10SLBParser,
     CiscoFWParser,
     F5GTMParser,

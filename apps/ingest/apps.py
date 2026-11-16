@@ -10,10 +10,8 @@ class OperatorConfig(AppConfig):
     verbose_name = "数据摄入（采集与解析入库）"
 
     def ready(self):
-        # 导入 Saver 包会执行各模块里的类定义，__init_subclass__ 借此把 Saver 注册进
-        # registry。原先只靠 signals 里那行 `from ingest.savers.registry import ...` 顺带
-        # 触发父包导入，一旦那行被挪进函数体（惰性导入），所有 Saver 会静默失效。
-        import ingest.savers  # noqa: F401
+        # Saver 注册表已随 parsers / savers / mapping 迁入 configs，注册点移到
+        # configs.apps.ConfigsConfig.ready()（见该文件注释），本域不再负责触发。
         import ingest.signals  # noqa: F401
 
         self._register_task_vocabulary()

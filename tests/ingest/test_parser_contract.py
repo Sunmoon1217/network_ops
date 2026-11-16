@@ -1,7 +1,7 @@
 """解析器 / 模板 / Saver 之间的契约测试。
 
 三者的映射靠命名约定（模板的顶层 group 名 = config_json 的键 = Saver 的 keys）
-加上 ``ingest.mapping`` 的归一层（别名键 / 别名字段 → 规范名），缺少校验时只会
+加上 ``configs.mapping`` 的归一层（别名键 / 别名字段 → 规范名），缺少校验时只会
 **静默失效**：模板改了结构、或 Saver 注册到了错误的设备类型上，都不会报错，
 只是数据不再入库。
 
@@ -10,11 +10,11 @@
 修复缺口后需要同步更新常量，否则测试会失败并提醒。
 """
 
-from ingest.mapping import canonical_key
-from ingest.parsers.contract import KNOWN_MISSING_PRODUCER, KNOWN_UNCONSUMED_PRODUCTS
-from ingest.parsers.factory import ParserFactory
-from ingest.parsers.template_keys import template_keys
-from ingest.savers.registry import all_savers
+from configs.mapping import canonical_key
+from configs.parsers.contract import KNOWN_MISSING_PRODUCER, KNOWN_UNCONSUMED_PRODUCTS
+from configs.parsers.factory import ParserFactory
+from configs.parsers.template_keys import template_keys
+from configs.savers.registry import all_savers
 
 
 def _products_by_device_type() -> dict[str, set[str]]:
@@ -86,9 +86,4 @@ def test_unconsumed_products_match_snapshot():
     actual = {dt: keys for dt, keys in actual.items() if keys}
     expected = {dt: sorted(keys) for dt, keys in KNOWN_UNCONSUMED_PRODUCTS.items()}
 
-    assert actual == expected, (
-        "产出/消费缺口发生变化。\n"
-        f"实际: {actual}\n"
-        f"快照: {expected}\n"
-        "若为修复缺口，请同步更新 KNOWN_UNCONSUMED_PRODUCTS。"
-    )
+    assert actual == expected, f"产出/消费缺口发生变化。\n实际: {actual}\n快照: {expected}\n若为修复缺口，请同步更新 KNOWN_UNCONSUMED_PRODUCTS。"

@@ -88,7 +88,7 @@ def run_parsing_stage(self, stage_id):
 
         raw_config = collection_stage.output_data.get("config", "")
 
-        from ingest.parsers.factory import ParserFactory
+        from configs.parsers.factory import ParserFactory
 
         try:
             parser = ParserFactory.get_parser(device)
@@ -126,7 +126,7 @@ def run_storage_stage(self, stage_id):
         parsed_data = parsing_stage.output_data
 
         # 分组规则（一个 Saver 可注册多个 key、payload 只含自己有值的键）见 build_saver_payloads
-        from ingest.savers.registry import build_saver_payloads
+        from configs.savers.registry import build_saver_payloads
 
         total_created, total_updated = 0, 0
         for saver, payload in build_saver_payloads(device.device_type, parsed_data):
@@ -151,8 +151,8 @@ def run_storage_stage(self, stage_id):
 def run_config_parsing(self, config_id):
     """异步解析 DeviceConfig"""
     from configs.models import DeviceConfig
+    from configs.parsers.factory import ParserFactory
     from ingest.config_repo import get_config
-    from ingest.parsers.factory import ParserFactory
 
     logger.info("Starting config parsing for DeviceConfig %s", config_id)
     try:
@@ -197,7 +197,7 @@ def run_config_storage(self, config_id):
             return
 
         # 与 run_storage_stage 同一套分组：每个 Saver 只拿到自己注册的 key
-        from ingest.savers.registry import build_saver_payloads
+        from configs.savers.registry import build_saver_payloads
 
         total_created, total_updated = 0, 0
         for saver, payload in build_saver_payloads(device.device_type, config.config_json):

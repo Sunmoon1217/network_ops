@@ -107,7 +107,7 @@ def route_collect(request):
 
         # 模板是 ingest 解析管道的资产，路径经其公开常量取（analysis → ingest 单向依赖）。
         # 别再手算相对路径：拆出 app 后 `parent.parent` 已指错——同「测试内资源定位」的坑。
-        from ingest.parsers.template_keys import TMPLS_DIR
+        from configs.parsers.template_keys import TMPLS_DIR
 
         template_path = None
         for subdir in ("configs", "running"):

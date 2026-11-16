@@ -9,8 +9,8 @@ import pytest
 
 from assets.models import Device
 from configs.models import LtmPersist, LtmPool, LtmPoolMember, LtmProfile, LtmVirtualServer
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.a10_lb import A10ServiceGroupSaver, A10VirtualServerSaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.a10_lb import A10ServiceGroupSaver, A10VirtualServerSaver
 
 A10_CONFIG = """slb server server1 10.1.1.1
    port 80 tcp

@@ -8,8 +8,8 @@ import pytest
 
 from assets.models import Device
 from configs.models import AddressBook
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import AddressBookSaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import AddressBookSaver
 
 HILLSTONE_ADDRESSES = """address "office"
   ip 10.0.0.0/24

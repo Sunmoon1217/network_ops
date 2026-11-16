@@ -13,3 +13,9 @@ class ConfigsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "configs"
     verbose_name = "设备配置"
+
+    def ready(self):
+        # 导入 Saver 包会执行各模块里的类定义，__init_subclass__ 借此把 Saver 注册进
+        # registry。Saver 已随解析/写入链路迁入本域，注册点也跟着搬过来——原先放在
+        # ingest.apps 里会形成 ingest → configs 之外的隐式启动顺序依赖。
+        import configs.savers  # noqa: F401

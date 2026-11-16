@@ -8,9 +8,9 @@ import pytest
 
 from assets.models import Device
 from configs.models import Route, SnmpConfig, Vlan, Vrf
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.network import SnmpConfigSaver, VlanSaver
-from ingest.savers.routing import RouteSaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.network import SnmpConfigSaver, VlanSaver
+from configs.savers.routing import RouteSaver
 
 
 def _parse(vendor: str, device_type: str, cfg: str) -> dict:

@@ -1,7 +1,8 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1（`ConfigBase` + `Vlan`）与切片 2（其余 23 个子类 +
-> `ArpMac` 改继承 + `DeviceConfig`，共 25 张表）已落地；parsers / savers / admin / API 未迁。**
+> **状态：实施中（2026-11-16 起）。切片 1 / 2 已落地（25 个 `ConfigBase` 子类 + `DeviceConfig`，
+> 共 26 张表迁到 configs）；切片 3 已落地（序列化器合并 + 配置类序列化器 + parsers / savers /
+> mapping 迁入）；admin / API / llmtools 目录改名 / 软资产归并未迁。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -547,18 +548,32 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
    fresh 库会直接 DROP 表；`configs/0002` 的 CreateModel 若不做 state-only，会与历史迁移
    已建的同名表/constraint 冲突。两边都靠 `database_operations=[]` 才对。
 
-**仍然是过渡态**：`assets/admin.py`、`assets/api/views.py`、`assets/serializers/views.py`、
-`ingest/savers/*` 等仍 import configs 的模型（合法的下层依赖），admin / API / 序列化器本身
-还没搬；`ArpMac` 并入后 `purge_configs` 会清 ARP/MAC 表（已写进 `handbook/ingest.md`）。
+**仍然是过渡态**（切片 2 结束时）：`assets/admin.py`、`assets/api/views.py`、`assets/serializers/views.py`
+等仍 import configs 的模型（合法的下层依赖），admin / API 本身还没搬；`ArpMac` 并入后
+`purge_configs` 会清 ARP/MAC 表（已写进 `handbook/ingest.md`）。其中解析 / 写入 / 序列化器
+部分已在切片 3 迁走。
+
+### 切片 3 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 序列化器合并 | 两个私有展示函数并入 `assets/serializers/views.py`，删除 `assets/api/serializers.py`；`analysis/api/firewall_groups.py` 改 import；契约测试改成「旧模块已删除」对账 |
+| 配置类序列化器 | 26 个（25 子类 + DeviceConfig）→ `configs/serializers/views.py`，继承 `assets.serializers.base`；`PolicySerializer` 保留三个 `*_display` 展示字段（API 口径不变） |
+| 解析 / 写入 / 归一 | `ingest/parsers/`、`ingest/savers/`、`ingest/mapping.py` 整体迁 `configs/`；`access_flow_trigger.py` 随 PolicySaver 迁 configs（按任务名 send_task，仍不 import analysis） |
+| 注册与模板路径 | Saver 注册点从 `ingest.apps.ready()` 移到 `configs.apps.ready()`；解析器模板按 `configs.parsers.__file__` 定位，模板管理接口同步 |
+| 引用点 | 34 个文件的模块路径改指 configs；savers 的序列化器 import 改 `configs.serializers.views`；llmtools 规格改为 `s`（assets）+ `cs`（configs）双引用 |
+
+**实测结论**：全量 **846 passed, 66 subtests passed**；`manage.py check` 无问题；configs 侧对
+`ingest` / `analysis` 的 import 为 0（`access_flow_trigger` 只按任务名字符串投递）。
+failures 修了两处：`PolicySerializer` 的展示字段随合并丢了（已补回），解析器测试的模板目录
+断言仍指向 `ingest`（已改按 `configs.parsers` 包定位）。
 
 ### 下一步（按依赖顺序）
 
-1. **迁 parsers / savers / mapping**：注意 `savers/*.py` 里 `from assets.serializers.views import *Serializer`
-   要跟着改成 `configs.serializers.views`（序列化器先合并新旧两套，见 §「序列化器：先合并新旧，再搬」）。
-2. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄。
-3. **llmtools**：`domains/assets/` 改名 + `specs/ipam.py` 的 `models.` → `cm.`（切片 1 已先把 `Vlan`
-   两处改成 `cm.Vlan`，可作为范本）。
-4. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
+1. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄；
+   `resolve_config_owner` 随 `DeviceConfigViewSet` 迁 configs。
+2. **llmtools**：`domains/assets/` 改名 + 规格里的模型来源已按 `cm.` 改完，剩目录改名与 `tools.py` 的跨域工具。
+3. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
    `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
-5. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+4. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
 

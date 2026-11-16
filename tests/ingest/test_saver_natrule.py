@@ -9,8 +9,8 @@ import pytest
 
 from assets.models import Device
 from configs.models import AddressBook, NatRule
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import NatRuleSaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import NatRuleSaver
 
 CISCO_NAT = """object network web
  host 10.0.0.10

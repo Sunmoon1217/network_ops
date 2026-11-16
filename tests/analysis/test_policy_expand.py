@@ -464,7 +464,7 @@ def test_command_sync_rebuilds_in_process():
 def test_command_dispatches_by_default(monkeypatch):
     device = _device("_t_af_cmd2")
     calls: list[int] = []
-    monkeypatch.setattr("ingest.access_flow_trigger.request_rebuild", calls.append)
+    monkeypatch.setattr("configs.access_flow_trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname)
 
@@ -475,7 +475,7 @@ def test_command_dispatches_by_default(monkeypatch):
 def test_command_dedupes_repeated_devices(monkeypatch):
     device = _device("_t_af_cmd3")
     calls: list[int] = []
-    monkeypatch.setattr("ingest.access_flow_trigger.request_rebuild", calls.append)
+    monkeypatch.setattr("configs.access_flow_trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname, "--device", device.hostname)
 
@@ -504,8 +504,8 @@ def test_multi_protocol_service_expands_into_two_flow_rows():
     走 build_saver_payloads 的真实执行顺序（registry 已保证 ServiceSaver 先于
     PolicySaver——先有稳定行、再挂 M2M）。
     """
-    from ingest.parsers.factory import ParserFactory
-    from ingest.savers.registry import build_saver_payloads
+    from configs.parsers.factory import ParserFactory
+    from configs.savers.registry import build_saver_payloads
 
     device = _device("_t_svc_flow")
     parsed = ParserFactory.get_parser_by_keys("Hillstone", "firewall").parse(
@@ -538,7 +538,7 @@ def test_multi_protocol_service_expands_into_two_flow_rows():
 def test_policy_reference_gets_all_rows_even_when_defined_first():
     """Service 先于 Policy 跑（registry 排序）时，引用拿到的是全部行——
     补充场景：占位逻辑不应发生（真行已存在 → missing 为空 → 无 any 占位混入）"""
-    from ingest.savers.registry import build_saver_payloads
+    from configs.savers.registry import build_saver_payloads
 
     device = _device("_t_svc_noplace")
     parsed = {

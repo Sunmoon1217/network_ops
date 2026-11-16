@@ -13,13 +13,13 @@ import pytest
 
 from assets.models import Device, DeviceModel, Vendor
 from configs.models import DeviceConfig, Service, Vlan, Vrf
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import ServiceSaver
+from configs.savers.interface import InterfaceSaver
+from configs.savers.lb import LBSnatSaver
+from configs.savers.registry import get_savers_for_config
+from configs.savers.routing import VrfSaver
 from ingest.config_repo import get_config
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import ServiceSaver
-from ingest.savers.interface import InterfaceSaver
-from ingest.savers.lb import LBSnatSaver
-from ingest.savers.registry import get_savers_for_config
-from ingest.savers.routing import VrfSaver
 
 # ---------- 单条命中（dict）不应崩溃 ----------
 

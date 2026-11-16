@@ -1,6 +1,6 @@
 """解析器产出 → Saver → 模型 的关联映射层：把厂商间的键级/字段级差异收敛成声明表。
 
-由 :meth:`ingest.savers.base.BaseSaver.save` 在入口统一归一（键先归一、记录字段再归一），
+由 :meth:`configs.savers.base.BaseSaver.save` 在入口统一归一（键先归一、记录字段再归一），
 子类 ``_save`` 只读规范字段。
 
 分层约定（哪些差异该留在 Saver）、为什么声明表不带厂商维度：见 handbook/ingest.md

@@ -14,7 +14,7 @@ Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详�
 阶段的写侧例外**，做监控平台统一管理（自动纳管、告警富化、状态回写），不属于「只做查询」限制。范围
 边界与任务裁剪见 [`handbook/roadmap.md`](handbook/roadmap.md)「现阶段目标与范围边界」。
 
-- 后端：数据模型 + REST API；设备配置解析入库（`ingest/parsers` TTP + `savers`）；
+- 后端：数据模型 + REST API；设备配置解析入库（`configs/parsers` TTP + `configs/savers`）；
   `ingest/collectors/` 接 Zabbix / Autotask 给总览大屏供数。
 - 前端：Vite **双入口**（`index.html` 主站 / `dashboard.html` 大屏），构建产物可由 Django 直接托管（开发调试）。
 - 生产：`docker compose` 起 db / redis / code-init（一次性把代码与静态成品铺进命名卷）/ app / worker /
@@ -60,8 +60,9 @@ network_ops/
 
 > 分层规范以 `handbook/design/layering.md` 为准（实施中，未完全落地）。
 
-**依赖方向**：`llmtools → apps`，`analysis → ingest → assets`（单向）。`assets` 不许 import
-`ingest`；`ingest` 除 `purge_configs` 这类跨域运维工具外不许 import `analysis`；`llmtools` 的
+**依赖方向**：`llmtools → apps`，`analysis → ingest → configs → assets`（单向）。`assets`
+是叶子节点，不许 import `configs` / `ingest`；`configs` 不许 import `ingest` / `analysis`；
+`ingest` 除 `purge_configs` 这类跨域运维工具外不许 import `analysis`；`llmtools` 的
 子模块不许 import 任何业务域（`domains/` 是唯一例外）。
 
 ## 文档地图
@@ -260,8 +261,9 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 | 层 | 职责 | 细节 |
 |----|------|------|
 | `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检也在这里） | [`handbook/api.md`](handbook/api.md) |
-| `assets/` | 网络域数据模型（`ConfigBase` 基类）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
-| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
+| `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
+| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
+| `ingest/` | 采集与入库编排、Git 配置仓库；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
 | `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控、大屏供数（只读消费） | [`handbook/analysis.md`](handbook/analysis.md) |
 | `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
 | `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
@@ -270,7 +272,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 ## 注意事项
 
 - **解析器 / Saver / 模型三层关联**：解析器按 `(vendor, device_type)` 产出**原始**键 →
-  `ingest.mapping` 归一（键别名 + 字段别名，纯函数、幂等、**无厂商维度**）→ Saver 按
+  `configs.mapping` 归一（键别名 + 字段别名，纯函数、幂等、**无厂商维度**）→ Saver 按
   `(device_type, key)` 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`
   （模板方法），值语义与结构级差异留 Saver。契约测试 `tests/ingest/test_parser_contract.py` +
   `test_mapping.py`；清单接口 `/api/parsers/mapping/`。

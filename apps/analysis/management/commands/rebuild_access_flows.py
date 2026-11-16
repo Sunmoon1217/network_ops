@@ -47,18 +47,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"完成（sync）：{len(devices)} 台，+{total_created} ~{total_updated}"))
             return
 
-        # 延迟 import：让测试可以 monkeypatch ingest.access_flow_trigger.request_rebuild
+        # 延迟 import：让测试可以 monkeypatch configs.access_flow_trigger.request_rebuild
         # （触发器住 ingest——它是 PolicySaver 侧的投递触点，依赖方向只许 analysis → ingest）
-        from ingest.access_flow_trigger import request_rebuild
+        from configs.access_flow_trigger import request_rebuild
 
         for device in devices:
             request_rebuild(device.pk)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"已投递 {len(devices)} 台设备的重建任务（队列 access_flow，"
-                "需有 worker 消费；ACCESS_FLOW_DISPATCH=0 时投递为空操作）"
-            )
-        )
+        self.stdout.write(self.style.SUCCESS(f"已投递 {len(devices)} 台设备的重建任务（队列 access_flow，需有 worker 消费；ACCESS_FLOW_DISPATCH=0 时投递为空操作）"))
 
     def _resolve(self, options) -> list[Device]:
         if options["all"]:

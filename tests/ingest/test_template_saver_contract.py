@@ -13,10 +13,10 @@ from django.conf import settings
 
 from assets.models import Device
 from configs.models import AddressBook, Interface, Policy, Service
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import AddressBookSaver, PolicySaver, ServiceSaver
-from ingest.savers.interface import InterfaceSaver
-from ingest.savers.registry import build_saver_payloads
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import AddressBookSaver, PolicySaver, ServiceSaver
+from configs.savers.interface import InterfaceSaver
+from configs.savers.registry import build_saver_payloads
 
 HILLSTONE_CONFIG = """interface ge0/1
 exit
@@ -270,8 +270,8 @@ def test_inline_config_lands_in_db(cid, vendor, dtype, cfg):
     登记在案的未消费缺口）；``if not payloads`` 分支防御性地覆盖「某厂商全部
     产出键都无 Saver」的情形，验证没有出现新的未消费缺口。
     """
-    from ingest.mapping import canonical_key
-    from ingest.parsers.contract import KNOWN_UNCONSUMED_PRODUCTS
+    from configs.mapping import canonical_key
+    from configs.parsers.contract import KNOWN_UNCONSUMED_PRODUCTS
 
     parsed = ParserFactory.get_parser_by_keys(vendor, dtype).parse(cfg)
     device = Device.objects.create(hostname=f"_t_inline_{cid}", device_type=dtype)
@@ -347,7 +347,7 @@ def test_interface_enabled_three_states(cid, vendor, template):
     回退都会红。
     """
     from configs.models import Interface
-    from ingest.savers.interface import InterfaceSaver
+    from configs.savers.interface import InterfaceSaver
 
     parsed = ParserFactory.get_parser_by_keys(vendor, "switch").parse(template)
     device = Device.objects.create(hostname=f"_t_en_{cid}", device_type="switch")
@@ -369,7 +369,7 @@ def test_cisco_interface_shutdown_two_states():
     （带 default(1) 使行可选），与四家交换机同款。
     """
     from configs.models import Interface
-    from ingest.savers.interface import InterfaceSaver
+    from configs.savers.interface import InterfaceSaver
 
     cfg = """interface GigabitEthernet0/0
  shutdown
@@ -413,7 +413,7 @@ def test_f5_virtual_status_two_states_after_unify():
     字段，由 Saver 侧 ``status_enabled`` 双轨转换。
     """
     from configs.models import LtmVirtualServer
-    from ingest.savers.lb import LBVirtualServerSaver
+    from configs.savers.lb import LBVirtualServerSaver
 
     cfg = """ltm virtual /Common/v1 {
     destination /Common/10.2.2.1:80
@@ -440,7 +440,7 @@ ltm virtual /Common/v2 {
 def test_manual_legacy_status_payload_still_accepted():
     """手工 payload 的 legacy 形态（status/pool_status/rule_status str）不许被统一改造弄丢——
     这是既有测试与存量 config_json 的契约。"""
-    from ingest.savers.base import status_enabled
+    from configs.savers.base import status_enabled
 
     assert status_enabled({"status": "disabled"}, "status") is False
     assert status_enabled({"status": "enabled"}, "status") is True

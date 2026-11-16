@@ -98,7 +98,7 @@ def test_storage_stage_writes_every_matched_saver(eager_celery):
 def test_storage_failure_marks_task_as_failure(eager_celery, monkeypatch):
     """存储阶段失败时 Stage=failed 且 Celery 状态为 FAILURE（与采集/解析一致）"""
     from assets.models import Device
-    from ingest.savers.interface import InterfaceSaver
+    from configs.savers.interface import InterfaceSaver
 
     def _boom(self, device, parsed_data):
         raise RuntimeError("模拟 Saver 故障")
@@ -124,8 +124,8 @@ def test_multi_key_saver_receives_all_matched_keys():
     PolicySaver 注册了 policies / acl / rules 三个 key，内部是
     ``a or b or c`` 的短路链——只传第一个的话其余 key 的数据会被静默丢弃。
     """
-    from ingest.savers.firewall import PolicySaver
-    from ingest.savers.registry import build_saver_payloads
+    from configs.savers.firewall import PolicySaver
+    from configs.savers.registry import build_saver_payloads
 
     payloads = build_saver_payloads(
         "firewall",
@@ -144,7 +144,7 @@ def test_each_saver_only_receives_its_own_keys():
     ``run_config_storage`` 原先把整个 config_json 递给每个 Saver，等于让它们
     看到不属于自己的键——注册的 key 写错了也测不出来。
     """
-    from ingest.savers.registry import all_savers, build_saver_payloads
+    from configs.savers.registry import all_savers, build_saver_payloads
 
     config = {"interfaces": [1], "vlans": [1], "vpn_instances": [1], "policies": [1], "rules": [1]}
     registry_map = all_savers()

@@ -162,7 +162,7 @@ def test_parse_member_entry_falls_back_to_name():
 @pytest.mark.django_db
 def test_members_written_by_saver_are_resolvable():
     """端到端：经 GtmPoolSaver 入库的池成员，分析时必须能解析到 GTM 虚拟服务器。"""
-    from ingest.savers.lb import GtmPoolSaver
+    from configs.savers.lb import GtmPoolSaver
 
     gslb = _device("ia-saver-keys")
     server = GtmServer.objects.create(device=gslb, name="s1")
@@ -290,7 +290,7 @@ def test_pool_found_is_scoped_to_device():
 @pytest.mark.django_db
 def test_f5_ltm_parses_ipv4_and_ipv6_destination():
     """F5 的 IPv6 destination 用点号分隔端口，模板必须区分两种写法"""
-    from ingest.parsers.factory import ParserFactory
+    from configs.parsers.factory import ParserFactory
 
     config = """ltm virtual /Common/vs_v4 {
     destination /Common/10.0.0.1:443

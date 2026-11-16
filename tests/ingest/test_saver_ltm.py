@@ -12,8 +12,8 @@ import pytest
 
 from assets.models import Device
 from configs.models import LtmIRule, LtmPersist, LtmPool, LtmPoolMember, LtmProfile, LtmSNAT, LtmVirtualServer
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.lb import LBPoolSaver, LBSnatSaver, LBVirtualServerSaver
+from configs.parsers.factory import ParserFactory
+from configs.savers.lb import LBPoolSaver, LBSnatSaver, LBVirtualServerSaver
 
 F5_VIRTUAL = """ltm virtual /Common/vs_web {
     destination /Common/10.0.0.1:443

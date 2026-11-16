@@ -16,7 +16,7 @@ class VrfSaver(BaseSaver):
     model_paths = ["configs.models.Vrf"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        # vpn_instances 别名已由 ingest.mapping 在 save 入口归一为 vrfs
+        # vpn_instances 别名已由 configs.mapping 在 save 入口归一为 vrfs
         vrfs = as_list(parsed_data.get("vrfs"))
         if not vrfs:
             return (0, 0)
@@ -44,7 +44,7 @@ class RouteSaver(BaseSaver):
 
     模板产出形如 ``{"destination_network": "10.0.0.0", "mask": "255.255.0.0",
     "next_hop": "10.0.0.1"}``——Maipu / Ruijie 产出的 ``subnet_mask`` 已由
-    ``ingest.mapping.FIELD_ALIASES`` 归一为 ``mask``，cisco 的还带 ``interface_name``
+    ``configs.mapping.FIELD_ALIASES`` 归一为 ``mask``，cisco 的还带 ``interface_name``
     与 ``metric``。
 
     Route 通过 ``vrf`` 表达归属，继承来的 ``device`` 与之冗余；产出里没有 VRF 信息，
