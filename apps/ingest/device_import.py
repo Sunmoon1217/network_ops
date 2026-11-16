@@ -1,3 +1,14 @@
+"""Excel 批量导入：设备台账 / 机柜 / 设备组 / 配置文件（原 ``assets/device_import.py``）。
+
+**为什么在 ingest**：这个模块是「外部资料 → 落库」的采集入口之一，最后一步要往 Git 配置
+仓库写文件（``ingest.config_repo.save_config``）、并投递配置采集任务
+（``ingest.workflow.submit_config_job``）。留在 assets 会让 assets 反向 import ingest
+（依赖矩阵禁止）。迁过来之后方向是 ``ingest → assets`` ✓，两处反向依赖一起消失。
+
+导入器按 Sheet 注册在模块末尾的 ``IMPORT_SHEETS``：Sheet 名 → 列头 + 导入函数，
+``ingest/api/imports.py`` 的「上传 Excel」与「下载模板」两个接口读的都是这一份表。
+"""
+
 import re
 from pathlib import Path
 

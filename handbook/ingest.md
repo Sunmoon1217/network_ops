@@ -475,3 +475,30 @@ python manage.py collect_dashboard autotask         # 只投一个源
 python manage.py collect_dashboard zabbix --sync    # 本进程同步采集（采集异常直接打终端）
 python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只校验 conf/links.json）
 ```
+
+## Excel 批量导入（`device_import.py`）
+
+外部资料 → 落库的第二个入口（第一个是采集链）。导入器在 `ingest/device_import.py`，
+两个接口（上传分发 / 模板下载）在 `ingest/api/imports.py`；**URL 与 name 沿用拆分前**
+（`/api/assets/import-devices/` / `import-devices`），前端零改动。落库目标仍是 assets 的
+模型（Device / DeviceGroup / Cabinet / DeviceConfig…），方向 `ingest → assets` ✓。
+
+- **`IMPORT_SHEETS` 是 Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源**：
+  `import_excel` 按它逐个分发，模板下载接口按它生成表头——两边读同一份表，
+  加删 Sheet 只改这里。列头必须与各 `_import_*` 里按下标取的列严格对齐
+  （改列头 = 改导入函数，反之亦然）。
+- **「配置文件」sheet 的 `config_dir` 为空时**取 `DEFAULT_CONFIG_DIR`：容器内是
+  data 卷（宿主 `data/` 绑到 `/data`）下的 `configs/`；宿主机直跑时该路径通常不存在，
+  表里显式填写即可。
+- **用「先查后建」而不是 `update_or_create`**：`DeviceConfig` 代表「某设备在某 commit 上的
+  配置快照」，重复导入同一版本不该动它。`update_or_create` 会把已解析好的 `config_json`
+  清空，而 `created=False` 又不触发重新解析，解析结果就永久丢了。
+- **批量导入不在请求里跑同步流水线**：每台设备解析 + 入库要 0.2–12 s，几十行就是几十秒
+  串行。这里挂 `_defer_pipeline` 让信号跳过同步处理，再投递 celery 链（解析 → 存储）；
+  单个上传仍走同步路径，失败能直接在响应里报错。
+- Sheet 顺序有意义：「设备组」排在「设备」之后（行里的设备必须已存在）；组名 / 角色
+  不填表，由导入推导。
+
+**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `config_repo.save_config`（写 Git
+仓库）与 `workflow.submit_config_job`（投递采集链），两者都是 ingest 的能力；留在 assets
+就是 `assets → ingest` 反向依赖（依赖矩阵禁止）。

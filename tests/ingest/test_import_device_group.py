@@ -20,8 +20,8 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook, load_workbook
 
-from assets.device_import import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
 from assets.models import Device, DeviceGroup
+from ingest.device_import import IMPORT_SHEETS, _device_roles, _group_name, _import_device_groups
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -52,9 +52,7 @@ def test_group_name_rules():
     # 集群：取设备名结构里的「安全区 + 设备类型」，类型段去尾部编号
     assert _group_name("cluster", ["NET-SH01-R05-SEC-FW01", "NET-SH01-R06-SEC-FW02"]) == "SEC-FW"
     assert _group_name("cluster", ["net-sh01-r05-sec-fw01"]) == "sec-fw", "单台集群组同样按结构取，前缀大小写不敏感"
-    assert _group_name("cluster", ["NET-SH01-R05-SEC-FW01", "NET-SH01-R05-DMZ-FW02"]) == "NET-SH01-R05-SEC-FW01", (
-        "同行拆出的安全区不一致 → 回退第一台"
-    )
+    assert _group_name("cluster", ["NET-SH01-R05-SEC-FW01", "NET-SH01-R05-DMZ-FW02"]) == "NET-SH01-R05-SEC-FW01", "同行拆出的安全区不一致 → 回退第一台"
     # 不符合结构 → 回退第一台 hostname
     assert _group_name("cluster", ["rt1", "sw2"]) == "rt1", "首段不是 NET"
     assert _group_name("cluster", ["net-prod-cs01"]) == "net-prod-cs01", "段数不足 4"

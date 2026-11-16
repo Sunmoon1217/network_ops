@@ -1,8 +1,8 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1–6 已落地：26 张表 + 序列化器 + parsers/savers/mapping
+> **状态：实施中（2026-11-16 起）。切片 1–7 已落地：26 张表 + 序列化器 + parsers/savers/mapping
 > + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
-> + 软资产归并拆成「configs 算 / assets 写」；剩 Excel 导入迁 ingest、`purge_configs` 迁 scripts，
+> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest；剩 `purge_configs` 迁 scripts，
 > 以及 `assets/api/views.py` 的 `overview` 概览统计（见 §待定项 5）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
@@ -161,6 +161,10 @@ from assets.serializers.views import VlanSerializer   # → 改成 configs.seria
 - 结果：`assets → ingest` 的两处 import（`device_import.py:17` / `:340`）随搬迁消失，
   加上 `views.py:347` 的 resolve_config_owner 随 DeviceConfigViewSet 归 configs，
   **三处反向依赖全部清零**。
+
+> **已落地（2026-11-16，切片 7）**：`apps/ingest/device_import.py` + `apps/ingest/api/imports.py`；
+> `assets/api/urls.py` 的两条路由删除，`ingest/api/urls.py` 以同路径同名注册；
+> 两个测试文件迁 `tests/ingest/`。`grep -rn "from ingest" apps/assets` 现在**无命中**。
 
 ## 软资产归并：唯一的横跨功能
 
@@ -626,9 +630,21 @@ Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。�
 新增：计算段无写操作 / 落库段按 kind 建 CI / lb draft 不带 CIType + 两条 AST 边界守卫）；
 `manage.py check` 干净，`manage.py help sync_soft_assets` 仍能发现命令（命令发现与 app 标签无关）。
 
-### 下一步（按依赖顺序）
+### 切片 7 — 已落地（2026-11-16）
 
-1. **Excel 导入（`device_import.py`）整体迁 ingest**：见本稿专章——清掉 `assets → ingest`
-   的两处 import，端点随迁、前缀不变。
-2. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+| 项 | 落点 |
+|---|---|
+| 导入器 | `apps/assets/device_import.py` → `apps/ingest/device_import.py`（441 行整体 `git mv`，加了一段「为什么在 ingest」的模块注释） |
+| 接口 | 两个视图（上传分发 / 模板下载）从 `assets/api/views.py` 提到 `ingest/api/imports.py`；`assets/api/urls.py` 删两条路由，`ingest/api/urls.py` 以**同路径同名**注册（`assets/import-devices/`、`assets/import-template/`） |
+| 清理 | `assets/api/views.py` 去掉 `IMPORT_SHEETS` / `HttpResponse` / `Worksheet` / `cast` / `logger` 等只被搬走代码用到的导入 |
+| 测试 | `test_import_configs_async.py` / `test_import_device_group.py` → `tests/ingest/`，模块路径改 `ingest.device_import`；URL 断言不用改（前缀与 name 都没动） |
+| 文档 | `handbook/assets.md` 该节改成指针，正文搬 `handbook/ingest.md`；`handbook/api.md`、`AGENTS.md` 的架构表与目录树同步 |
+
+**结果**：`grep -rn "from ingest" apps/assets` **无命中**——`assets → ingest` 清零，
+矩阵里 assets 行的四个 ✗ 只剩 `assets → configs`（就是待定项 5 的 `overview`）。
+
+### 下一步
+
+1. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+2. （待定）**`overview` 的跨域聚合**：见 §待定项 5，要动前端契约，单独一轮。
 

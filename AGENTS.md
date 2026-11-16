@@ -37,8 +37,9 @@ network_ops/
 ├── netops/          # settings/（base 集中 env 动态项 + dev/container/prod）、urls、asgi、lifespan、views、schema（外部 DTO 基类）
 ├── apps/
 │   ├── core/        # 用户与认证、Task/Stage、运维命令（ensure_superuser / migrate_if_needed / queue_*）
-│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API + Excel 导入
-│   ├── ingest/      # 采集/解析/入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo + collectors/（外部数据源）
+│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API
+│   ├── configs/     # 配置行家族（ConfigBase 25 子类 + DeviceConfig）+ TTP 解析 / Saver / 归一 / 序列化器 / API
+│   ├── ingest/      # 采集与入库编排：pipeline / workflow / config_repo / device_import(Excel) + collectors/（外部数据源）
 │   ├── analysis/    # 只读消费侧：路径追踪、访问流、互联网资产、监控、大屏供数；models/ 是包
 │   ├── cloud/       # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
 │   └── docs/        # 功能域：表格编辑 + 文档转换 + Dify 推送（与 handbook/ 无关）
@@ -261,9 +262,9 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 | 层 | 职责 | 细节 |
 |----|------|------|
 | `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检也在这里） | [`handbook/api.md`](handbook/api.md) |
-| `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
-| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
-| `ingest/` | 采集与入库编排、Git 配置仓库；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
+| `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API | [`handbook/assets.md`](handbook/assets.md) |
+| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 + 软资产计算 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
+| `ingest/` | 采集与入库编排、Git 配置仓库、Excel 批量导入；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
 | `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控、大屏供数（只读消费） | [`handbook/analysis.md`](handbook/analysis.md) |
 | `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
 | `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
