@@ -141,12 +141,19 @@ RUN python -c "import importlib.metadata as m; [__import__(n) for n in (...)]; p
 
 `frontend/dist` 与 `www` 是 `.dockerignore` 里**唯一被显式放开**的构建产物目录——改 `.dockerignore` 时别顺手加通配把这两个也忽略掉。
 
-### 4.3 `mkdir -p` 的三个挂载点
+### 4.3 挂载点（compose 定义，镜像不建目录）
 
-`/app/data/config_repo`（命名卷 `config_repo_data`）、`/app/data/configs`（只读 bind）、`/var/lib/netops-static`（命名卷 `static_data`）。
+镜像里**没有 `mkdir` 任何挂载点**——docker 起容器时自动创建挂载目标，属主随命名卷首次播种继承（技能 `docker-mounts-and-ownership`）。运行期实际用到这几处：
 
-- 都**建成空目录**：命名卷首次创建时属主 / 布局继承自镜像目录（技能 `docker-mounts-and-ownership`），挂载点必须存在、且存在与否可预期。
-- `data/configs` 那侧是 `create_host_path: false`，宿主机目录得先 `mkdir -p data/configs`（语义与沿革：`AGENTS.md`「配置仓库是命名卷、配置源目录是只读 bind」）。
+| 容器内 | 来源 | 用途 |
+|--------|------|------|
+| `/app` | 命名卷 `network-ops-code`（`ro`） | 代码，由 `code-init` 权威铺入 |
+| `/configs` | 命名卷 `network-ops-configrepo` | 配置仓库（每台设备一个独立 git 仓库），即 `settings.CONFIG_REPO_PATH` |
+| `/data` | 宿主 `./data` bind | 运维放文件的地方（配置原文目录默认 `/data/configs`） |
+| `/etc/netops/conf` | 宿主 `./conf` bind（`ro`） | 平台自身配置 `links.json` |
+| `/usr/share/nginx/html` | 命名卷 `network-ops-static`（`ro`，nginx 侧） | 前端静态产物，同样由 `code-init` 铺入 |
+
+宿主 `./data` 是唯一的 bind 数据目录：目录不存在时 `up` 直接失败（`driver_opts` 不会替你建），首次部署先 `mkdir -p data`。逐项语义与沿革见 [`../handbook/deploy.md`](../handbook/deploy.md)。
 
 ### 4.4 git 提交身份
 
@@ -175,8 +182,8 @@ RUN git config --system --add safe.directory '*'
 - **app 不映射端口、也不写 `expose`**：容器之间能不能通只取决于进程有没有在监听；对外统一走 nginx 入口。调试用 `docker compose exec app python manage.py shell`。
 - **nginx 的 resolver 脚本只挂单个文件**（`./nginx/docker-entrypoint.d/05-netops-resolver.sh`）：挂整个目录会**遮住 nginx 镜像自带**的 entrypoint 脚本。
 - nginx 探活用的 `curl` 是 `nginx:alpine` **自带**的（实测 8.22.0）；换基础镜像若不带 curl，healthcheck 会直接失败（`-f` 让 4xx/5xx 也算失败，负向验证要用「空目录 / 死端口」，别用一个随便的 404 路径——SPA 有 `try_files` 兜底）。
-- `static_data` 是**可丢弃**数据：入口脚本每次启动权威重铺，删了也能由重建镜像恢复。
-- 卷名 `config_repo_data` **刻意不复用**旧的 `network_ops_app_data`——那里面是上个方案的另一份历史，复用等于把两份不相干的历史静默合并。旧卷不会自动删除，确认空了再 `docker volume rm network_ops_app_data`。
+- `network-ops-static` 是**可丢弃**数据：`code-init` 每次运行都权威重铺（先清再铺），删了也能由重建镜像恢复。
+- 配置仓库卷 `network-ops-configrepo` **刻意新起名字**，不复用旧方案留下的数据卷——那里面是另一份历史，复用等于把两份不相干的历史静默合并。旧卷不会自动删除，确认空了再 `docker volume rm`。
 - **访问流的 Celery 队列与消费者**：策略展开走独立的 `access_flow` Celery 队列（`settings.CELERY_TASK_ROUTES`），由 `worker` 一并消费（command 里的 `-Q celery,access_flow` + `--concurrency=2`）。任务本体 2026-09 随域拆分迁为 `analysis.rebuild_access_flows`（原 `ingest.rebuild_access_flows`）——**队列名、stream 名、心跳键、命令名全部没变**，只有 celery 任务名变了；升级时 Redis 里未消费的旧名消息会 `Unknown task`，**停 worker、清空 access_flow 队列再滚动**。曾为它单开 `worker-access` 服务做故障域隔离，**已合并**：两条链皆低频，共享 2 个并发槽的最坏代价是秒级排队，而独占服务是 +677MB/+16 进程的常驻保费；队列本身保持独立，出现主链被饿死的实测证据时，把独占服务加回来即可。`access-flow-consumer` 是 AccessFlow 的**唯一写者**：只能跑一个实例（`scale` 起多份 = 多写者，先查后合并的前提就没了），它不挂任何卷、只连 db 与 redis；探活看 redis 里的 `access_flow:heartbeat` 键（消费循环**每轮开头**盖章、TTL 300s，healthcheck 阈值 120s；心跳必须在 `XREADGROUP` **之前**盖——读超时走进 except 分支时也得盖，否则读持续失败会让心跳停更、把活着的进程判死），光看 PID 判断不了死循环卡住。**`get_redis()` 的 `socket_timeout=10` 必须 > 消费端的 `block=5000`**：两者相等时 stream 一空，服务端恰好阻塞满 5s 才回包、客户端 5s 就断读，每轮必抛 TimeoutError（实测消费循环空转 32 次/6 分钟）。背压阈值是 `ACCESS_FLOW_MAX_QUEUE`（envs/common.env 可覆盖，默认 500，2026-10 由 50000 调低）：生产者投递前查 Stream **未投递积压**（`XINFO GROUPS` 的 `lag`，不是 XLEN——XACK 不删条目，已消费的会躺到 maxlen trim 才走，用 XLEN 会把「消化完了但条目还躺着」误判成积压），超了就 `self.retry` 让路——绝不在任务里 sleep 等待（会占死 worker 进程）。**积压监控**：`manage.py queue_status`（人看表格 / `--json`，超阈值退出码 1 可接 cron）与 `/api/analysis/queue-status/`（Home 页「任务队列监控」卡片 30s 轮询）——采集口径与告警阈值见 `analysis/queue_monitor.py` 模块注释；毒消息（PEL 里重投次数高的条目）会直接点名消息 ID。
 
 ## 6. 其余主题去哪儿看

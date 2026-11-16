@@ -19,17 +19,18 @@ client ──▶ nginx ───────┤
 
 ### 静态产物是怎么到 nginx 的
 
-产物的源头是**宿主机**，流程是「宿主机构建 → COPY 进 app 镜像 → 命名卷 → nginx」：
+产物的源头是**宿主机**，流程是「宿主机构建 → COPY 进 code 镜像 → `code-init` 铺进命名卷 → nginx」：
 
 1. 宿主机上执行 `cd frontend && pnpm build` 与 `uv run python manage.py collectstatic --noinput`；
-2. `Dockerfile.app` 把 `frontend/dist` 与 `www` **COPY 进 app 镜像**
-   （`.dockerignore` 特意放开了这两个目录）；这两个路径同时就是 Django 的
-   `STATIC_ROOT` 与 `FRONTEND`，DEBUG 下 Django 自己也从这里托管；
-3. 容器启动时 `docker/entrypoint.sh` 把它们复制**另一份**到命名卷（**一个**卷，按 URL 前缀布局）；
+2. `dockerfile.code` 把 `frontend/dist` 与 `www` **COPY 进 code 镜像**
+   （`.dockerignore` 特意放开了这两个目录），落点是 `/opt/netops/http`（`dist`）与
+   `/opt/netops/http/static`（`www`）；
+3. `code-init` 一次性容器（`entrypoint/code_init.sh`）把它们复制**另一份**到命名卷
+   `network-ops-static`（**一个**卷，按 URL 前缀布局）；
 4. nginx 只读挂载这**一个**卷。
 
 镜像里因此**没有任何 node/npm/pnpm**，构建也只需秒级。代价是构建前必须先在宿主机
-把成品构建出来——镜像里有断言，`frontend/dist` 缺 `index.html` / `dashboard.html`
+把成品构建出来——`dockerfile.code` 里有断言，`frontend/dist` 缺 `index.html` / `dashboard.html`
 （Vite 双入口）或 `www` 为空都会直接构建失败。
 
 ### 为什么必须用卷
@@ -43,7 +44,7 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 
 而卷挂在有内容的目录上会**遮住镜像里的同名目录**，Docker 又只在卷首次创建时用镜像内容播种一次——重建镜像后旧卷不会更新，表现就是「镜像里产物是新的，页面还是旧的」。
 
-所以命名卷挂在镜像里**故意留空的目录** `/var/lib/netops-static` 上：卷的初始内容为空，内容唯一来源就是 entrypoint 启动时的复制，不存在「播种过一次就不更新」的歧义。复制是**权威**的（先清空再铺），所以上一版带 hash 的遗留资源也不会堆在卷里。
+所以卷的内容**不依赖镜像播种**：`code-init` 每次起容器都先把卷清空再铺（`entrypoint/code_init.sh`），内容唯一来源就是这份复制，不存在「播种过一次就不更新」的歧义。复制是**权威**的（先清空再铺），所以上一版带 hash 的遗留资源也不会堆在卷里。
 
 卷内的目录布局**按 URL 前缀设计**，这样 nginx 一个 `root` 就能覆盖全部静态请求：
 
@@ -63,10 +64,10 @@ nginx 是独立容器，**读不到 app 容器镜像里的文件**。Docker 里�
 
 | `volumes_from` 的行为 | 后果 |
 |----------------------|------|
-| 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连配置仓库那些挂载（宿主机 `./data/config_repo` → `/app/data/config_repo`）一起拿到 |
+| 把源容器的**所有**卷都带过来，且不能挑 | nginx 会连配置仓库那些挂载（`repo` 卷 → `/configs`、`data` bind → `/data`）一起拿到 |
 | 卷在目标容器里的路径 = 源容器的路径 | nginx 只能看到 `/app/www`、`/app/frontend/dist`，`root` 得写成 app 的内部路径，配置被绑死 |
 
-所以 compose 里显式写 `static_data:/usr/share/nginx/html:ro`：只读、能挑卷、放在 nginx 自己的常规路径上，一个 root 覆盖 `/`、`/assets/*`、`/static/*`。
+所以 compose 里显式写 `static:/usr/share/nginx/html:ro`（卷名 `network-ops-static`）：只读、能挑卷、放在 nginx 自己的常规路径上，一个 root 覆盖 `/`、`/assets/*`、`/static/*`。
 
 ## 目录结构
 
@@ -93,15 +94,17 @@ nginx 只加载 `/etc/nginx/conf.d/*.conf`，故 `.disabled` 后缀的文件不�
 
 | 卷 | app 容器 | nginx 容器 | 内容 |
 |----|---------|-----------|------|
-| `static_data` | `/var/lib/netops-static`（读写） | `/usr/share/nginx/html`（只读） | `index.html` + `dashboard.html` + `assets/`（Vite）与 `static/`（collectstatic） |
-| `config_repo_data`（**命名卷**） | `/app/data/config_repo`（读写） | — | 配置仓库（git），app 与 worker **共用同一个卷**，必须持久化 |
-| `./data/configs`（**宿主机 bind**） | `/app/data/configs`（**只读**） | — | Excel「配置文件」sheet 的 `config_dir` 源目录，只有 app 挂 |
+| `network-ops-code`（命名卷） | `/app`（只读） | — | 代码，由 `code-init` 权威铺入 |
+| `network-ops-static`（命名卷） | —（不挂） | `/usr/share/nginx/html`（只读） | `index.html` + `dashboard.html` + `assets/`（Vite）与 `static/`（collectstatic），由 `code-init` 铺入 |
+| `network-ops-configrepo`（命名卷） | `/configs`（读写） | — | 配置仓库（git，每台设备一个仓库），app 与 worker **共用同一个卷**，必须持久化；即 `settings.CONFIG_REPO_PATH` |
+| `network-ops-extradata`（宿主 `./data` bind） | `/data`（读写） | — | 运维放文件的地方，配置原文目录默认 `/data/configs` |
 
-app 侧的挂载点在镜像里是**空目录**，只作为命名卷的落点；镜像里真正放产物的是
-`/app/frontend/dist` 与 `/app/www`（Django 用），entrypoint 负责把它们复制进卷
-（`dist` → 卷根，`www` → 卷内 `static/`）。
+镜像里不建这些挂载点；源码在 `/opt/netops/code`，静态成品在 `/opt/netops/http`
+（`dist` 与 `static/`）。`code-init` 容器把两者**权威**铺进卷：代码 → `network-ops-code` 的 `/app`，
+静态 → `network-ops-static` 的 `/static`（`dist` → 卷根，`static/` → 卷内 `static/`），
+之后 app / worker / consumer 以 `/app:ro`、nginx 以 `/usr/share/nginx/html:ro` 使用。
 
-`static_data` 属于**可丢弃数据**：删掉卷后 `docker compose up -d app` 会从镜像重新同步出来（宿主机 `./data` 那份则必须保留）。
+`network-ops-static` 属于**可丢弃数据**：删掉卷后 `docker compose up -d code-init` 会从镜像重新铺出来（宿主机 `./data` 那份则必须保留）。
 
 ## 使用方法
 
@@ -324,8 +327,8 @@ app 容器启动时会把新产物同步进那个静态卷，nginx 无需重启�
 - **上传大小**：`100m`，用于设备 Excel 导入。
 - **超时**：`proxy_read_timeout 300s`，因路径追踪、配置解析等操作较慢。
 - **关闭缓冲**：`/api/` 关闭 `proxy_buffering`，便于流式响应。
-- **gunicorn 调参**：常用参数（`GUNICORN_WORKERS` / `GUNICORN_TIMEOUT` / `GUNICORN_KEEP_ALIVE` / `GUNICORN_MAX_REQUESTS` / `GUNICORN_LOG_LEVEL` …）在 `envs/gunicorn.env` 里设，compose 的 app 服务把 `envs/gunicorn.env`（连同 `envs/common.env` 与 `envs/container.env`）经 `env_file` 注入容器（同名时 `environment:` 优先），`docker/entrypoint.sh` 再用 shell 插值（`${GUNICORN_WORKERS:-1}` 等，默认值就写在那一份）拼出整条 gunicorn 命令，改完 `docker compose up -d app` 生效（不必重建镜像，compose 里也没有 command 要改）。一次性临时调参仍可覆盖：`docker compose run --rm app --workers 4`（追加在默认命令之后，gunicorn 对同名选项是后者胜）；传整条命令则原样执行。**`--bind` 没有环境变量、也不在这里覆盖**：它与本目录 `conf.d` 里的 upstream（现在是 `app:8000`）耦合，改端口必须同步改 nginx 配置；而且 gunicorn 的 `--bind` 是 append 语义，追加一个只会多一个监听、覆盖不掉。要换地址就整条命令替换。
-- **同一个镜像的三种用法**：不传参（或只给 `-` 开头的参数）= web；`entrypoint: ["celery"]` + `command:` 放参数 = worker（刻意跳过铺静态产物那一步，worker 不挂 `static_data`）；`docker compose run --rm app python manage.py migrate` = 一次性容器。
+- **gunicorn 调参**：常用参数（`GUNICORN_WORKERS` / `GUNICORN_TIMEOUT` / `GUNICORN_KEEP_ALIVE` / `GUNICORN_MAX_REQUESTS` / `GUNICORN_LOG_LEVEL` …）在 `envs/gunicorn.env` 里设，compose 的 app 服务把 `envs/gunicorn.env`（连同 `envs/common.env` 与 `envs/container.env`）经 `env_file` 注入容器（同名时 `environment:` 优先），`entrypoint/app.sh` 再用 shell 插值（`${GUNICORN_WORKERS:-1}` 等，默认值就写在那一份）拼出整条 gunicorn 命令，改完 `docker compose up -d app` 生效（不必重建镜像，compose 里也没有 command 要改）。一次性临时调参仍可覆盖：`docker compose run --rm app --workers 4`（追加在默认命令之后，gunicorn 对同名选项是后者胜）；传整条命令则原样执行。**`--bind` 没有环境变量、也不在这里覆盖**：它与本目录 `conf.d` 里的 upstream（现在是 `app:8000`）耦合，改端口必须同步改 nginx 配置；而且 gunicorn 的 `--bind` 是 append 语义，追加一个只会多一个监听、覆盖不掉。要换地址就整条命令替换。
+- **同一个镜像的多种用法**：每个服务走各自入口脚本（`entrypoint/{app,worker,consumer,beat}.sh`），静态产物只由 `code-init` 铺一次，worker / consumer / beat 都不挂 `network-ops-static`；`docker compose run --rm app python manage.py migrate` 是一次性容器（`app.sh` 按参数决定跑默认命令还是整条命令）。
 
 ## 排查
 
