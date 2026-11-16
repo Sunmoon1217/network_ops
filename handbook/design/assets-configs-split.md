@@ -1,8 +1,8 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1 / 2 已落地（25 个 `ConfigBase` 子类 + `DeviceConfig`，
-> 共 26 张表迁到 configs）；切片 3 已落地（序列化器合并 + 配置类序列化器 + parsers / savers /
-> mapping 迁入）；admin / API / llmtools 目录改名 / 软资产归并未迁。**
+> **状态：实施中（2026-11-16 起）。切片 1–4 已落地：26 张表 + 序列化器 + parsers/savers/mapping
+> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）；剩 llmtools 目录改名、
+> 软资产归并拆分、`purge_configs` 迁 scripts。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -568,12 +568,24 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 failures 修了两处：`PolicySerializer` 的展示字段随合并丢了（已补回），解析器测试的模板目录
 断言仍指向 `ingest`（已改按 `configs.parsers` 包定位）。
 
+### 切片 4 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| admin | 26 个 `@admin.register`（含 `DeviceConfigAdmin`）从 `assets/admin.py` 迁 `configs/admin.py`；`DEVICE_FILTER` 同口径另立一份，列表/搜索/筛选逐字照抄 |
+| API ViewSet | 26 个 ViewSet 迁 `configs/api/views.py`；类体内的局部模型/序列化器 import 上提到模块头 |
+| 路由 | 新建 `configs/api/urls.py`（自己的 `SimpleRouter`，`path("assets/", …)`），`netops/urls.py` 与 assets 并列挂载；`basename` 原样，反解结果不变（`/api/assets/vlans/` 等） |
+| `resolve_config_owner` | `ingest/config_owner.py` 迁 `configs/config_owner.py`；ingest 的 pipeline / purge_configs、analysis 注释、测试同步改路径 |
+| 实测 | `configs` admin 注册数 = 26；`reverse("vlan-list")` 等仍是 `/api/assets/...`；全量 **846 passed, 66 subtests** |
+
+**踩点**：`assets/api/urls.py` 与 `configs/api/urls.py` 两个 include 都写 `path("assets/", …)`，
+靠 Django「按顺序尝试、命中即止」共存——不要为了"干净"去合并成单 router，那会把 assets 与
+configs 重新绑在一起。
+
 ### 下一步（按依赖顺序）
 
-1. **admin 26 个注册 + API 26 个端点**：`configs/api/urls.py` 挂在同一 `/api/` 前缀下，`basename` 照抄；
-   `resolve_config_owner` 随 `DeviceConfigViewSet` 迁 configs。
-2. **llmtools**：`domains/assets/` 改名 + 规格里的模型来源已按 `cm.` 改完，剩目录改名与 `tools.py` 的跨域工具。
-3. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
+1. **llmtools**：`domains/assets/` 改名 + 规格里的模型来源已按 `cm.` 改完，剩目录改名与 `tools.py` 的跨域工具。
+2. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
    `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
-4. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+3. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
 

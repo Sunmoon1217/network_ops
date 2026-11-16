@@ -31,7 +31,7 @@ from assets.models import Device, DeviceGroup
 
 # 参与「主备合并」的组类型：ha（主备）与 failover（故障接管）是同一类语义（一个主一个备），
 # 单机（single）与堆叠（stack）**不参与合并**——堆叠组备机没有配置、配置归属主设备
-# （见 ingest.config_owner），不需要在这里并。集群（cluster）只有 GSLB 用，单独传入。
+# （见 configs.config_owner），不需要在这里并。集群（cluster）只有 GSLB 用，单独传入。
 HA_GROUP_TYPES = frozenset({"ha", "failover"})
 
 
@@ -76,15 +76,11 @@ def resolve_groups(
             continue
         for device in members:
             assigned.add(device.pk)
-        groups[f"group-{group.pk}"] = GroupKey(
-            key=f"group-{group.pk}", name=group.name, group_id=group.pk, devices=members
-        )
+        groups[f"group-{group.pk}"] = GroupKey(key=f"group-{group.pk}", name=group.name, group_id=group.pk, devices=members)
 
     for device in sorted(devices.values(), key=lambda item: item.hostname):
         if device.pk not in assigned:
-            groups[f"device-{device.pk}"] = GroupKey(
-                key=f"device-{device.pk}", name=device.hostname, group_id=None, devices=[device]
-            )
+            groups[f"device-{device.pk}"] = GroupKey(key=f"device-{device.pk}", name=device.hostname, group_id=None, devices=[device])
 
     resolved = sorted(groups.values(), key=lambda group: (group.name, group.key))
     if group_key:

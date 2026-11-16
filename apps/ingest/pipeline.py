@@ -61,7 +61,7 @@ def run_config_pipeline(device, device_config, *, force_parse: bool = False) -> 
     """
     result = PipelineResult()
 
-    from ingest.config_owner import resolve_config_owner
+    from configs.config_owner import resolve_config_owner
 
     owner = resolve_config_owner(device)
     if owner.pk != device.pk:

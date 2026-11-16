@@ -22,8 +22,8 @@ from django.db import transaction
 
 from analysis.models import AccessFlow, InternetAnalysis
 from assets.models import Device
+from configs.config_owner import resolve_config_owner
 from configs.models import ConfigBase, DeviceConfig
-from ingest.config_owner import resolve_config_owner
 
 # InternetAnalysis / AccessFlow 住在 analysis app，但**清理仍归本命令**：purge_configs
 # 的语义是「配置解析产物一把清」，它是跨域的运维工具（工具层允许跨域 import），别把这段搬走。

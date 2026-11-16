@@ -40,9 +40,14 @@
 | `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
 | `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
 
-## assets（`assets/api/urls.py`，前缀 `/api/assets/`）
+## assets / configs（`assets/api/urls.py` + `configs/api/urls.py`，共用前缀 `/api/assets/`）
 
-DRF `SimpleRouter`（`trailing_slash=True`），资源列表：
+DRF `SimpleRouter`（`trailing_slash=True`）。两个 app 各有一个 router，都挂在
+`path("assets/", ...)` 下——URL 解析按 include 顺序逐个尝试、命中即止，所以前缀共用不冲突
+（2026-11-16 拆分后前端零改动）。**配置行家族 26 个端点（device-configs / device-accounts /
+vlans / vrfs / interfaces / snmp·ntp·syslog-configs / ltm-* / gtm-* / address-books /
+services / policies / nat-rules / routes / arp-mac）由 `configs/api/urls.py` 提供**，
+其余资源仍在 `assets/api/urls.py`。资源列表：
 
 ```
 security-zones, datacenters, rooms, cabinets,

@@ -11,8 +11,8 @@
 import pytest
 
 from assets.models import Device, DeviceGroup, DeviceGroupMember
+from configs.config_owner import resolve_config_owner
 from configs.models import DeviceConfig
-from ingest.config_owner import resolve_config_owner
 
 
 def _device(hostname: str) -> Device:

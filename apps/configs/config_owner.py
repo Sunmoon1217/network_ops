@@ -28,21 +28,11 @@ def resolve_config_owner(device: "Device"):
     """
     from assets.models import DeviceGroupMember
 
-    membership = (
-        DeviceGroupMember.objects.filter(device=device, group__group_type="stack")
-        .select_related("group")
-        .order_by("group_id")
-        .first()
-    )
+    membership = DeviceGroupMember.objects.filter(device=device, group__group_type="stack").select_related("group").order_by("group_id").first()
     if not membership or membership.device_role == "master":
         return device
 
-    master = (
-        DeviceGroupMember.objects.filter(group=membership.group, device_role="master")
-        .select_related("device")
-        .order_by("pk")
-        .first()
-    )
+    master = DeviceGroupMember.objects.filter(group=membership.group, device_role="master").select_related("device").order_by("pk").first()
     if not master or master.device == device:
         return device
     return master.device
