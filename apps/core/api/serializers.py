@@ -150,9 +150,7 @@ class StageSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    # 前端契约不变（``device`` 是数字、``device_hostname`` 是字符串），但底层已由外键改成
-    # ``target_type`` + ``target_id`` 的软引用：读走 ``Task`` 的兼容 property，
-    # 写在 ``validate()`` 里折算成 ``target_*``。
+    # 前端契约不变（``device`` 数字、``device_hostname`` 字符串）；底层软引用在 ``validate()`` 折算
     device = serializers.IntegerField(required=False, allow_null=True, help_text="作用目标是设备时的设备 ID")
     device_hostname = serializers.CharField(read_only=True)
     task_type_display = serializers.CharField(source="get_task_type_display", read_only=True)
@@ -195,12 +193,7 @@ class TaskSerializer(serializers.ModelSerializer):
         )
 
     def validate_task_type(self, value: str) -> str:
-        """只接受业务域已注册的任务类型。
-
-        模型字段没有 ``choices``（词表不属于 core，也不能写进迁移），注册表才是权威；
-        这里提前拒掉未知类型，避免落到 ``create_task`` 里抛 ``LookupError`` 被视图
-        统一吞成 503——那会让「客户端写错词」看起来像「服务端挂了」。
-        """
+        """只接受已注册的任务类型——未知词当场 400，别让它被视图兜成 503。"""
         from core import task_types
 
         if not task_types.is_registered_task_type(value):
@@ -208,11 +201,7 @@ class TaskSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        """把 ``device`` 折算成软引用：类型与名字都来自注册表。
-
-        校验目标是否存在也放在这里（而不是 ``create()``）：视图把 ``save()`` 的任何异常
-        兜成 503，若在这里放过非法设备，客户端会被误导成「服务端挂了」。
-        """
+        """把 ``device`` 折算成软引用（类型与名字都来自注册表）；目标不存在在这里拒掉。"""
         from core import task_types
 
         device_id = attrs.get("device")
@@ -231,7 +220,7 @@ class TaskSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """建任务即投递第一个阶段，第一个阶段由注册表按 ``task_type`` 反查。"""
+        """建任务即投递第一个阶段（阶段名由注册表反查）。"""
         from core.tasks import create_task
 
         validated_data.pop("device", None)  # 已折算成 target_*

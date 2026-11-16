@@ -1,8 +1,6 @@
-"""任务与阶段的 API。
+"""任务与阶段的 API：任务支持列表 / 详情 / 新建 / 取消，阶段只读。
 
-只提供「列表 / 详情 / 新建 / 取消」与阶段的只读查询：任务的推进完全由 celery 阶段任务
-与业务域的阶段推进信号负责，接口不该能随意改状态（否则数据库里的 Task/Stage 会与
-真实的 celery 执行状态脱节）。
+状态由 celery 阶段任务与业务域推进信号维护，接口不开放改状态。见 ``handbook/tasks.md``。
 """
 
 import logging
@@ -35,11 +33,7 @@ class TaskViewSet(
     ordering_fields = ("created_at", "started_at", "completed_at", "status")
 
     def get_queryset(self):
-        """手工过滤：项目只启用了 SearchFilter / OrderingFilter，精确过滤按惯例在这里做。
-
-        ``device=<id>`` 保持旧契约：翻译成「作用目标是设备」的软引用查询；「哪个 type
-        算设备」由注册表说明，core 里不出现 ``"device"`` 这个词。
-        """
+        """手工做精确过滤：``device=<id>`` 折算成软引用查询，其余按字段直筛。"""
         qs = super().get_queryset()
         device = self.request.query_params.get("device")
         if device:

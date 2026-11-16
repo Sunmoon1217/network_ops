@@ -12,6 +12,9 @@
 | 配置导入 | `assets.api.views._import_configs` → `workflow.submit_config_job` | `run_config_parsing` → `run_config_storage`（celery chain，两者都 `.si(config_id)`） | Excel 里的配置文件批量导入，走 DeviceConfig |
 | 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
+配置导入链两个任务都要拿到 `config_id`，所以第二个用 `.si()`（immutable）——默认的 `.s()`
+会把上游返回值传下去，而解析任务返回 `None`。
+
 ## 阶段推进与取消
 
 **通用任务控制在 core**：建任务 / 投递阶段 / 取消是 `core.tasks` 的

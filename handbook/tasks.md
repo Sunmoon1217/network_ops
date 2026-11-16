@@ -68,6 +68,10 @@ register_target_type(target_type, label, resolver, *, feeds_device_fields=False)
 2. **`register_stage` 当场校验 `handler.delay`**。注册表是唯一 resolve 点，接错对象
    （传了普通函数）要在启动时炸，而不是等第一次投递。
 
+三条登记函数都是**幂等**的（同 key 覆盖旧值、`feeds_device_fields` 记为最后一个声明的类型）：
+`ready()` 在测试里会被重放多次，覆盖语义比「重复登记报错」省事。`label_for` 查两张表是
+有意的——`task_type` 与 `stage_type` 命名空间互不相干，将来同名也不该串。
+
 **为什么词汇不放模型字段的 `choices`**：`choices` 是类属性、会被 `makemigrations` 写进
 迁移状态，运行期往 `choices` 追加词汇必然造成「代码注册了、迁移没动」的永久漂移。
 所以 `Task.task_type` / `Stage.stage_type` 是自由字符串（迁移 `core/0005` 摘掉 `choices`），
@@ -169,6 +173,9 @@ AddField(target_type) → AddField(target_id) → AddField(target_label)
   出现已下线的词时不该让整个列表 500。
 - **注册表在测试里会被 `reset()`**，用例之间要保证 `ready()` 已重放过，否则 `first_stage_of`
   会 `LookupError`。
+- **`celery_app.control` 类型存根说是方法、运行时是 property**。写成 `control()` 直接炸；
+  `cancel()` 里用 `cast("Control", celery_app.control)` 才既拿得到 `.revoke`，又保住对这个
+  名字的检查（比 `type: ignore` 好）。
 
 ## 前端契约
 
@@ -179,4 +186,11 @@ AddField(target_type) → AddField(target_id) → AddField(target_label)
 - `progress` 由 Stage 状态现算，`stages` 内嵌阶段列表。
 
 新域若要作用到非设备对象，前端需要读 `target_type` / `target_label` 才会看到新目标名——
-`device` 系列只对设备有值。
+`device` 系列只对设备有值。按 `device=<id>` 过滤时，若没有任何域声明设备类型，结果是**空集**
+而不是全量（`views.get_queryset` 直接 `qs.none()`）。
+
+**接口不开放改状态**。`/api/tasks/` 只有列表 / 详情 / 新建 / 取消，阶段只读；`Task` / `Stage`
+的状态由 celery 阶段任务与业务域推进信号写。放开写会让库里的记录与真实执行状态脱节——
+前端进度条说谎，`cancel()` 也无从判断「任务是否还在跑」。
+
+`progress` 由当前阶段列表现算：`success` / `failed` / `skipped` 都算已完成，无阶段时为 0。

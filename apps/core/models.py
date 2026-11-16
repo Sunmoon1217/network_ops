@@ -96,14 +96,8 @@ class UserPreference(models.Model):
 class Task(models.Model):
     """任务主记录。
 
-    **作用目标是软引用**：``target_type`` + ``target_id`` 指向任意业务实体（设备、设备组、
-    站点…），``target_label`` 是建任务时记下的名字。core 因此不认识任何业务模型，
-    也不会被业务表的删除级联带走（见 ``handbook/tasks.md``）。
-
-    ``task_type`` 同样是**自由字符串**，这里刻意不声明 ``choices``：词表属于业务域，由它们
-    在 ``core.task_types`` 注册表里登记。``choices`` 是字段的类属性、会写进迁移，运行时
-    注册注定与迁移状态漂移——所以词汇不放这里，显示名改由 ``get_task_type_display()``
-    反查注册表。
+    作用目标是软引用（``target_type`` + ``target_id`` + 建任务时记下的 ``target_label``），
+    ``task_type`` 是自由字符串、词汇由注册表提供。字段语义见 ``handbook/tasks.md``。
     """
 
     STATUS_CHOICES = (
@@ -145,22 +139,12 @@ class Task(models.Model):
         return f"{self.get_task_type_display()} - {self.get_status_display()}"
 
     def get_task_type_display(self) -> str:
-        """显示名按业务域注册的词汇表反查；未登记的旧词回落 key。
-
-        覆盖 Django 因 ``choices`` 自动生成的同名方法（现在字段没有 ``choices``），
-        这样 ``__str__`` / admin / 序列化器都不用改，且 core 里不出现任何业务词汇。
-        """
+        """显示名按注册表反查（未登记的旧词回落 key），替代 ``choices`` 自动生成的方法。"""
         return task_types.label_for(self.task_type)
 
     @property
     def device(self) -> int | None:
-        """**历史契约**：作用目标是设备时返回设备 ID，否则 ``None``。
-
-        ``Task`` 已经没有 ``device`` 外键了（core 不依赖 assets），但前端还在读
-        ``device`` / ``device_hostname`` 这两个键，所以留一对只读的兼容视图：
-        哪个 target_type 填它们由注册表说明（``feeds_device_fields``），core 不硬编码
-        ``"device"`` 这个词。
-        """
+        """**历史契约**：作用目标是设备时返回设备 ID，否则 ``None``。"""
         device_type = task_types.device_field_target_type()
         return self.target_id if device_type and self.target_type == device_type else None
 
@@ -172,10 +156,12 @@ class Task(models.Model):
 
     @property
     def current_stage(self):
+        """最近创建的阶段。"""
         return self.stages.order_by("-created_at").first()
 
     @property
     def progress(self):
+        """已完成阶段占比（0–100）；``skipped`` 也算完成。"""
         stages = self.stages.all()
         if not stages:
             return 0
@@ -184,11 +170,7 @@ class Task(models.Model):
 
 
 class Stage(models.Model):
-    """阶段记录。
-
-    ``stage_type`` 同样是自由字符串，词汇与 handler 由业务域在
-    ``core.task_types`` 注册表里登记——core 只负责存储与流转。
-    """
+    """阶段记录：``stage_type`` 为自由字符串，词汇与 handler 由注册表提供。"""
 
     STATUS_CHOICES = (
         ("pending", "等待中"),
@@ -223,5 +205,5 @@ class Stage(models.Model):
         return f"{self.task} - {self.get_stage_type_display()} - {self.get_status_display()}"
 
     def get_stage_type_display(self) -> str:
-        """显示名按注册表反查（未登记的旧词回落 key），见 ``Task.get_task_type_display``。"""
+        """显示名按注册表反查（未登记的旧词回落 key）。"""
         return task_types.label_for(self.stage_type)

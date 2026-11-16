@@ -10,14 +10,10 @@ admin.site.index_title = "后台管理"
 
 
 class VocabularyListFilter(admin.SimpleListFilter):
-    """按 ``core.task_types`` 的注册表快照出过滤项。
-
-    模型字段已经去掉 ``choices``（词汇属于业务域，写进迁移会永久漂移），admin 若仍写
-    ``list_filter = ("task_type",)`` 会退化成「按库里出现过的一切字符串过滤」。这里改成
-    运行期读注册表：选项带中文标签，业务域新登记的词自动出现，且不产生任何迁移。
-    """
+    """按 ``core.task_types`` 注册表快照出过滤项（字段已无 ``choices``，直接写字段会退化）。"""
 
     def vocabulary(self) -> list[tuple[str, str]]:
+        """子类返回 ``[(值, 显示名)]``，通常是某个 ``*_choices()`` 快照。"""
         raise NotImplementedError
 
     def lookups(self, request, model_admin):
@@ -153,6 +149,7 @@ class TaskAdmin(admin.ModelAdmin):
 
     @admin.display(description="作用目标")
     def target(self, obj):
+        """列表里的作用目标：``名字（type#id）``，无目标显示破折号。"""
         if not obj.target_id:
             return "—"
         return f"{obj.target_label or '?'}（{obj.target_type}#{obj.target_id}）"

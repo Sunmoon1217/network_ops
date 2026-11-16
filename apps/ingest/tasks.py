@@ -29,11 +29,7 @@ def _update_stage_status(stage_id, status, output_data=None, error_message=""):
 
 
 def _task_device(task):
-    """按软引用取任务的作用设备：类型不是设备、或设备已被删 → ``None``。
-
-    ``core.Task`` 不再有 ``device`` 外键（core 不依赖 assets），所以「从任务反查设备」
-    是业务域自己的事：认 ``target_type == "device"``，再按 ``target_id`` 查一次。
-    """
+    """按软引用取任务的作用设备：类型不是设备、或设备已被删 → ``None``。"""
     from assets.models import Device
 
     if task.target_type != "device" or not task.target_id:
