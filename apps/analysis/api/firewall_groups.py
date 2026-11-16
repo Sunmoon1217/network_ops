@@ -22,7 +22,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.group_merge import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, resolve_groups
-from assets.api.serializers import _format_address_entry, _format_service_entry
+from assets.serializers.views import _format_address_entry, _format_service_entry
 from configs.models import NatRule, Policy
 from netops.pagination import StandardPagination
 

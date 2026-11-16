@@ -56,8 +56,8 @@ class RouteSaver(BaseSaver):
     model_paths = ["configs.models.Route", "configs.models.Vrf"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import RouteSerializer
         from configs.models import Route
+        from configs.serializers.views import RouteSerializer
 
         routes = as_list(parsed_data.get("static_routes"))
         if not routes:

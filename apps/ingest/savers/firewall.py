@@ -34,8 +34,8 @@ class AddressBookSaver(BaseSaver):
     model_paths = ["configs.models.AddressBook"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import AddressBookSerializer
         from configs.models import AddressBook
+        from configs.serializers.views import AddressBookSerializer
 
         # addresses 别名已由 ingest.mapping 在 save 入口归一为 address_books
         raw = parsed_data.get("address_books")
@@ -151,8 +151,8 @@ class NatRuleSaver(BaseSaver):
     model_paths = ["configs.models.NatRule", "configs.models.AddressBook"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import NatRuleSerializer
         from configs.models import NatRule
+        from configs.serializers.views import NatRuleSerializer
 
         created, updated = 0, 0
         for index, rule in enumerate(as_list(parsed_data.get("nat"))):
@@ -308,8 +308,8 @@ class PolicySaver(BaseSaver):
     model_paths = ["configs.models.Policy", "configs.models.AddressBook", "configs.models.Service"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import AddressBookSerializer, PolicySerializer
         from configs.models import AddressBook, Policy, Service
+        from configs.serializers.views import AddressBookSerializer, PolicySerializer
 
         # acl / rules 别名已由 ingest.mapping 在 save 入口归一为 policies
         policies = parsed_data.get("policies")

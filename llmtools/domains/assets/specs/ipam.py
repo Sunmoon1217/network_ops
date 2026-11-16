@@ -7,6 +7,7 @@
 from assets import models
 from assets.serializers import views as s
 from configs import models as cm
+from configs.serializers import views as cs
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType
@@ -49,7 +50,7 @@ BUNDLE: dict[str, EntitySpec] = {
         node_type=NodeType.INTERFACE,
         label="接口",
         model=cm.Interface,
-        serializer=s.InterfaceSerializer,
+        serializer=cs.InterfaceSerializer,
         key="interface",
         summary=("device_hostname", "interface", "mode", "ip_address", "enabled", "description"),
         filters={
@@ -66,7 +67,7 @@ BUNDLE: dict[str, EntitySpec] = {
         node_type=NodeType.VLAN,
         label="VLAN",
         model=cm.Vlan,
-        serializer=s.VlanSerializer,
+        serializer=cs.VlanSerializer,
         key="vid",
         summary=("device_hostname", "vid", "name", "description"),
         filters={"device": Filter(("device__hostname",)), "vid": Filter(("vid",), "exact")},
@@ -78,7 +79,7 @@ BUNDLE: dict[str, EntitySpec] = {
         node_type=NodeType.VRF,
         label="VRF",
         model=cm.Vrf,
-        serializer=s.VrfSerializer,
+        serializer=cs.VrfSerializer,
         key="name",
         summary=("device_hostname", "name", "rd", "description"),
         filters={"device": Filter(("device__hostname",)), "keyword": Filter(("name", "rd"))},
@@ -91,7 +92,7 @@ BUNDLE: dict[str, EntitySpec] = {
         node_type=NodeType.ROUTE,
         label="路由",
         model=cm.Route,
-        serializer=s.RouteSerializer,
+        serializer=cs.RouteSerializer,
         key="destination",
         summary=("device_hostname", "destination", "nexthop", "interface", "protocol", "metric"),
         filters={
@@ -142,7 +143,7 @@ BUNDLE: dict[str, EntitySpec] = {
         node_type=NodeType.ARP_MAC,
         label="ARP/MAC",
         model=cm.ArpMac,
-        serializer=s.ArpMacSerializer,
+        serializer=cs.ArpMacSerializer,
         key="ip_address",
         summary=("device_hostname", "ip_address", "mac_address", "vlan", "interface", "arp_type", "status"),
         filters={

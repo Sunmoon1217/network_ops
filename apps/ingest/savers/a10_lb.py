@@ -113,8 +113,8 @@ class A10VirtualServerSaver(BaseSaver):
     ]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import LtmPersistSerializer, LtmProfileSerializer
         from configs.models import LtmPersist, LtmProfile, LtmVirtualServer
+        from configs.serializers.views import LtmPersistSerializer, LtmProfileSerializer
 
         servers = as_list(parsed_data.get("virtual_server"))
         if not servers:

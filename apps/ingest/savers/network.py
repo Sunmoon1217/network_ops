@@ -22,8 +22,8 @@ class VlanSaver(BaseSaver):
     model_paths = ["configs.models.Vlan"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import VlanSerializer
         from configs.models import Vlan
+        from configs.serializers.views import VlanSerializer
 
         rows = []
         for item in as_list(parsed_data.get("vlans")):
@@ -53,8 +53,8 @@ class SnmpConfigSaver(BaseSaver):
     model_paths = ["configs.models.SnmpConfig"]
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
-        from assets.serializers.views import SnmpConfigSerializer
         from configs.models import SnmpConfig
+        from configs.serializers.views import SnmpConfigSerializer
 
         entries = as_list(parsed_data.get("snmp"))
         if not entries:

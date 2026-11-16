@@ -31,24 +31,26 @@ from configs.models import (
     Vlan,
     Vrf,
 )
-
-from .serializers import (
-    CabinetSerializer,
-    DataCenterSerializer,
+from configs.serializers.views import (
     DeviceAccountSerializer,
     DeviceConfigSerializer,
+    InterfaceSerializer,
+    NtpConfigSerializer,
+    SnmpConfigSerializer,
+    SyslogConfigSerializer,
+    VlanSerializer,
+    VrfSerializer,
+)
+
+from ..serializers.views import (
+    CabinetSerializer,
+    DataCenterSerializer,
     DeviceConnectionSerializer,
     DeviceModelSerializer,
     DeviceSerializer,
-    InterfaceSerializer,
-    NtpConfigSerializer,
     RoomSerializer,
     SecurityZoneSerializer,
-    SnmpConfigSerializer,
-    SyslogConfigSerializer,
     VendorSerializer,
-    VlanSerializer,
-    VrfSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -278,7 +280,7 @@ class DeviceModelViewSet(viewsets.ModelViewSet):
 class DeviceGroupViewSet(viewsets.ModelViewSet):
     from assets.models import DeviceGroup
 
-    from .serializers import DeviceGroupSerializer
+    from ..serializers.views import DeviceGroupSerializer
 
     queryset = DeviceGroup.objects.prefetch_related("members").all()
     serializer_class = DeviceGroupSerializer
@@ -289,7 +291,7 @@ class DeviceGroupViewSet(viewsets.ModelViewSet):
 class DeviceGroupMemberViewSet(viewsets.ModelViewSet):
     from assets.models import DeviceGroupMember
 
-    from .serializers import DeviceGroupMemberSerializer
+    from ..serializers.views import DeviceGroupMemberSerializer
 
     queryset = DeviceGroupMember.objects.select_related("group", "device").all()
     serializer_class = DeviceGroupMemberSerializer
@@ -446,8 +448,7 @@ class SyslogConfigViewSet(viewsets.ModelViewSet):
 
 class LtmVirtualServerViewSet(viewsets.ModelViewSet):
     from configs.models import LtmVirtualServer
-
-    from .serializers import LtmVirtualServerSerializer
+    from configs.serializers.views import LtmVirtualServerSerializer
 
     queryset = LtmVirtualServer.objects.select_related("device").all()
     serializer_class = LtmVirtualServerSerializer
@@ -464,8 +465,7 @@ class LtmVirtualServerViewSet(viewsets.ModelViewSet):
 
 class LtmPoolViewSet(viewsets.ModelViewSet):
     from configs.models import LtmPool
-
-    from .serializers import LtmPoolSerializer
+    from configs.serializers.views import LtmPoolSerializer
 
     queryset = LtmPool.objects.select_related("device").all()
     serializer_class = LtmPoolSerializer
@@ -482,8 +482,7 @@ class LtmPoolViewSet(viewsets.ModelViewSet):
 
 class LtmPoolMemberViewSet(viewsets.ModelViewSet):
     from configs.models import LtmPoolMember
-
-    from .serializers import LtmPoolMemberSerializer
+    from configs.serializers.views import LtmPoolMemberSerializer
 
     queryset = LtmPoolMember.objects.select_related("device").all()
     serializer_class = LtmPoolMemberSerializer
@@ -500,8 +499,7 @@ class LtmPoolMemberViewSet(viewsets.ModelViewSet):
 
 class LtmProfileViewSet(viewsets.ModelViewSet):
     from configs.models import LtmProfile
-
-    from .serializers import LtmProfileSerializer
+    from configs.serializers.views import LtmProfileSerializer
 
     queryset = LtmProfile.objects.select_related("device").all()
     serializer_class = LtmProfileSerializer
@@ -517,8 +515,7 @@ class LtmProfileViewSet(viewsets.ModelViewSet):
 
 class LtmIRuleViewSet(viewsets.ModelViewSet):
     from configs.models import LtmIRule
-
-    from .serializers import LtmIRuleSerializer
+    from configs.serializers.views import LtmIRuleSerializer
 
     queryset = LtmIRule.objects.select_related("device").all()
     serializer_class = LtmIRuleSerializer
@@ -534,8 +531,7 @@ class LtmIRuleViewSet(viewsets.ModelViewSet):
 
 class LtmSNATViewSet(viewsets.ModelViewSet):
     from configs.models import LtmSNAT
-
-    from .serializers import LtmSNATSerializer
+    from configs.serializers.views import LtmSNATSerializer
 
     queryset = LtmSNAT.objects.select_related("device").all()
     serializer_class = LtmSNATSerializer
@@ -551,8 +547,7 @@ class LtmSNATViewSet(viewsets.ModelViewSet):
 
 class LtmPersistViewSet(viewsets.ModelViewSet):
     from configs.models import LtmPersist
-
-    from .serializers import LtmPersistSerializer
+    from configs.serializers.views import LtmPersistSerializer
 
     queryset = LtmPersist.objects.select_related("device").all()
     serializer_class = LtmPersistSerializer
@@ -571,8 +566,7 @@ class LtmPersistViewSet(viewsets.ModelViewSet):
 
 class GtmDatacenterViewSet(viewsets.ModelViewSet):
     from configs.models import GtmDatacenter
-
-    from .serializers import GtmDatacenterSerializer
+    from configs.serializers.views import GtmDatacenterSerializer
 
     queryset = GtmDatacenter.objects.select_related("device").all()
     serializer_class = GtmDatacenterSerializer
@@ -588,8 +582,7 @@ class GtmDatacenterViewSet(viewsets.ModelViewSet):
 
 class GtmWideipViewSet(viewsets.ModelViewSet):
     from configs.models import GtmWideip
-
-    from .serializers import GtmWideipSerializer
+    from configs.serializers.views import GtmWideipSerializer
 
     queryset = GtmWideip.objects.select_related("device").all()
     serializer_class = GtmWideipSerializer
@@ -606,8 +599,7 @@ class GtmWideipViewSet(viewsets.ModelViewSet):
 
 class GtmPoolViewSet(viewsets.ModelViewSet):
     from configs.models import GtmPool
-
-    from .serializers import GtmPoolSerializer
+    from configs.serializers.views import GtmPoolSerializer
 
     queryset = GtmPool.objects.select_related("device").all()
     serializer_class = GtmPoolSerializer
@@ -624,8 +616,7 @@ class GtmPoolViewSet(viewsets.ModelViewSet):
 
 class GtmServerViewSet(viewsets.ModelViewSet):
     from configs.models import GtmServer
-
-    from .serializers import GtmServerSerializer
+    from configs.serializers.views import GtmServerSerializer
 
     queryset = GtmServer.objects.select_related("device").all()
     serializer_class = GtmServerSerializer
@@ -642,8 +633,7 @@ class GtmServerViewSet(viewsets.ModelViewSet):
 
 class GtmVServerViewSet(viewsets.ModelViewSet):
     from configs.models import GtmVServer
-
-    from .serializers import GtmVServerSerializer
+    from configs.serializers.views import GtmVServerSerializer
 
     queryset = GtmVServer.objects.select_related("device", "server").all()
     serializer_class = GtmVServerSerializer
@@ -666,8 +656,7 @@ class GtmVServerViewSet(viewsets.ModelViewSet):
 
 class AddressBookViewSet(viewsets.ModelViewSet):
     from configs.models import AddressBook
-
-    from .serializers import AddressBookSerializer
+    from configs.serializers.views import AddressBookSerializer
 
     queryset = AddressBook.objects.select_related("device", "parent").all()
     serializer_class = AddressBookSerializer
@@ -683,8 +672,7 @@ class AddressBookViewSet(viewsets.ModelViewSet):
 
 class ServiceViewSet(viewsets.ModelViewSet):
     from configs.models import Service
-
-    from .serializers import ServiceSerializer
+    from configs.serializers.views import ServiceSerializer
 
     queryset = Service.objects.select_related("device").all()
     serializer_class = ServiceSerializer
@@ -700,8 +688,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
 class PolicyViewSet(viewsets.ModelViewSet):
     from configs.models import Policy
-
-    from .serializers import PolicySerializer
+    from configs.serializers.views import PolicySerializer
 
     # 列表要展示源/目的地址（AddressBook）与端口（Service），三个 M2M 用 prefetch
     # 一次取回，避免逐行查询（N+1）
@@ -727,8 +714,7 @@ class PolicyViewSet(viewsets.ModelViewSet):
 
 class NatRuleViewSet(viewsets.ModelViewSet):
     from configs.models import NatRule
-
-    from .serializers import NatRuleSerializer
+    from configs.serializers.views import NatRuleSerializer
 
     queryset = NatRule.objects.select_related("device").all()
     serializer_class = NatRuleSerializer
@@ -749,7 +735,7 @@ class NatRuleViewSet(viewsets.ModelViewSet):
 class TagViewSet(viewsets.ModelViewSet):
     from assets.models import Tag
 
-    from .serializers import TagSerializer
+    from ..serializers.views import TagSerializer
 
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
@@ -760,7 +746,7 @@ class TagViewSet(viewsets.ModelViewSet):
 class SubnetViewSet(viewsets.ModelViewSet):
     from assets.models import Subnet
 
-    from .serializers import SubnetSerializer
+    from ..serializers.views import SubnetSerializer
 
     queryset = Subnet.objects.prefetch_related("tags").all()
     serializer_class = SubnetSerializer
@@ -781,7 +767,7 @@ class SubnetViewSet(viewsets.ModelViewSet):
 class IPAddressViewSet(viewsets.ModelViewSet):
     from assets.models import IPAddress
 
-    from .serializers import IPAddressSerializer
+    from ..serializers.views import IPAddressSerializer
 
     queryset = IPAddress.objects.select_related("subnet", "device", "security_zone").all()
     serializer_class = IPAddressSerializer
@@ -804,8 +790,7 @@ class IPAddressViewSet(viewsets.ModelViewSet):
 
 class RouteViewSet(viewsets.ModelViewSet):
     from configs.models import Route
-
-    from .serializers import RouteSerializer
+    from configs.serializers.views import RouteSerializer
 
     queryset = Route.objects.select_related("vrf", "vrf__device").all()
     serializer_class = RouteSerializer
@@ -826,7 +811,7 @@ class RouteViewSet(viewsets.ModelViewSet):
 class TopologyViewSet(viewsets.ModelViewSet):
     from assets.models import Topology
 
-    from .serializers import TopologySerializer
+    from ..serializers.views import TopologySerializer
 
     queryset = Topology.objects.all()
     serializer_class = TopologySerializer
@@ -836,8 +821,7 @@ class TopologyViewSet(viewsets.ModelViewSet):
 
 class ArpMacViewSet(viewsets.ModelViewSet):
     from configs.models import ArpMac
-
-    from .serializers import ArpMacSerializer
+    from configs.serializers.views import ArpMacSerializer
 
     queryset = ArpMac.objects.select_related("device").all()
     serializer_class = ArpMacSerializer
@@ -861,7 +845,7 @@ class ArpMacViewSet(viewsets.ModelViewSet):
 class SubnetUsageLogViewSet(viewsets.ModelViewSet):
     from assets.models import SubnetUsageLog
 
-    from .serializers import SubnetUsageLogSerializer
+    from ..serializers.views import SubnetUsageLogSerializer
 
     queryset = SubnetUsageLog.objects.select_related("subnet").all()
     serializer_class = SubnetUsageLogSerializer

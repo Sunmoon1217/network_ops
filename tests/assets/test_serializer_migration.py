@@ -1,68 +1,55 @@
-"""序列化器迁移对比测试。
+"""序列化器合并后的对账：旧模块已删除，公共能力与字段口径都还在。
 
-对比 `assets/api/serializers.py`（旧）与 `assets/serializers/views.py`（改造版），
-确保改造过程没有丢字段。旧文件删除后，本测试可一并删除。
+原测试逐字段对比 `assets/api/serializers.py`（旧）与 `assets/serializers/views.py`（新）；
+旧模块删除后对账对象没了，改锁三件仍然重要的契约：
+
+1. 旧模块确实删掉（防止有人为了兼容又把它加回来）；
+2. 从旧模块并入的两个展示函数还在 assets 侧（analysis 接口在用）；
+3. `model` 装饰器仍按「fields=__all__」补全字段，且拒绝非法 model 参数。
 """
 
-import importlib
+import importlib.util
+from types import SimpleNamespace
 
 import pytest
 
 from assets.serializers.base import DeviceRelatedSerializer, ParentClass, model
-
-OLD_MODULE = "assets.api.serializers"
-NEW_MODULE = "assets.serializers.views"
-
-
-def _pairs():
-    """产出 (类名, 旧类, 新类) 三元组"""
-    old = importlib.import_module(OLD_MODULE)
-    new = importlib.import_module(NEW_MODULE)
-    for name in sorted(dir(old)):
-        if not name.endswith("Serializer"):
-            continue
-        old_cls = getattr(old, name, None)
-        if not isinstance(old_cls, type):
-            continue
-        yield name, old_cls, getattr(new, name, None)
+from assets.serializers.views import _format_address_entry, _format_service_entry
+from configs.serializers.views import LtmVirtualServerSerializer
 
 
-def test_new_module_covers_every_serializer():
-    """新版必须包含旧版的每一个序列化器"""
-    missing = [name for name, _, new_cls in _pairs() if new_cls is None]
-    assert not missing, f"新版缺少序列化器: {missing}"
+def test_old_serializer_module_removed():
+    """旧模块彻底删除——两套同名序列化器并存最容易漏改引用。"""
+    assert importlib.util.find_spec("assets.api.serializers") is None
 
 
-def test_new_model_fields_are_superset():
-    """新版的模型字段必须是旧版的超集（只增不减）"""
-    problems = []
-    for name, old_cls, new_cls in _pairs():
-        if new_cls is None:
-            continue
-        model_fields = {f.name for f in new_cls.Meta.model._meta.fields}
-        old_exposed = set(old_cls().fields) & model_fields
-        new_exposed = set(new_cls().fields) & model_fields
-        missing = sorted(old_exposed - new_exposed)
-        if missing:
-            problems.append(f"{name} 缺少模型字段: {missing}")
-    assert not problems, "\n".join(problems)
+def test_format_helpers_survive_merge():
+    """两个展示串函数并入后行为不变（analysis/api/firewall_groups.py 依赖）。"""
+    address = _format_address_entry(
+        SimpleNamespace(
+            address_type="subnet",
+            ip_start=None,
+            ip_end=None,
+            ip_address="10.0.0.0",
+            ip_netmask=24,
+            name="办公网段",
+        )
+    )
+    service = _format_service_entry(SimpleNamespace(protocol="tcp", port="443", port2="", name="https"))
+    assert address == "办公网段(10.0.0.0/24)"
+    assert service == "tcp/443"
 
 
 def test_decorator_completes_model_fields():
-    """装饰器注入 fields="__all__" 后，旧版遗漏的模型字段应被补全"""
-    from assets.serializers.views import LtmVirtualServerSerializer
-    from configs.models import LtmVirtualServer
-
+    """装饰器注入 fields="__all__" 后，旧版遗漏的模型字段应被补全。"""
     fields = set(LtmVirtualServerSerializer().fields)
-    model_fields = {f.name for f in LtmVirtualServer._meta.fields}
-
+    model_fields = {f.name for f in LtmVirtualServerSerializer.Meta.model._meta.fields}
     assert model_fields <= fields
-    # 旧版三处遗漏，改造后由 __all__ 自动补全
     assert {"status", "source", "snat_pool"} <= fields
 
 
 def test_wrong_base_class_is_rejected():
-    """模型没有 device 字段却继承 DeviceRelatedSerializer 时，应在类定义阶段报错"""
+    """模型没有 device 字段却继承 DeviceRelatedSerializer 时，应在类定义阶段报错。"""
     from assets.models import Tag
 
     assert not hasattr(Tag, "device")
