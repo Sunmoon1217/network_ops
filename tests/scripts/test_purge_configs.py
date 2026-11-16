@@ -1,19 +1,23 @@
-"""``purge_configs`` 管理命令。
+"""``scripts/purge_configs.py`` 独立运维脚本。
 
 守护的语义：默认只报告不删除；``--yes`` 才删；只清「配置解析产物 + DeviceConfig +
 派生缓存」，人工/Excel 数据一律不动；堆叠组的备机折算到主设备；``--purge-repo`` 必须
 与 ``--all`` 同用。
+
+脚本已从 ``manage.py purge_configs`` 迁出（原本是 ``ingest → analysis`` 的反向依赖，
+靠运维例外汇免；脱离 app 后豁免取消）。入参是 argv，输出注入 StringIO；
+退出码 0 正常、2 参数错误。
 """
 
 from io import StringIO
 
 import pytest
-from django.core.management import CommandError, call_command
 
 from analysis.models import AccessFlow, InternetAnalysis
 from assets.models import Device, DeviceGroup, DeviceGroupMember, ServerOwner
 from configs.models import ConfigBase, DeviceConfig, Route, Vrf
 from core.models import Stage, Task
+from scripts import purge_configs
 
 
 def _device(hostname: str) -> Device:
@@ -26,10 +30,16 @@ def _config_rows(device: Device) -> None:
     Route.objects.create(vrf=vrf, device=device, destination="10.0.0.0/24", protocol="static")
 
 
-def _run(*args, **kwargs) -> str:
+def _run_rc(*args) -> tuple[int, str]:
     out = StringIO()
-    call_command("purge_configs", *args, stdout=out, **kwargs)
-    return out.getvalue()
+    rc = purge_configs.main(list(args), out=out)
+    return rc, out.getvalue()
+
+
+def _run(*args) -> str:
+    rc, output = _run_rc(*args)
+    assert rc == 0, output
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +87,7 @@ def test_yes_removes_config_products_but_keeps_manual_data():
 
 @pytest.mark.django_db
 def test_covers_every_configbase_subclass():
-    """命令按 ConfigBase 的子类枚举目标：抽查几个不同领域的模型都会被清掉"""
+    """脚本按 ConfigBase 的子类枚举目标：抽查几个不同领域的模型都会被清掉"""
     device = _device("_t_purge_c")
     vrf = Vrf.objects.create(device=device, name="default")
     Route.objects.create(vrf=vrf, device=device, destination="10.0.0.0/24", protocol="static")
@@ -89,7 +99,7 @@ def test_covers_every_configbase_subclass():
 
     _run("--all", "--yes")
 
-    assert ConfigBase.__subclasses__(), "枚举不到子类说明命令的定义失效了"
+    assert ConfigBase.__subclasses__(), "枚举不到子类说明脚本的定义失效了"
     for model in (Vrf, Route, Interface, Vlan, AddressBook):
         assert model.objects.count() == 0, f"{model.__name__} 没被清掉"
 
@@ -192,21 +202,28 @@ def test_access_flow_reported_then_removed_per_device():
 
 @pytest.mark.django_db
 def test_requires_device_or_all():
-    with pytest.raises(CommandError):
-        _run()
+    """--device / --all 二选一由 argparse 强制：缺了直接退出码 2"""
+    with pytest.raises(SystemExit) as excinfo:
+        purge_configs.main([], out=StringIO())
+
+    assert excinfo.value.code == 2
 
 
 @pytest.mark.django_db
 def test_unknown_device_raises():
-    with pytest.raises(CommandError, match="设备不存在"):
-        _run("--device", "no-such-device")
+    rc, output = _run_rc("--device", "no-such-device")
+
+    assert rc == 2
+    assert "设备不存在" in output
 
 
 @pytest.mark.django_db
 def test_purge_repo_requires_all():
     device = _device("_t_purge_f")
-    with pytest.raises(CommandError, match="--purge-repo"):
-        _run("--device", device.hostname, "--yes", "--purge-repo")
+    rc, output = _run_rc("--device", device.hostname, "--yes", "--purge-repo")
+
+    assert rc == 2
+    assert "--purge-repo" in output
 
 
 @pytest.mark.django_db

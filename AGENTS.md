@@ -63,8 +63,8 @@ network_ops/
 
 **依赖方向**：`llmtools → apps`，`analysis → ingest → configs → assets`（单向）。`assets`
 是叶子节点，不许 import `configs` / `ingest`；`configs` 不许 import `ingest` / `analysis`；
-`ingest` 除 `purge_configs` 这类跨域运维工具外不许 import `analysis`；`llmtools` 的
-子模块不许 import 任何业务域（`domains/` 是唯一例外）。
+`ingest` 不许 import `analysis`（跨四域的清理工具已迁出 app，见 `scripts/purge_configs.py`）；
+`llmtools` 的子模块不许 import 任何业务域（`domains/` 是唯一例外）。
 
 ## 文档地图
 
@@ -128,7 +128,8 @@ cd frontend && pnpm install
 uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status          # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog         # 积压明细（--json / --limit）
-uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
+uv run python manage.py reparse | import_server_owners   # 见 handbook/ingest.md
+uv run python scripts/purge_configs.py --device <H> [--yes]   # 清理配置解析产物（默认 dry-run）
 uv run python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]   # GTM/LTM → 软资产
 uv run python manage.py rebuild_access_flows --device <H> [--sync]
 ./scripts/deploy-host.sh deploy | status      # 宿主部署：app / worker / consumer 三进程
@@ -291,7 +292,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   **不动 label**（迁移历史挂在它上面）。
 - **改 celery 任务名要按部署步骤走**：Redis 里未消费的旧名消息会 `Unknown task`——升级前停
   worker、清空对应队列再滚动。
-- **清理配置数据用 `manage.py purge_configs`**（默认 dry-run）：配置原文在 Git 仓库、解析结果在
+- **清理配置数据用 `python scripts/purge_configs.py`**（默认 dry-run，已从 `manage.py` 迁出）：
+  配置原文在 Git 仓库、解析结果在
   资产表，两者与 `DeviceConfig` 无外键，手工清必漏；`--purge-repo` 只删当前环境的仓库。
 - **导入服务器负责人**：`manage.py import_server_owners --file x.xlsx`（sheet `servers`，**按列名
   取**、缺列直接报错；`ip` 是唯一键；只覆盖 hostname / owner，不动 `status`；有非法行整批不导入）。

@@ -1,9 +1,10 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1–7 已落地：26 张表 + 序列化器 + parsers/savers/mapping
+> **状态：基本落地（2026-11-16 起）。切片 1–8 已完成：26 张表 + 序列化器 + parsers/savers/mapping
 > + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
-> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest；剩 `purge_configs` 迁 scripts，
-> 以及 `assets/api/views.py` 的 `overview` 概览统计（见 §待定项 5）。**
+> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest + `purge_configs` 迁 scripts。
+> 只剩两处待定：`assets/api/views.py` 的 `overview` 概览统计（见 §待定项 5）、
+> `existing_asset_registry` 的归属。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -643,8 +644,22 @@ Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。�
 **结果**：`grep -rn "from ingest" apps/assets` **无命中**——`assets → ingest` 清零，
 矩阵里 assets 行的四个 ✗ 只剩 `assets → configs`（就是待定项 5 的 `overview`）。
 
+### 切片 8 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 脚本 | `scripts/purge_configs.py`（原 `apps/ingest/management/commands/purge_configs.py` 删除）：同样四个开关、同样默认 dry-run，`main(argv, out)` 可注入输出，退出码 0 / 2 |
+| 结构 | 逻辑从 `Command` 类改成 `_Purge` 类 + `main()`；模型导入全部下移到用到的函数里（脚本 import 时不碰 Django 应用加载，`main()` 里才 `django.setup()`） |
+| 测试 | `tests/ingest/test_purge_configs_command.py` → `tests/scripts/test_purge_configs.py`（12 条语义不变；错误断言从 `CommandError` 改成「退出码 2 + 输出含提示」，缺 `--device/--all` 由 argparse 抛 `SystemExit(2)`） |
+| 工具链 | `pyproject.toml` 的 ruff `known-first-party` 补 `scripts`（否则 `from scripts import …` 被当第三方包排到最前） |
+| 文档 | `handbook/ingest.md` 的命令表与「为什么存在」、`deploy.md` 的容器调用、`AGENTS.md` 三条、`layering.md` 的例外表 |
+
+**结果**：`ingest` 不再 import `analysis`——矩阵里 ingest 行的 ✗ 成立；`layering.md`
+「例外与豁免」表里 purge_configs 那行从「待迁出」变成「已迁出」，只剩 `core/queue_*` 两条。
+**调用方式变了**：`manage.py purge_configs` → `python scripts/purge_configs.py`（容器里
+`docker compose exec app python scripts/purge_configs.py …`）。
+
 ### 下一步
 
-1. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
-2. （待定）**`overview` 的跨域聚合**：见 §待定项 5，要动前端契约，单独一轮。
+1. （待定）**`overview` 的跨域聚合**：见 §待定项 5，要动前端契约，单独一轮。
 

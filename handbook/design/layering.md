@@ -23,7 +23,11 @@
 
 ### 三个反向依赖（assets → ingest）
 
-违反 `AGENTS.md` 声明的「`analysis → ingest → assets` 单向」：
+违反 `AGENTS.md` 声明的「`analysis → ingest → assets` 单向」。
+
+> **已清零（2026-11-16）**：①③ 随 Excel 导入整体迁 ingest（切片 7）、② 随
+> `resolve_config_owner` 迁 configs（切片 4）消失。`grep -rn "from ingest" apps/assets`
+> 现在无命中。下表保留为当时的盘点记录。
 
 | # | 位置 | 性质 |
 |---|---|---|
@@ -33,7 +37,7 @@
 
 ①③ 的根因是**「Excel 导入」这个用例整体住在 assets**，而「配置文件」sheet 恰好就是
 ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner` 被 ingest 自己用着
-（`ingest/pipeline.py:64`、`ingest/management/commands/purge_configs.py:25`），
+（`ingest/pipeline.py:64`、当时的 `ingest/management/commands/purge_configs.py:25`），
 搬走它会让 ingest 反过来依赖 assets。
 
 **处置（2026-11-16 拍板）**：①③ → **Excel 导入（`device_import.py`）整体迁 ingest**，
@@ -159,7 +163,7 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 | 位置 | 例外 | 理由 |
 |---|---|---|
-| `scripts/purge_configs.py` | 迁出 app，改为独立运维脚本 | 跨域**运维工具**，脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
+| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
 | `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.queue_monitor`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
 | `ingest/access_flow_trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
 | `ingest/collectors/dashboard.py` | 不 import analysis，用任务名 | 同上 |

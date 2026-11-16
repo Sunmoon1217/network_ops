@@ -382,19 +382,22 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 | 命令 | 用途 |
 |------|------|
 | `manage.py reparse` | 重跑已入库配置的解析与入库（`force_parse` 语义） |
-| `manage.py purge_configs` | 清理配置解析产物（默认 dry-run，含 analysis 的缓存） |
 | `manage.py import_server_owners` | xlsx 导入服务器负责人 |
+| `python scripts/purge_configs.py` | 清理配置解析产物（默认 dry-run，含 analysis 的缓存）——**独立脚本，不是管理命令** |
 
 ### `purge_configs` 为什么存在
 
 配置**原文**只存在一份（Git 仓库），但**解析结果**写进了各资产表，而这些表与
 `DeviceConfig` 之间**没有任何外键**——删 `DeviceConfig`、删仓库都不会级联清掉它们，
-手工清又容易漏。本命令把「哪些行来自配置解析」集中到一处，并且默认只报告。
+手工清又容易漏。本脚本把「哪些行来自配置解析」集中到一处，并且默认只报告。
 
 「配置解析产物」用 `ConfigBase.__subclasses__()` 运行时枚举，这个定义自维护：新增 Saver
 或模型自动纳入（实测 Saver 里写的模型全是 `ConfigBase` 子类，没有漏网之鱼）。
-`InternetAnalysis` / `AccessFlow` 住在 analysis app，但清理仍归本命令——它是跨域的
-运维工具（工具层允许跨域 import）。
+`InternetAnalysis` / `AccessFlow` 住在 analysis app，但清理仍归本脚本——它同时动四个域的表
+（configs / assets / analysis / core），**所以它不在任何 app 里**：挂在 ingest 时是
+`ingest → analysis` 的反向依赖，只能靠「运维工具例外」豁免；挪到 `scripts/` 后脱离依赖矩阵，
+豁免自然取消。代价是调用方式从 `manage.py` 变成脚本（容器里同理：
+`docker compose exec app python scripts/purge_configs.py ...`）。
 
 **ARP/MAC 也会被清**（2026-11-16 行为变化）：`ArpMac` 已改为继承 `ConfigBase` 并随家族迁入
 configs，因此进入枚举集合。ARP/MAC 是可再生的设备运行数据，被清可接受；契约测试
