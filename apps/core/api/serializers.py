@@ -1,7 +1,7 @@
 """注册与任务相关的序列化器。
 
 ``Task`` 的写入只开放 ``device`` / ``task_type`` / ``params``——状态、结果、时间戳都由
-工作流（``ingest.workflow``）与阶段任务维护，客户端不该直接改。
+任务机制（``core.tasks``）与阶段任务维护，客户端不该直接改。
 """
 
 from django.contrib.auth.password_validation import validate_password
@@ -190,12 +190,25 @@ class TaskSerializer(serializers.ModelSerializer):
             "stages",
         )
 
-    def create(self, validated_data):
-        """建任务即投递第一个阶段（采集），见 ``ingest.workflow.start_task``。"""
-        from ingest.workflow import start_task
+    def validate_task_type(self, value: str) -> str:
+        """只接受业务域已注册的任务类型。
 
-        return start_task(
-            device=validated_data["device"],
+        模型层的 ``choices`` 拦不住增量词汇（改 ``choices`` 要迁移），注册表才是权威；
+        这里提前拒掉未知类型，避免落到 ``create_task`` 里抛 ``LookupError`` 被视图
+        统一吞成 503——那会让「客户端写错词」看起来像「服务端挂了」。
+        """
+        from core import task_types
+
+        if not task_types.is_registered_task_type(value):
+            raise serializers.ValidationError(f"未知的任务类型 {value!r}，可选：{[key for key, _ in task_types.task_type_choices()]}")
+        return value
+
+    def create(self, validated_data):
+        """建任务即投递第一个阶段，第一个阶段由注册表按 ``task_type`` 反查。"""
+        from core.tasks import create_task
+
+        return create_task(
             task_type=validated_data["task_type"],
+            device=validated_data.get("device"),
             params=validated_data.get("params") or {},
         )

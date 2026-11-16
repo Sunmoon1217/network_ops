@@ -42,9 +42,9 @@ def test_chain_from_parsing_to_storage_completes_task(eager_celery):
         output_data={"config": "sysname E2E\nvlan 10\nvlan 20\n"},
     )
 
-    from ingest.workflow import dispatch_stage
+    from core.tasks import dispatch
 
-    dispatch_stage(task, "parsing")
+    dispatch(task, "parsing")
 
     task.refresh_from_db()
     assert task.status == "success", task.error_message
@@ -56,12 +56,15 @@ def test_chain_from_parsing_to_storage_completes_task(eager_celery):
 
 @pytest.mark.django_db
 def test_start_task_dispatches_collection_stage(eager_celery):
-    """``start_task`` = 建 Task + 建并投递 collection 阶段（采集无可用连接 → 失败收尾）。"""
+    """``create_task`` = 建 Task + 建并投递首个阶段（采集无可用连接 → 失败收尾）。
+
+    首个阶段由 ``core.task_types`` 按 task_type 反查得到，core 不认识 ``collection``。
+    """
     device = _switch("_t_wf_fail")  # 没有可用连接 → 采集阶段必然失败
 
-    from ingest.workflow import start_task
+    from core.tasks import create_task
 
-    task = start_task(device, "collect_config")
+    task = create_task("collect_config", device=device)
 
     task.refresh_from_db()
     assert task.started_at is not None
@@ -76,7 +79,7 @@ def test_start_task_dispatches_collection_stage(eager_celery):
 def test_cancelled_task_is_not_advanced():
     """任务取消后，阶段即使成功也不再推进。
 
-    ``ingest.workflow.cancel_task`` 里的 revoke 只是尽力而为（需要 worker 在线），
+    ``core.tasks.cancel`` 里的 revoke 只是尽力而为（需要 worker 在线），
     真正兜底的是信号里的这个检查。
     """
     device = _switch("_t_wf_cancel")
@@ -93,12 +96,12 @@ def test_cancelled_task_is_not_advanced():
 
 @pytest.mark.django_db
 def test_cancel_task_marks_cancelled():
-    from ingest.workflow import cancel_task
+    from core.tasks import cancel
 
     device = _switch("_t_wf_cancel2")
     task = Task.objects.create(task_type="collect_config", device=device, status="running")
 
-    cancel_task(task)
+    cancel(task)
 
     task.refresh_from_db()
     assert task.status == "cancelled"

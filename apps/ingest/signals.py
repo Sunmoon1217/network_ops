@@ -53,9 +53,9 @@ def on_stage_complete(sender, instance, **kwargs):
 
         next_stage = _NEXT_STAGE.get(instance.stage_type)
         if next_stage:
-            from ingest.workflow import dispatch_stage
+            from core.tasks import dispatch
 
-            dispatch_stage(task, next_stage)
+            dispatch(task, next_stage)
         else:
             # storage 阶段成功 = 整个任务完成
             type(task).objects.filter(id=task.pk).update(
