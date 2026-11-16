@@ -3,6 +3,9 @@
 对应 ``handbook/design/layering.md`` 的依赖矩阵第一行（core 对所有业务域都是 ✗）。
 这条约束靠人眼守不住——一次「顺手 import 一下」就回来了，所以用 AST 扫一遍源码。
 
+连同 ``test_assets_imports_no_upper_domain``：assets 是矩阵的另一端叶子节点
+（``analysis → ingest → configs → assets``），拆分的全部意义就是让它不再 import 上层域。
+
 只扫**运行期真的会执行**的 import：``TYPE_CHECKING`` 里的注解 import 不在此列。
 模型层的同类约束由 ``test_core_models_have_no_cross_domain_foreign_key`` 守——字符串外键
 （``ForeignKey("assets.Device")``）不是 import，AST 扫不到，但一样会把 core 绑死在上层域上。
@@ -12,9 +15,14 @@
 import ast
 from pathlib import Path
 
-CORE_DIR = Path(__file__).resolve().parents[2] / "apps" / "core"
+APPS_DIR = Path(__file__).resolve().parents[2] / "apps"
+CORE_DIR = APPS_DIR / "core"
+ASSETS_DIR = APPS_DIR / "assets"
 PROJECT_ROOT = CORE_DIR.parent.parent
 DOMAIN_APPS = {"assets", "configs", "ingest", "egest", "analysis", "docs", "cloud"}
+
+#: assets 之上的域：拆分后 assets 一个都不许 import（它是叶子）。
+ASSETS_UPPER_DOMAINS = {"configs", "ingest", "egest", "analysis", "docs", "cloud"}
 
 #: 跨域运维工具例外：与 ``layering.md``「例外与豁免」同源。
 #: ``queue_*`` 两个巡检命令读的是 analysis 的访问流指标，而那是 platform 级的队列巡检
@@ -71,6 +79,24 @@ def test_operational_exceptions_are_still_needed():
         f"  清单里有但代码里没有：{sorted(OPERATIONAL_EXCEPTIONS - hit)}\n"
         f"  代码里有但清单没记：{sorted(hit - OPERATIONAL_EXCEPTIONS)}"
     )
+
+
+def test_assets_imports_no_upper_domain():
+    """assets 是叶子节点：不许 import configs / ingest / analysis 等上层域。
+
+    拆分（``handbook/design/assets-configs-split.md``）把配置行家族搬走之后，assets 只该
+    剩「基础资产」——一旦这里报出 configs，说明又有跨域聚合（如曾经的 ``overview``）
+    挂回了 assets。跨域读取放上层域（configs 之上）或让调用方传入，别从叶子往上够。
+    """
+    offenders: list[str] = []
+    for path in sorted(ASSETS_DIR.rglob("*.py")):
+        rel = path.relative_to(PROJECT_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for lineno, module in _imported_modules(tree):
+            if module.split(".")[0] in ASSETS_UPPER_DOMAINS:
+                offenders.append(f"{rel}:{lineno} → {module}")
+
+    assert not offenders, "assets 出现上层域依赖（应上移到 configs/ingest/analysis，或由调用方传入）：\n" + "\n".join(offenders)
 
 
 def test_core_models_have_no_cross_domain_foreign_key():

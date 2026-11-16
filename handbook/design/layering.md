@@ -102,7 +102,7 @@ core           底层服务：用户 / 认证 / Token / 权限 / 用户偏好
 
 assets         基础资产信息：DCIM / 设备台账 / IPAM / CI 统一台账
                 + 软资产扩展表（DomainAsset / LoadBalancerService）
-                ← 零上层依赖（目标态：叶子节点）
+                ← 零上层依赖（叶子节点，AST 守卫：tests/core/test_layering.py）
 
 configs        配置行：ConfigBase 家族 25 子类（ArpMac 改继承并入）+ DeviceConfig
                 + parsers/（文本 → dict）+ savers/（写配置行）+ mapping/（键归一）
@@ -151,6 +151,8 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 1. **`core` 不依赖任何业务域。** 它是平台服务，用户 / 认证 / 权限不该认识设备。
 2. **`assets` 不依赖任何上层域。** 它是事实的权威源，不该知道谁在消费它。
+   2026-11-16 起由 `tests/core/test_layering.py::test_assets_imports_no_upper_domain` 守住
+   （拆分前是 `overview` 的跨域计数破了这条，已迁 analysis）。
 3. **不允许跨层**（如 ingest 直接依赖 analysis）。要跨只能走 §「跨域调用」。
 
 **`analysis -> ingest` 是允许的**（与 `AGENTS.md` 声明的单向链一致）：analysis 作为只读消费侧，

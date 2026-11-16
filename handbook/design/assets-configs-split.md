@@ -1,10 +1,10 @@
 # assets / configs 域拆分方案
 
-> **状态：基本落地（2026-11-16 起）。切片 1–8 已完成：26 张表 + 序列化器 + parsers/savers/mapping
+> **状态：基本落地（2026-11-16 起）。切片 1–9 已完成：26 张表 + 序列化器 + parsers/savers/mapping
 > + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
-> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest + `purge_configs` 迁 scripts。
-> 只剩两处待定：`assets/api/views.py` 的 `overview` 概览统计（见 §待定项 5）、
-> `existing_asset_registry` 的归属。**
+> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest + `purge_configs` 迁 scripts
+> + `overview` 概览跨域聚合迁 analysis（assets 至此真正成为叶子）。
+> 只剩 `existing_asset_registry` 的归属待定（§待定项 6）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -482,7 +482,8 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
 | 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
-| 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **新发现的反向依赖**（切片 4 后暴露，不在原「三处」之列）：`overview` 直接 `Interface/Route/Policy/NatRule/AddressBook/Service/Ltm*` 15 个 configs 模型做计数，是 `assets → configs`。两条出路：把配置侧计数抽成 configs 的 stats 服务（assets 只留设备/机柜部分，前端合并两个接口），或把整个概览端点迁 configs。**暂缓**——改的是前端契约，单独一轮做 |
+| 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **已落地（切片 9，2026-11-16）**：整个端点迁 `analysis/api/overview.py`——它是 assets + configs 的只读聚合，只能落在两者之上；**URL 与 name 原样保留**，前端零改动。configs 单侧统计不做拆接口（`analysis` 已在矩阵里允许同时读两个域，再拆成两个接口只会让前端多一次请求）。 |
+| 6 | `assets/services/existing_asset_registry.py`（既有资产判重）是否随 Excel 导入迁 ingest | 目前只被 ingest 的导入链路调用，但「资产唯一性口径」必须与 assets 的模型约束同处一地（否则两边各写一份判重规则必然漂移）。倾向**留在 assets**，待导入链路再变动时定 |
 
 ## 建议的最小验证切片
 
@@ -659,7 +660,38 @@ Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。�
 **调用方式变了**：`manage.py purge_configs` → `python scripts/purge_configs.py`（容器里
 `docker compose exec app python scripts/purge_configs.py …`）。
 
+### 切片 9 — 已落地（2026-11-16）
+
+`overview` 是**读取侧**唯一同时消费 assets 与 configs 的查询（机柜 / 设备 / 网段 + 接口 /
+VLAN / 路由 / 策略 / NAT / SLB / GTM / ARP 的分布）。切片 4 把 26 个 ViewSet 迁走之后，
+它成了 assets 里最后一个 `configs` import——叶子节点往上够。
+
+| 项 | 落点 |
+|---|---|
+| 视图 | `apps/assets/api/views.py` 的 `overview` → **新模块** `apps/analysis/api/overview.py`（函数改名 `assets_overview`，逻辑逐行照抄） |
+| 路由 | `assets/api/urls.py` 删一行；`analysis/api/urls.py` 以 `path("assets/overview/", …)` + `name="assets-overview"` 注册——**路径与 name 一字未改**，`frontend/src/netops/views/Home.vue` 与 `reverse()` 零改动 |
+| 清理 | `assets/api/views.py` 去掉 `configs.models` 15 个模型导入、`logging` / `logger` / `api_view` / `Response`（只剩 DCIM ViewSet，assets 全目录对上层域 import 归零） |
+| 守卫 | `tests/core/test_layering.py` 新增 `test_assets_imports_no_upper_domain`：AST 扫 `apps/assets`，出现 `configs/ingest/analysis/egest/docs/cloud` 即失败 |
+| 契约 | 新增 `tests/analysis/test_overview_api.py`：普通用户 200 + **41 个顶层字段的冻结清单**（前端整包消费，少一个就是一块空白卡片），外加「两侧计数同时生效」用例 |
+| 文档 | `handbook/api.md` 该行从 assets 表移入 analysis 表并注明 URL 不变；`layering.md` 的 assets 行从「目标态」改为「叶子节点（有守卫）」 |
+
+**为什么落 analysis 而不是 configs**：`analysis → ingest → configs → assets`，analysis 本来
+就装着 dashboard / lb-chain / 设备组合并这些跨域只读聚合；搬到 configs 还得让 configs
+反向读 assets 的机柜与设备，等于把刚解开的一条反向依赖换成另一条。
+
+**为什么不做「拆成两个接口」**：那两条出路都会动前端契约（Home 页要并发两次请求再合并），
+而 analysis 在矩阵里本来就允许同时读两个域——收益只有「少一个跨域点」，代价是前端与
+缓存口径都要重排，不划算。
+
+**实测**：`tests/core/test_permissions.py` + `tests/core/test_layering.py` 16 passed；
+`tests/analysis/test_overview_api.py` 2 passed（字段清单与实测响应完全一致）；
+`reverse("assets-overview")` = `/api/assets/overview/`，`resolve()` 落在
+`analysis.api.overview`；全量 **854 passed, 66 subtests passed**（851 基线 + 3 条新增）；
+`manage.py check` 干净；OpenAPI schema 的 warnings / errors 计数（11 / 273）与 develop 基线
+**完全一致**——`api_view` 的 serializer 推断告警是这类函数视图的既有现象，不是本次引入。
+
 ### 下一步
 
-1. （待定）**`overview` 的跨域聚合**：见 §待定项 5，要动前端契约，单独一轮。
+1. （待定）`existing_asset_registry` 的归属，见 §待定项 6——目前倾向留在 assets，
+   不阻塞拆分收尾。
 
