@@ -95,7 +95,7 @@ sh scripts/setup-git-hooks.sh    # 等价于 git config core.hooksPath .githooks
 
 - **端点**：`/mcp`（Streamable HTTP，官方 Python SDK 2.x，由 `netops/asgi.py` 的路径分发器挂载；`/mcp*` 走 MCP，其余走 Django）
 - **反向代理**：Vite（`vite.config.ts`）与 nginx（`conf.d/netops.conf`）都已代理 `/mcp`——缺这条时请求会落到 SPA 兜底返回 `index.html`，表现是「被 Vue Router 守卫拦截跳登录」，其实根本没到 Django。新增反代层别漏。MCP 是 SSE 长连接，代理要 `proxy_buffering off` + 长读超时
-- **工具**：根目录 `llmtools/`（基建 + 工具注册表，`__init__.py` 即组合根），域接入在 `llmtools/domains/assets/`（`specs.py` 的 `EntitySpec` / `EDGES` + `tools.py` 的 `locate`）；通用六工具在 `llmtools/entity_tools.py`（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations`），字段口径复用 `assets/serializers`——新增表 = 注册表加一行，工具层零改动
+- **工具**：根目录 `llmtools/`（基建 + 工具注册表，`__init__.py` 即组合根），域接入在 `llmtools/domains/network/`（`specs.py` 的 `EntitySpec` / `EDGES` + `tools.py` 的 `locate`）；通用六工具在 `llmtools/entity_tools.py`（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations`），字段口径复用 `assets/serializers`——新增表 = 注册表加一行，工具层零改动
 - **本地运行与验证**（`manage.py runserver` 走 WSGI，没有 `/mcp`）：
 
 ```bash

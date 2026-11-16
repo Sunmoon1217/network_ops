@@ -1,8 +1,8 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1–4 已落地：26 张表 + 序列化器 + parsers/savers/mapping
-> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）；剩 llmtools 目录改名、
-> 软资产归并拆分、`purge_configs` 迁 scripts。**
+> **状态：实施中（2026-11-16 起）。切片 1–5 已落地：26 张表 + 序列化器 + parsers/savers/mapping
+> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`；
+> 剩软资产归并拆分、`purge_configs` 迁 scripts。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -287,12 +287,12 @@ group.devices.append(wideip.device.hostname)
 
 - `SPEC` 是全局单例 dict，`register_entity(spec, override=False)` 按 `node_type` 键注册；
 - `register_edge` 只要求**两端先注册**，不要求同域；
-- `llmtools/domains/assets/` 下**现在只有一个目录**，它已经同时包含 assets 域模型
+- `llmtools/domains/network/` 下**现在只有一个目录**，它已经同时包含 assets 域模型
   （Device、Subnet、IPAddress、DeviceGroup、ServerOwner）和 ConfigBase 家族模型
   （Interface、Vlan、Policy、Ltm*、Gtm*、NatRule、AddressBook、Service、Route）。
 
 **MCP 域早就是"混合"的**，只是恰好只混了 assets 内部的两块。ConfigBase 迁出后，
-`llmtools/domains/assets/` 继续 import 两个 app 的模型即可：
+`llmtools/domains/network/` 继续 import 两个 app 的模型即可：
 
 ```python
 from assets import models            # Device, Subnet, IPAddress, DeviceGroup...
@@ -303,7 +303,7 @@ from configs import models as cm     # Interface, Vlan, Policy, Ltm*, Gtm*...
 
 | # | 事项 | 说明 |
 |---|---|---|
-| 1 | 目录改名 | `llmtools/domains/assets/` 名不副实（覆盖两个域）。建议改 `network/`（覆盖「网络设备及其配置」话题）。改动：目录重命名 + `llmtools/__init__.py` / `llmtools/tools.py` 两处 import |
+| 1 | 目录改名 | **已落地**：`domains/assets/` → `domains/network/`（覆盖「网络设备及其配置」话题，两个 app 的模型都归它）。改动面只有目录重命名 + `llmtools/__init__.py` / `llmtools/tools.py` 两处 import |
 | 2 | `specs/ipam.py` 跨域 | 该文件同时含 Device/DeviceGroup（assets）与 Interface/Vlan/Vrf/Route（configs）。**保持混合**，逐个改 model 来源即可 |
 | 3 | `specs/slb.py` 13 个实体 | 全是 ConfigBase 家族 → 改 `models.` 为 `cm.` |
 | 4 | `specs/firewall.py` 4 个实体 | 同上 |
@@ -470,7 +470,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 |---|---|---|
 | 1 | `Task.device` 保留 FK 还是改 JSON | **已落地**：方案 C（多态引用），见 [`../tasks.md`](../tasks.md) §作用目标 |
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
-| 3 | `llmtools/domains/assets/` 改名成什么 | `network/`？`infra/`？（import 修复不受此影响，必须先与拆分同提交落地） |
+| 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
 
 ## 建议的最小验证切片
@@ -582,10 +582,27 @@ failures 修了两处：`PolicySerializer` 的展示字段随合并丢了（已�
 靠 Django「按顺序尝试、命中即止」共存——不要为了"干净"去合并成单 router，那会把 assets 与
 configs 重新绑在一起。
 
+### 切片 5 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 目录 | `llmtools/domains/assets/` → `llmtools/domains/network/`（10 个文件整体 `git mv`） |
+| 组合根 | `llmtools/__init__.py` / `llmtools/tools.py`：`from llmtools.domains import network`、`network.register()`、`*network.TOOLS` |
+| 域内引用 | `domains/network/tools.py` 的 `specs._helpers` 绝对导入改指 `llmtools.domains.network.specs` |
+| 文档 | `README.md`、`handbook/llmtools.md`、`apps/assets/models/ci.py` docstring（`NodeType` 交叉引用）、本稿 §llmtools |
+
+**为什么不按 app 拆成两个域**：`specs/ipam.py` 一个文件里就有 Device/DeviceGroup（assets）与
+Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。注册表本身是全局的
+（`node_type` 键 + 「两端先注册」），硬拆只会把同一话题的实体分到两个包再互相 import。
+按**话题**划分是对的，按 app 划分不是。
+
+**踩点**：批量替换脚本先 `git mv` 再 rglob 遍历，结果 SKIP 集合里的 `".worktrees"` 命中了
+项目根自身的路径段（worktree 就住在 `.worktrees/` 下），整棵树被跳过、只有两个显式文件生效。
+批量改名用 `git ls-files` 枚举跟踪文件，别用 `rglob` + 目录黑名单。
+
 ### 下一步（按依赖顺序）
 
-1. **llmtools**：`domains/assets/` 改名 + 规格里的模型来源已按 `cm.` 改完，剩目录改名与 `tools.py` 的跨域工具。
-2. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
+1. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
    `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
-3. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
+2. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
 

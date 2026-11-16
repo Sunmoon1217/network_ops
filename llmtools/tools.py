@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from llmtools import entity_tools
-from llmtools.domains import assets
+from llmtools.domains import network
 from llmtools.server import mcpserver, with_db_lifecycle
 
 #: 对外暴露的工具名单（顺序即 ``list_tools`` 的返回顺序）
@@ -32,7 +32,7 @@ TOOLS: tuple[Callable[..., Any], ...] = (
     entity_tools.get_record,
     entity_tools.bundle,
     entity_tools.relations,
-    *assets.TOOLS,
+    *network.TOOLS,
 )
 
 _registered = False

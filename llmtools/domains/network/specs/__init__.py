@@ -1,4 +1,4 @@
-"""资产域的 MCP 实体声明入口（由 ``llmtools.domains.assets.register()`` 触发）。
+"""网络域的 MCP 实体声明入口（由 ``llmtools.domains.network.register()`` 触发）。
 
 **布局**（实体按子域分文件，边独立一层）：
 
@@ -70,7 +70,7 @@ _validate_edges()
 
 
 def register() -> None:
-    """把本域实体与边登记到 llmtools.registry（由 ``llmtools.domains.assets.register()`` 调用）。
+    """把本域实体与边登记到 llmtools.registry（由 ``llmtools.domains.network.register()`` 调用）。
 
     幂等：已登记的类型与边跳过（``clear_registry()`` 之后重跑也安全）。
     """
@@ -82,7 +82,7 @@ def register() -> None:
             register_edge(edge)
 
 
-# 刻意**不在**模块底部自动调用：注册由 llmtools/__init__.py 经 assets.register() 显式触发——
+# 刻意**不在**模块底部自动调用：注册由 llmtools/__init__.py 经 network.register() 显式触发——
 # import 一个声明模块不应悄悄改写全局注册表，与工具侧「TOOLS 名单 + register_all()」同一套语义。
 
 

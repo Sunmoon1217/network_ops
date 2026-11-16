@@ -334,6 +334,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
    **注意（2026-11-16 评审修正）**：llmtools 的 **import 修复不能等到第 5 步**——
    第 2 步模型搬走的瞬间，`llmtools/domains/assets/` 里 ConfigBase 家族的 import
    就断，必须与第 2 步**同提交**落地（只改 import 来源，保证测试全绿）；能独立推迟的
-   只有「目录改名（如 `network/`）」这一项。第 5 步实际只剩改名与 specs 收尾。
+   只有目录改名这一项。**结果**：import 修复随切片 2/3 落地，目录改名（`assets/` →
+   `network/`）作为切片 5 单独提交，第 5 步已收尾。
 
 每一步都要能独立跑通全量测试（基线：`822 passed, 66 subtests passed`）。

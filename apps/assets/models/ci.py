@@ -16,7 +16,7 @@ class CIType:
     """资产类型标识（字符串常量，刻意不用 Enum）。
 
     ``Enum`` 成员与同值字符串的哈希不同，作为 dict 键会查不到（见
-    ``llmtools.domains.assets.nodes.NodeType`` 的同一条坑）。
+    ``llmtools.domains.network.nodes.NodeType`` 的同一条坑）。
 
     **只登记资产**，按 ``PHYSICAL_TYPES`` / ``SOFT_TYPES`` 分两类：
     实物资产有物理实体；软资产的身份来自自身全局标识，设备只是部署位置之一。
