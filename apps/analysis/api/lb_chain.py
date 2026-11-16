@@ -30,7 +30,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.analysis import _join_ip_port, _parse_member_entry
-from assets.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 from netops.pagination import StandardPagination
 
 # 模糊搜索反查出的 (device, pool) 组合上限：搜索词极短时可能命中全表，

@@ -1,6 +1,8 @@
 # 域分层：依赖矩阵与职责边界
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：实施中（2026-11-16 起）。core 去业务依赖已全部落地；
+> configs 拆分进行中（模型 / 解析 / 写入 / 序列化器已迁，admin / API / 软资产未迁）；
+> ingest 收窄与外部连接收归 core 未动。**
 > 代码里的依赖方向在落地前仍以 `AGENTS.md` 现有描述为准。
 
 本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**，
@@ -21,7 +23,11 @@
 
 ### 三个反向依赖（assets → ingest）
 
-违反 `AGENTS.md` 声明的「`analysis → ingest → assets` 单向」：
+违反 `AGENTS.md` 声明的「`analysis → ingest → assets` 单向」。
+
+> **已清零（2026-11-16）**：①③ 随 Excel 导入整体迁 ingest（切片 7）、② 随
+> `resolve_config_owner` 迁 configs（切片 4）消失。`grep -rn "from ingest" apps/assets`
+> 现在无命中。下表保留为当时的盘点记录。
 
 | # | 位置 | 性质 |
 |---|---|---|
@@ -31,7 +37,7 @@
 
 ①③ 的根因是**「Excel 导入」这个用例整体住在 assets**，而「配置文件」sheet 恰好就是
 ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner` 被 ingest 自己用着
-（`ingest/pipeline.py:64`、`ingest/management/commands/purge_configs.py:25`），
+（`ingest/pipeline.py:64`、当时的 `ingest/management/commands/purge_configs.py:25`），
 搬走它会让 ingest 反过来依赖 assets。
 
 **处置（2026-11-16 拍板）**：①③ → **Excel 导入（`device_import.py`）整体迁 ingest**，
@@ -40,28 +46,48 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 `DeviceConfigViewSet` 本就随 DeviceConfig 归 configs）。细节见
 [`assets-configs-split.md`](assets-configs-split.md)。
 
-### 两处跨 app 外键（指向 assets）
+### 跨 app 外键（指向 assets）
 
 | 位置 | 目标 |
 |---|---|
-| `apps/core/models.py:115` | `Task.device → assets.Device` |
 | `apps/analysis/models/internet_analysis.py:16` | `InternetAnalysis.device → assets.Device` |
+
+`Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
+见 [`../tasks.md`](../tasks.md) §作用目标），现在 core 侧一处也不剩。
 
 `AccessFlow` 刻意**不挂外键**（用 `device_ids` / `policy_ids` JSON 数组 + GIN 索引），
 说明项目已经有「物化表不依赖源表外键」的成熟做法。
 
-### core 对 assets 的依赖只有一行
+### core 对 assets 的依赖已是 0
 
 ```python
-# apps/core/models.py:115
+# apps/core/models.py（改造前）
 device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, ...)
+
+# apps/core/models.py（现在）
+target_type = models.CharField(max_length=50, blank=True, default="")
+target_id = models.BigIntegerField(null=True, blank=True)
+target_label = models.CharField(max_length=255, blank=True, default="")
 ```
+
+「作用目标是设备时怎么校验、怎么显示名字」由 assets 在 `ready()` 里注册进
+`core/task_types`（`register_target_type("device", ..., feeds_device_fields=True)`），
+core 自己既没有那个外键，也不认识 `"device"` 这个词。
 
 core 的其余模型（`User` / `Token` / `UserPreference`）只依赖 `settings.AUTH_USER_MODEL`。
 
 **但 core 对 ingest 有 4 处**：`core/api/serializers.py:195`（`start_task`）、
-`core/api/views.py:72`（`cancel_task`）、以及两处注释。加上上面那行外键，
-core 传递依赖 `ingest → assets`。
+`core/api/views.py:72`（`cancel_task`）、以及两处注释。加上那行外键，
+core 曾传递依赖 `ingest → assets`。
+
+> **2026-11-16 更新：这 4 处已清零。** 任务控制函数已下沉到
+> `core/tasks.py`，调用方改道，注释同步改掉。现在 core 对 ingest 的 import 是 0。
+>
+> **同时实测出原文漏数的两处 core → analysis**：
+> `core/management/commands/queue_status.py:25`、`queue_backlog.py:26` 都
+> `from analysis.queue_monitor import ...`。按本表「例外与豁免」登记为运维工具例外
+> （精确到「文件 + 模块」），由 `tests/core/test_layering.py` 的 AST 断言守住，
+> 且例外失效会被 `test_operational_exceptions_are_still_needed` 抓出来。
 
 ## 分层总图
 
@@ -76,7 +102,7 @@ core           底层服务：用户 / 认证 / Token / 权限 / 用户偏好
 
 assets         基础资产信息：DCIM / 设备台账 / IPAM / CI 统一台账
                 + 软资产扩展表（DomainAsset / LoadBalancerService）
-                ← 零上层依赖（目标态：叶子节点）
+                ← 零上层依赖（叶子节点，AST 守卫：tests/core/test_layering.py）
 
 configs        配置行：ConfigBase 家族 25 子类（ArpMac 改继承并入）+ DeviceConfig
                 + parsers/（文本 → dict）+ savers/（写配置行）+ mapping/（键归一）
@@ -125,6 +151,8 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 1. **`core` 不依赖任何业务域。** 它是平台服务，用户 / 认证 / 权限不该认识设备。
 2. **`assets` 不依赖任何上层域。** 它是事实的权威源，不该知道谁在消费它。
+   2026-11-16 起由 `tests/core/test_layering.py::test_assets_imports_no_upper_domain` 守住
+   （拆分前是 `overview` 的跨域计数破了这条，已迁 analysis）。
 3. **不允许跨层**（如 ingest 直接依赖 analysis）。要跨只能走 §「跨域调用」。
 
 **`analysis -> ingest` 是允许的**（与 `AGENTS.md` 声明的单向链一致）：analysis 作为只读消费侧，
@@ -137,7 +165,8 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 | 位置 | 例外 | 理由 |
 |---|---|---|
-| `scripts/purge_configs.py` | 迁出 app，改为独立运维脚本 | 跨域**运维工具**，脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
+| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
+| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.queue_monitor`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
 | `ingest/access_flow_trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
 | `ingest/collectors/dashboard.py` | 不 import analysis，用任务名 | 同上 |
 
@@ -147,15 +176,19 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 **装什么**：用户 / 认证 / Token / 权限 / 用户偏好；`Task` / `Stage` 模型与通用任务控制
 （`create_task` / `dispatch` / `cancel`）；外部连接实例与 client 生命周期
-（`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）。
+（`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）；
+Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
+还要删目录——放任一业务域都会让另一边反向依赖，故归平台层；`DeviceConfig` 的 hash 回写
+走 configs 注册的钩子，core 不认识那张表）。
 
 **不装什么**：设备、配置行、任何业务词汇。
 
 现状的 `Task.task_type`（`collect_config` / `ansible_playbook` …）与
 `Stage.stage_type`（`collection` / `parsing` / `storage`）是**ingest 的词汇**，
-`ansible_playbook` 更是未来 egest 的词汇——core 不该知道这些，要改成自由字符串。
+`ansible_playbook` 更是未来 egest 的词汇——core 不该知道这些。
+**2026-11-16 已落成自由字符串 + 注册表**。
 
-详见 [`task-framework.md`](task-framework.md)。
+详见 [`../tasks.md`](../tasks.md)。
 
 外部连接实例（Zabbix / 阿里云 / Dify 等 client）的归属见
 [`external-clients.md`](external-clients.md)。它与被管设备的连接
@@ -192,9 +225,9 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 ### ingest —— 采集与入库编排
 
-**装什么**：Git 配置仓库（`config_repo.py`）、Excel 导入（含 `device_import.py` 模块
-与其端点，自 assets 整体迁入，URL 前缀不变）、采集器（`collectors/`）、
-阶段推进编排（`workflow.py`）。
+**装什么**：Excel 导入（含 `device_import.py` 模块与其端点，自 assets 整体迁入，URL 前缀
+不变）、采集器（`collectors/`）、阶段推进编排（`workflow.py`）、配置仓库的 HTTP 读接口
+（`api/configs.py`：快照 / diff / 历史 —— 实现 `config_repo` 已归 core，这里只做端点）。
 
 **不装什么**：配置语义（解析、归一、写入配置行都归 configs）。
 
@@ -296,8 +329,8 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 分层是全局约束，**不要一次性全改**。建议按「先让下层变干净」的顺序：
 
-1. **core 去除业务依赖**（[`task-framework.md`](task-framework.md)）——core 变叶子后，
-   上面的拆分才有稳定的基座；
+1. **core 去除业务依赖**（✅ 2026-11-16 已落地，现状见 [`../tasks.md`](../tasks.md)）
+   ——core 变叶子后，上面的拆分才有稳定的基座；
 2. **拆 configs 域**（[`assets-configs-split.md`](assets-configs-split.md)）——迁模型、
    迁 parsers/savers、拆软资产归并；
 3. **ingest 收窄**——去掉配置语义，只留采集与编排；
@@ -310,6 +343,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
    **注意（2026-11-16 评审修正）**：llmtools 的 **import 修复不能等到第 5 步**——
    第 2 步模型搬走的瞬间，`llmtools/domains/assets/` 里 ConfigBase 家族的 import
    就断，必须与第 2 步**同提交**落地（只改 import 来源，保证测试全绿）；能独立推迟的
-   只有「目录改名（如 `network/`）」这一项。第 5 步实际只剩改名与 specs 收尾。
+   只有目录改名这一项。**结果**：import 修复随切片 2/3 落地，目录改名（`assets/` →
+   `network/`）作为切片 5 单独提交，第 5 步已收尾。
 
 每一步都要能独立跑通全量测试（基线：`822 passed, 66 subtests passed`）。

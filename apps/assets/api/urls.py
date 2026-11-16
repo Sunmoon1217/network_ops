@@ -15,48 +15,22 @@ router.register(r"cabinets", views.CabinetViewSet, basename="cabinet")
 router.register(r"vendors", views.VendorViewSet, basename="vendor")
 router.register(r"device-models", views.DeviceModelViewSet, basename="device-model")
 router.register(r"devices", views.DeviceViewSet, basename="device")
-router.register(r"device-configs", views.DeviceConfigViewSet, basename="device-config")
 router.register(r"device-connections", views.DeviceConnectionViewSet, basename="device-connection")
-router.register(r"device-accounts", views.DeviceAccountViewSet, basename="device-account")
 router.register(r"device-groups", views.DeviceGroupViewSet, basename="device-group")
 router.register(r"device-group-members", views.DeviceGroupMemberViewSet, basename="device-group-member")
 
 # Network
-router.register(r"vlans", views.VlanViewSet, basename="vlan")
-router.register(r"vrfs", views.VrfViewSet, basename="vrf")
-router.register(r"interfaces", views.InterfaceViewSet, basename="interface")
 
 # Baseline
-router.register(r"snmp-configs", views.SnmpConfigViewSet, basename="snmp-config")
-router.register(r"ntp-configs", views.NtpConfigViewSet, basename="ntp-config")
-router.register(r"syslog-configs", views.SyslogConfigViewSet, basename="syslog-config")
 
 # SLB (LTM)
-router.register(r"ltm-virtual-servers", views.LtmVirtualServerViewSet, basename="ltm-vs")
-router.register(r"ltm-pools", views.LtmPoolViewSet, basename="ltm-pool")
-router.register(r"ltm-pool-members", views.LtmPoolMemberViewSet, basename="ltm-pool-member")
-router.register(r"ltm-profiles", views.LtmProfileViewSet, basename="ltm-profile")
-router.register(r"ltm-irules", views.LtmIRuleViewSet, basename="ltm-irule")
-router.register(r"ltm-snats", views.LtmSNATViewSet, basename="ltm-snat")
-router.register(r"ltm-persists", views.LtmPersistViewSet, basename="ltm-persist")
 
 # GSLB (GTM)
-router.register(r"gtm-datacenters", views.GtmDatacenterViewSet, basename="gtm-dc")
-router.register(r"gtm-wideips", views.GtmWideipViewSet, basename="gtm-wideip")
-router.register(r"gtm-pools", views.GtmPoolViewSet, basename="gtm-pool")
-router.register(r"gtm-servers", views.GtmServerViewSet, basename="gtm-server")
-router.register(r"gtm-vservers", views.GtmVServerViewSet, basename="gtm-vserver")
 
 # Firewall Policy
-router.register(r"address-books", views.AddressBookViewSet, basename="address-book")
-router.register(r"services", views.ServiceViewSet, basename="service")
-router.register(r"policies", views.PolicyViewSet, basename="policy")
-router.register(r"nat-rules", views.NatRuleViewSet, basename="nat-rule")
 
 # Routing
-router.register(r"routes", views.RouteViewSet, basename="route")
 router.register(r"topologies", views.TopologyViewSet, basename="topology")
-router.register(r"arp-mac", views.ArpMacViewSet, basename="arp-mac")
 router.register(r"subnet-usage-logs", views.SubnetUsageLogViewSet, basename="subnet-usage-log")
 
 # IPAM
@@ -80,7 +54,7 @@ router.register(r"load-balancer-services", views.LoadBalancerServiceViewSet, bas
 
 urlpatterns = [
     path("assets/", include(router.urls)),
-    path("assets/overview/", views.overview, name="assets-overview"),
-    path("assets/import-devices/", views.import_excel, name="import-devices"),
-    path("assets/import-template/", views.import_template, name="import-template"),
+    # 总览 / Excel 导入 / 模板下载都不在本文件了：
+    #   overview 是跨 assets+configs 的聚合，随拆分迁 analysis.api.urls（/api/assets/overview/ 不变）
+    #   import-* 随 device_import.py 迁 ingest.api.urls（URL 与 name 同样不变）
 ]

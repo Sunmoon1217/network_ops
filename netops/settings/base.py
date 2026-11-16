@@ -220,7 +220,8 @@ DIFY_CONFIG = {
 
 
 # Zabbix API（ingest 采集器的数据源）：这里只放连接配置，单例与登录逻辑在
-# apps/ingest/collectors/zabbix/zabbix.py（get_zapi / close_zapi），未配置 url 则拒绝创建。
+# core/integrations/providers/zabbix/client.py（get_zapi / close_zapi，实例由 core 统管），
+# 未配置 url 则拒绝创建。
 # 变量清单与凭据链见 handbook/settings.md；zabbix_utils 自身也读同名 env 兜底，
 # 这里显式传参以 settings 为准，行为可预期。
 ZABBIX_CONFIG = {
@@ -230,6 +231,13 @@ ZABBIX_CONFIG = {
     "password": _env_or_file("ZABBIX_PASSWORD"),
     "timeout": int(os.environ.get("ZABBIX_TIMEOUT", "30")),
 }
+
+
+# Git 配置仓库（core.config_repo 读写）：**每台设备一个独立仓库** ``<CONFIG_REPO_PATH>/<hostname>/``。
+# 默认 ``<项目根>/data/config_repo``；容器里由 envs/container.env 覆盖成命名卷挂载点
+# （``CONFIG_REPO_PATH=/configs``，见 handbook/deploy.md）——宿主与容器各一份历史，互不影响。
+# 路径**在调用时读**（config_repo 不缓存成模块常量），测试可以直接 override_settings 换目录。
+CONFIG_REPO_PATH = Path(os.environ.get("CONFIG_REPO_PATH", str(BASE_DIR / "data" / "config_repo")))
 
 
 # 以下为环境无关的静态配置
@@ -282,6 +290,8 @@ INSTALLED_APPS = [
     "core.apps.CoreConfig",
     "ingest.apps.OperatorConfig",
     "assets.apps.AssetsConfig",
+    # 配置域：configs → assets（Device 外键），所以排在 assets 之后
+    "configs.apps.ConfigsConfig",
     "analysis.apps.AnalysisConfig",
     "cloud.apps.CloudConfig",
     "docs.apps.DocsConfig",

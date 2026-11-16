@@ -5,6 +5,8 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from core import task_types
+
 
 class User(AbstractUser):
     """扩展用户模型。
@@ -92,15 +94,12 @@ class UserPreference(models.Model):
 
 
 class Task(models.Model):
-    """任务主记录"""
+    """任务主记录。
 
-    TASK_TYPES = (
-        ("collect_config", "采集配置"),
-        ("backup_config", "备份配置"),
-        ("ansible_playbook", "Ansible执行"),
-        ("batch_collect", "批量采集"),
-        ("config_backup", "配置备份"),
-    )
+    作用目标是软引用（``target_type`` + ``target_id`` + 建任务时记下的 ``target_label``），
+    ``task_type`` 是自由字符串、词汇由注册表提供。字段语义见 ``handbook/tasks.md``。
+    """
+
     STATUS_CHOICES = (
         ("pending", "等待中"),
         ("running", "运行中"),
@@ -110,9 +109,11 @@ class Task(models.Model):
     )
 
     celery_task_id = models.CharField(max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID")
-    task_type = models.CharField(max_length=50, choices=TASK_TYPES, verbose_name="任务类型")
+    task_type = models.CharField(max_length=50, verbose_name="任务类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
-    device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备")
+    target_type = models.CharField(max_length=50, blank=True, default="", verbose_name="作用目标类型")
+    target_id = models.BigIntegerField(null=True, blank=True, verbose_name="作用目标ID")
+    target_label = models.CharField(max_length=255, blank=True, default="", verbose_name="作用目标名称")
     params = models.JSONField(default=dict, verbose_name="任务参数")
     result = models.JSONField(null=True, blank=True, verbose_name="任务结果")
     error_message = models.TextField(blank=True, default="", verbose_name="错误信息")
@@ -123,24 +124,44 @@ class Task(models.Model):
     if TYPE_CHECKING:
         stages: models.QuerySet["Stage"]
 
-        def get_task_type_display(self) -> str: ...
-
         def get_status_display(self) -> str: ...
 
     class Meta:
         verbose_name = "任务"
         verbose_name_plural = verbose_name
         ordering = ("-created_at",)
+        indexes = (
+            # 软引用没有外键索引；按目标查任务（列表过滤、purge 清理）走这个复合索引
+            models.Index(fields=("target_type", "target_id"), name="task_target_idx"),
+        )
 
     def __str__(self):
         return f"{self.get_task_type_display()} - {self.get_status_display()}"
 
+    def get_task_type_display(self) -> str:
+        """显示名按注册表反查（未登记的旧词回落 key），替代 ``choices`` 自动生成的方法。"""
+        return task_types.label_for(self.task_type)
+
+    @property
+    def device(self) -> int | None:
+        """**历史契约**：作用目标是设备时返回设备 ID，否则 ``None``。"""
+        device_type = task_types.device_field_target_type()
+        return self.target_id if device_type and self.target_type == device_type else None
+
+    @property
+    def device_hostname(self) -> str:
+        """**历史契约**：作用目标是设备时返回建任务时记下的设备名，否则空串。"""
+        device_type = task_types.device_field_target_type()
+        return self.target_label if device_type and self.target_type == device_type else ""
+
     @property
     def current_stage(self):
+        """最近创建的阶段。"""
         return self.stages.order_by("-created_at").first()
 
     @property
     def progress(self):
+        """已完成阶段占比（0–100）；``skipped`` 也算完成。"""
         stages = self.stages.all()
         if not stages:
             return 0
@@ -149,13 +170,8 @@ class Task(models.Model):
 
 
 class Stage(models.Model):
-    """阶段记录"""
+    """阶段记录：``stage_type`` 为自由字符串，词汇与 handler 由注册表提供。"""
 
-    STAGE_TYPES = (
-        ("collection", "数据采集"),
-        ("parsing", "配置解析"),
-        ("storage", "数据存储"),
-    )
     STATUS_CHOICES = (
         ("pending", "等待中"),
         ("running", "运行中"),
@@ -165,7 +181,7 @@ class Stage(models.Model):
     )
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="stages", verbose_name="所属任务")
-    stage_type = models.CharField(max_length=50, choices=STAGE_TYPES, verbose_name="阶段类型")
+    stage_type = models.CharField(max_length=50, verbose_name="阶段类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
     input_data = models.JSONField(default=dict, verbose_name="输入数据")
     output_data = models.JSONField(null=True, blank=True, verbose_name="输出数据")
@@ -178,8 +194,6 @@ class Stage(models.Model):
 
     if TYPE_CHECKING:
 
-        def get_stage_type_display(self) -> str: ...
-
         def get_status_display(self) -> str: ...
 
     class Meta:
@@ -189,3 +203,7 @@ class Stage(models.Model):
 
     def __str__(self):
         return f"{self.task} - {self.get_stage_type_display()} - {self.get_status_display()}"
+
+    def get_stage_type_display(self) -> str:
+        """显示名按注册表反查（未登记的旧词回落 key）。"""
+        return task_types.label_for(self.stage_type)

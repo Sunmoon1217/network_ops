@@ -13,7 +13,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from assets.models import Device, DeviceConfig, DeviceModel, Interface, Vendor, Vlan
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig, Interface, Vlan
 
 CONFIG = "sysname E2E-SW\nvlan 10\nvlan 20\ninterface GigabitEthernet1/0/1\n port access vlan 10\n"
 
@@ -38,7 +39,7 @@ def _run(*args) -> str:
 @pytest.mark.django_db
 def test_reparse_parses_and_runs_savers(monkeypatch, h3c_model):
     """--device 会重新解析并跑 Saver"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     config = _make_config("rp-sw-01", h3c_model)
 
     output = _run("--device", "rp-sw-01")
@@ -58,7 +59,7 @@ def test_reparse_no_parse_reuses_existing_config_json(monkeypatch, h3c_model):
     def _boom(hostname, commit=None):
         raise AssertionError("--no-parse 不应读取 Git")
 
-    monkeypatch.setattr("ingest.config_repo.get_config", _boom)
+    monkeypatch.setattr("core.config_repo.get_config", _boom)
     config = _make_config("rp-sw-02", h3c_model, config_json={"vlans": [{"vlan_id": "30"}]})
 
     output = _run("--device", "rp-sw-02", "--no-parse")
@@ -70,7 +71,7 @@ def test_reparse_no_parse_reuses_existing_config_json(monkeypatch, h3c_model):
 @pytest.mark.django_db
 def test_reparse_reports_skip_reason(monkeypatch, h3c_model):
     """Git 里没有配置时，应该报告跳过原因而不是静默什么都不做"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: None)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: None)
     _make_config("rp-sw-03", h3c_model)
 
     output = _run("--device", "rp-sw-03")
@@ -82,7 +83,7 @@ def test_reparse_reports_skip_reason(monkeypatch, h3c_model):
 @pytest.mark.django_db
 def test_reparse_without_device_model_reports_skip(monkeypatch, h3c_model):
     """设备没设型号时，解析器匹配失败应作为跳过原因报出来（而不是抛 AttributeError）"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     device = Device.objects.create(hostname="rp-sw-04", device_type="switch")
     DeviceConfig.objects.create(device=device, git_commit_hash="abc1234", config_json={})
 
@@ -109,7 +110,7 @@ def test_reparse_device_without_config_raises(h3c_model):
 @pytest.mark.django_db
 def test_reparse_all_takes_latest_config_per_device(monkeypatch, h3c_model):
     """--all 每台设备只处理最新一条，不重跑历史版本"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     device = Device.objects.create(hostname="rp-sw-06", device_type="switch", device_model=h3c_model)
     DeviceConfig.objects.create(device=device, git_commit_hash="old0001", config_json={})
     latest = DeviceConfig.objects.create(device=device, git_commit_hash="new0002", config_json={})
@@ -124,10 +125,10 @@ def test_reparse_all_takes_latest_config_per_device(monkeypatch, h3c_model):
 @pytest.mark.django_db
 def test_reparse_saver_failure_raises_command_error(monkeypatch, h3c_model):
     """单个 Saver 失败时应以非零退出码收尾，方便脚本判断"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     _make_config("rp-sw-07", h3c_model)
 
-    from ingest.savers import registry
+    from configs.savers import registry
 
     def _boom(self, device, parsed_data):
         raise RuntimeError("模拟 Saver 故障")
@@ -140,7 +141,7 @@ def test_reparse_saver_failure_raises_command_error(monkeypatch, h3c_model):
             saver.save = _boom.__get__(saver, type(saver))
         return savers
 
-    monkeypatch.setattr("ingest.savers.registry.get_savers_for_config", _patched)
+    monkeypatch.setattr("configs.savers.registry.get_savers_for_config", _patched)
 
     with pytest.raises(CommandError, match="Saver 执行失败"):
         _run("--device", "rp-sw-07")
@@ -156,7 +157,7 @@ def test_reparse_dedupes_repeated_device(monkeypatch, h3c_model):
     不去重的话，并行时会有多个 worker 同时写同一台设备的同一批行，
     正是要避免的那种并发。
     """
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     _make_config("rp-dup", h3c_model)
 
     output = _run("--device", "rp-dup", "--device", "rp-dup")
@@ -167,7 +168,7 @@ def test_reparse_dedupes_repeated_device(monkeypatch, h3c_model):
 
 @pytest.mark.django_db
 def test_reparse_rejects_zero_workers(monkeypatch, h3c_model):
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     _make_config("rp-w0", h3c_model)
 
     with pytest.raises(CommandError, match="--workers 必须 >= 1"):
@@ -181,7 +182,7 @@ def test_reparse_parallel_writes_same_result_as_sequential(monkeypatch):
     transaction=True 是必须的：子进程连的是同一个测试库，但看不到父进程
     未提交的事务，包裹式事务下子进程会读不到这些 DeviceConfig。
     """
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X-par", vendor=vendor)
     hostnames = [f"rp-par-{i}" for i in range(4)]
@@ -201,13 +202,13 @@ def test_reparse_parallel_writes_same_result_as_sequential(monkeypatch):
 @pytest.mark.django_db(transaction=True)
 def test_reparse_parallel_reports_saver_failure(monkeypatch):
     """并行时子进程里的 Saver 失败要能回传，并以非零退出码收尾"""
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: CONFIG)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: CONFIG)
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X-fail", vendor=vendor)
     _make_config("rp-par-fail-1", model)
     _make_config("rp-par-fail-2", model)
 
-    from ingest.savers import registry
+    from configs.savers import registry
 
     def _boom(self, device, parsed_data):
         raise RuntimeError("模拟 Saver 故障")
@@ -220,7 +221,7 @@ def test_reparse_parallel_reports_saver_failure(monkeypatch):
             saver.save = _boom.__get__(saver, type(saver))
         return savers
 
-    monkeypatch.setattr("ingest.savers.registry.get_savers_for_config", _patched)
+    monkeypatch.setattr("configs.savers.registry.get_savers_for_config", _patched)
 
     with pytest.raises(CommandError, match="Saver 执行失败"):
         _run("--all", "--workers", "2")

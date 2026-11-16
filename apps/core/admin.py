@@ -1,11 +1,54 @@
 # -*- coding: utf-8 -*-
 from django.contrib import admin
 
+from . import task_types
 from .models import Stage, Task, Token, User, UserPreference
 
 admin.site.site_header = "网络运维管理平台"
 admin.site.site_title = "网络运维管理平台"
 admin.site.index_title = "后台管理"
+
+
+class VocabularyListFilter(admin.SimpleListFilter):
+    """按 ``core.task_types`` 注册表快照出过滤项（字段已无 ``choices``，直接写字段会退化）。"""
+
+    def vocabulary(self) -> list[tuple[str, str]]:
+        """子类返回 ``[(值, 显示名)]``，通常是某个 ``*_choices()`` 快照。"""
+        raise NotImplementedError
+
+    def lookups(self, request, model_admin):
+        return list(self.vocabulary())
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        # 只认注册表里的词；未登记的值（历史脏数据）不当作可选项，但也别让过滤静默失效
+        if value and value in dict(self.vocabulary()):
+            return queryset.filter(**{self.parameter_name: value})
+        return queryset
+
+
+class TaskTypeFilter(VocabularyListFilter):
+    title = "任务类型"
+    parameter_name = "task_type"
+
+    def vocabulary(self):
+        return task_types.task_type_choices()
+
+
+class StageTypeFilter(VocabularyListFilter):
+    title = "阶段类型"
+    parameter_name = "stage_type"
+
+    def vocabulary(self):
+        return task_types.stage_type_choices()
+
+
+class TargetTypeFilter(VocabularyListFilter):
+    title = "作用目标类型"
+    parameter_name = "target_type"
+
+    def vocabulary(self):
+        return task_types.target_type_choices()
 
 
 @admin.register(User)
@@ -87,23 +130,29 @@ class TaskAdmin(admin.ModelAdmin):
         "id",
         "task_type",
         "status",
-        "device",
+        "target",
         "celery_task_id",
         "created_at",
         "started_at",
         "completed_at",
     )
     list_filter = (
-        "task_type",
+        TaskTypeFilter,
+        TargetTypeFilter,
         "status",
-        ("device", admin.RelatedOnlyFieldListFilter),
         "created_at",
     )
-    search_fields = ("device__hostname", "celery_task_id", "error_message")
-    autocomplete_fields = ("device",)
-    list_select_related = ("device",)
+    # 作用目标是软引用，名字在 target_label 里（建任务时记下），不需要 join 业务表
+    search_fields = ("target_label", "celery_task_id", "error_message")
     date_hierarchy = "created_at"
     inlines = (StageInline,)
+
+    @admin.display(description="作用目标")
+    def target(self, obj):
+        """列表里的作用目标：``名字（type#id）``，无目标显示破折号。"""
+        if not obj.target_id:
+            return "—"
+        return f"{obj.target_label or '?'}（{obj.target_type}#{obj.target_id}）"
 
 
 @admin.register(Stage)
@@ -119,8 +168,8 @@ class StageAdmin(admin.ModelAdmin):
         "created_at",
         "completed_at",
     )
-    list_filter = ("stage_type", "status", "created_at")
-    search_fields = ("task__device__hostname", "task__celery_task_id", "error_message")
+    list_filter = (StageTypeFilter, "status", "created_at")
+    search_fields = ("task__target_label", "task__celery_task_id", "error_message")
     autocomplete_fields = ("task",)
     list_select_related = ("task",)
     date_hierarchy = "created_at"

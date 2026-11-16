@@ -6,8 +6,9 @@
 
 import pytest
 
-from assets.models import Device, DeviceAccount
-from ingest.savers.account import DeviceAccountSaver
+from assets.models import Device
+from configs.models import DeviceAccount
+from configs.savers.account import DeviceAccountSaver
 
 
 @pytest.mark.django_db

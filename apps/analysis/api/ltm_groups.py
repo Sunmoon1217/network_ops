@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from analysis.api.analysis import _join_ip_port
 from analysis.api.group_merge import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 from analysis.api.lb_chain import _xlsx_response
-from assets.models import LtmPool, LtmPoolMember, LtmVirtualServer
+from configs.models import LtmPool, LtmPoolMember, LtmVirtualServer
 from netops.pagination import StandardPagination
 
 # VS 上逐字段比较的标量（profiles / rules 是列表，取并集不算冲突）

@@ -2,8 +2,9 @@
 
 import pytest
 
-from assets.models import Device, DomainAsset, GtmPool, GtmServer, GtmVServer, GtmWideip, LoadBalancerService, LtmPoolMember, LtmVirtualServer
-from assets.services.soft_asset_sync import sync_soft_assets
+from assets.models import Device, DomainAsset, LoadBalancerService
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPoolMember, LtmVirtualServer
+from configs.services.soft_asset_sync import sync_soft_assets
 
 DOMAIN_URL = "/api/assets/domain-assets/"
 SERVICE_URL = "/api/assets/load-balancer-services/"

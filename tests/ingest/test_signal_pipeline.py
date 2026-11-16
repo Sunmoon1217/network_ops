@@ -11,14 +11,15 @@
 
 import pytest
 
-from assets.models import Device, DeviceConfig, DeviceModel, Service, Vendor, Vlan, Vrf
-from ingest.config_repo import get_config
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import ServiceSaver
-from ingest.savers.interface import InterfaceSaver
-from ingest.savers.lb import LBSnatSaver
-from ingest.savers.registry import get_savers_for_config
-from ingest.savers.routing import VrfSaver
+from assets.models import Device, DeviceModel, Vendor
+from configs.models import DeviceConfig, Service, Vlan, Vrf
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import ServiceSaver
+from configs.savers.interface import InterfaceSaver
+from configs.savers.lb import LBSnatSaver
+from configs.savers.registry import get_savers_for_config
+from configs.savers.routing import VrfSaver
+from core.config_repo import get_config
 
 # ---------- 单条命中（dict）不应崩溃 ----------
 
@@ -90,9 +91,7 @@ def test_reimport_same_commit_keeps_config_json():
     original = {"vlans": [{"vlan_id": "1"}]}
     record = DeviceConfig.objects.create(device=device, git_commit_hash="aaa111", config_json=original)
 
-    _, created = DeviceConfig.objects.get_or_create(
-        device=device, git_commit_hash="aaa111", defaults={"config_json": {}}
-    )
+    _, created = DeviceConfig.objects.get_or_create(device=device, git_commit_hash="aaa111", defaults={"config_json": {}})
     record.refresh_from_db()
 
     assert created is False
@@ -109,7 +108,7 @@ def test_signal_parses_then_dispatches_to_savers(monkeypatch):
     用 monkeypatch 替换 get_config，避免测试依赖真实的 Git 仓库内容。
     """
     raw = "sysname E2E\nvlan 10\nvlan 20\n"
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
 
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X", vendor=vendor)
@@ -128,7 +127,7 @@ def test_signal_parses_then_dispatches_to_savers(monkeypatch):
 def test_signal_is_idempotent_on_reimport(monkeypatch):
     """同一 commit 再次导入（created=False）不重复写入"""
     raw = "sysname E2E\nvlan 10\n"
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
 
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X", vendor=vendor)

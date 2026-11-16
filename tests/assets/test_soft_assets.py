@@ -7,7 +7,8 @@
 import pytest
 from django.db import IntegrityError, transaction
 
-from assets.models import CIType, ConfigBase, ConfigurationItem, DomainAsset, LoadBalancerService
+from assets.models import CIType, ConfigurationItem, DomainAsset, LoadBalancerService
+from configs.models import ConfigBase
 
 
 def _ci(ci_type: str, name: str) -> ConfigurationItem:

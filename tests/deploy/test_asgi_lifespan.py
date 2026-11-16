@@ -174,12 +174,14 @@ def test_asgi_application_wires_lifespan_over_django():
     from django.core.handlers.asgi import ASGIHandler
 
     from llmtools import mcpserver
-    from netops.asgi import LIFESPAN_HOOKS, _dispatch, application, django_application
+    from netops.asgi import LIFESPAN_HOOKS, _dispatch, _release_integrations, application, django_application
 
     assert isinstance(application, LifespanApp)
     assert isinstance(django_application, ASGIHandler)
     assert application.app is _dispatch  # 分发器在 LifespanApp 之内，lifespan 只由外层接管
-    assert LIFESPAN_HOOKS == [mcpserver.session_manager.run]  # 钩子清单只在 asgi.py 组合
+    # 钩子清单只在 asgi.py 组合：MCP 的任务组先进入，外部 client 的释放排最后
+    # （AsyncExitStack 逆序退出 → 先断 client，再收 MCP 任务组）。
+    assert LIFESPAN_HOOKS == [mcpserver.session_manager.run, _release_integrations]
 
     sent = _run(_handshake(application))
     assert [m["type"] for m in sent] == ["lifespan.startup.complete", "lifespan.shutdown.complete"]

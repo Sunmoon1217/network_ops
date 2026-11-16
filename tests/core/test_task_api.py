@@ -9,7 +9,6 @@ from rest_framework.test import APIClient
 
 from assets.models import Device, DeviceConnection, DeviceModel, Vendor
 from core.models import Stage, Task, User
-from ingest import workflow
 
 TASKS_URL = "/api/tasks/"
 
@@ -31,15 +30,14 @@ def device(db):
 
 
 def _no_dispatch(monkeypatch):
-    """让投递失败：阶段表里的任务换成 ``.delay()`` 抛异常的桩（模拟 broker 不可达）。"""
+    """让投递失败：把注册表的解析点换成 ``.delay()`` 抛异常的桩（模拟 broker 不可达）。"""
 
     class _FailTask:
         @staticmethod
         def delay(stage_id):
             raise RuntimeError("broker down")
 
-    for stage_type in ("collection", "parsing", "storage"):
-        monkeypatch.setitem(workflow._STAGE_TASKS, stage_type, _FailTask)
+    monkeypatch.setattr("core.task_types.handler_for", lambda stage_type: _FailTask)
 
 
 @pytest.mark.django_db
@@ -97,11 +95,43 @@ def test_create_task_returns_503_when_dispatch_fails(client, device, monkeypatch
 
 
 @pytest.mark.django_db
+def test_create_rejects_unregistered_task_type(client, device):
+    """字段去掉 ``choices`` 之后模型不再兜底，未知词汇必须被序列化器拒成 400（不能变 503）。"""
+    resp = client.post(TASKS_URL, {"device": device.pk, "task_type": "no_such_task"}, format="json")
+
+    assert resp.status_code == 400
+    assert "task_type" in resp.json()
+    assert Task.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_rejects_unknown_device(client, device):
+    """作用目标是软引用，外键不再替我们校验存在性——注册表的 resolver 必须补上这一环。"""
+    resp = client.post(TASKS_URL, {"device": device.pk + 999, "task_type": "collect_config"}, format="json")
+
+    assert resp.status_code == 400
+    assert "不存在" in str(resp.json()["device"])
+    assert Task.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_without_device_leaves_target_empty(client, eager_celery):
+    """无作用目标的任务（如批量采集）两个字段都留空，不是必须挂设备。"""
+    resp = client.post(TASKS_URL, {"task_type": "batch_collect"}, format="json")
+
+    assert resp.status_code == 201, resp.content
+    task = Task.objects.get()
+    assert (task.target_type, task.target_id, task.target_label) == ("", None, "")
+    assert resp.json()["device"] is None
+    assert resp.json()["device_hostname"] == ""
+
+
+@pytest.mark.django_db
 def test_list_filters_by_device_status_and_type(client, device):
     other = Device.objects.create(hostname="_t_task_dev2", device_type="switch")
-    Task.objects.create(task_type="collect_config", device=device, status="running")
-    Task.objects.create(task_type="collect_config", device=device, status="success")
-    Task.objects.create(task_type="backup_config", device=other, status="success")
+    Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="running")
+    Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="success")
+    Task.objects.create(task_type="backup_config", target_type="device", target_id=other.pk, target_label=other.hostname, status="success")
 
     assert client.get(TASKS_URL, {"device": device.pk}).json()["count"] == 2
     assert client.get(TASKS_URL, {"status": "success"}).json()["count"] == 2
@@ -112,7 +142,7 @@ def test_list_filters_by_device_status_and_type(client, device):
 
 @pytest.mark.django_db
 def test_detail_returns_stages(client, device):
-    task = Task.objects.create(task_type="collect_config", device=device, status="failed")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="failed")
     Stage.objects.create(task=task, stage_type="collection", status="failed", error_message="连接超时")
 
     body = client.get(f"{TASKS_URL}{task.pk}/").json()
@@ -124,7 +154,7 @@ def test_detail_returns_stages(client, device):
 
 @pytest.mark.django_db
 def test_cancel_running_task(client, device):
-    task = Task.objects.create(task_type="collect_config", device=device, status="running")
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status="running")
 
     resp = client.post(f"{TASKS_URL}{task.pk}/cancel/")
 
@@ -137,7 +167,7 @@ def test_cancel_running_task(client, device):
 @pytest.mark.django_db
 @pytest.mark.parametrize("status", ["success", "failed", "cancelled"])
 def test_cancel_rejects_finished_task(client, device, status):
-    task = Task.objects.create(task_type="collect_config", device=device, status=status)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname, status=status)
 
     resp = client.post(f"{TASKS_URL}{task.pk}/cancel/")
 
@@ -147,7 +177,7 @@ def test_cancel_rejects_finished_task(client, device, status):
 
 @pytest.mark.django_db
 def test_stages_endpoint_is_read_only_and_filterable(client, device):
-    task = Task.objects.create(task_type="collect_config", device=device)
+    task = Task.objects.create(task_type="collect_config", target_type="device", target_id=device.pk, target_label=device.hostname)
     # 用 update() 落状态：save() 会触发阶段联动信号，把下一个阶段也建出来
     # （非 eager 模式下还会真的往 broker 投递任务）
     collection = Stage.objects.create(task=task, stage_type="collection")

@@ -10,7 +10,8 @@ import pytest
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
-from assets.models import Device, DeviceGroup, DeviceGroupMember, LtmPool, LtmPoolMember, LtmVirtualServer
+from assets.models import Device, DeviceGroup, DeviceGroupMember
+from configs.models import LtmPool, LtmPoolMember, LtmVirtualServer
 
 BASE = "/api/analysis/ltm-groups/"
 
@@ -42,9 +43,7 @@ def _seed_pool(device, name="pool_web", mode="round-robin", monitors=None) -> Lt
 
 
 def _seed_member(device, pool_name="pool_web", name="/Common/node_a", address="10.1.1.1", port="80"):
-    return LtmPoolMember.objects.create(
-        device=device, pool_name=pool_name, name=name, address=address, port=port
-    )
+    return LtmPoolMember.objects.create(device=device, pool_name=pool_name, name=name, address=address, port=port)
 
 
 def _read_xlsx(resp):

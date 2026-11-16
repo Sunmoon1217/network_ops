@@ -7,7 +7,7 @@
   **不 import 本模块、不碰数据库**；
 - 采集任务结束时按 ``settings.DASHBOARD_WRITE_TASK`` 的**任务名字符串**
   ``current_app.send_task(...)`` 把结果投递给 analysis 的写库任务——沿用
-  ``ingest/access_flow_trigger.py`` 的接缝（``tests/ingest/test_access_flow_trigger.py``
+  ``configs/access_flow_trigger.py`` 的接缝（``tests/ingest/test_access_flow_trigger.py``
   守着「投递侧不 import analysis」这条边界）；
 - ``analysis/tasks.py`` 的写库任务消费 payload，同步 upsert 到下列表（**唯一写入口**）；
 - ``analysis/api/dashboard.py`` 只读，把表数据组装成旧 dashboard 前端的

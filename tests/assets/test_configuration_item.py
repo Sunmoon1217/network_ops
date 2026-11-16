@@ -7,7 +7,8 @@ API 分页 / 搜索 / 过滤，以及 CI 台账不被 ``purge_configs`` 误清�
 import pytest
 from django.db import IntegrityError, transaction
 
-from assets.models import CI_TYPE_CHOICES, PHYSICAL_TYPES, SOFT_TYPES, CIType, ConfigBase, ConfigurationItem, PhysicalServer
+from assets.models import CI_TYPE_CHOICES, PHYSICAL_TYPES, SOFT_TYPES, CIType, ConfigurationItem, PhysicalServer
+from configs.models import ConfigBase
 
 CI_URL = "/api/assets/configuration-items/"
 PHY_URL = "/api/assets/physical-servers/"

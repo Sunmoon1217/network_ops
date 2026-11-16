@@ -6,16 +6,8 @@
 
 import pytest
 
-from assets.models import (
-    Device,
-    GtmPool,
-    GtmServer,
-    GtmVServer,
-    GtmWideip,
-    LtmPool,
-    LtmPoolMember,
-    LtmVirtualServer,
-)
+from assets.models import Device
+from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPool, LtmPoolMember, LtmVirtualServer
 
 
 @pytest.fixture
@@ -39,12 +31,8 @@ def _seed_ltm(device: Device):
         rules=["/Common/irule_redirect"],
     )
     LtmPool.objects.create(device=device, name="pool_web", mode="round-robin", monitors=["http"])
-    LtmPoolMember.objects.create(
-        device=device, pool_name="pool_web", name="/Common/node_a", address="10.1.1.1", port="80"
-    )
-    LtmPoolMember.objects.create(
-        device=device, pool_name="pool_web", name="/Common/node_b", address="10.1.1.2", port="80"
-    )
+    LtmPoolMember.objects.create(device=device, pool_name="pool_web", name="/Common/node_a", address="10.1.1.1", port="80")
+    LtmPoolMember.objects.create(device=device, pool_name="pool_web", name="/Common/node_b", address="10.1.1.2", port="80")
 
 
 @pytest.mark.django_db
@@ -246,9 +234,7 @@ def test_ltm_search_ipv6_not_mis_split(api):
 def test_chain_endpoints_paginated(api):
     """两个端点都返回 {count, next, previous, results} 的标准分页结构。"""
     for i in range(3):
-        LtmVirtualServer.objects.create(
-            device=_slb_device(f"_t_lb_pg{i}"), name=f"vs_{i}", vs_address=f"10.0.{i}.1", vs_port="80"
-        )
+        LtmVirtualServer.objects.create(device=_slb_device(f"_t_lb_pg{i}"), name=f"vs_{i}", vs_address=f"10.0.{i}.1", vs_port="80")
     GtmWideip.objects.create(device=_gslb_device("_t_lb_pg_g"), name="a.example.com")
 
     for url in ("/api/lb-chain/slb/", "/api/lb-chain/gslb/"):
@@ -265,12 +251,8 @@ def test_chain_endpoints_paginated(api):
 def _seed_gtm_search(device: Device):
     """搜索与过滤测试的共用底座：www(A) → pool_dns → srvA/vsA；api(AAAA) → pool_b → srvB/vsB。"""
     _seed_gtm(device, [{"server": "srvA", "vserver": "vsA"}])
-    GtmWideip.objects.create(
-        device=device, name="api.example.com", rtype="AAAA", lb_mode="round-robin", pools=["pool_b"]
-    )
-    GtmPool.objects.create(
-        device=device, name="pool_b", members=[{"server": "srvB", "vserver": "vsB"}], monitor=["gtm_tcp"]
-    )
+    GtmWideip.objects.create(device=device, name="api.example.com", rtype="AAAA", lb_mode="round-robin", pools=["pool_b"])
+    GtmPool.objects.create(device=device, name="pool_b", members=[{"server": "srvB", "vserver": "vsB"}], monitor=["gtm_tcp"])
     GtmPool.objects.filter(name="pool_dns").update(monitor=["gtm_https", "icmp"])
     srv_a = GtmServer.objects.create(device=device, name="srvA", monitor="icmp")
     GtmVServer.objects.create(device=device, server=srv_a, name="vsA", ip_address="10.9.9.1", port="53", monitor="dns")

@@ -40,9 +40,14 @@
 | `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
 | `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
 
-## assets（`assets/api/urls.py`，前缀 `/api/assets/`）
+## assets / configs（`assets/api/urls.py` + `configs/api/urls.py`，共用前缀 `/api/assets/`）
 
-DRF `SimpleRouter`（`trailing_slash=True`），资源列表：
+DRF `SimpleRouter`（`trailing_slash=True`）。两个 app 各有一个 router，都挂在
+`path("assets/", ...)` 下——URL 解析按 include 顺序逐个尝试、命中即止，所以前缀共用不冲突
+（2026-11-16 拆分后前端零改动）。**配置行家族 26 个端点（device-configs / device-accounts /
+vlans / vrfs / interfaces / snmp·ntp·syslog-configs / ltm-* / gtm-* / address-books /
+services / policies / nat-rules / routes / arp-mac）由 `configs/api/urls.py` 提供**，
+其余资源仍在 `assets/api/urls.py`。资源列表：
 
 ```
 security-zones, datacenters, rooms, cabinets,
@@ -61,8 +66,7 @@ tags, subnets, ip-addresses
 
 | 路径 | 说明 |
 |------|------|
-| `/api/assets/overview/` | 总览聚合统计 |
-| `/api/assets/import-devices/` | Excel 导入设备。Sheet 清单 / 顺序 / 列头 / 导入函数唯一来源是 `assets/device_import.py` 的 `IMPORT_SHEETS`；含「设备组」Sheet：`组类型 \| 设备名(多个用逗号分隔) \| 描述`，**一行 = 一个设备组**。组名与角色不填表、由导入推：非集群第一台 = 主、第二台 = 备且组名 = 主设备 hostname；集群全部 = 成员且组名由设备名结构里的「安全区+设备类型」得到（设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`，首段 `NET` 大小写不敏感、段数 ≥ 4，安全区与类型取最后两段、类型段去尾部编号，如 `NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname。行是该组的**完整快照**，不在行里的既有成员会被摘掉 |
+| `/api/assets/import-devices/` | Excel 导入设备。Sheet 清单 / 顺序 / 列头 / 导入函数唯一来源是 `ingest/device_import.py` 的 `IMPORT_SHEETS`（接口在 `ingest/api/imports.py`，URL 与 name 沿用拆分前）；含「设备组」Sheet：`组类型 \| 设备名(多个用逗号分隔) \| 描述`，**一行 = 一个设备组**。组名与角色不填表、由导入推：非集群第一台 = 主、第二台 = 备且组名 = 主设备 hostname；集群全部 = 成员且组名由设备名结构里的「安全区+设备类型」得到（设备名 `NET-<数据中心+机柜位置>-<安全区>-<设备类型+编号>`，首段 `NET` 大小写不敏感、段数 ≥ 4，安全区与类型取最后两段、类型段去尾部编号，如 `NET-SH01-R05-SEC-FW01`/`…FW02` → `SEC-FW`），不符合结构或同行拆出的安全区/类型不一致则回退第一台 hostname。行是该组的**完整快照**，不在行里的既有成员会被摘掉 |
 | `/api/assets/import-template/` | 下载导入模板 xlsx：按 `IMPORT_SHEETS` 生成表头（与导入分发同源，只写表头、不放示例行） |
 
 ## ingest（`ingest/api/urls.py`）
@@ -83,6 +87,7 @@ tags, subnets, ip-addresses
 
 | 路径 | 说明 |
 |------|------|
+| `/api/assets/overview/` | 资产 + 配置行总览聚合（Home 页一次拿全）。`assets` + `configs` 的跨域只读统计，实现在 `analysis/api/overview.py`——**路径与 name 沿用拆分前**，前端零改动 |
 | `/api/trace/` | 路径追踪 |
 | `/api/trace/route-collect/` | 路由采集 |
 | `/api/trace/route-collect-raw/` | 路由采集（原始输出） |

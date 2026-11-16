@@ -1,7 +1,7 @@
 # 变量按「谁读」分三处（根 .env 给 compose 插值 / envs/*.env 按层注入 / envs/secrets/* 给凭据）：envs/README.md
 # envs/*.env 三层：common.env（共享值）+ container.env（容器差异，排最后生效）+ 服务级（gunicorn/celery）；
 # 宿主直跑读同一份 common.env + host.env（settings/base.py 启动时加载）——只维护一套配置。
-# 部署与排障：docker/README.md §5；项目自身的约定：AGENTS.md「关键约定」
+# 部署与排障：entrypoint/README.md §5；项目自身的约定：AGENTS.md「关键约定」
 
 name: network_ops
 

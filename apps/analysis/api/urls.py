@@ -2,21 +2,24 @@
 设备组配置合并（GSLB 集群、LTM 主备）/ 访问流。
 
 URL 前缀保持拆分前的原样（``/api/trace/...``、``/api/internet-analysis/...``、
-``/api/access-flows/...``），前端 ``api/`` 与 ``views/tools/`` 无需任何改动——
-路由跟着 view 走，不跟 app 走。设备组合并接口另开 ``/api/analysis/`` 前缀：
+``/api/access-flows/...``、``/api/assets/overview/``），前端 ``api/`` 与 ``views/`` 无需
+任何改动——路由跟着 view 走，不跟 app 走。设备组合并接口另开 ``/api/analysis/`` 前缀：
 它换了合并口径（按组合并、device 拼接），不混进旧接口。
 """
 
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, trace
+from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, overview, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：URL 不变，前端零改动
 router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-flow")
 
 urlpatterns = [
+    # 资产总览（Home 页）：跨 assets + configs 的只读聚合，随拆分迁入本域。
+    # 路径与 name 保持拆分前的 /api/assets/overview/（路由跟 view 走，前端零改动）。
+    path("assets/overview/", overview.assets_overview, name="assets-overview"),
     path("trace/", trace.path_trace, name="path-trace"),
     path("trace/route-collect/", trace.route_collect, name="route-collect"),
     path("trace/route-collect-raw/", trace.route_collect_raw, name="route-collect-raw"),

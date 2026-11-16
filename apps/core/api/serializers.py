@@ -1,7 +1,7 @@
 """注册与任务相关的序列化器。
 
 ``Task`` 的写入只开放 ``device`` / ``task_type`` / ``params``——状态、结果、时间戳都由
-工作流（``ingest.workflow``）与阶段任务维护，客户端不该直接改。
+任务机制（``core.tasks``）与阶段任务维护，客户端不该直接改。
 """
 
 from django.contrib.auth.password_validation import validate_password
@@ -150,7 +150,9 @@ class StageSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    device_hostname = serializers.CharField(source="device.hostname", read_only=True)
+    # 前端契约不变（``device`` 数字、``device_hostname`` 字符串）；底层软引用在 ``validate()`` 折算
+    device = serializers.IntegerField(required=False, allow_null=True, help_text="作用目标是设备时的设备 ID")
+    device_hostname = serializers.CharField(read_only=True)
     task_type_display = serializers.CharField(source="get_task_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     progress = serializers.IntegerField(read_only=True)
@@ -190,12 +192,42 @@ class TaskSerializer(serializers.ModelSerializer):
             "stages",
         )
 
-    def create(self, validated_data):
-        """建任务即投递第一个阶段（采集），见 ``ingest.workflow.start_task``。"""
-        from ingest.workflow import start_task
+    def validate_task_type(self, value: str) -> str:
+        """只接受已注册的任务类型——未知词当场 400，别让它被视图兜成 503。"""
+        from core import task_types
 
-        return start_task(
-            device=validated_data["device"],
+        if not task_types.is_registered_task_type(value):
+            raise serializers.ValidationError(f"未知的任务类型 {value!r}，可选：{[key for key, _ in task_types.task_type_choices()]}")
+        return value
+
+    def validate(self, attrs):
+        """把 ``device`` 折算成软引用（类型与名字都来自注册表）；目标不存在在这里拒掉。"""
+        from core import task_types
+
+        device_id = attrs.get("device")
+        if device_id is None:
+            return attrs
+
+        target_type = task_types.device_field_target_type()
+        label = task_types.resolve_target_label(target_type, device_id) if target_type else None
+        if label is None:
+            raise serializers.ValidationError({"device": f"设备 {device_id} 不存在"})
+
+        # 名字一并记下：列表展示不再回查业务表（也避免 N+1）
+        attrs["target_type"] = target_type
+        attrs["target_id"] = device_id
+        attrs["target_label"] = label
+        return attrs
+
+    def create(self, validated_data):
+        """建任务即投递第一个阶段（阶段名由注册表反查）。"""
+        from core.tasks import create_task
+
+        validated_data.pop("device", None)  # 已折算成 target_*
+        return create_task(
             task_type=validated_data["task_type"],
-            params=validated_data.get("params") or {},
+            params=validated_data.pop("params", None) or {},
+            target_type=validated_data.pop("target_type", ""),
+            target_id=validated_data.pop("target_id", None),
+            target_label=validated_data.pop("target_label", ""),
         )

@@ -1,7 +1,7 @@
-"""映射层（``ingest.mapping``）的行为与声明契约。
+"""映射层（``configs.mapping``）的行为与声明契约。
 
 对应关系：解析器按 (vendor, device_type) 注册、产出**原始**键与字段；Saver 按
-(device_type, key) 注册（key 含别名）并声明写入的模型；``ingest.mapping`` 的两张
+(device_type, key) 注册（key 含别名）并声明写入的模型；``configs.mapping`` 的两张
 声明表把不同厂商的同语义键 / 字段归一到规范名（由 ``BaseSaver.save`` 执行）。
 
 这里守两件事：
@@ -13,16 +13,16 @@
 
 import pytest
 
-from assets.models import ConfigBase
-from ingest.mapping import (
+from configs.mapping import (
     FIELD_ALIASES,
     KEY_ALIASES,
     canonical_key,
     normalize_config,
     resolve_models,
 )
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.registry import all_savers
+from configs.models import ConfigBase
+from configs.parsers.factory import ParserFactory
+from configs.savers.registry import all_savers
 
 
 def _all_produced_keys() -> set[str]:

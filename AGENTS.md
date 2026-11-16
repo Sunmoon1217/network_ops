@@ -14,7 +14,7 @@ Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详�
 阶段的写侧例外**，做监控平台统一管理（自动纳管、告警富化、状态回写），不属于「只做查询」限制。范围
 边界与任务裁剪见 [`handbook/roadmap.md`](handbook/roadmap.md)「现阶段目标与范围边界」。
 
-- 后端：数据模型 + REST API；设备配置解析入库（`ingest/parsers` TTP + `savers`）；
+- 后端：数据模型 + REST API；设备配置解析入库（`configs/parsers` TTP + `configs/savers`）；
   `ingest/collectors/` 接 Zabbix / Autotask 给总览大屏供数。
 - 前端：Vite **双入口**（`index.html` 主站 / `dashboard.html` 大屏），构建产物可由 Django 直接托管（开发调试）。
 - 生产：`docker compose` 起 db / redis / code-init（一次性把代码与静态成品铺进命名卷）/ app / worker /
@@ -36,9 +36,10 @@ Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详�
 network_ops/
 ├── netops/          # settings/（base 集中 env 动态项 + dev/container/prod）、urls、asgi、lifespan、views、schema（外部 DTO 基类）
 ├── apps/
-│   ├── core/        # 用户与认证、Task/Stage、运维命令（ensure_superuser / migrate_if_needed / queue_*）
-│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API + Excel 导入
-│   ├── ingest/      # 采集/解析/入库：parsers(TTP) / savers / mapping / pipeline / workflow / config_repo + collectors/（外部数据源）
+│   ├── core/        # 用户与认证、Task/Stage、外部连接实例（integrations/）、Git 配置仓库、运维命令
+│   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API
+│   ├── configs/     # 配置行家族（ConfigBase 25 子类 + DeviceConfig）+ TTP 解析 / Saver / 归一 / 序列化器 / API
+│   ├── ingest/      # 采集与入库编排：pipeline / workflow / device_import(Excel) / 配置仓库读接口 + collectors/（外部数据源）
 │   ├── analysis/    # 只读消费侧：路径追踪、访问流、互联网资产、监控、大屏供数；models/ 是包
 │   ├── cloud/       # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
 │   └── docs/        # 功能域：表格编辑 + 文档转换 + Dify 推送（与 handbook/ 无关）
@@ -60,9 +61,10 @@ network_ops/
 
 > 分层规范以 `handbook/design/layering.md` 为准（实施中，未完全落地）。
 
-**依赖方向**：`llmtools → apps`，`analysis → ingest → assets`（单向）。`assets` 不许 import
-`ingest`；`ingest` 除 `purge_configs` 这类跨域运维工具外不许 import `analysis`；`llmtools` 的
-子模块不许 import 任何业务域（`domains/` 是唯一例外）。
+**依赖方向**：`llmtools → apps`，`analysis → ingest → configs → assets`（单向）。`assets`
+是叶子节点，不许 import `configs` / `ingest`；`configs` 不许 import `ingest` / `analysis`；
+`ingest` 不许 import `analysis`（跨四域的清理工具已迁出 app，见 `scripts/purge_configs.py`）；
+`llmtools` 的子模块不许 import 任何业务域（`domains/` 是唯一例外）。
 
 ## 文档地图
 
@@ -126,7 +128,8 @@ cd frontend && pnpm install
 uv run python manage.py migrate | createsuperuser | runserver
 uv run python manage.py queue_status          # 队列积压巡检（--json；超阈值退出码 1，可接 cron）
 uv run python manage.py queue_backlog         # 积压明细（--json / --limit）
-uv run python manage.py reparse | purge_configs | import_server_owners   # 见 handbook/ingest.md
+uv run python manage.py reparse | import_server_owners   # 见 handbook/ingest.md
+uv run python scripts/purge_configs.py --device <H> [--yes]   # 清理配置解析产物（默认 dry-run）
 uv run python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]   # GTM/LTM → 软资产
 uv run python manage.py rebuild_access_flows --device <H> [--sync]
 ./scripts/deploy-host.sh deploy | status      # 宿主部署：app / worker / consumer 三进程
@@ -259,9 +262,10 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 
 | 层 | 职责 | 细节 |
 |----|------|------|
-| `core/` | 用户与认证、`Task` / `Stage`、运维命令（积压巡检也在这里） | [`handbook/api.md`](handbook/api.md) |
-| `assets/` | 网络域数据模型（`ConfigBase` 基类）+ 序列化器 + API + Excel 导入 | [`handbook/assets.md`](handbook/assets.md) |
-| `ingest/` | 采集、TTP 解析、Saver 写库、Git 配置仓库；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
+| `core/` | 用户与认证、`Task` / `Stage`、外部连接实例（`integrations/`）、Git 配置仓库、运维命令（积压巡检也在这里） | [`handbook/integrations.md`](handbook/integrations.md) |
+| `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API | [`handbook/assets.md`](handbook/assets.md) |
+| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 + 软资产计算 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
+| `ingest/` | 采集与入库编排、Git 配置仓库、Excel 批量导入；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
 | `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控、大屏供数（只读消费） | [`handbook/analysis.md`](handbook/analysis.md) |
 | `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
 | `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
@@ -270,7 +274,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 ## 注意事项
 
 - **解析器 / Saver / 模型三层关联**：解析器按 `(vendor, device_type)` 产出**原始**键 →
-  `ingest.mapping` 归一（键别名 + 字段别名，纯函数、幂等、**无厂商维度**）→ Saver 按
+  `configs.mapping` 归一（键别名 + 字段别名，纯函数、幂等、**无厂商维度**）→ Saver 按
   `(device_type, key)` 消费、以 `model_paths` 声明写入的模型。归一住在 `BaseSaver.save`
   （模板方法），值语义与结构级差异留 Saver。契约测试 `tests/ingest/test_parser_contract.py` +
   `test_mapping.py`；清单接口 `/api/parsers/mapping/`。
@@ -288,7 +292,8 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   **不动 label**（迁移历史挂在它上面）。
 - **改 celery 任务名要按部署步骤走**：Redis 里未消费的旧名消息会 `Unknown task`——升级前停
   worker、清空对应队列再滚动。
-- **清理配置数据用 `manage.py purge_configs`**（默认 dry-run）：配置原文在 Git 仓库、解析结果在
+- **清理配置数据用 `python scripts/purge_configs.py`**（默认 dry-run，已从 `manage.py` 迁出）：
+  配置原文在 Git 仓库、解析结果在
   资产表，两者与 `DeviceConfig` 无外键，手工清必漏；`--purge-repo` 只删当前环境的仓库。
 - **导入服务器负责人**：`manage.py import_server_owners --file x.xlsx`（sheet `servers`，**按列名
   取**、缺列直接报错；`ip` 是唯一键；只覆盖 hostname / owner，不动 `status`；有非法行整批不导入）。

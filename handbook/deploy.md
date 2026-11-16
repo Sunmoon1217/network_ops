@@ -91,7 +91,7 @@ worker / consumer / beat 用 `volumes_from: [app:ro]` 继承同一组卷（导�
 
 ```bash
 docker compose exec app git -C /configs/<hostname> log --oneline
-docker compose exec app python manage.py purge_configs --all --purge-repo --yes
+docker compose exec app python scripts/purge_configs.py --all --purge-repo --yes
 ```
 
 卷名用新的 `repo` / `data`（不复用旧 `network_ops_app_data`，避免静默合并两份历史）；旧的

@@ -1,7 +1,12 @@
 # assets / configs 域拆分方案
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：基本落地（2026-11-16 起）。切片 1–9 已完成：26 张表 + 序列化器 + parsers/savers/mapping
+> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
+> + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest + `purge_configs` 迁 scripts
+> + `overview` 概览跨域聚合迁 analysis（assets 至此真正成为叶子）。
+> 待定项已全部收口（2026-11-16）：`existing_asset_registry` 定为留在 assets（§待定项 6）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
+> 进度与实测差异见文末 §「实施进度」。
 
 ## 为什么要拆
 
@@ -158,6 +163,10 @@ from assets.serializers.views import VlanSerializer   # → 改成 configs.seria
   加上 `views.py:347` 的 resolve_config_owner 随 DeviceConfigViewSet 归 configs，
   **三处反向依赖全部清零**。
 
+> **已落地（2026-11-16，切片 7）**：`apps/ingest/device_import.py` + `apps/ingest/api/imports.py`；
+> `assets/api/urls.py` 的两条路由删除，`ingest/api/urls.py` 以同路径同名注册；
+> 两个测试文件迁 `tests/ingest/`。`grep -rn "from ingest" apps/assets` 现在**无命中**。
+
 ## 软资产归并：唯一的横跨功能
 
 `apps/assets/services/soft_asset_sync.py` 现在**同时读 configs 的模型、写 assets 的模型**：
@@ -266,6 +275,10 @@ with transaction.atomic():
 「配置变了」）；ingest 的 4 处 import 改指 configs——`ingest → configs` ✓ 合法；
 assets 侧不再持有这个信号，软资产同步链路对 assets 变成纯被动（只提供 `apply_soft_assets`）。
 
+> **已落地（2026-11-16，切片 6）**：本节全部实现——builder / apply / 编排三处落点见 §实施进度
+> 切片 6；`assets/signals.py` 与 assets 侧的命令已删除，`assets/services/soft_asset_sync.py`
+> 只剩 `SyncStats` + `apply_soft_assets`，AST 守卫钉住「算不 import assets、写不 import configs」。
+
 ### 一个刻意保留的设计
 
 软资产表存 **hostname 列表**而非 device_id：
@@ -284,12 +297,12 @@ group.devices.append(wideip.device.hostname)
 
 - `SPEC` 是全局单例 dict，`register_entity(spec, override=False)` 按 `node_type` 键注册；
 - `register_edge` 只要求**两端先注册**，不要求同域；
-- `llmtools/domains/assets/` 下**现在只有一个目录**，它已经同时包含 assets 域模型
+- `llmtools/domains/network/` 下**现在只有一个目录**，它已经同时包含 assets 域模型
   （Device、Subnet、IPAddress、DeviceGroup、ServerOwner）和 ConfigBase 家族模型
   （Interface、Vlan、Policy、Ltm*、Gtm*、NatRule、AddressBook、Service、Route）。
 
 **MCP 域早就是"混合"的**，只是恰好只混了 assets 内部的两块。ConfigBase 迁出后，
-`llmtools/domains/assets/` 继续 import 两个 app 的模型即可：
+`llmtools/domains/network/` 继续 import 两个 app 的模型即可：
 
 ```python
 from assets import models            # Device, Subnet, IPAddress, DeviceGroup...
@@ -300,7 +313,7 @@ from configs import models as cm     # Interface, Vlan, Policy, Ltm*, Gtm*...
 
 | # | 事项 | 说明 |
 |---|---|---|
-| 1 | 目录改名 | `llmtools/domains/assets/` 名不副实（覆盖两个域）。建议改 `network/`（覆盖「网络设备及其配置」话题）。改动：目录重命名 + `llmtools/__init__.py` / `llmtools/tools.py` 两处 import |
+| 1 | 目录改名 | **已落地**：`domains/assets/` → `domains/network/`（覆盖「网络设备及其配置」话题，两个 app 的模型都归它）。改动面只有目录重命名 + `llmtools/__init__.py` / `llmtools/tools.py` 两处 import |
 | 2 | `specs/ipam.py` 跨域 | 该文件同时含 Device/DeviceGroup（assets）与 Interface/Vlan/Vrf/Route（configs）。**保持混合**，逐个改 model 来源即可 |
 | 3 | `specs/slb.py` 13 个实体 | 全是 ConfigBase 家族 → 改 `models.` 为 `cm.` |
 | 4 | `specs/firewall.py` 4 个实体 | 同上 |
@@ -427,7 +440,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 配置记录 | `DeviceConfig` | configs |
 | 派生缓存 | `InternetAnalysis`、`AccessFlow` | analysis |
 | 工作流记录（可选） | `core.Stage` / `core.Task` | core |
-| Git 仓库（可选） | `CONFIG_REPO_PATH` 整个目录 | ingest |
+| Git 仓库（可选） | `CONFIG_REPO_PATH` 整个目录 | core（`config_repo` 存储层；写侧在 ingest） |
 
 代码里已经明确写了立场：
 
@@ -465,10 +478,12 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 
 | # | 待定 | 影响 |
 |---|---|---|
-| 1 | `Task.device` 保留 FK 还是改 JSON | 已定方案 C（多态引用，见 [`task-framework.md`](task-framework.md)），A 为过渡态 |
+| 1 | `Task.device` 保留 FK 还是改 JSON | **已落地**：方案 C（多态引用），见 [`../tasks.md`](../tasks.md) §作用目标 |
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
-| 3 | `llmtools/domains/assets/` 改名成什么 | `network/`？`infra/`？（import 修复不受此影响，必须先与拆分同提交落地） |
+| 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
+| 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **已落地（切片 9，2026-11-16）**：整个端点迁 `analysis/api/overview.py`——它是 assets + configs 的只读聚合，只能落在两者之上；**URL 与 name 原样保留**，前端零改动。configs 单侧统计不做拆接口（`analysis` 已在矩阵里允许同时读两个域，再拆成两个接口只会让前端多一次请求）。 |
+| 6 | `assets/services/existing_asset_registry.py`（存量资产登记）是否随 Excel 导入迁 ingest | **已定：留在 assets（2026-11-16）**。实测它只被 `manage.py register_assets`（assets 自己的命令）与 `tests/assets/test_existing_asset_registry.py` 调用，**与 ingest 导入链路无关**（本条原先的「只被 ingest 调用」是误记）。它读 `Device` / `IPAddress` / `Subnet`、写 `ConfigurationItem` / `CIObjectLink`，四个模型全是 assets 自家；搬去 ingest 等于让上层域持有叶子域的台账同步，纯亏。 |
 
 ## 建议的最小验证切片
 
@@ -483,3 +498,217 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 4. 确认表名、索引、约束、`__subclasses__()` 枚举都正确。
 
 **通过后再批量迁其余 24 张子类表 + `DeviceConfig`。** 一次迁 26 张表，出了问题不好定位。
+
+## 实施进度
+
+### 切片 1 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 新 app | `apps/configs/`（`label = "configs"`，`INSTALLED_APPS` 排在 `assets` 之后） |
+| 基类 | `configs/models/base.py` 的 `ConfigBase`；`device` 用**字符串** `"assets.Device"`，不 import assets 的模型 |
+| 首个模型 | `configs/models/network.py` 的 `Vlan` |
+| assets 侧 | `assets/models/network.py` 删掉基类与 `Vlan` 的定义，改为 `from configs.models.base import ConfigBase`；`assets/models/__init__.py` 不再导出二者 |
+| 迁移 | `assets/0036_remove_vlan_state`（`SeparateDatabaseAndState` 只删 state）→ `configs/0001_initial`（建 state + `RunSQL` 把 `assets_vlan` 改名 `configs_vlan`） |
+| 引用点 | 生产 11 处（admin / api / serializers / saver / purge_configs / llmtools）+ 测试 13 处改指 `configs.models` |
+| 工具链 | `pyproject.toml` 的 ruff `known-first-party` 补 `configs`（顺带补上同样漏掉的 `cloud`） |
+
+**实测结论**（克隆开发库 + 空库，两路径都跑了）：
+
+1. **数据完整**：迁移前 `assets_vlan` 2 行 → 迁移后 `configs_vlan` 2 行，ORM 读到的 device hostname 正确。
+2. **约束与索引随表走，不需要改名**：`uni_vlan_device_vid` 不含 app 名；`devices_vlan_pkey` /
+   `devices_vlan_vid_check` 是更早表名（`devices_vlan`）时代的历史命名，`assets_vlan_device_id_*`
+   是 FK 自动索引——RENAME 不改它们，**Django 也不按这些名字做状态比较**，所以既无漂移也无功能
+   影响。提案预留的「逐个核对并在 `SeparateDatabaseAndState` 里改索引/约束名」这一步，实测结论是
+   **核对后确认无需改**（新迁的表若显式命名了带 `assets_` 前缀的索引，仍要单独处理）。
+3. **fresh 库必须显式依赖 assets**：`configs/0001` 的 `dependencies` 指向 `assets/0036`，
+   否则从零 migrate 时外键目标表还没建。两条路径（存量升级 / fresh）都验证过。
+4. **反向可用**：`migrate configs zero` → `migrate assets 0035`，表名改回 `assets_vlan`、2 行数据仍在。
+5. **运行时枚举不受影响**：`ConfigBase.__subclasses__()` 仍是 24 个，`Vlan` 的
+   `app_label` 变成 `configs`，`purge_configs` 的枚举照常工作。
+6. **手写 state 与模型严格一致**：`makemigrations --check` 只剩 `cloud` 那 8 条既存漂移。
+
+**与提案的差异**：
+
+1. **切片期存在临时反向依赖**：其余 23 个 `ConfigBase` 子类还在 `assets/models/network.py`，
+   只能 `from configs.models.base import ConfigBase` —— 即 **assets → configs**。提案按「一次迁完」
+   写，没提这个过渡态。它会在最后一批子类迁走时消失，切片阶段**不给 assets 加分层守卫**
+   （否则等于给过渡态写一条假约束）。
+2. **`assets/models/__init__.py` 不做 re-export**。re-export 能让 47 处 import 零改动，但会把
+   「模型已经不在 assets」这件事藏起来，批量迁移时也分不清哪些是真引用。全部改指 `configs.models`。
+3. **`configs` 只是新 app 的起点，`apps.py` 暂时没有 `ready()`**：本域目前没有要在启动时注册的
+   东西（软资产信号、词汇注册都随后续步骤进来）。
+
+### 切片 2 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| ArpMac 改继承 | `assets/0037_arpmac_configbase`：删自带 device FK 的 related_name、补 `is_active`；改名同义的 created_at/updated_at 不重复添加 |
+| 模型 | 23 个子类 + ArpMac 进 `configs/models/network.py`（与 Vlan 同模块，保留类名直接引用）；`DeviceConfig` 独占 `configs/models/device_config.py`，device 改字符串引用 `assets.Device` |
+| 迁移 | `assets/0038_remove_config_state`（**SeparateDatabaseAndState，只删 state，DB 不动**）→ `configs/0002_bulk_models`（state 建 25 模型 + 31 条 `ALTER TABLE … RENAME`，含 Policy/NatRule 的 6 张 M2M 中间表） |
+| 字段对齐 | CreateModel 的字段/约束从 `assets/0037` 的 ProjectState 逐字段生成；跨模型 FK 的 `to=` 改为 `configs.*`（Vrf / GtmServer / AddressBook / Service），保留 `assets.device` |
+| 引用点 | 生产 + 测试 67 个文件的 import / 属性访问 / saver 的 `model_paths` 字符串统一改指 configs；`assets/models/__init__.py` 不再 re-export 这 25 个名字；`ingest/signals.py` 的 lazy sender 改 `configs.DeviceConfig` |
+| 契约 | 新增 `tests/configs/test_configbase_registry.py`：锁死 25 子类集合、全部 app_label=configs、DeviceConfig 不被枚举 |
+
+**实测结论**：
+1. 克隆存量库造数（Vrf + Policy）→ `migrate` → `configs_vrf` / `configs_policy` 数据完好、ORM 可读；
+   `migrate configs zero` + `migrate assets 0037` 反向后表名与数据都回到 `assets_*`。
+2. fresh 库全量 `migrate` 与 pytest 建测试库都通过：全量 **846 passed, 66 subtests**
+   （842 基线 + 4 条新契约）。
+3. `makemigrations --check` 只剩 `cloud` 那 8 条既存漂移。
+4. **两个必须踩的坑**：`assets/0038` 的 DeleteModel 若不放进 `SeparateDatabaseAndState`，
+   fresh 库会直接 DROP 表；`configs/0002` 的 CreateModel 若不做 state-only，会与历史迁移
+   已建的同名表/constraint 冲突。两边都靠 `database_operations=[]` 才对。
+
+**仍然是过渡态**（切片 2 结束时）：`assets/admin.py`、`assets/api/views.py`、`assets/serializers/views.py`
+等仍 import configs 的模型（合法的下层依赖），admin / API 本身还没搬；`ArpMac` 并入后
+`purge_configs` 会清 ARP/MAC 表（已写进 `handbook/ingest.md`）。其中解析 / 写入 / 序列化器
+部分已在切片 3 迁走。
+
+### 切片 3 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 序列化器合并 | 两个私有展示函数并入 `assets/serializers/views.py`，删除 `assets/api/serializers.py`；`analysis/api/firewall_groups.py` 改 import；契约测试改成「旧模块已删除」对账 |
+| 配置类序列化器 | 26 个（25 子类 + DeviceConfig）→ `configs/serializers/views.py`，继承 `assets.serializers.base`；`PolicySerializer` 保留三个 `*_display` 展示字段（API 口径不变） |
+| 解析 / 写入 / 归一 | `ingest/parsers/`、`ingest/savers/`、`ingest/mapping.py` 整体迁 `configs/`；`access_flow_trigger.py` 随 PolicySaver 迁 configs（按任务名 send_task，仍不 import analysis） |
+| 注册与模板路径 | Saver 注册点从 `ingest.apps.ready()` 移到 `configs.apps.ready()`；解析器模板按 `configs.parsers.__file__` 定位，模板管理接口同步 |
+| 引用点 | 34 个文件的模块路径改指 configs；savers 的序列化器 import 改 `configs.serializers.views`；llmtools 规格改为 `s`（assets）+ `cs`（configs）双引用 |
+
+**实测结论**：全量 **846 passed, 66 subtests passed**；`manage.py check` 无问题；configs 侧对
+`ingest` / `analysis` 的 import 为 0（`access_flow_trigger` 只按任务名字符串投递）。
+failures 修了两处：`PolicySerializer` 的展示字段随合并丢了（已补回），解析器测试的模板目录
+断言仍指向 `ingest`（已改按 `configs.parsers` 包定位）。
+
+### 切片 4 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| admin | 26 个 `@admin.register`（含 `DeviceConfigAdmin`）从 `assets/admin.py` 迁 `configs/admin.py`；`DEVICE_FILTER` 同口径另立一份，列表/搜索/筛选逐字照抄 |
+| API ViewSet | 26 个 ViewSet 迁 `configs/api/views.py`；类体内的局部模型/序列化器 import 上提到模块头 |
+| 路由 | 新建 `configs/api/urls.py`（自己的 `SimpleRouter`，`path("assets/", …)`），`netops/urls.py` 与 assets 并列挂载；`basename` 原样，反解结果不变（`/api/assets/vlans/` 等） |
+| `resolve_config_owner` | `ingest/config_owner.py` 迁 `configs/config_owner.py`；ingest 的 pipeline / purge_configs、analysis 注释、测试同步改路径 |
+| 实测 | `configs` admin 注册数 = 26；`reverse("vlan-list")` 等仍是 `/api/assets/...`；全量 **846 passed, 66 subtests** |
+
+**踩点**：`assets/api/urls.py` 与 `configs/api/urls.py` 两个 include 都写 `path("assets/", …)`，
+靠 Django「按顺序尝试、命中即止」共存——不要为了"干净"去合并成单 router，那会把 assets 与
+configs 重新绑在一起。
+
+### 切片 5 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 目录 | `llmtools/domains/assets/` → `llmtools/domains/network/`（10 个文件整体 `git mv`） |
+| 组合根 | `llmtools/__init__.py` / `llmtools/tools.py`：`from llmtools.domains import network`、`network.register()`、`*network.TOOLS` |
+| 域内引用 | `domains/network/tools.py` 的 `specs._helpers` 绝对导入改指 `llmtools.domains.network.specs` |
+| 文档 | `README.md`、`handbook/llmtools.md`、`apps/assets/models/ci.py` docstring（`NodeType` 交叉引用）、本稿 §llmtools |
+
+**为什么不按 app 拆成两个域**：`specs/ipam.py` 一个文件里就有 Device/DeviceGroup（assets）与
+Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。注册表本身是全局的
+（`node_type` 键 + 「两端先注册」），硬拆只会把同一话题的实体分到两个包再互相 import。
+按**话题**划分是对的，按 app 划分不是。
+
+**踩点**：批量替换脚本先 `git mv` 再 rglob 遍历，结果 SKIP 集合里的 `".worktrees"` 命中了
+项目根自身的路径段（worktree 就住在 `.worktrees/` 下），整棵树被跳过、只有两个显式文件生效。
+批量改名用 `git ls-files` 枚举跟踪文件，别用 `rglob` + 目录黑名单。
+
+### 切片 6 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 算（只读） | `configs/services/soft_asset_builder.py`：`SoftAssetDraft`（kind/key/values）+ `BuildResult`（drafts/skipped）+ `build_domain_drafts()` / `build_lb_drafts()` |
+| 写（只写 assets） | `assets/services/soft_asset_sync.py`：`SyncStats` + `apply_soft_assets(drafts)`；`kind` → (CIType, 模型, 归一键字段) 一张表查完，两个 `_sync_*_group` 合成一个通用 `_apply_draft` |
+| 编排 | `configs/services/soft_asset_sync.py`：`sync_domain_assets` / `sync_load_balancer_services` / `sync_soft_assets`，单事务 + `pg_advisory_xact_lock`（原样保留） |
+| 信号 | `assets/signals.py` → `configs/signals.py`（信号对象 + `request_soft_asset_sync` + 接收器）；`configs/apps.py.ready()` 里 import |
+| 命令 | `manage.py sync_soft_assets` 从 assets 迁 configs，命令名与参数不变 |
+| 引用 | ingest 4 处惰性 import、测试 2 个文件改指 configs；`assets/apps.py` 不再 import `assets.signals` |
+| 守卫 | `tests/configs/test_soft_asset_boundary.py`：AST 钉住「builder 不 import assets、writer 不 import configs」 |
+
+**为什么类型用 `Protocol` 而不是共用 dataclass**：`apply_soft_assets` 的入参若标注
+`configs...SoftAssetDraft`，assets 就得 import configs（矩阵禁止）。改用只读属性的
+`Protocol`（结构化类型），冻结 dataclass 天然满足，一个 import 都不用加。
+
+**实测**：`tests/configs` 25 passed；全量 **851 passed, 66 subtests passed**（846 基线 + 5 条
+新增：计算段无写操作 / 落库段按 kind 建 CI / lb draft 不带 CIType + 两条 AST 边界守卫）；
+`manage.py check` 干净，`manage.py help sync_soft_assets` 仍能发现命令（命令发现与 app 标签无关）。
+
+### 切片 7 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 导入器 | `apps/assets/device_import.py` → `apps/ingest/device_import.py`（441 行整体 `git mv`，加了一段「为什么在 ingest」的模块注释） |
+| 接口 | 两个视图（上传分发 / 模板下载）从 `assets/api/views.py` 提到 `ingest/api/imports.py`；`assets/api/urls.py` 删两条路由，`ingest/api/urls.py` 以**同路径同名**注册（`assets/import-devices/`、`assets/import-template/`） |
+| 清理 | `assets/api/views.py` 去掉 `IMPORT_SHEETS` / `HttpResponse` / `Worksheet` / `cast` / `logger` 等只被搬走代码用到的导入 |
+| 测试 | `test_import_configs_async.py` / `test_import_device_group.py` → `tests/ingest/`，模块路径改 `ingest.device_import`；URL 断言不用改（前缀与 name 都没动） |
+| 文档 | `handbook/assets.md` 该节改成指针，正文搬 `handbook/ingest.md`；`handbook/api.md`、`AGENTS.md` 的架构表与目录树同步 |
+
+**结果**：`grep -rn "from ingest" apps/assets` **无命中**——`assets → ingest` 清零，
+矩阵里 assets 行的四个 ✗ 只剩 `assets → configs`（就是待定项 5 的 `overview`）。
+
+### 切片 8 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 脚本 | `scripts/purge_configs.py`（原 `apps/ingest/management/commands/purge_configs.py` 删除）：同样四个开关、同样默认 dry-run，`main(argv, out)` 可注入输出，退出码 0 / 2 |
+| 结构 | 逻辑从 `Command` 类改成 `_Purge` 类 + `main()`；模型导入全部下移到用到的函数里（脚本 import 时不碰 Django 应用加载，`main()` 里才 `django.setup()`） |
+| 测试 | `tests/ingest/test_purge_configs_command.py` → `tests/scripts/test_purge_configs.py`（12 条语义不变；错误断言从 `CommandError` 改成「退出码 2 + 输出含提示」，缺 `--device/--all` 由 argparse 抛 `SystemExit(2)`） |
+| 工具链 | `pyproject.toml` 的 ruff `known-first-party` 补 `scripts`（否则 `from scripts import …` 被当第三方包排到最前） |
+| 文档 | `handbook/ingest.md` 的命令表与「为什么存在」、`deploy.md` 的容器调用、`AGENTS.md` 三条、`layering.md` 的例外表 |
+
+**结果**：`ingest` 不再 import `analysis`——矩阵里 ingest 行的 ✗ 成立；`layering.md`
+「例外与豁免」表里 purge_configs 那行从「待迁出」变成「已迁出」，只剩 `core/queue_*` 两条。
+**调用方式变了**：`manage.py purge_configs` → `python scripts/purge_configs.py`（容器里
+`docker compose exec app python scripts/purge_configs.py …`）。
+
+### 切片 9 — 已落地（2026-11-16）
+
+`overview` 是**读取侧**唯一同时消费 assets 与 configs 的查询（机柜 / 设备 / 网段 + 接口 /
+VLAN / 路由 / 策略 / NAT / SLB / GTM / ARP 的分布）。切片 4 把 26 个 ViewSet 迁走之后，
+它成了 assets 里最后一个 `configs` import——叶子节点往上够。
+
+| 项 | 落点 |
+|---|---|
+| 视图 | `apps/assets/api/views.py` 的 `overview` → **新模块** `apps/analysis/api/overview.py`（函数改名 `assets_overview`，逻辑逐行照抄） |
+| 路由 | `assets/api/urls.py` 删一行；`analysis/api/urls.py` 以 `path("assets/overview/", …)` + `name="assets-overview"` 注册——**路径与 name 一字未改**，`frontend/src/netops/views/Home.vue` 与 `reverse()` 零改动 |
+| 清理 | `assets/api/views.py` 去掉 `configs.models` 15 个模型导入、`logging` / `logger` / `api_view` / `Response`（只剩 DCIM ViewSet，assets 全目录对上层域 import 归零） |
+| 守卫 | `tests/core/test_layering.py` 新增 `test_assets_imports_no_upper_domain`：AST 扫 `apps/assets`，出现 `configs/ingest/analysis/egest/docs/cloud` 即失败 |
+| 契约 | 新增 `tests/analysis/test_overview_api.py`：普通用户 200 + **41 个顶层字段的冻结清单**（前端整包消费，少一个就是一块空白卡片），外加「两侧计数同时生效」用例 |
+| 文档 | `handbook/api.md` 该行从 assets 表移入 analysis 表并注明 URL 不变；`layering.md` 的 assets 行从「目标态」改为「叶子节点（有守卫）」 |
+
+**为什么落 analysis 而不是 configs**：`analysis → ingest → configs → assets`，analysis 本来
+就装着 dashboard / lb-chain / 设备组合并这些跨域只读聚合；搬到 configs 还得让 configs
+反向读 assets 的机柜与设备，等于把刚解开的一条反向依赖换成另一条。
+
+**为什么不做「拆成两个接口」**：那两条出路都会动前端契约（Home 页要并发两次请求再合并），
+而 analysis 在矩阵里本来就允许同时读两个域——收益只有「少一个跨域点」，代价是前端与
+缓存口径都要重排，不划算。
+
+**实测**：`tests/core/test_permissions.py` + `tests/core/test_layering.py` 16 passed；
+`tests/analysis/test_overview_api.py` 2 passed（字段清单与实测响应完全一致）；
+`reverse("assets-overview")` = `/api/assets/overview/`，`resolve()` 落在
+`analysis.api.overview`；全量 **854 passed, 66 subtests passed**（851 基线 + 3 条新增）；
+`manage.py check` 干净；OpenAPI schema 的 warnings / errors 计数（11 / 273）与 develop 基线
+**完全一致**——`api_view` 的 serializer 推断告警是这类函数视图的既有现象，不是本次引入。
+
+### 待定项 6 结案 — 留在 assets（2026-11-16，无代码改动）
+
+`existing_asset_registry` 的归属定死：**不迁**。依据是实测出来的调用面，而不是偏好：
+
+| 事实 | 含义 |
+|---|---|
+| 调用方只有 `apps/assets/management/commands/register_assets.py` 与 `tests/assets/test_existing_asset_registry.py` | 与 ingest 的 Excel 导入链路**没有关系**（设计稿原写的「只被 ingest 调用」是误记，已改） |
+| 读 `Device` / `IPAddress` / `Subnet`，写 `ConfigurationItem` / `CIObjectLink` | 四个模型全在 assets，一次跨域都没有 |
+| 幂等键 `(source_type, source_id)` + `pg_advisory_xact_lock("REGI")` | 「怎么算同一个资产」与 assets 模型的唯一约束是同一件事，必须同处一地 |
+
+搬去 ingest 的收益为零，代价是多一条 `ingest → assets` 的写依赖，还得把登记锁与 assets
+的唯一约束分家——这类「口径分裂」正是拆分想消掉的东西。
+
+### 下一步
+
+设计稿至此**收口**：九个切片全部落地，两处待定（§待定项 5 / 6）都已结案，矩阵里
+`assets` 行的四个 ✗ 与 `core` 行的六个 ✗ 全部成立。后续只剩两件与本稿无关的事：
+
+1. 分支合并到 develop 后跑一次 `manage.py migrate`（26 张表的 RENAME 迁移）。
+2. `egest` 域真正落地时另开设计稿（§待定项 2 的「是否独立成域」）。
+
+

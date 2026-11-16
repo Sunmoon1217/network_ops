@@ -4,9 +4,11 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from ingest.parsers.factory import ParserFactory
+from configs import parsers
+from configs.parsers.factory import ParserFactory
 
-_TMPLS_DIR = Path(__file__).resolve().parent.parent / "parsers" / "tmpls"
+# 模板随 parsers 迁入 configs，按包路径定位（不再依赖本项目文件在 apps/ingest 下）
+_TMPLS_DIR = Path(parsers.__file__).resolve().parent / "tmpls"
 
 
 def _find_template(name: str) -> Path | None:
@@ -42,16 +44,16 @@ def parser_mapping(request):
     用于回答"这台设备会解析出什么、进哪些表"，以及发现
     「模板改了结构导致 Saver 静默失效」这类问题。
 
-    产出与消费的对账在**归一口径**（``ingest.mapping.canonical_key``）下进行；
+    产出与消费的对账在**归一口径**（``configs.mapping.canonical_key``）下进行；
     ``consumers`` 条目附 ``canonical_key`` 与 ``models``（Saver 写入的模型），
     顶层另给 ``key_aliases`` / ``field_aliases`` 两张归一声明表与按 Saver
     聚合的 ``savers`` 清单——即解析器 / 关键字内部结构差异 / Saver / 模型
     的完整关联关系。
     """
-    from ingest.mapping import FIELD_ALIASES, KEY_ALIASES, canonical_key
-    from ingest.parsers.contract import KNOWN_MISSING_PRODUCER
-    from ingest.parsers.template_keys import template_has_dynamic_groups, template_keys
-    from ingest.savers.registry import all_savers
+    from configs.mapping import FIELD_ALIASES, KEY_ALIASES, canonical_key
+    from configs.parsers.contract import KNOWN_MISSING_PRODUCER
+    from configs.parsers.template_keys import template_has_dynamic_groups, template_keys
+    from configs.savers.registry import all_savers
 
     savers = all_savers()
 

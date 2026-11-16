@@ -61,7 +61,7 @@ def run_config_pipeline(device, device_config, *, force_parse: bool = False) -> 
     """
     result = PipelineResult()
 
-    from ingest.config_owner import resolve_config_owner
+    from configs.config_owner import resolve_config_owner
 
     owner = resolve_config_owner(device)
     if owner.pk != device.pk:
@@ -82,7 +82,7 @@ def run_config_pipeline(device, device_config, *, force_parse: bool = False) -> 
 
 def _parse_config(device, device_config, result: PipelineResult) -> dict:
     """从 Git 取配置原文并解析，成功后写回 config_json"""
-    from ingest.config_repo import get_config
+    from core.config_repo import get_config
 
     commit_hash = device_config.git_commit_hash
     raw_text = get_config(device.hostname, commit_hash)
@@ -92,7 +92,7 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
         logger.warning("DeviceConfig %s: %s", device_config.pk, result.skipped)
         return {}
 
-    from ingest.parsers.factory import ParserFactory
+    from configs.parsers.factory import ParserFactory
 
     try:
         parser = ParserFactory.get_parser(device)
@@ -113,15 +113,13 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
 
 def _dispatch_savers(device, config_json: dict, result: PipelineResult) -> None:
     """按顶层 key 找到 Saver 并逐个执行；单个失败只记录，不中断其余"""
-    from ingest.savers.registry import build_saver_payloads
+    from configs.savers.registry import build_saver_payloads
 
     for saver, payload in build_saver_payloads(device.device_type, config_json):
         outcome = SaverOutcome(keys=list(payload))
         try:
             outcome.created, outcome.updated = saver.save(device, payload)
-            logger.info(
-                "设备 %s [%s] 保存完成: +%d ~%d", device.hostname, outcome.label, outcome.created, outcome.updated
-            )
+            logger.info("设备 %s [%s] 保存完成: +%d ~%d", device.hostname, outcome.label, outcome.created, outcome.updated)
         except Exception as e:
             outcome.error = str(e)
             logger.error("设备 %s [%s] 保存失败: %s", device.hostname, outcome.label, e, exc_info=True)

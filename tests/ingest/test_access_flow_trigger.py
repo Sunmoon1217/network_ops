@@ -1,4 +1,4 @@
-"""访问流重建的投递触点（ingest.access_flow_trigger）：任务名字符串 send_task、开关语义。
+"""访问流重建的投递触点（configs.access_flow_trigger）：任务名字符串 send_task、开关语义。
 
 守护三点：
 
@@ -25,7 +25,7 @@ def _patch_send(monkeypatch, settings) -> list:
     """把 trigger 的 celery 句柄换成记账桩，返回 ``(task_name, args)`` 的记录列表。"""
     calls: list[tuple[str, list]] = []
     monkeypatch.setattr(
-        "ingest.access_flow_trigger.current_app",
+        "configs.access_flow_trigger.current_app",
         SimpleNamespace(send_task=lambda name, args=None: calls.append((name, list(args or [])))),
     )
     assert settings.ACCESS_FLOW_TASK == "analysis.rebuild_access_flows", "任务名唯一定义处"
@@ -40,7 +40,7 @@ def _patch_send(monkeypatch, settings) -> list:
 @pytest.mark.django_db
 def test_request_rebuild_sends_task_name_string(settings, monkeypatch):
     """投递物是任务名字符串 + args——不是函数对象，worker 端拿名字查注册表执行"""
-    from ingest.access_flow_trigger import request_rebuild
+    from configs.access_flow_trigger import request_rebuild
 
     calls = _patch_send(monkeypatch, settings)
 
@@ -51,7 +51,7 @@ def test_request_rebuild_sends_task_name_string(settings, monkeypatch):
 
 @pytest.mark.django_db
 def test_request_rebuild_respects_settings_switch(settings, monkeypatch):
-    from ingest.access_flow_trigger import request_rebuild
+    from configs.access_flow_trigger import request_rebuild
 
     calls = _patch_send(monkeypatch, settings)
 
@@ -72,7 +72,7 @@ def test_request_rebuild_respects_settings_switch(settings, monkeypatch):
 @pytest.mark.django_db
 def test_policy_saver_triggers_rebuild(settings, monkeypatch):
     """PolicySaver 保存成功后要投递重建——触发点本身（开关开时必须发出）"""
-    from ingest.savers.firewall import PolicySaver
+    from configs.savers.firewall import PolicySaver
 
     calls = _patch_send(monkeypatch, settings)
     settings.ACCESS_FLOW_DISPATCH = True
@@ -89,7 +89,7 @@ def test_policy_saver_triggers_rebuild(settings, monkeypatch):
 @pytest.mark.django_db
 def test_policy_saver_dispatch_is_off_by_default_in_tests(monkeypatch, settings):
     """conftest 的 autouse 开关必须拦掉真实投递（否则测试会把消息发进本机 Redis）"""
-    from ingest.savers.firewall import PolicySaver
+    from configs.savers.firewall import PolicySaver
 
     calls = _patch_send(monkeypatch, settings)
 

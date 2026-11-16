@@ -8,11 +8,30 @@
 
 | 链 | 入口 | 任务 | 说明 |
 |----|------|------|------|
-| 阶段式工作流 | `/api/tasks/` → `workflow.start_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
+| 阶段式工作流 | `/api/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
 | 配置导入 | `assets.api.views._import_configs` → `workflow.submit_config_job` | `run_config_parsing` → `run_config_storage`（celery chain，两者都 `.si(config_id)`） | Excel 里的配置文件批量导入，走 DeviceConfig |
 | 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
+配置导入链两个任务都要拿到 `config_id`，所以第二个用 `.si()`（immutable）——默认的 `.s()`
+会把上游返回值传下去，而解析任务返回 `None`。
+
 ## 阶段推进与取消
+
+**通用任务控制在 core**：建任务 / 投递阶段 / 取消是 `core.tasks` 的
+`create_task` / `dispatch` / `cancel`，那三个函数不认识任何业务词汇——任务类型到
+「第一个阶段是什么」的映射、以及阶段名到 celery 任务的映射，都由本域在
+`ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
+`core.Task.task_type` / `core.Stage.stage_type` 因此是**自由字符串**（不带 `choices`）：
+词表一旦写进迁移，就会与运行时注册永久漂移；显示名一律由注册表反查。
+机制本身（注册表 API、字段语义、新增任务类型要改哪几处）见
+[`tasks.md`](tasks.md)，本节只讲 ingest 这条链怎么用它。
+
+**任务的作用目标是软引用**：`Task.target_type` + `target_id` + `target_label`，core 侧
+没有 `device` 外键。设备由 assets 在 `ready()` 里注册（`register_target_type("device", …,
+feeds_device_fields=True)`），阶段任务要拿设备时走 `ingest/tasks.py` 的 `_task_device(task)`
+（按 `target_id` 反查，设备已删则返回 `None`）。API 的 `device` / `device_hostname`
+两个历史字段由 `Task` 的兼容 property 提供，前端零改动。
+「下一个阶段是什么」是链路知识，留在这里。
 
 `signals.on_stage_complete` 监听 `core.Stage` 的 post_save，按
 `_NEXT_STAGE = {"collection": "parsing", "parsing": "storage"}` 推进：
@@ -20,7 +39,7 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 
 - **阶段失败必须收尾 Task**：否则任务永远挂在「运行中」，前端只看到一个不动的进度，
   失败原因只留在 Stage 上。
-- **取消的语义**：`workflow.cancel_task` 里的 `revoke(terminate=True)` 只是尽力而为
+- **取消的语义**：`core.tasks.cancel` 里的 `revoke(terminate=True)` 只是尽力而为
   （要求 worker 在线、broker 可达）。**真正保证链条停下的是信号里的
   「`task.status == "cancelled"` 就不再推进」**——即使撤不掉正在跑的那一次，
   它也会在下一个阶段边界停住。信号里也顺带避免 storage 完成后把 cancelled 改回 success。
@@ -47,10 +66,11 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 ## 配置入库后刷新软资产（T4）
 
 配置行变化会影响派生资产（域名 / 负载均衡服务），四条入库路径在完成后都会调用
-`assets.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
+`configs.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
 `run_storage_stage`、批量导入的 `run_config_storage`、`reparse` 命令收尾（并行子进程里
 不发，父进程统一发一次）。接收器在**事务提交后**执行全量归并，同一事务只跑最后一次；
-细节见 [`assets.md`](assets.md)「软资产归并（T4）」。
+细节见 [`assets.md`](assets.md)「软资产归并（T4）」。信号住在 configs（语义是「配置行变了」），
+ingest 调用它是 `ingest → configs`，方向合法。
 
 ## Saver 分组规则
 
@@ -109,9 +129,9 @@ dict 与 dict 合并字段会把两条独立规则揉成一条；消费方本就
 不抛会让 Celery 把失败任务记成 `SUCCESS`，`AsyncResult` / Flower 的失败告警与重试
 全部失效。
 
-## Saver 基类（`savers/base.py`）
+## Saver 基类（`configs/savers/base.py`）
 
-`BaseSaver.save` 是模板方法：先 `ingest.mapping.normalize_config` 归一键与字段，
+`BaseSaver.save` 是模板方法：先 `configs.mapping.normalize_config` 归一键与字段，
 再交给子类 `_save`。归一放在这一口而不是 pipeline，是为了让**绕过分发直调 `save`**
 的调用方（命令重跑、测试）拿到同样的规范结构。
 
@@ -153,7 +173,7 @@ F5 配置里对象名普遍带 `/Common/` 分区前缀，库里存末段（`_lea
 `member_status` 等 str（`enabled/disabled`、`enable/disable`）。都没有时用 `default`，
 给手工 payload 兜底。
 
-## 负载均衡 Saver 的约定（`savers/lb.py`）
+## 负载均衡 Saver 的约定（`configs/savers/lb.py`）
 
 - **`virtuals` 里的 profiles / rules / persist 是设备级清单**（`LtmProfile` /
   `LtmIRule` / `LtmPersist` 没有指向 virtual server 的外键），所以在
@@ -175,7 +195,7 @@ rules    -> {"name": ["/Common/irule_redirect"]}
 persist  -> {"name": "/Common/cookie"}
 ```
 
-## A10 SLB Saver（`savers/a10_lb.py`）
+## A10 SLB Saver（`configs/savers/a10_lb.py`）
 
 A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 各消费 A10 自己的顶层键
 （`service_groups` / `virtual_server`），不与 F5 的 `pools` / `virtuals` 冲突：
@@ -202,7 +222,7 @@ A10 与 F5 共享同一套 `Ltm*` 模型，但配置语义不同。两个 Saver 
 - `servers`（slb server 节点清单）没有对应 `Ltm*` 模型，与 F5 `nodes` 一样保持「产出
   无消费」，落在 `KNOWN_UNCONSUMED_PRODUCTS`。
 
-## 防火墙 Saver 的映射约定（`savers/firewall.py`）
+## 防火墙 Saver 的映射约定（`configs/savers/firewall.py`）
 
 ### AddressBookSaver
 
@@ -261,7 +281,7 @@ src 行单独成行：`port` 照落端口值、`description` 标注 `src: ...` �
 ### PolicySaver
 
 三种原始键（`policies` / `acl`(cisco) / `rules`(hillstone)）与字段差异已在
-`BaseSaver.save` 入口由 `ingest.mapping` 归一，Saver 内部只处理**值语义**与
+`BaseSaver.save` 入口由 `configs.mapping` 归一，Saver 内部只处理**值语义**与
 hillstone 的结构级特征。
 
 hillstone 的地址按来源分列：
@@ -293,7 +313,7 @@ A10/slb、Cisco/firewall、F5/gslb、F5/slb、H3C/switch、H3C/router、
 Hillstone/firewall、Huawei/switch、Maipu/switch、Ruijie/switch
 ```
 
-Saver 实现（`savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
+Saver 实现（`configs/savers/`）：InterfaceSaver、VrfSaver、RouteSaver、VlanSaver、SnmpConfigSaver、
 LBVirtualServerSaver、LBPoolSaver、LBSnatSaver、GTMWideipSaver、GtmDatacenterSaver、
 GtmServerSaver、GtmPoolSaver、A10ServiceGroupSaver、A10VirtualServerSaver、AddressBookSaver、
 ServiceSaver、PolicySaver、DeviceAccountSaver、NatRuleSaver。
@@ -365,19 +385,27 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 | 命令 | 用途 |
 |------|------|
 | `manage.py reparse` | 重跑已入库配置的解析与入库（`force_parse` 语义） |
-| `manage.py purge_configs` | 清理配置解析产物（默认 dry-run，含 analysis 的缓存） |
 | `manage.py import_server_owners` | xlsx 导入服务器负责人 |
+| `python scripts/purge_configs.py` | 清理配置解析产物（默认 dry-run，含 analysis 的缓存）——**独立脚本，不是管理命令** |
 
 ### `purge_configs` 为什么存在
 
 配置**原文**只存在一份（Git 仓库），但**解析结果**写进了各资产表，而这些表与
 `DeviceConfig` 之间**没有任何外键**——删 `DeviceConfig`、删仓库都不会级联清掉它们，
-手工清又容易漏。本命令把「哪些行来自配置解析」集中到一处，并且默认只报告。
+手工清又容易漏。本脚本把「哪些行来自配置解析」集中到一处，并且默认只报告。
 
 「配置解析产物」用 `ConfigBase.__subclasses__()` 运行时枚举，这个定义自维护：新增 Saver
 或模型自动纳入（实测 Saver 里写的模型全是 `ConfigBase` 子类，没有漏网之鱼）。
-`InternetAnalysis` / `AccessFlow` 住在 analysis app，但清理仍归本命令——它是跨域的
-运维工具（工具层允许跨域 import）。
+`InternetAnalysis` / `AccessFlow` 住在 analysis app，但清理仍归本脚本——它同时动四个域的表
+（configs / assets / analysis / core），**所以它不在任何 app 里**：挂在 ingest 时是
+`ingest → analysis` 的反向依赖，只能靠「运维工具例外」豁免；挪到 `scripts/` 后脱离依赖矩阵，
+豁免自然取消。代价是调用方式从 `manage.py` 变成脚本（容器里同理：
+`docker compose exec app python scripts/purge_configs.py ...`）。
+
+**ARP/MAC 也会被清**（2026-11-16 行为变化）：`ArpMac` 已改为继承 `ConfigBase` 并随家族迁入
+configs，因此进入枚举集合。ARP/MAC 是可再生的设备运行数据，被清可接受；契约测试
+`tests/configs/test_configbase_registry.py` 锁死 25 个子类集合（含 ArpMac），
+`DeviceConfig`（配置快照）刻意不继承基类、不在枚举内。
 
 边界（报告里也会逐条列出）：
 
@@ -397,7 +425,7 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 ```
 ingest/tasks.py: collect_dashboard(source)
   → collectors/dashboard.py: collect(source)（设备组 / Autotask，纯函数式编排）
-       ├── zabbix/   异步 Zabbix API（get_zapi 进程级单例）+ 查询层 + JSON-RPC DTO
+       ├── zabbix/   查询编排层（client 单例与 DTO 已迁 core/integrations/providers/zabbix/）
        └── autotask/ 工单 / SLB / 巡检 HTTP 客户端 + pydantic DTO
   → 返回纯 dict payload（metrics / samples / cases / run，采样时刻 3 分钟对齐）
   → 按 settings.DASHBOARD_WRITE_TASK send_task → analysis.write_dashboard（唯一写库入口）
@@ -453,3 +481,30 @@ python manage.py collect_dashboard autotask         # 只投一个源
 python manage.py collect_dashboard zabbix --sync    # 本进程同步采集（采集异常直接打终端）
 python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只校验 conf/links.json）
 ```
+
+## Excel 批量导入（`device_import.py`）
+
+外部资料 → 落库的第二个入口（第一个是采集链）。导入器在 `ingest/device_import.py`，
+两个接口（上传分发 / 模板下载）在 `ingest/api/imports.py`；**URL 与 name 沿用拆分前**
+（`/api/assets/import-devices/` / `import-devices`），前端零改动。落库目标仍是 assets 的
+模型（Device / DeviceGroup / Cabinet / DeviceConfig…），方向 `ingest → assets` ✓。
+
+- **`IMPORT_SHEETS` 是 Sheet 清单 / 顺序 / 列头 / 导入函数的唯一来源**：
+  `import_excel` 按它逐个分发，模板下载接口按它生成表头——两边读同一份表，
+  加删 Sheet 只改这里。列头必须与各 `_import_*` 里按下标取的列严格对齐
+  （改列头 = 改导入函数，反之亦然）。
+- **「配置文件」sheet 的 `config_dir` 为空时**取 `DEFAULT_CONFIG_DIR`：容器内是
+  data 卷（宿主 `data/` 绑到 `/data`）下的 `configs/`；宿主机直跑时该路径通常不存在，
+  表里显式填写即可。
+- **用「先查后建」而不是 `update_or_create`**：`DeviceConfig` 代表「某设备在某 commit 上的
+  配置快照」，重复导入同一版本不该动它。`update_or_create` 会把已解析好的 `config_json`
+  清空，而 `created=False` 又不触发重新解析，解析结果就永久丢了。
+- **批量导入不在请求里跑同步流水线**：每台设备解析 + 入库要 0.2–12 s，几十行就是几十秒
+  串行。这里挂 `_defer_pipeline` 让信号跳过同步处理，再投递 celery 链（解析 → 存储）；
+  单个上传仍走同步路径，失败能直接在响应里报错。
+- Sheet 顺序有意义：「设备组」排在「设备」之后（行里的设备必须已存在）；组名 / 角色
+  不填表，由导入推导。
+
+**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `core.config_repo.save_config`（写 Git
+仓库）与 `workflow.submit_config_job`（投递采集链），两者都是 ingest 的能力；留在 assets
+就是 `assets → ingest` 反向依赖（依赖矩阵禁止）。

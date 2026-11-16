@@ -100,129 +100,9 @@ class DeviceSerializer(ParentClass):
         return obj.get_device_type_display() or ""
 
 
-@model(model=models.DeviceConfig)
-class DeviceConfigSerializer(ParentClass):
-    device_name = serializers.CharField(source="device.hostname", read_only=True)
-
-
 @model(model=models.DeviceConnection)
 class DeviceConnectionSerializer(ParentClass):
     device_name = serializers.CharField(source="device.hostname", read_only=True, default="")
-
-
-@model(model=models.Vlan)
-class VlanSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.Vrf)
-class VrfSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.Interface)
-class InterfaceSerializer(DeviceRelatedSerializer):
-    vrf_name = serializers.CharField(source="vrf.name", read_only=True, default="")
-
-
-@model(model=models.DeviceAccount)
-class DeviceAccountSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.SnmpConfig)
-class SnmpConfigSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.NtpConfig)
-class NtpConfigSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.SyslogConfig)
-class SyslogConfigSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmVirtualServer)
-class LtmVirtualServerSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmPool)
-class LtmPoolSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmPoolMember)
-class LtmPoolMemberSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmProfile)
-class LtmProfileSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmIRule)
-class LtmIRuleSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmSNAT)
-class LtmSNATSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.LtmPersist)
-class LtmPersistSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.GtmDatacenter)
-class GtmDatacenterSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.GtmWideip)
-class GtmWideipSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.GtmPool)
-class GtmPoolSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.AddressBook)
-class AddressBookSerializer(DeviceRelatedSerializer):
-    parent_name = serializers.CharField(source="parent.name", read_only=True, default="")
-
-
-@model(model=models.GtmServer)
-class GtmServerSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.GtmVServer)
-class GtmVServerSerializer(DeviceRelatedSerializer):
-    server_name = serializers.CharField(source="server.name", read_only=True, default="")
-
-
-@model(model=models.Service)
-class ServiceSerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.Policy)
-class PolicySerializer(DeviceRelatedSerializer):
-    pass
-
-
-@model(model=models.NatRule)
-class NatRuleSerializer(DeviceRelatedSerializer):
-    pass
 
 
 @model(model=models.Tag)
@@ -253,20 +133,8 @@ class IPAddressSerializer(DeviceRelatedSerializer):
     security_zone_name = serializers.CharField(source="security_zone.name", read_only=True, default="")
 
 
-@model(model=models.Route)
-class RouteSerializer(ParentClass):
-    device_hostname = serializers.CharField(source="vrf.device.hostname", read_only=True, default="")
-
-    vrf_name = serializers.CharField(source="vrf.name", read_only=True, default="")
-
-
 @model(model=models.Topology)
 class TopologySerializer(ParentClass):
-    pass
-
-
-@model(model=models.ArpMac)
-class ArpMacSerializer(DeviceRelatedSerializer):
     pass
 
 
@@ -422,3 +290,35 @@ class LoadBalancerServiceSerializer(ParentClass):
             "updated_at",
         )
         read_only_fields = fields
+
+
+def _format_address_entry(entry) -> str:
+    """地址簿条目的展示串：优先按类型拼出地址内容，再带上名字（若有且不同）。
+
+    - range → ``起始-结束``；subnet → ``地址/前缀``；host → 地址本身
+    - addressbook 引用没有自己的地址字段，只有名字，直接显示名字
+    """
+    if entry.address_type == "range" and entry.ip_start and entry.ip_end:
+        content = f"{entry.ip_start}-{entry.ip_end}"
+    elif entry.ip_address and entry.ip_netmask is not None:
+        content = f"{entry.ip_address}/{entry.ip_netmask}"
+    elif entry.ip_address:
+        content = str(entry.ip_address)
+    else:
+        content = ""
+    name = (entry.name or "").strip()
+    if content and name and name != content:
+        return f"{name}({content})"
+    return name or content
+
+
+def _format_service_entry(entry) -> str:
+    """服务条目的展示串：``协议/端口``（带结束端口时是 ``协议/起-止``）。"""
+    protocol = (entry.protocol or "").strip().lower()
+    port = (entry.port or "").strip()
+    port2 = (entry.port2 or "").strip()
+    if port and port2 and port2 != port:
+        port = f"{port}-{port2}"
+    if port and protocol:
+        return f"{protocol}/{port}"
+    return port or protocol or entry.name

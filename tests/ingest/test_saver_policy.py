@@ -6,9 +6,10 @@ hillstone 的 ``rules`` 是扁平的分列地址（``src-ip`` / ``src-addr`` / `
 
 import pytest
 
-from assets.models import AddressBook, Device, Policy, Service
-from ingest.parsers.factory import ParserFactory
-from ingest.savers.firewall import PolicySaver
+from assets.models import Device
+from configs.models import AddressBook, Policy, Service
+from configs.parsers.factory import ParserFactory
+from configs.savers.firewall import PolicySaver
 
 HILLSTONE_RULE = """rule id 9
   action permit
@@ -188,10 +189,7 @@ def test_m2m_links_are_replaced_not_accumulated():
 def test_shared_address_book_is_written_once_for_many_rules():
     """多条规则引用同一个地址簿时，最终只有一条地址簿记录"""
     device = Device.objects.create(hostname="_t_pol_shared", device_type="firewall")
-    rules = [
-        {"rule_id": str(i), "action": "permit", "src-addr": ["office-group"], "dst-host": [f"10.0.0.{i}"]}
-        for i in range(1, 6)
-    ]
+    rules = [{"rule_id": str(i), "action": "permit", "src-addr": ["office-group"], "dst-host": [f"10.0.0.{i}"]} for i in range(1, 6)]
 
     PolicySaver().save(device, {"rules": rules})
 

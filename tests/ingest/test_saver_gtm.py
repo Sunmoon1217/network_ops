@@ -6,8 +6,9 @@ GTM 侧的 Saver 走「Saver 调用序列化器」的路径（`BaseSaver.upsert`
 
 import pytest
 
-from assets.models import Device, GtmDatacenter, GtmPool, GtmServer, GtmVServer, GtmWideip
-from ingest.savers.lb import GtmDatacenterSaver, GtmPoolSaver, GtmServerSaver, GTMWideipSaver
+from assets.models import Device
+from configs.models import GtmDatacenter, GtmPool, GtmServer, GtmVServer, GtmWideip
+from configs.savers.lb import GtmDatacenterSaver, GtmPoolSaver, GtmServerSaver, GTMWideipSaver
 
 
 @pytest.mark.django_db

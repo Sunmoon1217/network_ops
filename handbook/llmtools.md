@@ -14,7 +14,7 @@ MCP 的基建、实体注册表、通用工具与出口都在这里，`core` 只
 
 ## import 本包 = 完成整条接线
 
-组合根就是 `llmtools/__init__.py`：先 `assets.register()`（登记实体与边，**边要求端点
+组合根就是 `llmtools/__init__.py`：先 `network.register()`（登记实体与边，**边要求端点
 先登记**），再 `register_all()`（把 `TOOLS` 逐个挂到根 server）。传输层不在这里——
 `mcpserver.streamable_http_app()` 由 `netops.asgi` 调用，本包不认识 Django、也不决定站点
 怎么装配；对外只暴露 `mcpserver` 与 `build_transport_security`。
@@ -38,7 +38,7 @@ MCP 的基建、实体注册表、通用工具与出口都在这里，`core` 只
   AND/OR、多字段排序、字段投影与 offset；`query` 走受控编译层，字段路径与操作符仍走白名单。
 
 判断标准只有一条：**能用 spec 的 `filters` / `include` 表达的，一律不新开工具**。
-域专属工具（如资产域的 `locate`）放在各域的 `tools.py`，不混进通用模块。
+域专属工具（如网络域的 `locate`）放在各域的 `tools.py`，不混进通用模块。
 
 ## 三条返回纪律
 
@@ -97,9 +97,9 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 基建（`server` / `registry` / `query` / `entity_tools`）先、`domains` 次之、`tools` 最后，而
 `domains/*` 只 import `registry` / `entity_tools`，绝不 import `tools` 或包本身。
 
-现状：资产域为实体注册表形态，2026-11 从单文件拆成四层——`domains/assets/nodes.py`（`NodeType`，
-零 import 的公共词汇）、`domains/assets/specs/`（实体声明，按子域分 `ipam` / `slb` / `firewall` /
-`owners`，各自导出 `BUNDLE`）、`domains/assets/edges.py`（36 条关系边，不属于任何子域）、
+现状：网络域为实体注册表形态，2026-11 从单文件拆成四层——`domains/network/nodes.py`（`NodeType`，
+零 import 的公共词汇）、`domains/network/specs/`（实体声明，按子域分 `ipam` / `slb` / `firewall` /
+`owners`，各自导出 `BUNDLE`）、`domains/network/edges.py`（36 条关系边，不属于任何子域）、
 `specs/__init__.py`（合并 + 启动期校验 + `register()`）。拆分的两个硬约束：**边只依赖模型与
 `NodeType`、不 import 实体声明**（避免环）；**`node_type` 撞名与「同 src 边名重复」由
 `specs/__init__` 在 import 期断言**（`edge_named` 只取第一条命中，重名会静默串台）。

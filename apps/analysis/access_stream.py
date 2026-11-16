@@ -9,7 +9,7 @@
 **单写者**是「先查后合并 + bulk」能成立的前提（并行展开没问题，冲突全在写库），
 也意味着消费者只能跑一个实例。恢复语义、socket_timeout 与积压口径等坑见 handbook/analysis.md
 
-投递触发不在这里：PolicySaver 在 ingest 侧经 ``ingest.access_flow_trigger`` 按任务名
+投递触发不在这里：PolicySaver 在 ingest 侧经 ``configs.access_flow_trigger`` 按任务名
 send_task——依赖方向 analysis → ingest 单向，ingest 不许 import analysis。
 """
 

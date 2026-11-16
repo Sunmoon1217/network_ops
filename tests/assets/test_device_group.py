@@ -10,8 +10,9 @@
 
 import pytest
 
-from assets.models import Device, DeviceConfig, DeviceGroup, DeviceGroupMember
-from ingest.config_owner import resolve_config_owner
+from assets.models import Device, DeviceGroup, DeviceGroupMember
+from configs.config_owner import resolve_config_owner
+from configs.models import DeviceConfig
 
 
 def _device(hostname: str) -> Device:
@@ -69,9 +70,7 @@ def test_backup_config_query_redirects_to_master(api_client):
     """备机查询配置接口时返回主设备的配置记录"""
     master, backup = _device("dg-q-m"), _device("dg-q-b")
     _stack_group("stack-q", master, backup)
-    DeviceConfig.objects.bulk_create(
-        [DeviceConfig(device=master, git_commit_hash="a" * 40, config_json={"interfaces": []})]
-    )
+    DeviceConfig.objects.bulk_create([DeviceConfig(device=master, git_commit_hash="a" * 40, config_json={"interfaces": []})])
 
     master_rows = api_client.get("/api/assets/device-configs/", {"device": master.pk}).json()["results"]
     backup_rows = api_client.get("/api/assets/device-configs/", {"device": backup.pk}).json()["results"]
