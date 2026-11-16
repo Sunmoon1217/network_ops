@@ -18,6 +18,7 @@
 """
 
 import os
+from contextlib import asynccontextmanager
 
 from django.conf import settings
 from django.core.asgi import get_asgi_application
@@ -30,6 +31,23 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "netops.settings")
 # 先完成 Django 初始化，出口层才能安全 import 各域 models / serializers。
 django_application = get_asgi_application()
 
+
+@asynccontextmanager
+async def _release_integrations():
+    """进程收尾释放外部 client（``core.integrations.release_all``）。
+
+    迁移前 Zabbix 的 ``close_zapi()`` 全项目没有调用点，session 一直泄漏到进程退出；
+    现在 ASGI worker 与 Celery 子进程退出都会走这条钩子（见 ``handbook/integrations.md``）。
+    ``release_all`` 内部对单个 provider 失败只记日志，不会挡住 shutdown。
+    """
+    try:
+        yield
+    finally:
+        from core.integrations import release_all
+
+        await release_all()
+
+
 if settings.MCP_ENABLED:
     from llmtools import build_transport_security, mcpserver  # noqa: E402 — import 即接线（实体 + 工具）
 
@@ -40,10 +58,12 @@ if settings.MCP_ENABLED:
 
     # 生命周期钩子的唯一组合点：MCP 的 session_manager.run() 必须在 lifespan 里进入一次
     # （全进程只能调用一次），否则 tool 调用会挂在没有任务组的 manager 上。
-    LIFESPAN_HOOKS = [mcpserver.session_manager.run]
+    # _release_integrations 排在最后 → AsyncExitStack 逆序退出时它**先**执行：
+    # 先断开外部 client，再收 MCP 的任务组。
+    LIFESPAN_HOOKS = [mcpserver.session_manager.run, _release_integrations]
 else:
     mcp_http_app = None
-    LIFESPAN_HOOKS = []
+    LIFESPAN_HOOKS = [_release_integrations]
 
 
 async def _dispatch(scope, receive, send):

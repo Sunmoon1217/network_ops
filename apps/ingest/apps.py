@@ -14,7 +14,20 @@ class OperatorConfig(AppConfig):
         # configs.apps.ConfigsConfig.ready()（见该文件注释），本域不再负责触发。
         import ingest.signals  # noqa: F401
 
+        self._register_integrations()
         self._register_task_vocabulary()
+
+    def _register_integrations(self):
+        """把本域用到的外部系统 provider 登记进 core（方向：域 → core）。
+
+        Zabbix 的 client 单例住在 ``core/integrations/providers/zabbix/``，但「本项目用不用
+        Zabbix、用哪个实例」是采集域的决定，所以注册动作在这里——core 只提供注册表，
+        自己不 import 任何具体系统（``tests/core/test_layering.py`` 守着这条）。
+        """
+        from core.integrations import register_provider
+        from core.integrations.providers.zabbix import ZabbixProvider
+
+        register_provider(ZabbixProvider())
 
     def _register_task_vocabulary(self):
         """把 ingest 的任务类型 / 阶段词汇登记进 core 的注册表。

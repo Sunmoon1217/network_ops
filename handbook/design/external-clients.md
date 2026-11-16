@@ -1,6 +1,9 @@
 # core 承载外部连接实例与 client 生命周期
 
-> **状态：提案（2026-11-16 二次评审已修正），待实施。**
+> **状态：切片式实施中（2026-11-16 起）。Step 2 / 3 已落地（`core/integrations/` 骨架 +
+> Zabbix 下沉 + ASGI / Celery 释放钩子），Step 1 只做了 Zabbix 一处（其余三套 CONFIG 未统一），
+> Step 4（健康状态外化）与 Step 5（Dify / 阿里云接入）未做。**
+> **现状文档见 [`../integrations.md`](../integrations.md)**——本文保留设计论证与未完成部分。
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制（已落地）见
 > [`../tasks.md`](../tasks.md)。
 
@@ -48,7 +51,9 @@ async def _dispose(zapi) -> None:         # :167
 grep 结果：只在 `apps/ingest/collectors/zabbix/__init__.py` 里 re-export，
 **没有任何地方调用它**。Zabbix 的 session 一直泄漏到进程退出。
 
-这是本方案最直接可兑现的收益。
+这是本方案最直接可兑现的收益。**已兑现（Step 3）**：ASGI lifespan 与 Celery
+`worker_process_shutdown` 都调 `core.integrations.release_all()`，见
+[`../integrations.md`](../integrations.md) §释放。
 
 ### 设备侧连接是另一回事
 
@@ -246,9 +251,12 @@ def register_providers():
 
 ## 实施顺序
 
-每步独立可验证、可停下。每步跑全量测试（基线 `822 passed, 66 subtests passed`）。
+每步独立可验证、可停下。每步跑全量测试（当前基线 `854 passed, 66 subtests passed`）。
 
 ### Step 1 — 补漏（低风险，零架构改动）
+
+**状态：部分落地（2026-11-16）**——只治了 Zabbix 这一处（`_zapi` 迁 core 时顺带把配置读取
+收紧），另三套 CONFIG 的字段统一、`autotask.BASE_URL` 收口、"是否已配置"语义统一**未做**。
 
 1. `apps/ingest/collectors/autotask/autotask.py:11` 的硬编码 `BASE_URL`
    → 收进 settings，走 env 注入。**这是全项目唯一游离在配置外的连接信息。**
@@ -260,17 +268,30 @@ def register_providers():
 
 ### Step 2 — 建 `core/integrations/` 骨架（不动现有调用）
 
-按 §「目标形态」建子包；先只提供 API，`queries.py` / `dashboard.py` 的现有调用不动。
+**状态：已落地（2026-11-16）**。`provider.py`（Protocol）、`registry.py`（注册表 +
+`acquire` / `acquire_sync` / `release_all` / `describe_all` / `registered`）与包出口。
+`acquire_sync` 的实现取向：**只有 provider 显式实现 `acquire_sync()` 才可用**，async-only
+的直接 `TypeError`——不在同步栈里偷偷起事件循环。
 
 ### Step 3 — 迁 Zabbix（唯一真正需要持有实例的）
 
-1. `get_zapi` / `close_zapi` / `_dispose` 迁入 `core/integrations/providers/zabbix.py`，
-   **循环亲和逻辑原样带走**。
-2. `ingest.collectors.zabbix.get_zapi` 保留薄转发（见 §「调用方视角」）。
-3. 释放钩子接上 ASGI lifespan 与 Celery `worker_process_shutdown`——
-   **补上 `close_zapi()` 至今没有调用点的空缺**。
+**状态：已落地（2026-11-16）**。落点与设计稿略有差异：
+
+| 项 | 实际落点 |
+|---|---|
+| client + DTO | `core/integrations/providers/zabbix/{client,schemas}.py`（`schemas.py` 一起搬，否则 core → ingest 反向依赖） |
+| provider | `core/integrations/providers/zabbix/provider.py`（只转发 `get_zapi` / `close_zapi`，不持第二份状态） |
+| 注册 | `apps/ingest/apps.py.ready()`（「用不用 Zabbix」是采集域的决定） |
+| 薄转发 | `apps/ingest/collectors/zabbix/zabbix.py` 只 re-export core 的符号，`queries.py` 的 9 处调用与 `patch.object(queries, "get_zapi")` 全不动 |
+| 释放钩子 | `netops/asgi.py` 的 `LIFESPAN_HOOKS`（`_release_integrations`，排最后 → 逆序先执行）+ `netops/celery.py` 的 `worker_process_shutdown` |
+| 收尾健壮性 | `_dispose` 对 `logout` / `session.close()` 都兜异常：进程收尾时实例常绑在已关闭的 loop 上，**关不掉也不能炸** |
+
+`queries.py`（查什么、怎么组装）**没有跟着搬**——那是采集语义，留在 ingest。
 
 ### Step 4 — 状态外化与多实例（T16 前完成）
+
+**状态：未做**。注册键已经是 `(system, instance)`，但 `IntegrationHealth` 表、周期
+`probe_all`、`GET /api/core/integrations/` 都还没有。
 
 1. 新增 `IntegrationHealth` 表 + 迁移。
 2. 键从单实例扩到 `(system, instance)`。
@@ -279,7 +300,7 @@ def register_providers():
 
 ### Step 5 — Dify / 阿里云接入（按需）
 
-无状态的以 provider 形式注册，每次调用新建，实现上零心智负担。
+**状态：未做**。无状态的以 provider 形式注册，每次调用新建，实现上零心智负担。
 **不必为了"统一"强行把它们变成单例。**
 
 ## 与其他设计稿的关系

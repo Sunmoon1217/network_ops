@@ -21,6 +21,7 @@
 | [`deploy.md`](deploy.md) | 部署与容器化：nginx/静态卷、两个数据目录、entrypoint 四步、健康检查、凭据、镜像 |
 | [`settings.md`](settings.md) | settings 分层与环境变量全表、凭据链、三个环境的守卫矩阵 |
 | [`tasks.md`](tasks.md) | core 通用任务机制：Task/Stage 字段语义、词汇注册表、作用目标软引用、接入指引、迁移手法 |
+| [`integrations.md`](integrations.md) | core 外部连接实例：Provider 协议、注册/取用/释放、Zabbix 单例与循环亲和、与被管设备连接的边界 |
 | [`ingest.md`](ingest.md) | 配置采集/解析/入库链路：阶段推进、信号防重入、Saver 契约、批量导入 |
 | [`analysis.md`](analysis.md) | 路径追踪、策略展开、访问流链路（队列/背压/单写者/事故复盘）、监控口径 |
 | [`assets.md`](assets.md) | 资产模型与 API：查询约定、导入流程、序列化器分工 |

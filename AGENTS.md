@@ -36,7 +36,7 @@ Excel 导入 / 人工维护）与信息查询（跨类型检索 / 关系 / 详�
 network_ops/
 ├── netops/          # settings/（base 集中 env 动态项 + dev/container/prod）、urls、asgi、lifespan、views、schema（外部 DTO 基类）
 ├── apps/
-│   ├── core/        # 用户与认证、Task/Stage、Git 配置仓库（config_repo）、运维命令（ensure_superuser / migrate_if_needed / queue_*）
+│   ├── core/        # 用户与认证、Task/Stage、外部连接实例（integrations/）、Git 配置仓库、运维命令
 │   ├── assets/      # 网络域模型（models/ 包，__init__ 只做 re-export）+ 序列化器 + API
 │   ├── configs/     # 配置行家族（ConfigBase 25 子类 + DeviceConfig）+ TTP 解析 / Saver / 归一 / 序列化器 / API
 │   ├── ingest/      # 采集与入库编排：pipeline / workflow / device_import(Excel) / 配置仓库读接口 + collectors/（外部数据源）
@@ -262,7 +262,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 
 | 层 | 职责 | 细节 |
 |----|------|------|
-| `core/` | 用户与认证、`Task` / `Stage`、Git 配置仓库、运维命令（积压巡检也在这里） | [`handbook/api.md`](handbook/api.md) |
+| `core/` | 用户与认证、`Task` / `Stage`、外部连接实例（`integrations/`）、Git 配置仓库、运维命令（积压巡检也在这里） | [`handbook/integrations.md`](handbook/integrations.md) |
 | `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API | [`handbook/assets.md`](handbook/assets.md) |
 | `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 + 软资产计算 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
 | `ingest/` | 采集与入库编排、Git 配置仓库、Excel 批量导入；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |

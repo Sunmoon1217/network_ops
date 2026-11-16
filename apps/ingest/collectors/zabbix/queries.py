@@ -1,9 +1,9 @@
 """Zabbix 查询编排层：**按业务意图**提供 4 个入口。
 
-``zabbix.py`` 的 ``TypedZabbixAPI`` 只提供 ``<object>_get`` 扩展方法（一次官方 API
-调用 + 有限参数固化 + response 校验实例化）；本层负责全部编排：范围解析、条件组合、
-触发器关联、峰值计算。名称→ID、纯透传、单条详情这类实现细节都不是业务意图，
-已收进私有助手，不对外暴露。
+``TypedZabbixAPI``（在 ``core/integrations/providers/zabbix/client.py``）只提供
+``<object>_get`` 扩展方法（一次官方 API 调用 + 有限参数固化 + response 校验实例化）；
+本层负责全部编排：范围解析、条件组合、触发器关联、峰值计算。名称→ID、纯透传、
+单条详情这类实现细节都不是业务意图，已收进私有助手，不对外暴露。
 
     device_count(...)   某主机组有多少台设备
     items(...)          查监控项当前值（可给 name / key_ 组合条件并发查）
@@ -20,7 +20,8 @@ from itertools import product
 from logging import getLogger
 from typing import Any, TypedDict
 
-from .schemas import ZAPIHost, ZAPIItem, ZAPIProblem, ZAPITrigger
+from core.integrations.providers.zabbix.schemas import ZAPIHost, ZAPIItem, ZAPIProblem, ZAPITrigger
+
 from .zabbix import get_zapi
 
 logger = getLogger(__name__)

@@ -220,7 +220,8 @@ DIFY_CONFIG = {
 
 
 # Zabbix API（ingest 采集器的数据源）：这里只放连接配置，单例与登录逻辑在
-# apps/ingest/collectors/zabbix/zabbix.py（get_zapi / close_zapi），未配置 url 则拒绝创建。
+# core/integrations/providers/zabbix/client.py（get_zapi / close_zapi，实例由 core 统管），
+# 未配置 url 则拒绝创建。
 # 变量清单与凭据链见 handbook/settings.md；zabbix_utils 自身也读同名 env 兜底，
 # 这里显式传参以 settings 为准，行为可预期。
 ZABBIX_CONFIG = {

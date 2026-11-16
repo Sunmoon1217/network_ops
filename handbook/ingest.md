@@ -422,7 +422,7 @@ configs，因此进入枚举集合。ARP/MAC 是可再生的设备运行数据�
 ```
 ingest/tasks.py: collect_dashboard(source)
   → collectors/dashboard.py: collect(source)（设备组 / Autotask，纯函数式编排）
-       ├── zabbix/   异步 Zabbix API（get_zapi 进程级单例）+ 查询层 + JSON-RPC DTO
+       ├── zabbix/   查询编排层（client 单例与 DTO 已迁 core/integrations/providers/zabbix/）
        └── autotask/ 工单 / SLB / 巡检 HTTP 客户端 + pydantic DTO
   → 返回纯 dict payload（metrics / samples / cases / run，采样时刻 3 分钟对齐）
   → 按 settings.DASHBOARD_WRITE_TASK send_task → analysis.write_dashboard（唯一写库入口）

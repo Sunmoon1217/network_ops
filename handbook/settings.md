@@ -135,7 +135,7 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 模块常量），所以测试用 `override_settings(CONFIG_REPO_PATH=tmp_path)` 就能换目录，
 `scripts/purge_configs.py --purge-repo` 也读同一个值。
 
-### Zabbix（`ingest/collectors/zabbix`）
+### Zabbix（`core/integrations/providers/zabbix`，实例由 core 统管）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
@@ -145,6 +145,8 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | `ZABBIX_TIMEOUT` | `30` | HTTP 超时秒数 |
 
 `zabbix_utils` 自身也会读同名 env 兜底，这里显式传参以 `settings.ZABBIX_CONFIG` 为准。
+client 单例与登录逻辑在 `core/integrations/providers/zabbix/client.py`（见
+[`integrations.md`](integrations.md)）；采集侧只留查询编排 `ingest/collectors/zabbix/queries.py`。
 
 ### 阿里云
 
