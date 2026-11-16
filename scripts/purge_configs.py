@@ -183,10 +183,10 @@ class _Purge:
         return plan
 
     def _repo_path(self) -> Path:
-        # 延迟导入：测试里可以替换 ingest.config_repo.CONFIG_REPO_PATH
-        from ingest.config_repo import CONFIG_REPO_PATH
+        # 路径的唯一来源是 settings（env CONFIG_REPO_PATH）；测试用 override_settings 换目录
+        from django.conf import settings
 
-        return Path(CONFIG_REPO_PATH)
+        return Path(settings.CONFIG_REPO_PATH)
 
     def _print_repo(self, purge_repo: bool) -> None:
         self.write("")

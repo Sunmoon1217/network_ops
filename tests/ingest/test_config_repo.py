@@ -18,14 +18,18 @@ import pytest
 
 from assets.models import Device, DeviceModel, Vendor
 from configs.models import DeviceConfig
-from ingest import config_repo
+from core import config_repo
 
 
 @pytest.fixture(autouse=True)
-def _repo_path(tmp_path, monkeypatch):
-    """把仓库根挪进 tmp：绝不碰真实的 data/config_repo。"""
+def _repo_path(tmp_path, settings):
+    """把仓库根挪进 tmp：绝不碰真实的 data/config_repo。
+
+    路径的唯一来源是 ``settings.CONFIG_REPO_PATH``（pytest-django 的 ``settings`` fixture
+    用完自动还原），所以这里不 monkeypatch 模块属性。
+    """
     root = tmp_path / "config_repo"
-    monkeypatch.setattr(config_repo, "CONFIG_REPO_PATH", root)
+    settings.CONFIG_REPO_PATH = root
     return root
 
 

@@ -137,7 +137,7 @@ def test_defer_pipeline_skips_sync_pipeline(monkeypatch):
 def test_submit_config_job_parses_then_stores(eager_celery, monkeypatch):
     """异步链（解析 → 存储）：config_json 由解析任务写回，Saver 由存储任务跑。"""
     raw = "sysname E2E\nvlan 10\nvlan 20\n"
-    monkeypatch.setattr("ingest.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
     device = _switch("_t_wf_chain")
 
     config = DeviceConfig(device=device, git_commit_hash="f" * 40, config_json={})

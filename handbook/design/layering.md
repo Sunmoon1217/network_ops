@@ -176,7 +176,10 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 **装什么**：用户 / 认证 / Token / 权限 / 用户偏好；`Task` / `Stage` 模型与通用任务控制
 （`create_task` / `dispatch` / `cancel`）；外部连接实例与 client 生命周期
-（`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）。
+（`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）；
+Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
+还要删目录——放任一业务域都会让另一边反向依赖，故归平台层；`DeviceConfig` 的 hash 回写
+走 configs 注册的钩子，core 不认识那张表）。
 
 **不装什么**：设备、配置行、任何业务词汇。
 
@@ -222,9 +225,9 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 
 ### ingest —— 采集与入库编排
 
-**装什么**：Git 配置仓库（`config_repo.py`）、Excel 导入（含 `device_import.py` 模块
-与其端点，自 assets 整体迁入，URL 前缀不变）、采集器（`collectors/`）、
-阶段推进编排（`workflow.py`）。
+**装什么**：Excel 导入（含 `device_import.py` 模块与其端点，自 assets 整体迁入，URL 前缀
+不变）、采集器（`collectors/`）、阶段推进编排（`workflow.py`）、配置仓库的 HTTP 读接口
+（`api/configs.py`：快照 / diff / 历史 —— 实现 `config_repo` 已归 core，这里只做端点）。
 
 **不装什么**：配置语义（解析、归一、写入配置行都归 configs）。
 

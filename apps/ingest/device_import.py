@@ -1,7 +1,7 @@
 """Excel 批量导入：设备台账 / 机柜 / 设备组 / 配置文件（原 ``assets/device_import.py``）。
 
 **为什么在 ingest**：这个模块是「外部资料 → 落库」的采集入口之一，最后一步要往 Git 配置
-仓库写文件（``ingest.config_repo.save_config``）、并投递配置采集任务
+仓库写文件（``core.config_repo.save_config``）、并投递配置采集任务
 （``ingest.workflow.submit_config_job``）。留在 assets 会让 assets 反向 import ingest
 （依赖矩阵禁止）。迁过来之后方向是 ``ingest → assets`` ✓，两处反向依赖一起消失。
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceGroup, DeviceGroupMember, DeviceModel, Room, SecurityZone, Vendor
 from configs.models import DeviceConfig
-from ingest.config_repo import save_config
+from core.config_repo import save_config
 
 # Excel「配置文件」sheet 的 config_dir 列为空时的默认目录：
 # 容器内是 data 卷（绑定宿主机 data 目录，挂载点 /data）下的 configs/；

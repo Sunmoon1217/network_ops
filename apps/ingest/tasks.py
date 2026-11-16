@@ -152,7 +152,7 @@ def run_config_parsing(self, config_id):
     """异步解析 DeviceConfig"""
     from configs.models import DeviceConfig
     from configs.parsers.factory import ParserFactory
-    from ingest.config_repo import get_config
+    from core.config_repo import get_config
 
     logger.info("Starting config parsing for DeviceConfig %s", config_id)
     try:

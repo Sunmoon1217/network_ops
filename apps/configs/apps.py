@@ -23,3 +23,10 @@ class ConfigsConfig(AppConfig):
         # 软资产刷新信号的接收器：语义是「配置行变了」，所以住在配置域
         # （拆分前在 assets.signals，会让 assets 认识 configs，方向被矩阵禁止）。
         import configs.signals  # noqa: F401
+        from configs.repo_hashes import remap_device_config_hashes
+
+        # 配置仓库重放旧历史后要把 DeviceConfig.git_commit_hash 改指新 hash。core 不认识
+        # 这张表，所以由本域注册钩子（core 只提供钩子点与旧仓库锚点查询）。
+        from core.config_repo import register_hash_remapper
+
+        register_hash_remapper(remap_device_config_hashes)

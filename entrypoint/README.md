@@ -71,7 +71,7 @@ docker compose up -d app worker
 | `FROM python:3.12-slim` | Debian trixie / glibc：`manylinux` 轮子覆盖最全；代价是基础层 119MB（alpine 只有 55MB）。选型理由见本节末 |
 | 不装 `build-essential` / `libpq-dev` / `curl` | 带 C 扩展的依赖（`psycopg2-binary` / `cryptography` / `lz4` / `cffi`）都有 `cp312 manylinux` 轮子；少数只有 sdist 的纯 Python 包（`aliyun-python-sdk-*`）uv 会现场打包，但**不需要编译器**。`build-essential` 会带进 gcc / g++ / make，装进运行期镜像纯属体积 |
 | `apt-get update` 与 `install` 同一层，并加 `--no-install-recommends` | 分开会用到过期索引；不装 recommends 可避免把 git 的 `ssh-client` / `less` / `patch` 等拖进来 |
-| 运行期必须有 `git` 可执行文件 | `apps/ingest/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
+| 运行期必须有 `git` 可执行文件 | `apps/core/config_repo.py` 用 GitPython（底层是 git CLI）操作配置仓库 |
 | 运行期 `libpq5` | psycopg2 用的是 `psycopg2-binary`（自带 libpq），系统库只是兜底；不需要 `libpq-dev` |
 | 删系统 pip / site-packages（路径用 `site.getsitepackages()` 取） | 基础镜像自带的那份约 7MB，依赖都将在 `dockerfile.venv` 里装进 `/opt/venv`；不写死 `python3.12`，换小版本不会删错 |
 

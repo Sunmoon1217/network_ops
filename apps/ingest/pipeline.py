@@ -82,7 +82,7 @@ def run_config_pipeline(device, device_config, *, force_parse: bool = False) -> 
 
 def _parse_config(device, device_config, result: PipelineResult) -> dict:
     """从 Git 取配置原文并解析，成功后写回 config_json"""
-    from ingest.config_repo import get_config
+    from core.config_repo import get_config
 
     commit_hash = device_config.git_commit_hash
     raw_text = get_config(device.hostname, commit_hash)

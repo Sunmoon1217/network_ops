@@ -232,6 +232,13 @@ ZABBIX_CONFIG = {
 }
 
 
+# Git 配置仓库（core.config_repo 读写）：**每台设备一个独立仓库** ``<CONFIG_REPO_PATH>/<hostname>/``。
+# 默认 ``<项目根>/data/config_repo``；容器里由 envs/container.env 覆盖成命名卷挂载点
+# （``CONFIG_REPO_PATH=/configs``，见 handbook/deploy.md）——宿主与容器各一份历史，互不影响。
+# 路径**在调用时读**（config_repo 不缓存成模块常量），测试可以直接 override_settings 换目录。
+CONFIG_REPO_PATH = Path(os.environ.get("CONFIG_REPO_PATH", str(BASE_DIR / "data" / "config_repo")))
+
+
 # 以下为环境无关的静态配置
 
 # Logging：业务模块的日志统一走 stderr（Django 的 DEFAULT_LOGGING 只给 django / django.server

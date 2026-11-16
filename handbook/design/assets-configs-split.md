@@ -440,7 +440,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 配置记录 | `DeviceConfig` | configs |
 | 派生缓存 | `InternetAnalysis`、`AccessFlow` | analysis |
 | 工作流记录（可选） | `core.Stage` / `core.Task` | core |
-| Git 仓库（可选） | `CONFIG_REPO_PATH` 整个目录 | ingest |
+| Git 仓库（可选） | `CONFIG_REPO_PATH` 整个目录 | core（`config_repo` 存储层；写侧在 ingest） |
 
 代码里已经明确写了立场：
 

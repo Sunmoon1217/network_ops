@@ -96,14 +96,14 @@ def test_import_reports_dispatch_failure_per_row(device, tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_import_unchanged_config_skipped_across_devices(tmp_path, monkeypatch):
+def test_import_unchanged_config_skipped_across_devices(tmp_path, monkeypatch, settings):
     """回归（走真实 save_config 的端到端）：两台设备**交替**导入时，内容未变的设备不该新增记录。
 
     共享线性链时代的故障形态：dev-a 内容没变，但 HEAD 已经被 dev-b 的提交顶掉，
     ``save_config`` 早退返回的是 dev-b 的 commit → configs 表按 (device, hash) 去重失效，
     dev-a 每轮都多一条重复记录并重跑一次解析。
     """
-    monkeypatch.setattr("ingest.config_repo.CONFIG_REPO_PATH", tmp_path / "repo")
+    settings.CONFIG_REPO_PATH = tmp_path / "repo"
     for key, value in (
         ("GIT_AUTHOR_NAME", "test"),
         ("GIT_AUTHOR_EMAIL", "test@example.com"),

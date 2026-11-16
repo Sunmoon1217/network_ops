@@ -125,6 +125,16 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | `MCP_ENABLED` | `1` | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。见 [`llmtools.md`](llmtools.md) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
 
+### Git 配置仓库（`core/config_repo.py`）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `CONFIG_REPO_PATH` | `<项目根>/data/config_repo` | 配置快照仓库根：**每台设备一个独立仓库** `<CONFIG_REPO_PATH>/<hostname>/`。容器里覆盖成命名卷挂载点（`/configs`，见 [`deploy.md`](deploy.md)）——宿主与容器各一份历史，互不影响 |
+
+路径的唯一来源是 `settings.CONFIG_REPO_PATH`：`core/config_repo.py` **每次调用都读**（不缓存成
+模块常量），所以测试用 `override_settings(CONFIG_REPO_PATH=tmp_path)` 就能换目录，
+`scripts/purge_configs.py --purge-repo` 也读同一个值。
+
 ### Zabbix（`ingest/collectors/zabbix`）
 
 | 变量 | 默认 | 说明 |

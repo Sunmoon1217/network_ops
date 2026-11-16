@@ -502,6 +502,6 @@ python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只
 - Sheet 顺序有意义：「设备组」排在「设备」之后（行里的设备必须已存在）；组名 / 角色
   不填表，由导入推导。
 
-**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `config_repo.save_config`（写 Git
+**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `core.config_repo.save_config`（写 Git
 仓库）与 `workflow.submit_config_job`（投递采集链），两者都是 ingest 的能力；留在 assets
 就是 `assets → ingest` 反向依赖（依赖矩阵禁止）。

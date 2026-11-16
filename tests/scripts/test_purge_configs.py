@@ -227,11 +227,11 @@ def test_purge_repo_requires_all():
 
 
 @pytest.mark.django_db
-def test_purge_repo_removes_directory(tmp_path, monkeypatch):
+def test_purge_repo_removes_directory(tmp_path, settings):
     repo = tmp_path / "config_repo"
     (repo / "_t_purge_g").mkdir(parents=True)
     (repo / "_t_purge_g" / "running.txt").write_text("sysname X\n", encoding="utf-8")
-    monkeypatch.setattr("ingest.config_repo.CONFIG_REPO_PATH", repo)
+    settings.CONFIG_REPO_PATH = repo
 
     device = _device("_t_purge_g")
     _config_rows(device)
@@ -244,11 +244,11 @@ def test_purge_repo_removes_directory(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_repo_is_kept_without_flag(tmp_path, monkeypatch):
+def test_repo_is_kept_without_flag(tmp_path, settings):
     repo = tmp_path / "config_repo"
     repo.mkdir()
     (repo / "keep.txt").write_text("x", encoding="utf-8")
-    monkeypatch.setattr("ingest.config_repo.CONFIG_REPO_PATH", repo)
+    settings.CONFIG_REPO_PATH = repo
 
     _run("--all", "--yes")
 
