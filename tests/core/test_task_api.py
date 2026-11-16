@@ -95,6 +95,16 @@ def test_create_task_returns_503_when_dispatch_fails(client, device, monkeypatch
 
 
 @pytest.mark.django_db
+def test_create_rejects_unregistered_task_type(client, device):
+    """字段去掉 ``choices`` 之后模型不再兜底，未知词汇必须被序列化器拒成 400（不能变 503）。"""
+    resp = client.post(TASKS_URL, {"device": device.pk, "task_type": "no_such_task"}, format="json")
+
+    assert resp.status_code == 400
+    assert "task_type" in resp.json()
+    assert Task.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_list_filters_by_device_status_and_type(client, device):
     other = Device.objects.create(hostname="_t_task_dev2", device_type="switch")
     Task.objects.create(task_type="collect_config", device=device, status="running")

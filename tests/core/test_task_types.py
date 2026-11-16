@@ -36,16 +36,65 @@ def test_unknown_type_is_loud(func):
         func("no_such_type")
 
 
-def test_model_choices_agree_with_registry():
-    """对账：模型 ``choices`` 与注册表是同一套词与同一套显示名。
+#: 步骤 2 之前写在模型 ``choices`` 里的词。字段现在改自由字符串了，
+#: 但历史词汇与显示名必须仍由注册表兜住——老数据与老前端都还在用。
+LEGACY_TASK_TYPES = {
+    "collect_config": "采集配置",
+    "backup_config": "备份配置",
+    "ansible_playbook": "Ansible执行",
+    "batch_collect": "批量采集",
+    "config_backup": "配置备份",
+}
+LEGACY_STAGE_TYPES = {"collection": "数据采集", "parsing": "配置解析", "storage": "数据存储"}
 
-    步骤 2 会把 ``choices`` 从模型上摘掉，那时这条断言改成「注册表覆盖历史词汇」即可；
-    在此之前它防的是「注册表里换了词，前端 display 跟着变但迁移没动」这种漂移。
-    """
-    for key, label in Task.TASK_TYPES:
+
+def test_registry_covers_historical_vocabulary():
+    """模型上的 ``choices`` 摘掉后，注册表是这些词的唯一出处——一个都不能漏。"""
+    for key, label in LEGACY_TASK_TYPES.items():
+        assert task_types.is_registered_task_type(key)
         assert task_types.label_for(key) == label
-    for key, label in Stage.STAGE_TYPES:
+    for key, label in LEGACY_STAGE_TYPES.items():
         assert task_types.label_for(key) == label
+        assert callable(task_types.handler_for(key).delay)
+
+
+@pytest.mark.parametrize(("model", "field"), [(Task, "task_type"), (Stage, "stage_type")])
+def test_model_fields_declare_no_business_vocabulary(model, field):
+    """字段上不许再有 ``choices``：它会被写进迁移，与运行时注册永远对不上。"""
+    assert not model._meta.get_field(field).choices
+
+
+def test_display_methods_read_the_registry():
+    """``__str__`` / admin / 序列化器都靠这两个方法；未登记的旧词回落 key 而不是报错。"""
+    assert Task(task_type="collect_config").get_task_type_display() == "采集配置"
+    assert Stage(stage_type="collection").get_stage_type_display() == "数据采集"
+    assert Task(task_type="legacy_word").get_task_type_display() == "legacy_word"
+    assert Stage(stage_type="legacy_stage").get_stage_type_display() == "legacy_stage"
+
+
+@pytest.mark.django_db
+def test_admin_filters_read_the_registry():
+    """去 ``choices`` 之后 admin 的过滤项由注册表提供（否则会退化成按库里散值过滤）。"""
+    from django.contrib.admin.sites import site
+    from django.test import RequestFactory
+
+    from core.admin import StageTypeFilter, TaskTypeFilter
+
+    Task.objects.create(task_type="collect_config")
+    Task.objects.create(task_type="backup_config")
+    task_admin = site._registry[Task]
+
+    # 过滤器的 params 形状与 request.GET 一致：值是**列表**（Django 取 value[-1]）
+    params = {"task_type": ["collect_config"], "stage_type": ["parsing"]}
+    request = RequestFactory().get("/admin/core/task/", params)
+
+    task_filter = TaskTypeFilter(request, dict(params), Task, task_admin)
+    assert ("collect_config", "采集配置") in task_filter.lookups(request, task_admin)
+    assert list(task_filter.queryset(request, Task.objects.all())) == [Task.objects.get(task_type="collect_config")]
+
+    stage_admin = site._registry[Stage]
+    stage_filter = StageTypeFilter(request, dict(params), Stage, stage_admin)
+    assert ("parsing", "配置解析") in stage_filter.lookups(request, stage_admin)
 
 
 def test_register_stage_rejects_non_celery_handler():

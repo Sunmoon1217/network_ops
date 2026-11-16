@@ -193,7 +193,7 @@ class TaskSerializer(serializers.ModelSerializer):
     def validate_task_type(self, value: str) -> str:
         """只接受业务域已注册的任务类型。
 
-        模型层的 ``choices`` 拦不住增量词汇（改 ``choices`` 要迁移），注册表才是权威；
+        模型字段没有 ``choices``（词表不属于 core，也不能写进迁移），注册表才是权威；
         这里提前拒掉未知类型，避免落到 ``create_task`` 里抛 ``LookupError`` 被视图
         统一吞成 503——那会让「客户端写错词」看起来像「服务端挂了」。
         """

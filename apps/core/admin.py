@@ -1,11 +1,50 @@
 # -*- coding: utf-8 -*-
 from django.contrib import admin
 
+from . import task_types
 from .models import Stage, Task, Token, User, UserPreference
 
 admin.site.site_header = "网络运维管理平台"
 admin.site.site_title = "网络运维管理平台"
 admin.site.index_title = "后台管理"
+
+
+class VocabularyListFilter(admin.SimpleListFilter):
+    """按 ``core.task_types`` 的注册表快照出过滤项。
+
+    模型字段已经去掉 ``choices``（词汇属于业务域，写进迁移会永久漂移），admin 若仍写
+    ``list_filter = ("task_type",)`` 会退化成「按库里出现过的一切字符串过滤」。这里改成
+    运行期读注册表：选项带中文标签，业务域新登记的词自动出现，且不产生任何迁移。
+    """
+
+    def vocabulary(self) -> list[tuple[str, str]]:
+        raise NotImplementedError
+
+    def lookups(self, request, model_admin):
+        return list(self.vocabulary())
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        # 只认注册表里的词；未登记的值（历史脏数据）不当作可选项，但也别让过滤静默失效
+        if value and value in dict(self.vocabulary()):
+            return queryset.filter(**{self.parameter_name: value})
+        return queryset
+
+
+class TaskTypeFilter(VocabularyListFilter):
+    title = "任务类型"
+    parameter_name = "task_type"
+
+    def vocabulary(self):
+        return task_types.task_type_choices()
+
+
+class StageTypeFilter(VocabularyListFilter):
+    title = "阶段类型"
+    parameter_name = "stage_type"
+
+    def vocabulary(self):
+        return task_types.stage_type_choices()
 
 
 @admin.register(User)
@@ -94,7 +133,7 @@ class TaskAdmin(admin.ModelAdmin):
         "completed_at",
     )
     list_filter = (
-        "task_type",
+        TaskTypeFilter,
         "status",
         ("device", admin.RelatedOnlyFieldListFilter),
         "created_at",
@@ -119,7 +158,7 @@ class StageAdmin(admin.ModelAdmin):
         "created_at",
         "completed_at",
     )
-    list_filter = ("stage_type", "status", "created_at")
+    list_filter = (StageTypeFilter, "status", "created_at")
     search_fields = ("task__device__hostname", "task__celery_task_id", "error_message")
     autocomplete_fields = ("task",)
     list_select_related = ("task",)

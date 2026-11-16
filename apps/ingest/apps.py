@@ -23,8 +23,8 @@ class OperatorConfig(AppConfig):
 
         方向是「业务域 → core」：core 不认识这些词，只在建任务、投递阶段、渲染
         ``*_display`` 时按 key 反查（见 ``handbook/design/task-framework.md``）。
-        词汇原本硬编码在模型字段的 ``choices`` 里，那个位置搬不走，所以这里保留同一套
-        词与显示名，保证 ``task_type_display`` 等前端契约不变。
+        词汇原先硬编码在模型字段的 ``choices`` 里；``choices`` 会写进迁移、运行时追加
+        必然造成迁移漂移，所以现在由这里登记词与显示名，模型字段是自由字符串。
         """
         from core.task_types import register_stage, register_task_type
         from ingest.tasks import run_collection_stage, run_parsing_stage, run_storage_stage

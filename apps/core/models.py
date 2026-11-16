@@ -5,6 +5,8 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from core import task_types
+
 
 class User(AbstractUser):
     """扩展用户模型。
@@ -92,15 +94,14 @@ class UserPreference(models.Model):
 
 
 class Task(models.Model):
-    """任务主记录"""
+    """任务主记录。
 
-    TASK_TYPES = (
-        ("collect_config", "采集配置"),
-        ("backup_config", "备份配置"),
-        ("ansible_playbook", "Ansible执行"),
-        ("batch_collect", "批量采集"),
-        ("config_backup", "配置备份"),
-    )
+    ``task_type`` 是**自由字符串**，这里刻意不声明 ``choices``：词表属于业务域，由它们
+    在 ``core.task_types`` 注册表里登记（见 ``handbook/design/task-framework.md``）。
+    ``choices`` 是字段的类属性、会写进迁移，运行时注册注定与迁移状态漂移——所以词汇
+    不放这里，显示名改由 ``get_task_type_display()`` 反查注册表。
+    """
+
     STATUS_CHOICES = (
         ("pending", "等待中"),
         ("running", "运行中"),
@@ -110,7 +111,7 @@ class Task(models.Model):
     )
 
     celery_task_id = models.CharField(max_length=100, unique=True, blank=True, default=None, null=True, verbose_name="Celery任务ID")
-    task_type = models.CharField(max_length=50, choices=TASK_TYPES, verbose_name="任务类型")
+    task_type = models.CharField(max_length=50, verbose_name="任务类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
     device = models.ForeignKey("assets.Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks", verbose_name="关联设备")
     params = models.JSONField(default=dict, verbose_name="任务参数")
@@ -123,8 +124,6 @@ class Task(models.Model):
     if TYPE_CHECKING:
         stages: models.QuerySet["Stage"]
 
-        def get_task_type_display(self) -> str: ...
-
         def get_status_display(self) -> str: ...
 
     class Meta:
@@ -134,6 +133,14 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.get_task_type_display()} - {self.get_status_display()}"
+
+    def get_task_type_display(self) -> str:
+        """显示名按业务域注册的词汇表反查；未登记的旧词回落 key。
+
+        覆盖 Django 因 ``choices`` 自动生成的同名方法（现在字段没有 ``choices``），
+        这样 ``__str__`` / admin / 序列化器都不用改，且 core 里不出现任何业务词汇。
+        """
+        return task_types.label_for(self.task_type)
 
     @property
     def current_stage(self):
@@ -149,13 +156,12 @@ class Task(models.Model):
 
 
 class Stage(models.Model):
-    """阶段记录"""
+    """阶段记录。
 
-    STAGE_TYPES = (
-        ("collection", "数据采集"),
-        ("parsing", "配置解析"),
-        ("storage", "数据存储"),
-    )
+    ``stage_type`` 同样是自由字符串，词汇与 handler 由业务域在
+    ``core.task_types`` 注册表里登记——core 只负责存储与流转。
+    """
+
     STATUS_CHOICES = (
         ("pending", "等待中"),
         ("running", "运行中"),
@@ -165,7 +171,7 @@ class Stage(models.Model):
     )
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="stages", verbose_name="所属任务")
-    stage_type = models.CharField(max_length=50, choices=STAGE_TYPES, verbose_name="阶段类型")
+    stage_type = models.CharField(max_length=50, verbose_name="阶段类型")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="状态")
     input_data = models.JSONField(default=dict, verbose_name="输入数据")
     output_data = models.JSONField(null=True, blank=True, verbose_name="输出数据")
@@ -178,8 +184,6 @@ class Stage(models.Model):
 
     if TYPE_CHECKING:
 
-        def get_stage_type_display(self) -> str: ...
-
         def get_status_display(self) -> str: ...
 
     class Meta:
@@ -189,3 +193,7 @@ class Stage(models.Model):
 
     def __str__(self):
         return f"{self.task} - {self.get_stage_type_display()} - {self.get_status_display()}"
+
+    def get_stage_type_display(self) -> str:
+        """显示名按注册表反查（未登记的旧词回落 key），见 ``Task.get_task_type_display``。"""
+        return task_types.label_for(self.stage_type)
