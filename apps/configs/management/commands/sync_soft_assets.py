@@ -7,12 +7,16 @@
 
 只读 ``GtmWideip`` / ``LtmVirtualServer`` 等配置行，只写 ``DomainAsset`` /
 ``LoadBalancerService``；重复执行幂等（不新增、不改 ``ci_id``）。已消失的配置不会删除资产。
+
+**归属**：命令住 configs——它本质是「从配置行重建资产」，计算段也在 configs；落库段调
+``assets.services.soft_asset_sync``（configs → assets 是矩阵允许的方向）。命令名不变，
+Django 的命令发现与 app 标签无关，调用方式一个字不用改。
 """
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from assets.services.soft_asset_sync import sync_soft_assets
+from configs.services.soft_asset_sync import sync_soft_assets
 
 
 class Command(BaseCommand):

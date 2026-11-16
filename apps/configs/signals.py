@@ -11,6 +11,10 @@
 
 归并失败只记日志、不抛出：配置入库本身已经成功，不能因为派生资产刷新失败而回滚或
 让 Celery 任务失败。需要补救时跑 ``manage.py sync_soft_assets`` 全量重建。
+
+**归属**：接收器住在 configs（信号语义是「配置变了」），落库能力在
+``assets.services.soft_asset_sync``——``configs → assets`` 是矩阵允许的方向，
+反过来不行。拆分前这个信号住在 ``assets.signals``，assets 因此不得不 import configs。
 """
 
 import logging
@@ -33,7 +37,7 @@ def request_soft_asset_sync(reason: str = "") -> None:
 
 
 def _run_sync() -> None:
-    from assets.services.soft_asset_sync import sync_soft_assets
+    from configs.services.soft_asset_sync import sync_soft_assets
 
     try:
         stats = sync_soft_assets()

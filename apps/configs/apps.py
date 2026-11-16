@@ -19,3 +19,7 @@ class ConfigsConfig(AppConfig):
         # registry。Saver 已随解析/写入链路迁入本域，注册点也跟着搬过来——原先放在
         # ingest.apps 里会形成 ingest → configs 之外的隐式启动顺序依赖。
         import configs.savers  # noqa: F401
+
+        # 软资产刷新信号的接收器：语义是「配置行变了」，所以住在配置域
+        # （拆分前在 assets.signals，会让 assets 认识 configs，方向被矩阵禁止）。
+        import configs.signals  # noqa: F401

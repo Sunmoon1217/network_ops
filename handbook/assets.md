@@ -173,7 +173,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 4. 列表读主表 + `select_related` 扩展表，`StandardPagination` SQL 分页 → **换页零全量重算**；
    详情 / 展开才反查配置行作证据。
 5. 触发有两路（共用同一把 PG 事务级咨询锁，不会并发写重）：
-   - **自动**：配置解析 / 存储完成后由 `ingest` 发 `assets.signals.soft_assets_stale`
+   - **自动**：配置解析 / 存储完成后由 `ingest` 发 `configs.signals.soft_assets_stale`
      （`DeviceConfig` 同步入库、阶段工作流的 storage 阶段、批量导入的 storage 任务、
      `reparse` 命令收尾各一处）。接收器在**事务提交后**执行全量归并，同一事务多次请求
      只跑最后一次；失败只记日志，不影响配置入库。
@@ -181,9 +181,12 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
      全量重建（异常兜底 / 对账）。
    已消失的配置**不删除**对应资产（可能已有人工标注），需要时另行处理。
 
-实现位置：`apps/assets/services/soft_asset_sync.py`（`sync_soft_assets` /
-`sync_domain_assets` / `sync_load_balancer_services`），命令在
-`apps/assets/management/commands/sync_soft_assets.py`。
+实现分两段（域拆分后）：**算**在 `apps/configs/services/soft_asset_builder.py`（只读配置行，
+产出 `SoftAssetDraft`，零写操作），**写**在 `apps/assets/services/soft_asset_sync.py`
+（`apply_soft_assets`，只写 CI 台账与两张扩展表）；编排 `sync_soft_assets` /
+`sync_domain_assets` / `sync_load_balancer_services` 与信号、命令都在 configs
+（`configs/services/soft_asset_sync.py`、`configs/signals.py`、`configs/management/commands/`）。
+依赖方向 `configs → assets`，assets 不认识 configs。
 
 **字段映射要点**：
 

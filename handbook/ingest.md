@@ -63,10 +63,11 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 ## 配置入库后刷新软资产（T4）
 
 配置行变化会影响派生资产（域名 / 负载均衡服务），四条入库路径在完成后都会调用
-`assets.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
+`configs.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
 `run_storage_stage`、批量导入的 `run_config_storage`、`reparse` 命令收尾（并行子进程里
 不发，父进程统一发一次）。接收器在**事务提交后**执行全量归并，同一事务只跑最后一次；
-细节见 [`assets.md`](assets.md)「软资产归并（T4）」。
+细节见 [`assets.md`](assets.md)「软资产归并（T4）」。信号住在 configs（语义是「配置行变了」），
+ingest 调用它是 `ingest → configs`，方向合法。
 
 ## Saver 分组规则
 

@@ -1,16 +1,17 @@
-"""软资产归并（T4）的契约测试：GTM → DomainAsset、LTM → LoadBalancerService。"""
+"""软资产归并（T4）的契约测试：GTM → DomainAsset、LTM → LoadBalancerService。
+
+归并拆成两段：configs 侧算候选值（``soft_asset_builder``）、assets 侧落库
+（``assets.services.soft_asset_sync.apply_soft_assets``）。对外仍是一个 ``sync_*`` 入口
+（``configs.services.soft_asset_sync``），事务与并发锁在那里。
+"""
 
 import pytest
 
-from assets.models import Device, DomainAsset, LoadBalancerService
-from assets.services.soft_asset_sync import (
-    lb_asset_key,
-    normalize_fqdn,
-    sync_domain_assets,
-    sync_load_balancer_services,
-    sync_soft_assets,
-)
+from assets.models import CIType, ConfigurationItem, Device, DomainAsset, LoadBalancerService
+from assets.services.soft_asset_sync import apply_soft_assets
 from configs.models import ConfigBase, GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPoolMember, LtmVirtualServer
+from configs.services.soft_asset_builder import build_domain_drafts, build_lb_drafts, lb_asset_key, normalize_fqdn
+from configs.services.soft_asset_sync import sync_domain_assets, sync_load_balancer_services, sync_soft_assets
 
 
 def _device(hostname: str, device_type: str) -> Device:
@@ -49,6 +50,35 @@ def test_lb_asset_key_uses_hash_separator():
     assert lb_asset_key("10.1.1.10", "443") == "10.1.1.10#443"
     assert lb_asset_key("2001:db8::1", "80") == "2001:db8::1#80"
     assert lb_asset_key("10.1.1.10", "") == "10.1.1.10"
+
+
+@pytest.mark.django_db
+def test_build_drafts_is_pure_and_carries_no_assets_knowledge():
+    """计算段只读：产出 draft，不碰 CI 台账；kind 是字符串而非 CIType 常量"""
+    _gtm_wideip(_device("gtm-a", "gslb"), "A.Example.COM.")
+
+    result = build_domain_drafts()
+
+    assert not ConfigurationItem.objects.exists()
+    assert not DomainAsset.objects.exists()
+    draft = result.drafts[0]
+    assert (draft.kind, draft.key) == ("domain", "a.example.com")
+    assert draft.values["rtypes"] == ["A"]
+    assert draft.values["vips"] == ["10.0.0.1#80"]
+
+
+@pytest.mark.django_db
+def test_apply_drafts_writes_ci_and_extension_row():
+    """落库段只写 assets：按 kind 查 CIType，按 key 建 CI 名"""
+    _gtm_wideip(_device("gtm-a", "gslb"), "a.example.com")
+    drafts = build_domain_drafts().drafts
+
+    stats = apply_soft_assets(drafts)
+
+    assert (stats.created, stats.updated, stats.unchanged) == (1, 0, 0)
+    asset = DomainAsset.objects.get()
+    assert asset.ci.ci_type == CIType.DOMAIN
+    assert asset.ci.name == "a.example.com"
 
 
 @pytest.mark.django_db
@@ -176,3 +206,15 @@ def test_merged_assets_are_not_config_products():
 
     assert DomainAsset not in ConfigBase.__subclasses__()
     assert LoadBalancerService not in ConfigBase.__subclasses__()
+
+
+@pytest.mark.django_db
+def test_lb_drafts_carry_no_ci_type():
+    """计算段不 import assets 的 CIType：kind 是普通字符串"""
+    _ltm_service(_device("slb-a", "slb"), "10.1.1.10", "443")
+
+    result = build_lb_drafts()
+
+    assert result.drafts[0].kind == "lb_service"
+    assert result.drafts[0].key == "10.1.1.10#443"
+    assert not ConfigurationItem.objects.exists()

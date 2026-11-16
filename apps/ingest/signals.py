@@ -82,7 +82,7 @@ def on_device_config_saved(sender, instance, created, **kwargs):
 
     _processing.add(instance.pk)
     try:
-        from assets.signals import request_soft_asset_sync
+        from configs.signals import request_soft_asset_sync
         from ingest.pipeline import run_config_pipeline
 
         result = run_config_pipeline(instance.device, instance)

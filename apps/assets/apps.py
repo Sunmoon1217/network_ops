@@ -17,9 +17,8 @@ class AssetsConfig(AppConfig):
     verbose_name = "资产管理"
 
     def ready(self):
-        # 注册软资产刷新信号（配置入库后自动归并，T4）
-        import assets.signals  # noqa: F401
-
+        # 软资产刷新信号已随「配置变了」的语义迁到 configs.signals（见该模块 docstring）：
+        # assets 只提供落库能力，不认识 configs，接收器不在本域注册。
         self._register_task_target()
 
     def _register_task_target(self):

@@ -134,7 +134,7 @@ class Command(BaseCommand):
 
         # 重跑 Saver 会改配置行 → 统一刷新一次软资产（子进程里不触发，避免并发全量归并）
         if any(summary["outcomes"] for summary in summaries):
-            from assets.signals import request_soft_asset_sync
+            from configs.signals import request_soft_asset_sync
 
             request_soft_asset_sync(f"reparse 重跑 {len(configs)} 台设备")
 

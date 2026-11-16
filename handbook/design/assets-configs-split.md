@@ -1,8 +1,9 @@
 # assets / configs 域拆分方案
 
-> **状态：实施中（2026-11-16 起）。切片 1–5 已落地：26 张表 + 序列化器 + parsers/savers/mapping
-> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`；
-> 剩软资产归并拆分、`purge_configs` 迁 scripts。**
+> **状态：实施中（2026-11-16 起）。切片 1–6 已落地：26 张表 + 序列化器 + parsers/savers/mapping
+> + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
+> + 软资产归并拆成「configs 算 / assets 写」；剩 Excel 导入迁 ingest、`purge_configs` 迁 scripts，
+> 以及 `assets/api/views.py` 的 `overview` 概览统计（见 §待定项 5）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -269,6 +270,10 @@ with transaction.atomic():
 「配置变了」）；ingest 的 4 处 import 改指 configs——`ingest → configs` ✓ 合法；
 assets 侧不再持有这个信号，软资产同步链路对 assets 变成纯被动（只提供 `apply_soft_assets`）。
 
+> **已落地（2026-11-16，切片 6）**：本节全部实现——builder / apply / 编排三处落点见 §实施进度
+> 切片 6；`assets/signals.py` 与 assets 侧的命令已删除，`assets/services/soft_asset_sync.py`
+> 只剩 `SyncStats` + `apply_soft_assets`，AST 守卫钉住「算不 import assets、写不 import configs」。
+
 ### 一个刻意保留的设计
 
 软资产表存 **hostname 列表**而非 device_id：
@@ -472,6 +477,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 2 | `egest` 是否独立成域 | 若复用 ingest 的采集通道，可能更适合做成 ingest 子模块 |
 | 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
+| 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **新发现的反向依赖**（切片 4 后暴露，不在原「三处」之列）：`overview` 直接 `Interface/Route/Policy/NatRule/AddressBook/Service/Ltm*` 15 个 configs 模型做计数，是 `assets → configs`。两条出路：把配置侧计数抽成 configs 的 stats 服务（assets 只留设备/机柜部分，前端合并两个接口），或把整个概览端点迁 configs。**暂缓**——改的是前端契约，单独一轮做 |
 
 ## 建议的最小验证切片
 
@@ -600,9 +606,29 @@ Interface/Vlan/Vrf/Route（configs），`edges.py` 36 条边也横跨两边。�
 项目根自身的路径段（worktree 就住在 `.worktrees/` 下），整棵树被跳过、只有两个显式文件生效。
 批量改名用 `git ls-files` 枚举跟踪文件，别用 `rglob` + 目录黑名单。
 
+### 切片 6 — 已落地（2026-11-16）
+
+| 项 | 落点 |
+|---|---|
+| 算（只读） | `configs/services/soft_asset_builder.py`：`SoftAssetDraft`（kind/key/values）+ `BuildResult`（drafts/skipped）+ `build_domain_drafts()` / `build_lb_drafts()` |
+| 写（只写 assets） | `assets/services/soft_asset_sync.py`：`SyncStats` + `apply_soft_assets(drafts)`；`kind` → (CIType, 模型, 归一键字段) 一张表查完，两个 `_sync_*_group` 合成一个通用 `_apply_draft` |
+| 编排 | `configs/services/soft_asset_sync.py`：`sync_domain_assets` / `sync_load_balancer_services` / `sync_soft_assets`，单事务 + `pg_advisory_xact_lock`（原样保留） |
+| 信号 | `assets/signals.py` → `configs/signals.py`（信号对象 + `request_soft_asset_sync` + 接收器）；`configs/apps.py.ready()` 里 import |
+| 命令 | `manage.py sync_soft_assets` 从 assets 迁 configs，命令名与参数不变 |
+| 引用 | ingest 4 处惰性 import、测试 2 个文件改指 configs；`assets/apps.py` 不再 import `assets.signals` |
+| 守卫 | `tests/configs/test_soft_asset_boundary.py`：AST 钉住「builder 不 import assets、writer 不 import configs」 |
+
+**为什么类型用 `Protocol` 而不是共用 dataclass**：`apply_soft_assets` 的入参若标注
+`configs...SoftAssetDraft`，assets 就得 import configs（矩阵禁止）。改用只读属性的
+`Protocol`（结构化类型），冻结 dataclass 天然满足，一个 import 都不用加。
+
+**实测**：`tests/configs` 25 passed；全量 **851 passed, 66 subtests passed**（846 基线 + 5 条
+新增：计算段无写操作 / 落库段按 kind 建 CI / lb draft 不带 CIType + 两条 AST 边界守卫）；
+`manage.py check` 干净，`manage.py help sync_soft_assets` 仍能发现命令（命令发现与 app 标签无关）。
+
 ### 下一步（按依赖顺序）
 
-1. **软资产归并拆分**（唯一的横跨功能）：`configs/services/soft_asset_builder.py` 纯计算 +
-   `assets/services/soft_asset_sync.py` 落库，同进程同事务调用。
+1. **Excel 导入（`device_import.py`）整体迁 ingest**：见本稿专章——清掉 `assets → ingest`
+   的两处 import，端点随迁、前缀不变。
 2. **`purge_configs` 迁 `scripts/`**：迁出后运维例外自然取消。
 
