@@ -4,7 +4,7 @@
 > + admin 26 注册 + API 26 端点（含 `resolve_config_owner`）+ llmtools 域目录改名 `network/`
 > + 软资产归并拆成「configs 算 / assets 写」+ Excel 导入迁 ingest + `purge_configs` 迁 scripts
 > + `overview` 概览跨域聚合迁 analysis（assets 至此真正成为叶子）。
-> 只剩 `existing_asset_registry` 的归属待定（§待定项 6）。**
+> 待定项已全部收口（2026-11-16）：`existing_asset_registry` 定为留在 assets（§待定项 6）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
 
@@ -483,7 +483,7 @@ fresh 库路径必须与存量库同路径跑通——这正是范本 `analysis.
 | 3 | `llmtools/domains/assets/` 改名成什么 | **已定 `network/`**（2026-11-16，切片 5 落地）；`infra/` 覆盖过宽（还会想塞采集与告警），不用 |
 | 4 | `analysis/api/parsers.py`（映射清单接口）的归属 | 涉及 parsers 与 savers 两边，实现可留 ingest，路径不变 |
 | 5 | `assets/api/views.py` 的 `overview`（`/api/assets/overview/`）跨域聚合 | **已落地（切片 9，2026-11-16）**：整个端点迁 `analysis/api/overview.py`——它是 assets + configs 的只读聚合，只能落在两者之上；**URL 与 name 原样保留**，前端零改动。configs 单侧统计不做拆接口（`analysis` 已在矩阵里允许同时读两个域，再拆成两个接口只会让前端多一次请求）。 |
-| 6 | `assets/services/existing_asset_registry.py`（既有资产判重）是否随 Excel 导入迁 ingest | 目前只被 ingest 的导入链路调用，但「资产唯一性口径」必须与 assets 的模型约束同处一地（否则两边各写一份判重规则必然漂移）。倾向**留在 assets**，待导入链路再变动时定 |
+| 6 | `assets/services/existing_asset_registry.py`（存量资产登记）是否随 Excel 导入迁 ingest | **已定：留在 assets（2026-11-16）**。实测它只被 `manage.py register_assets`（assets 自己的命令）与 `tests/assets/test_existing_asset_registry.py` 调用，**与 ingest 导入链路无关**（本条原先的「只被 ingest 调用」是误记）。它读 `Device` / `IPAddress` / `Subnet`、写 `ConfigurationItem` / `CIObjectLink`，四个模型全是 assets 自家；搬去 ingest 等于让上层域持有叶子域的台账同步，纯亏。 |
 
 ## 建议的最小验证切片
 
@@ -690,8 +690,25 @@ VLAN / 路由 / 策略 / NAT / SLB / GTM / ARP 的分布）。切片 4 把 26 �
 `manage.py check` 干净；OpenAPI schema 的 warnings / errors 计数（11 / 273）与 develop 基线
 **完全一致**——`api_view` 的 serializer 推断告警是这类函数视图的既有现象，不是本次引入。
 
+### 待定项 6 结案 — 留在 assets（2026-11-16，无代码改动）
+
+`existing_asset_registry` 的归属定死：**不迁**。依据是实测出来的调用面，而不是偏好：
+
+| 事实 | 含义 |
+|---|---|
+| 调用方只有 `apps/assets/management/commands/register_assets.py` 与 `tests/assets/test_existing_asset_registry.py` | 与 ingest 的 Excel 导入链路**没有关系**（设计稿原写的「只被 ingest 调用」是误记，已改） |
+| 读 `Device` / `IPAddress` / `Subnet`，写 `ConfigurationItem` / `CIObjectLink` | 四个模型全在 assets，一次跨域都没有 |
+| 幂等键 `(source_type, source_id)` + `pg_advisory_xact_lock("REGI")` | 「怎么算同一个资产」与 assets 模型的唯一约束是同一件事，必须同处一地 |
+
+搬去 ingest 的收益为零，代价是多一条 `ingest → assets` 的写依赖，还得把登记锁与 assets
+的唯一约束分家——这类「口径分裂」正是拆分想消掉的东西。
+
 ### 下一步
 
-1. （待定）`existing_asset_registry` 的归属，见 §待定项 6——目前倾向留在 assets，
-   不阻塞拆分收尾。
+设计稿至此**收口**：九个切片全部落地，两处待定（§待定项 5 / 6）都已结案，矩阵里
+`assets` 行的四个 ✗ 与 `core` 行的六个 ✗ 全部成立。后续只剩两件与本稿无关的事：
+
+1. 分支合并到 develop 后跑一次 `manage.py migrate`（26 张表的 RENAME 迁移）。
+2. `egest` 域真正落地时另开设计稿（§待定项 2 的「是否独立成域」）。
+
 
