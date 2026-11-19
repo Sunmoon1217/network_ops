@@ -47,6 +47,8 @@ const router = createRouter({
         { path: '', redirect: '/asset/devices' },
         // 主机 / 网络设备
         { path: 'devices', name: 'asset-device-list', component: () => import('@netops/views/devices/list.vue'), meta: { keepAlive: true } },
+        { path: 'physical', name: 'asset-physical', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '物理机' } },
+        { path: 'virtual', name: 'asset-virtual', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '虚拟机' } },
         { path: 'devices/create', name: 'asset-device-create', component: () => import('@netops/views/devices/forms/DeviceForm.vue'), meta: { requiresOperator: true } },
         { path: 'devices/:id/edit', name: 'asset-device-edit', component: () => import('@netops/views/devices/forms/DeviceForm.vue'), meta: { requiresOperator: true } },
         { path: 'devices/:id/config', name: 'asset-device-config', component: () => import('@netops/views/devices/config.vue') },

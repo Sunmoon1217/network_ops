@@ -151,3 +151,20 @@ export const findTopGroup = (path: string, items: MenuItem[] = menuOptions): Men
   }
   return matched
 }
+
+/** 在某个一级分组下，找到当前路由所属的二级节点（二级组或二级叶子） */
+export const findSecondGroup = (path: string, top?: MenuItem): MenuItem | undefined => {
+  if (!top?.children?.length) return undefined
+  let matched: MenuItem | undefined
+  let matchedLength = -1
+  for (const second of top.children) {
+    for (const leaf of collectPaths(second)) {
+      const hit = path === leaf || path.startsWith(`${leaf}/`)
+      if (hit && leaf.length > matchedLength) {
+        matched = second
+        matchedLength = leaf.length
+      }
+    }
+  }
+  return matched
+}
