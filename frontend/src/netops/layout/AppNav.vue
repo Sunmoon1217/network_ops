@@ -72,16 +72,16 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
 
 <style scoped>
 .app-nav {
-  /* 导航配色按主题取值：亮色走浅底深字，暗色才用深底白字；
-     下面的规则只用这几个变量，避免两套主题各写一遍。 */
-  --nav-fg: var(--el-text-color-primary);
-  --nav-hover-bg: var(--el-fill-color-light);
-  --nav-active-bg: var(--el-fill-color);
-  --nav-accent: var(--el-color-primary-dark-2);
-  --nav-accent-hover-bg: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
-  --nav-accent-active-bg: color-mix(in srgb, var(--el-color-primary) 18%, transparent);
-  --nav-divider: var(--el-border-color-lighter);
-  --nav-muted: var(--el-text-color-secondary);
+  /* 导航本体两个主题都是深色块（Django admin / Zabbix 那种），所以文字统一白色，
+     只让色相与深浅随主题变；下面的规则只用这几个变量。 */
+  --nav-fg: var(--el-color-white);
+  --nav-hover-bg: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  --nav-active-bg: color-mix(in srgb, var(--el-color-white) 10%, transparent);
+  --nav-accent: var(--el-color-primary-light-5);
+  --nav-accent-hover-bg: color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  --nav-accent-active-bg: color-mix(in srgb, var(--el-color-primary) 24%, transparent);
+  --nav-divider: color-mix(in srgb, var(--el-color-white) 14%, transparent);
+  --nav-muted: color-mix(in srgb, var(--el-color-white) 65%, transparent);
   /* el-menu 默认会铺自己的底色和 hover 底色，这里全部交给侧栏本体 */
   --el-menu-bg-color: transparent;
   --el-menu-hover-bg-color: transparent;
@@ -93,16 +93,9 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   height: 100%;
   padding: 0;
 }
-/* 暗色：深青本体上用白字 + 半透明白浮层 */
+/* 暗色本体更黑，二级菜单可以回到更饱和的主题色 */
 html.dark .app-nav {
-  --nav-fg: var(--el-color-white);
-  --nav-hover-bg: color-mix(in srgb, var(--el-color-white) 12%, transparent);
-  --nav-active-bg: color-mix(in srgb, var(--el-color-white) 10%, transparent);
   --nav-accent: var(--el-color-primary-light-3);
-  --nav-accent-hover-bg: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
-  --nav-accent-active-bg: color-mix(in srgb, var(--el-color-primary) 22%, transparent);
-  --nav-divider: color-mix(in srgb, var(--el-color-white) 12%, transparent);
-  --nav-muted: color-mix(in srgb, var(--el-color-white) 65%, transparent);
 }
 .app-nav :deep(.el-menu) {
   width: 100%;
