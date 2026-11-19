@@ -4,8 +4,8 @@
 同一张列表里看，但 core 不认识任何具体业务。业务域在 `AppConfig.ready()` 里把自己的词汇、
 阶段实现、作用目标解析器注册进来，core 只在需要时按 key 反查。
 
-> 这么分层的理由与依赖矩阵见 [`design/layering.md`](design/layering.md)（提案；
-> 「core 变叶子」这一步已落地）。**任务链路的业务视角**——ingest 的三阶段怎么跑、
+> 这么分层的理由与依赖矩阵见 [`design/layering.md`](design/layering.md)（已基本落地，
+> 现状与矩阵一致；只剩外部连接的部分步骤未做）。**任务链路的业务视角**——ingest 的三阶段怎么跑、
 > 信号怎么防重入——在 [`ingest.md`](ingest.md)，本文不重复。
 
 ## 模块分工

@@ -59,12 +59,11 @@ network_ops/
 └── pyproject.toml   # 依赖、pytest、ruff、pyrefly 配置
 ```
 
-> 分层规范以 `handbook/design/layering.md` 为准（实施中，未完全落地）。
-
 **依赖方向**：`llmtools → apps`，`analysis → ingest → configs → assets`（单向）。`assets`
 是叶子节点，不许 import `configs` / `ingest`；`configs` 不许 import `ingest` / `analysis`；
 `ingest` 不许 import `analysis`（跨四域的清理工具已迁出 app，见 `scripts/purge_configs.py`）；
-`llmtools` 的子模块不许 import 任何业务域（`domains/` 是唯一例外）。
+`llmtools` 的子模块不许 import 任何业务域（`domains/` 是唯一例外）。依赖矩阵与各域职责
+边界见 [`handbook/design/layering.md`](handbook/design/layering.md)。
 
 ## 文档地图
 
