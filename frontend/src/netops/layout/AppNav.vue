@@ -72,53 +72,73 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
 
 <style scoped>
 .app-nav {
+  /* 导航配色按主题取值：亮色走浅底深字，暗色才用深底白字；
+     下面的规则只用这几个变量，避免两套主题各写一遍。 */
+  --nav-fg: var(--el-text-color-primary);
+  --nav-hover-bg: var(--el-fill-color-light);
+  --nav-active-bg: var(--el-fill-color);
+  --nav-accent: var(--el-color-primary-dark-2);
+  --nav-accent-hover-bg: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  --nav-accent-active-bg: color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  --nav-divider: var(--el-border-color-lighter);
+  --nav-muted: var(--el-text-color-secondary);
   /* el-menu 默认会铺自己的底色和 hover 底色，这里全部交给侧栏本体 */
   --el-menu-bg-color: transparent;
   --el-menu-hover-bg-color: transparent;
-  --el-menu-text-color: var(--el-color-white);
-  --el-menu-active-color: var(--el-color-white);
+  --el-menu-text-color: var(--nav-fg);
+  --el-menu-active-color: var(--nav-fg);
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 0;
 }
+/* 暗色：深青本体上用白字 + 半透明白浮层 */
+html.dark .app-nav {
+  --nav-fg: var(--el-color-white);
+  --nav-hover-bg: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  --nav-active-bg: color-mix(in srgb, var(--el-color-white) 10%, transparent);
+  --nav-accent: var(--el-color-primary-light-3);
+  --nav-accent-hover-bg: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+  --nav-accent-active-bg: color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+  --nav-divider: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  --nav-muted: color-mix(in srgb, var(--el-color-white) 65%, transparent);
+}
 .app-nav :deep(.el-menu) {
   width: 100%;
   flex: 1;
   border-right: none;
 }
-/* 一级菜单：半透明白块叠在深色导航本体上，文字白色 */
+/* 一级菜单：完全透明，直接露出导航本体，只靠文字色区分；hover / 选中才浮一层底 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
   background: transparent;
-  background: color-mix(in srgb, var(--el-color-white) 7%, transparent);
-  color: var(--el-color-white);
+  color: var(--nav-fg);
 }
 .app-nav :deep(.app-menu > .el-menu-item .el-icon),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title .el-icon) {
-  color: var(--el-color-white);
+  color: var(--nav-fg);
 }
 .app-nav :deep(.app-menu > .el-menu-item:hover),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title:hover) {
-  background: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  background: var(--nav-hover-bg);
 }
 .app-nav :deep(.app-menu > .el-menu-item.is-active),
 .app-nav :deep(.app-menu > .el-sub-menu.is-active > .el-sub-menu__title) {
-  background: color-mix(in srgb, var(--el-color-white) 10%, transparent);
-  color: var(--el-color-white);
+  background: var(--nav-active-bg);
+  color: var(--nav-fg);
 }
 /* 二级菜单：主题色文字，hover / 选中用主题色的半透明底 */
 .app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item) {
-  color: var(--el-color-primary);
+  color: var(--nav-accent);
 }
 .app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item:hover) {
-  background: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
-  color: var(--el-color-primary-light-3);
+  background: var(--nav-accent-hover-bg);
+  color: var(--nav-accent);
 }
 .app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item.is-active) {
-  background: color-mix(in srgb, var(--el-color-primary) 22%, transparent);
-  color: var(--el-color-primary-light-3);
+  background: var(--nav-accent-active-bg);
+  color: var(--nav-accent);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
@@ -132,12 +152,11 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   align-items: center;
   justify-content: center;
   height: 42px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  border-bottom-color: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  border-bottom: 1px solid var(--nav-divider);
   flex-shrink: 0;
 }
-.logo-text { font-size: 1rem; font-weight: 600; color: var(--el-color-white); }
-.logo-icon { font-size: 1.2rem; color: var(--el-color-primary); }
+.logo-text { font-size: 1rem; font-weight: 600; color: var(--nav-fg); }
+.logo-icon { font-size: 1.2rem; color: var(--nav-accent); }
 .nav-collapse {
   position: absolute;
   bottom: 0;
@@ -147,12 +166,10 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   align-items: center;
   justify-content: center;
   height: 36px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  border-top-color: color-mix(in srgb, var(--el-color-white) 12%, transparent);
+  border-top: 1px solid var(--nav-divider);
   cursor: pointer;
-  color: var(--el-color-white);
-  color: color-mix(in srgb, var(--el-color-white) 65%, transparent);
+  color: var(--nav-muted);
 }
-.nav-collapse:hover { background: color-mix(in srgb, var(--el-color-white) 8%, transparent); }
+.nav-collapse:hover { background: var(--nav-hover-bg); }
 .nav-collapse .collapsed { transform: rotate(180deg); }
 </style>
