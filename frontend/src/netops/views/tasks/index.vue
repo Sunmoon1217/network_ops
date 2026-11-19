@@ -74,11 +74,17 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   ansible_playbook: 'Ansible执行',
   batch_collect: '批量采集',
   config_backup: '配置备份',
+  import_config: '导入配置',
 }
+// 新建任务只开放可手工建的类型：「导入配置」由 Excel 导入按份投递，手工建必然缺 config_id
+const CREATABLE_TASK_TYPES = Object.fromEntries(
+  Object.entries(TASK_TYPE_LABELS).filter(([key]) => key !== 'import_config'),
+)
 const STAGE_TYPE_LABELS: Record<string, string> = {
   collection: '数据采集',
   parsing: '配置解析',
   storage: '数据存储',
+  config_pipeline: '配置解析入库',
 }
 
 const statusLabel = (status: string, fallback = '') => STATUS_LABELS[status] || fallback || status
@@ -262,7 +268,7 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="任务类型">
           <el-select v-model="form.task_type" style="width: 100%">
-            <el-option v-for="(label, key) in TASK_TYPE_LABELS" :key="key" :label="label" :value="key" />
+            <el-option v-for="(label, key) in CREATABLE_TASK_TYPES" :key="key" :label="label" :value="key" />
           </el-select>
         </el-form-item>
       </el-form>

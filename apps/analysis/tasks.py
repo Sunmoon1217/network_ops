@@ -53,6 +53,7 @@ def rebuild_access_flows(self, device_id):
 
         device = Device.objects.filter(pk=device_id).first()
         if device is None:
+            logger.info("设备 %s 已删除，跳过访问流重建", device_id)
             return 0  # 设备已删，无事可做
 
         try:
@@ -97,67 +98,88 @@ def _resolve_payload(delivery):
 def write_dashboard(delivery):
     """消费采集 payload → upsert 大屏表；整批一个事务，重复投递由唯一键保证幂等。"""
     from django.db import transaction
+    from django.utils import timezone
     from django.utils.dateparse import parse_datetime
 
     from analysis.models import CollectionRun, DashboardMetric, ItsmCase, MetricSample
 
     payload = _resolve_payload(delivery)
-    with transaction.atomic():
-        for row in payload["metrics"]:
-            DashboardMetric.objects.update_or_create(
-                panel=row["panel"],
-                group=row["group"],
-                name=row["name"],
-                defaults={
-                    "value": row.get("value"),
-                    "list_value": row.get("list_value") or [],
-                    "sampled_at": parse_datetime(row["sampled_at"]) if row.get("sampled_at") else None,
-                },
-            )
-
-        for row in payload["samples"]:
-            MetricSample.objects.update_or_create(
-                kind=row["kind"],
-                scope=row["scope"],
-                subject=row["subject"],
-                metric_key=row.get("metric_key") or "",
-                sampled_at=parse_datetime(row["sampled_at"]),
-                defaults={"value": row.get("value"), "payload": row.get("payload") or {}},
-            )
-
-        cases = payload["cases"]
-        if cases:
-            case_nos = [row["case_no"] for row in cases]
-            for row in cases:
-                ItsmCase.objects.update_or_create(
-                    case_no=row["case_no"],
+    try:
+        with transaction.atomic():
+            for row in payload["metrics"]:
+                DashboardMetric.objects.update_or_create(
+                    panel=row["panel"],
+                    group=row["group"],
+                    name=row["name"],
                     defaults={
-                        "title": row["title"],
-                        "applicant": row.get("applicant") or "",
-                        "raw": row.get("raw") or {},
-                        "is_active": True,
+                        "value": row.get("value"),
+                        "list_value": row.get("list_value") or [],
+                        "sampled_at": parse_datetime(row["sampled_at"]) if row.get("sampled_at") else None,
                     },
                 )
-                # 读模型物化成「一条工单一行」，前端 AutomationTicketWidget 直接按 name 取工单号
-                DashboardMetric.objects.update_or_create(
-                    panel="itsmtask",
-                    group="case",
-                    name=row["case_no"],
-                    defaults={"value": None, "list_value": [row.get("raw") or {}], "sampled_at": parse_datetime(payload["batch_at"])},
-                )
-            # 全量快照：消失的工单保留历史但不再出现在大屏
-            ItsmCase.objects.exclude(case_no__in=case_nos).update(is_active=False)
-            DashboardMetric.objects.filter(panel="itsmtask", group="case").exclude(name__in=case_nos).delete()
 
-        run = payload["run"]
-        CollectionRun.objects.create(
-            source=payload["source"],
-            status=run["status"],
-            item_count=run["item_count"],
-            error=run.get("error") or "",
-            started_at=parse_datetime(run["started_at"]),
-            finished_at=parse_datetime(run["finished_at"]),
-        )
+            for row in payload["samples"]:
+                MetricSample.objects.update_or_create(
+                    kind=row["kind"],
+                    scope=row["scope"],
+                    subject=row["subject"],
+                    metric_key=row.get("metric_key") or "",
+                    sampled_at=parse_datetime(row["sampled_at"]),
+                    defaults={"value": row.get("value"), "payload": row.get("payload") or {}},
+                )
+
+            cases = payload["cases"]
+            if cases:
+                case_nos = [row["case_no"] for row in cases]
+                for row in cases:
+                    ItsmCase.objects.update_or_create(
+                        case_no=row["case_no"],
+                        defaults={
+                            "title": row["title"],
+                            "applicant": row.get("applicant") or "",
+                            "raw": row.get("raw") or {},
+                            "is_active": True,
+                        },
+                    )
+                    # 读模型物化成「一条工单一行」，前端 AutomationTicketWidget 直接按 name 取工单号
+                    DashboardMetric.objects.update_or_create(
+                        panel="itsmtask",
+                        group="case",
+                        name=row["case_no"],
+                        defaults={"value": None, "list_value": [row.get("raw") or {}], "sampled_at": parse_datetime(payload["batch_at"])},
+                    )
+                # 全量快照：消失的工单保留历史但不再出现在大屏
+                ItsmCase.objects.exclude(case_no__in=case_nos).update(is_active=False)
+                DashboardMetric.objects.filter(panel="itsmtask", group="case").exclude(name__in=case_nos).delete()
+
+            run = payload["run"]
+            CollectionRun.objects.create(
+                source=payload["source"],
+                status=run["status"],
+                item_count=run["item_count"],
+                error=run.get("error") or "",
+                started_at=parse_datetime(run["started_at"]),
+                finished_at=parse_datetime(run["finished_at"]),
+            )
+    except Exception as e:
+        # 写库失败不能只在 celery 里红一下：CollectionRun 是大屏数据新鲜度的来源，
+        # 补一条 failed 记录（主事务已回滚，这里另起事务），随后照常上抛让 Celery 记 FAILURE。
+        logger.exception("Dashboard 写库失败: source=%s", payload.get("source"))
+        failed_run = payload.get("run") or {}
+        source = payload.get("source")
+        if source:
+            try:
+                CollectionRun.objects.create(
+                    source=source,
+                    status="failed",
+                    item_count=0,
+                    error=str(e)[:2000],
+                    started_at=parse_datetime(failed_run.get("started_at") or "") or timezone.now(),
+                    finished_at=timezone.now(),
+                )
+            except Exception:
+                logger.exception("Dashboard 失败记录写入失败")
+        raise
 
     logger.info("Dashboard 写库完成: source=%s, status=%s, items=%s", payload["source"], run["status"], run["item_count"])
     return run["item_count"]

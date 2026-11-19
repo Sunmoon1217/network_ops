@@ -41,6 +41,7 @@ def probe_all() -> int:
     from core.integrations import get_provider, registered
 
     count = 0
+    down: list[str] = []
     for key in registered():
         system, instance = key
         status, error = asyncio.run(_probe(get_provider(system, instance)))
@@ -49,7 +50,11 @@ def probe_all() -> int:
             instance=instance,
             defaults={"status": status, "checked_at": timezone.now(), "error": error},
         )
+        if status != STATUS_OK:
+            down.append(f"{system}/{instance}")
         count += 1
+    # beat 周期任务没人等结果，日志是唯一的过程痕迹（结果本身落 IntegrationHealth）
+    logger.info("集成探活完成: %d 个实例, 不可用 %d 个%s", count, len(down), f"（{', '.join(down)}）" if down else "")
     return count
 
 

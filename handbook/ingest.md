@@ -9,11 +9,12 @@
 | 链 | 入口 | 任务 | 说明 |
 |----|------|------|------|
 | 阶段式工作流 | `/api/core/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
-| 配置导入 | `assets.api.views._import_configs` → `workflow.submit_config_job` | `run_config_parsing` → `run_config_storage`（celery chain，两者都 `.si(config_id)`） | Excel 里的配置文件批量导入，走 DeviceConfig |
+| 配置导入 | `ingest.device_import._import_configs` → `workflow.submit_config_job` | `run_config_pipeline_stage`（单阶段，建 `core.Task`） | Excel 里的配置文件批量导入，每份配置一条任务，复用 `pipeline` |
 | 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
-配置导入链两个任务都要拿到 `config_id`，所以第二个用 `.si()`（immutable）——默认的 `.s()`
-会把上游返回值传下去，而解析任务返回 `None`。
+配置导入是**按份建任务**：`submit_config_job` 调 `core.tasks.create_task("import_config", params={"config_id": ...})`，
+阶段 `config_pipeline` 直接跑同步路径的 `pipeline.run_config_pipeline`——解析入库只有这一份实现，
+任务页能看进度、能取消，失败原因落在 `Stage.error_message`。
 
 ## 阶段推进与取消
 
@@ -67,7 +68,7 @@ storage 成功即整个任务完成（写 `status=success` + `completed_at`）�
 
 配置行变化会影响派生资产（域名 / 负载均衡服务），四条入库路径在完成后都会调用
 `configs.signals.request_soft_asset_sync`：DeviceConfig 同步入库（信号里）、阶段工作流的
-`run_storage_stage`、批量导入的 `run_config_storage`、`reparse` 命令收尾（并行子进程里
+`run_storage_stage`、配置导入的 `run_config_pipeline_stage`、`reparse` 命令收尾（并行子进程里
 不发，父进程统一发一次）。接收器在**事务提交后**执行全量归并，同一事务只跑最后一次；
 细节见 [`assets.md`](assets.md)「软资产归并（T4）」。信号住在 configs（语义是「配置行变了」），
 ingest 调用它是 `ingest → configs`，方向合法。

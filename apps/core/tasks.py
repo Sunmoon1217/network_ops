@@ -35,7 +35,16 @@ def dispatch(task: Task, stage_type: str, input_data: dict[str, Any] | None = No
         input_data=input_data or {},
     )
     handler = task_types.handler_for(stage_type)
-    async_result = handler.delay(stage.pk)
+    try:
+        async_result = handler.delay(stage.pk)
+    except Exception as e:
+        # 投递失败不能留下一条永远 running 的孤儿阶段（Task 由 create_task 统一收尾）
+        Stage.objects.filter(pk=stage.pk).update(
+            status="failed",
+            error_message=f"投递失败: {e}",
+            completed_at=timezone.now(),
+        )
+        raise
     Task.objects.filter(pk=task.pk).update(celery_task_id=async_result.id)
     logger.info("已投递 %s 阶段 stage=%s celery=%s task=%s", stage_type, stage.pk, async_result.id, task.pk)
     return stage

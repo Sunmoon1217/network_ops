@@ -134,6 +134,9 @@ const handleClose = () => {
               {{ result.errors.length }} 条错误
             </span>
             <span v-else>新增 {{ result.created }}，更新 {{ result.updated }}</span>
+            <span v-if="result.task_ids?.length" style="color: var(--el-text-color-secondary)">
+              （已创建 {{ result.task_ids.length }} 个后台解析任务）
+            </span>
           </div>
         </div>
       </div>

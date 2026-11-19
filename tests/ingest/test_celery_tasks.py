@@ -9,7 +9,7 @@ AsyncResult / Flower 的失败告警与重试全部失效。
 import pytest
 
 from core.models import Stage, Task
-from ingest.tasks import run_collection_stage, run_parsing_stage, run_storage_stage
+from ingest.tasks import run_collection_stage, run_config_pipeline_stage, run_parsing_stage, run_storage_stage
 
 # eager_celery 是共享 fixture，见 tests/conftest.py
 
@@ -141,7 +141,7 @@ def test_multi_key_saver_receives_all_matched_keys():
 def test_each_saver_only_receives_its_own_keys():
     """每个 Saver 只能看到自己注册的 key。
 
-    ``run_config_storage`` 原先把整个 config_json 递给每个 Saver，等于让它们
+    旧的两段式导入存储任务原先把整个 config_json 递给每个 Saver，等于让它们
     看到不属于自己的键——注册的 key 写错了也测不出来。
     """
     from configs.savers.registry import all_savers, build_saver_payloads
@@ -157,3 +157,73 @@ def test_each_saver_only_receives_its_own_keys():
             checked += 1
 
     assert checked, "这个用例没匹配到任何 Saver，等于没测"
+
+
+# ---------------------------------------------------------------------------
+# 导入配置的阶段：单阶段复用同步流水线（pipeline.run_config_pipeline）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_config_pipeline_stage_requires_config_id(eager_celery):
+    """任务参数缺 config_id：阶段失败、Celery 状态 FAILURE、Task 收尾为失败。"""
+    task = Task.objects.create(task_type="import_config", params={}, status="running")
+    stage = Stage.objects.create(task=task, stage_type="config_pipeline")
+
+    result = run_config_pipeline_stage.delay(stage.pk)
+
+    stage.refresh_from_db()
+    task.refresh_from_db()
+    assert stage.status == "failed"
+    assert "config_id" in stage.error_message
+    assert result.state == "FAILURE"
+    assert task.status == "failed"
+
+
+@pytest.mark.django_db
+def test_config_pipeline_stage_skips_missing_config(eager_celery):
+    """设备删除会 CASCADE 掉快照：目标不存在按「无事可做」收尾，而不是失败。
+
+    跳过必须写 success + output_data.skipped——信号只认 success / failed，
+    写 Stage.status="skipped" 会让任务永远停在运行中。
+    """
+    task = Task.objects.create(task_type="import_config", params={"config_id": 987654}, status="running")
+    stage = Stage.objects.create(task=task, stage_type="config_pipeline")
+
+    run_config_pipeline_stage.delay(stage.pk)
+
+    stage.refresh_from_db()
+    task.refresh_from_db()
+    assert stage.status == "success"
+    assert stage.output_data["skipped"]
+    assert task.status == "success"
+
+
+@pytest.mark.django_db
+def test_config_pipeline_stage_fails_when_saver_errors(eager_celery, monkeypatch):
+    """部分 Saver 失败 → 阶段失败（数据可能已部分入库），Celery 记 FAILURE。"""
+    from assets.models import Device
+    from configs.models import DeviceConfig
+    from configs.savers.interface import InterfaceSaver
+
+    def _boom(self, device, parsed_data):
+        raise RuntimeError("模拟 Saver 故障")
+
+    monkeypatch.setattr(InterfaceSaver, "save", _boom)
+
+    device = Device.objects.create(hostname="celery-import-fail", device_type="switch")
+    config = DeviceConfig(device=device, git_commit_hash="a" * 40, config_json={"interfaces": [{"interface": "GE0/1"}]})
+    config._defer_pipeline = True
+    config.save()
+
+    task = Task.objects.create(task_type="import_config", params={"config_id": config.pk}, status="running")
+    stage = Stage.objects.create(task=task, stage_type="config_pipeline")
+
+    result = run_config_pipeline_stage.delay(stage.pk)
+
+    stage.refresh_from_db()
+    task.refresh_from_db()
+    assert stage.status == "failed"
+    assert "模拟 Saver 故障" in stage.error_message
+    assert result.state == "FAILURE", "阶段失败必须向上抛，否则 Celery 会记成 SUCCESS"
+    assert task.status == "failed"

@@ -105,6 +105,16 @@ def test_create_rejects_unregistered_task_type(client, device):
 
 
 @pytest.mark.django_db
+def test_create_rejects_non_creatable_task_type(client, device):
+    """「导入配置」只由 Excel 导入按份投递：手工建必然缺 config_id，接口直接拒。"""
+    resp = client.post(TASKS_URL, {"device": device.pk, "task_type": "import_config"}, format="json")
+
+    assert resp.status_code == 400
+    assert "task_type" in resp.json()
+    assert Task.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_create_rejects_unknown_device(client, device):
     """作用目标是软引用，外键不再替我们校验存在性——注册表的 resolver 必须补上这一环。"""
     resp = client.post(TASKS_URL, {"device": device.pk + 999, "task_type": "collect_config"}, format="json")
