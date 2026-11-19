@@ -83,26 +83,27 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   flex: 1;
   border-right: none;
 }
-/* 一级菜单（总览与各分组标题）用品牌色的低饱和浅底：color-mix 把主色按比例
-   混进侧栏底色，亮/暗模式都得到同色相的灰调，不会像实色底那样抢眼。
-   二级项保持透明，靠缩进区分层级。 */
+/* 一级菜单做成深色块（Django admin / Zabbix 那种色阶）：与侧栏底拉开大色差，
+   但用品牌主色混黑得到低饱和深青，比纯实色柔和、不刺眼。二级项保持透明。 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
-  background: var(--el-fill-color-light);
-  background: color-mix(in srgb, var(--el-color-primary) 18%, var(--el-fill-color-blank));
-  color: var(--el-text-color-primary);
+  background: var(--el-color-primary-dark-2);
+  background: color-mix(in srgb, var(--el-color-primary) 35%, var(--el-color-black));
+  color: var(--el-color-white);
 }
-/* hover 略微加深，选中态再深一档；文字沿用主题色（浅底上亮/暗都可读） */
+.app-nav :deep(.app-menu > .el-menu-item .el-icon),
+.app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title .el-icon) {
+  color: var(--el-color-white);
+}
+/* hover / 选中：同色相提亮一档；Element 默认会把选中文字改成主题色，这里压回白色 */
 .app-nav :deep(.app-menu > .el-menu-item:hover),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title:hover) {
-  background: var(--el-fill-color);
-  background: color-mix(in srgb, var(--el-color-primary) 30%, var(--el-fill-color-blank));
+  background: color-mix(in srgb, var(--el-color-primary) 45%, var(--el-color-black));
 }
 .app-nav :deep(.app-menu > .el-menu-item.is-active),
 .app-nav :deep(.app-menu > .el-sub-menu.is-active > .el-sub-menu__title) {
-  background: var(--el-fill-color-dark);
-  background: color-mix(in srgb, var(--el-color-primary) 26%, var(--el-fill-color-blank));
-  color: var(--el-text-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 40%, var(--el-color-black));
+  color: var(--el-color-white);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
