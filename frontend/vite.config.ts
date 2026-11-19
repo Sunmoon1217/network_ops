@@ -19,14 +19,19 @@ const DTS_ONLY_MODE = 'gen-dts'
 
 // dev 下 /dashboard 会被 Vite 自带的 SPA fallback 改写成 /index.html（主站），
 // 与生产 nginx / Django 的「大屏单独处理」不一致。configureServer 里直接注册中间件
-// 发生在 Vite 内部中间件之前，把友好 URL 归一到第二个入口 dashboard.html。
+// 发生在 Vite 内部中间件之前，把友好 URL 归一到第二个入口 dashboard.html；
+// 根路径 / 同样 302 到大屏（与 nginx location = / 与 Django path("") 一致）。
 const dashboardEntryPlugin: Plugin = {
   name: 'netops-dashboard-entry',
   configureServer: (server) => {
-    server.middlewares.use((req, _res, next) => {
+    server.middlewares.use((req, res, next) => {
       const [pathname, query] = (req.url ?? '').split('?')
       if (pathname === '/dashboard' || pathname === '/dashboard/') {
         req.url = query === undefined ? '/dashboard.html' : `/dashboard.html?${query}`
+      } else if (pathname === '/') {
+        res.writeHead(302, { Location: '/dashboard' })
+        res.end()
+        return
       }
       next()
     })

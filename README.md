@@ -6,14 +6,14 @@
 
 | 模块 | 路由 | 功能 |
 |------|------|------|
-| **总览** | `/` | 全局统计仪表盘（ECharts 图表）+ 任务队列监控卡片 |
+| **总览** | `/overview` | 全局统计仪表盘（ECharts 图表）+ 任务队列监控卡片 |
 | **资产** | `/asset/*` | 设备台账与配置快照（`devices`，含历史/对比）、网卡接口（`interfaces`）、VLAN（`vlans`）、IP 与网段（`ip-addresses` / `subnets`，含标签与使用趋势）、负载均衡与域名（软资产视图） |
 | **配置** | `/config/*` | 负载均衡（`slb` / `gslb`）、防火墙与访问策略（`firewall` / `policy`）、路由表（`routing-table`）、ARP/MAC（`arp-mac`）、基线（`baseline`：SNMP / NTP / Syslog）、解析器模板（`parsers`）、设备账号（`accounts`） |
 | **拓扑** | `/topology` | 拓扑视图（编辑页在建） |
 | **监控** | `/monitor/*` | 任务/阶段管理（`tasks`，Celery 采集→解析→存储）、运行监控（`status`：celery / Redis / 队列积压巡检） |
 | **文档** | `/docs/*` | 知识库、临时文档、在线表格（`spreadsheet`） |
 | **工具** | `/tools/*` | 路径追踪（策略匹配 + NAT + 路由 + 负载均衡）、机柜 U 位视图、子网计算器、DNS 查询、互联网资产、解析映射对照 |
-| **总览大屏** | `/dashboard`、`/dashboard.html`（独立入口） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
+| **总览大屏** | `/dashboard`、`/dashboard.html`（独立入口；`/` 302 到大屏） | Zabbix / Autotask 供数的可视化大屏；数据由 `analysis.write_dashboard` 写库、`GET /api/dashboard/` 只读 |
 
 > 旧的 `/devices`、`/ipam`、`/tasks`、`/tools/spreadsheet` 路径保留 redirect，收藏夹不会 404。
 

@@ -47,3 +47,14 @@ def test_frontend_routes_still_fall_through_to_spa():
 
     assert resolve("/adminfoo").func is views.vue_index
     assert resolve("/some/spa/route").func is views.vue_index
+
+
+def test_root_redirects_to_dashboard():
+    """根路径 302 到大屏：主站入口在 /overview，/ 专门留给免认证大屏。
+
+    必须放在 SPA 兜底之前注册，否则 / 会被 vue_index 返回主站首页而不是 302。
+    """
+    res = Client().get("/")
+
+    assert res.status_code == 302
+    assert res.headers["Location"] == "/dashboard"

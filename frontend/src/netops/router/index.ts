@@ -22,7 +22,17 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/',
+      // 登录页（真路由）：未登录访问任何受保护页面都会被守卫送到这里。
+      // 用 skipLayout 交给 router-view 渲染，不再靠 App.vue 按「未登录」兜底。
+      // 公开路由只有 /、/dashboard、/login、/register。
+      path: '/login',
+      name: 'login',
+      component: () => import('@netops/views/auth/Login.vue'),
+      meta: { skipLayout: true },
+    },
+    {
+      // 总览：根路径已交给大屏（服务端 302），主站入口固定为 /overview。
+      path: '/overview',
       name: 'home',
       component: () => import('@netops/views/Home.vue'),
       meta: { requiresAuth: true },
@@ -166,21 +176,20 @@ const router = createRouter({
     // 旧 /tools/spreadsheet* 路径兼容（表格编辑器已移入「文档」菜单）
     { path: '/tools/spreadsheet', redirect: '/docs/spreadsheet' },
     { path: '/tools/spreadsheet/:id', redirect: '/docs/spreadsheet/:id' },
-    // 兜底：未注册路径（含 /login——它是不注册路由的"伪路径"，靠下面的守卫与 App.vue 协作）。
-    // 必须用「匹配组件」而不是 redirect：
-    //   ① redirect 到 '/' 会与守卫的 return '/login' 互相触发，形成无限重定向；
-    //   ② 401 跳转靠 pathname 能停在 /login 防循环（见 api/index.ts），redirect 会把 URL 改掉；
-    // 已登录访问乱路径时渲染总览页，避免 matched=[] 白屏。
-    { path: '/:pathMatch(.*)*', meta: { requiresAuth: true }, component: () => import('@netops/views/Home.vue') },
+    // 兜底：未注册路径一律 404（HTTP 仍是 200，SPA 内渲染 404 页）。
+    // 未登录时先被守卫送到 /login，登录后再落到这里。
+    // 只做前端判定，nginx / Django 的 SPA 兜底保持不变——服务端不维护路由表。
+    { path: '/:pathMatch(.*)*', meta: { requiresAuth: true }, component: () => import('@netops/views/common/NotFound.vue') },
   ],
 })
 
 router.beforeEach(async (to) => {
-  // /login 已由兜底路由命中，不要再重定向它自己（return '/login' 会与自身相撞）
-  if (to.path === '/login') return true
+  // 登录页：已登录用户直接回总览，未登录放行渲染 Login
+  // 用 name 判断而不是 path，/login/ 带尾斜杠（strict=false 仍匹配本条）也能命中
+  if (to.name === 'login') {
+    return getToken() ? '/overview' : true
+  }
   if (to.meta.requiresAuth && !getToken()) {
-    // 跳到 /login 伪路径后，App.vue 按「未登录」兜底渲染静态引入的 Login。
-    // 必须用字符串路径——命名路由 'login' 不存在，resolve 会直接抛错。
     return '/login'
   }
   // 写表单路由（新建 / 编辑）：普通用户直接输 URL 也进不去，避免填完才被后端 403
@@ -190,7 +199,7 @@ router.beforeEach(async (to) => {
     if (!auth.user) await auth.fetchUser()
     if (!auth.canWrite) {
       ElMessage.warning('需要操作员权限')
-      return '/'
+      return '/overview'
     }
   }
 })

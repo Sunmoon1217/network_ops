@@ -36,6 +36,10 @@ urlpatterns = [
     path("dashboard.html", views.vue_dashboard),
     re_path(r"^dashboard/?$", views.vue_dashboard),
     re_path(r"^assets/(?P<path>.*)$", views.serve_frontend_assets),
+    # 根路径 302 到大屏（与 nginx 的 location = / 及 vite dev 中间件一致）：
+    # 主站入口挪到 /overview，根路径专门留给免认证的大屏。
+    # 必须放在下面的 SPA 兜底之前，否则 / 会被 vue_index 吃掉返回主站首页。
+    path("", RedirectView.as_view(url="/dashboard", permanent=False), name="root"),
 ]
 
 # 交给 Vue 路由兜底时要排除的前缀。

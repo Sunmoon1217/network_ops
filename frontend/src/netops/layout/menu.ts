@@ -20,7 +20,7 @@ const renderIcon = (icon: Component) => {
  * 约定：叶子节点的 index 就是路由路径（以 / 开头），分组节点的 index 是唯一 key。
  */
 export const menuOptions: MenuItem[] = [
-  { index: '/', label: '总览', icon: renderIcon(IconOverview) },
+  { index: '/overview', label: '总览', icon: renderIcon(IconOverview) },
   {
     index: 'assets', label: '资产', icon: renderIcon(IconDevices),
     children: [
