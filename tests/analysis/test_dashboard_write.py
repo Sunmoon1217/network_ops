@@ -56,3 +56,25 @@ def test_write_dashboard_is_idempotent():
     assert MetricSample.objects.filter(kind="device_cpu", subject="SW-1").count() == 1
     assert ItsmCase.objects.filter(case_no="GD-1", is_active=True).count() == 1
     assert CollectionRun.objects.count() == 2  # 每次批次都留痕，不覆盖
+
+
+@pytest.mark.django_db(transaction=True)
+def test_write_dashboard_records_failed_run_when_upsert_breaks():
+    """写库失败不能只在 celery 里红一下：补一条 failed 的 CollectionRun（大屏新鲜度要靠它）。"""
+    now = timezone.now().isoformat()
+    payload = {
+        "source": "zabbix",
+        "batch_at": now,
+        "metrics": [{"panel": "statusbar", "group": "devicecount", "name": "count", "value": None, "list_value": [{"count": 1}], "sampled_at": now}],
+        "samples": [],
+        "cases": [],
+        "run": {"status": "success", "item_count": 1, "started_at": now, "finished_at": now, "error": ""},
+    }
+
+    with patch.object(DashboardMetric.objects, "update_or_create", side_effect=RuntimeError("db down")), pytest.raises(RuntimeError, match="db down"):
+        analysis_tasks.write_dashboard(payload)
+
+    run = CollectionRun.objects.get()
+    assert run.status == "failed"
+    assert run.source == "zabbix"
+    assert "db down" in run.error
