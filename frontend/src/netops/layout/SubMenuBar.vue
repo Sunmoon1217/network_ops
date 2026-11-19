@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { findTopGroup } from '@netops/layout/menu'
+import { findTopGroup, findSecondGroup } from '@netops/layout/menu'
 import MenuNode from '@netops/layout/MenuNode.vue'
 
 const route = useRoute()
 
-// 当前路由归属的一级分组 → 渲染它下面的递归子菜单
-const children = computed(() => findTopGroup(route.path)?.children ?? [])
+// 一级 / 二级留在侧栏，顶栏只渲染当前二级组下的三级菜单。
+// 当前二级是叶子（如「配置」下的各页）时三级为空，顶栏只留用户区。
+const top = computed(() => findTopGroup(route.path))
+const second = computed(() => findSecondGroup(route.path, top.value))
+const children = computed(() => second.value?.children ?? [])
 </script>
 
 <template>

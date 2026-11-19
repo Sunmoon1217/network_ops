@@ -3,14 +3,24 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLayoutStore } from '@netops/stores/layout'
 import { IconLayoutSide } from '@/assets/menu-icons'
-import { menuOptions, findTopGroup, firstPath } from '@netops/layout/menu'
+import type { MenuItem } from '@/types'
+import { menuOptions, findTopGroup, findSecondGroup, firstPath } from '@netops/layout/menu'
 
 const route = useRoute()
 const layoutStore = useLayoutStore()
 const collapsed = computed(() => layoutStore.collapsed)
 
-// 侧栏只放一级分组，当前分组由路由反查
-const activeGroup = computed(() => findTopGroup(route.path)?.index)
+// 当前路由归属的一级 / 二级。二级组（自己还有三级）用组 key 高亮，
+// 一级叶子与二级叶子用路由路径——这样三级菜单移走后，侧栏仍能标出所在分组。
+const activeIndex = computed(() => {
+  const top = findTopGroup(route.path)
+  const second = findSecondGroup(route.path, top)
+  if (second?.children?.length) return second.index
+  return second?.index ?? top?.index ?? route.path
+})
+
+// 二级项点击目标：二级组去它的第一个三级叶子，二级叶子就是自己
+const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?? item.index) : item.index)
 </script>
 
 <template>
@@ -22,24 +32,36 @@ const activeGroup = computed(() => findTopGroup(route.path)?.index)
 
     <el-menu
       mode="vertical"
-      :default-active="activeGroup"
+      :default-active="activeIndex"
       :collapse="collapsed"
+      :unique-opened="true"
       class="app-menu"
     >
-      <el-menu-item
-        v-for="item in menuOptions"
-        :key="item.index"
-        :index="item.index"
-        class="nav-item"
-      >
-        <el-icon><component :is="item.icon?.()?.children?.default" /></el-icon>
-        <template #title><span>{{ item.label }}</span></template>
-        <router-link
-          :to="firstPath(item) ?? item.index"
-          class="nav-link-overlay"
-          :aria-label="item.label"
-        />
-      </el-menu-item>
+      <template v-for="item in menuOptions" :key="item.index">
+        <!-- 一级叶子（总览） -->
+        <el-menu-item v-if="!item.children?.length" :index="item.index" class="nav-item">
+          <el-icon><component :is="item.icon?.()?.children?.default" /></el-icon>
+          <template #title><span>{{ item.label }}</span></template>
+          <router-link :to="item.index" class="nav-link-overlay" :aria-label="item.label" />
+        </el-menu-item>
+
+        <!-- 一级分组：展开后是一级下的二级菜单；三级菜单在顶栏（SubMenuBar） -->
+        <el-sub-menu v-else :index="item.index">
+          <template #title>
+            <el-icon><component :is="item.icon?.()?.children?.default" /></el-icon>
+            <span>{{ item.label }}</span>
+          </template>
+          <el-menu-item
+            v-for="second in item.children"
+            :key="second.index"
+            :index="second.index"
+            class="nav-item"
+          >
+            <template #title><span>{{ second.label }}</span></template>
+            <router-link :to="targetOf(second)" class="nav-link-overlay" :aria-label="second.label" />
+          </el-menu-item>
+        </el-sub-menu>
+      </template>
     </el-menu>
 
     <div class="nav-collapse" @click="layoutStore.toggleCollapsed">
