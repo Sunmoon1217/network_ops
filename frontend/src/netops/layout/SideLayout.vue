@@ -32,10 +32,13 @@ const isCollapsed = computed(() => layoutStore.collapsed)
   overflow-y: auto;
   overflow-x: hidden;
   transition: width 0.3s;
-  /* 导航栏本体：品牌色混黑得到的低饱和深青，亮/暗模式都保持同一块深色底 */
-  background: var(--el-color-black);
-  background: color-mix(in srgb, var(--el-color-primary) 10%, var(--el-color-black));
+  /* 导航栏本体跟随主题：亮色是侧栏白底，暗色才是品牌色混黑得到的低饱和深青 */
+  background: var(--el-fill-color-blank);
   border-right: 1px solid var(--el-border-color);
+}
+html.dark .side-aside {
+  background: color-mix(in srgb, var(--el-color-primary) 10%, var(--el-color-black));
+  border-right-color: color-mix(in srgb, var(--el-color-white) 12%, transparent);
 }
 .side-header {
   display: flex;
