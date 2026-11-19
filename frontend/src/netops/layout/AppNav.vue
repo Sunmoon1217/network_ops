@@ -83,27 +83,26 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   flex: 1;
   border-right: none;
 }
-/* 一级菜单（总览与各分组标题）用品牌色亮底，和白色侧栏形成强对比；
-   二级项保持透明、靠缩进区分层级。文字固定黑色（亮底上主题文字色在暗色模式会发白，
-   反而看不清）。 */
+/* 一级菜单（总览与各分组标题）用品牌色的低饱和浅底：color-mix 把主色按比例
+   混进侧栏底色，亮/暗模式都得到同色相的灰调，不会像实色底那样抢眼。
+   二级项保持透明，靠缩进区分层级。 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
-  background: var(--el-color-primary-light-3);
-  color: var(--el-color-black);
+  background: var(--el-fill-color-light);
+  background: color-mix(in srgb, var(--el-color-primary) 18%, var(--el-fill-color-blank));
+  color: var(--el-text-color-primary);
 }
-.app-nav :deep(.app-menu > .el-menu-item .el-icon),
-.app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title .el-icon) {
-  color: var(--el-color-black);
-}
-/* hover 加深一档；选中态 Element 默认会把文字改成主题色，在品牌底上不可读，显式压回黑色 */
+/* hover 略微加深，选中态再深一档；文字沿用主题色（浅底上亮/暗都可读） */
 .app-nav :deep(.app-menu > .el-menu-item:hover),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title:hover) {
-  background: var(--el-color-primary);
+  background: var(--el-fill-color);
+  background: color-mix(in srgb, var(--el-color-primary) 30%, var(--el-fill-color-blank));
 }
 .app-nav :deep(.app-menu > .el-menu-item.is-active),
 .app-nav :deep(.app-menu > .el-sub-menu.is-active > .el-sub-menu__title) {
-  background: var(--el-color-primary);
-  color: var(--el-color-black);
+  background: var(--el-fill-color-dark);
+  background: color-mix(in srgb, var(--el-color-primary) 26%, var(--el-fill-color-blank));
+  color: var(--el-text-color-primary);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
