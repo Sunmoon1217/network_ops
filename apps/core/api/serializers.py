@@ -231,3 +231,14 @@ class TaskSerializer(serializers.ModelSerializer):
             target_id=validated_data.pop("target_id", None),
             target_label=validated_data.pop("target_label", ""),
         )
+
+
+class IntegrationHealthSerializer(serializers.Serializer):
+    """外部连接实例与健康状态（只读聚合：provider 自描述 + 最近一次探活结果）。"""
+
+    system = serializers.CharField()
+    instance = serializers.CharField()
+    description = serializers.DictField()
+    status = serializers.CharField()
+    checked_at = serializers.DateTimeField(allow_null=True)
+    error = serializers.CharField()

@@ -1,8 +1,8 @@
 # core 承载外部连接实例与 client 生命周期
 
-> **状态：切片式实施中（2026-11-16 起）。Step 1–3 已落地（Step 1 连接配置统一 + AUTOTASK 收口；
-> Step 2/3 `core/integrations/` 骨架 + Zabbix 下沉 + ASGI / Celery 释放钩子），
-> Step 4（健康状态外化）与 Step 5（Dify / 阿里云接入）未做。**
+> **状态：切片式实施中（2026-11-16 起）。Step 1–4 已落地（连接配置统一 + AUTOTASK 收口；
+> `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子；`IntegrationHealth` + beat 探活 + 只读接口），
+> 只剩 Step 5（Dify / 阿里云接入 provider）未做。**
 > **现状文档见 [`../integrations.md`](../integrations.md)**——本文保留设计论证与未完成部分。
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制（已落地）见
 > [`../tasks.md`](../tasks.md)。
@@ -248,7 +248,7 @@ def register_providers():
 ```
 
 **调度者（2026-11-16 补）**：用 **Celery beat 周期任务**触发——在 `netops/celery.py` 的
-`beat_schedule` 注册一条（如每 5 分钟）`core.integrations.probe_all` 任务，逐 provider
+`beat_schedule` 注册一条（默认每 5 分钟）`core.integrations.probe_all` 任务，逐 provider
 `acquire()` 成功即记 ok、异常记 down + error。beat 进程本就不建 client（见 §「释放钩子」），
 探测在 worker 里执行，与实例亲和检查同一套循环亲和逻辑（provider 内判定，core 不懂事件循环）。
 
@@ -298,13 +298,14 @@ def register_providers():
 
 ### Step 4 — 状态外化与多实例（T16 前完成）
 
-**状态：未做**。注册键已经是 `(system, instance)`，但 `IntegrationHealth` 表、周期
-`probe_all`、`GET /api/core/integrations/` 都还没有。
+**状态：已落地（2026-11-19）**。注册键本来就是 `(system, instance)`；本次补齐外化部分：
 
-1. 新增 `IntegrationHealth` 表 + 迁移。
-2. 键从单实例扩到 `(system, instance)`。
-3. `GET /api/core/integrations/` 只读列出实例与健康状态；
-   写操作走 `IsOperatorOrReadOnly`。
+1. `core.IntegrationHealth` + 迁移 `core/0007_integration_health`，唯一键 `(system, instance)`；
+2. beat 每 `INTEGRATION_PROBE_SECONDS`（默认 300）投递 `core.integrations.probe_all`，
+   逐 provider `acquire()` 成功后立刻 `release()`；`ok` / `down` + error 落库；
+3. `GET /api/integrations/` 只读列出「已注册实例 ∪ 健康行」（未探过 = `unknown`），
+   复用默认权限 `IsOperatorOrReadOnly`（读：已认证即可；本接口无写操作）。
+   路径沿用 core API 的 `/api/` 前缀（与 `/api/tasks/` 一致），不是 `/api/core/`。
 
 ### Step 5 — Dify / 阿里云接入（按需）
 

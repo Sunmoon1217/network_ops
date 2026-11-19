@@ -118,6 +118,13 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | `DASHBOARD_LINK_REFRESH_SECONDS` | `180` | beat 刷新周期（秒）；管理命令 `refresh_link_cache` 可立即刷新 |
 | `DASHBOARD_LINK_WINDOW_HOURS` | `3` | 链路折线窗口（小时） |
 
+### 外部连接健康探活
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `INTEGRATION_PROBE_TASK` | `core.integrations.probe_all` | 任务名的**唯一定义处**：`apps/core/tasks.py` 的装饰器 `name=` 与 beat key 必须与之一致（`tests/core/test_integration_health.py` 对账） |
+| `INTEGRATION_PROBE_SECONDS` | `300` | beat 探活周期（秒）；结果 upsert 到 `core.IntegrationHealth`，`GET /api/integrations/` 只读 |
+
 ### MCP 工具出口（`/mcp`）
 
 | 变量 | 默认 | 说明 |

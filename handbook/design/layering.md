@@ -4,7 +4,7 @@
 > （切片 1–9）、ingest 收窄、llmtools 域目录调整均已落地；`assets` 已是叶子节点
 > （AST 守卫 `tests/core/test_layering.py`）。**未落地的只剩外部连接实例统一**：Step 1–3
 > 已完成（`core/integrations/` + Zabbix 下沉 + 释放钩子 + 连接配置统一），
-> Step 4 健康状态外化、Step 5 Dify / 阿里云接入未做，见 [`external-clients.md`](external-clients.md)。
+> Step 5 Dify / 阿里云接入未做，见 [`external-clients.md`](external-clients.md)。
 > 代码里的依赖方向已与本文一致，`AGENTS.md` 已同步。
 
 本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**。
@@ -335,8 +335,8 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 3. **ingest 收窄**（✅ 已落地）——配置语义随 parsers/savers 归 configs，Excel 导入从 assets
    整体迁入，ingest 只留采集与编排；
 4. **外部连接收归 core**（⚠️ 部分落地，见 [`external-clients.md`](external-clients.md)）。
-   Step 1–3 已落地（连接配置统一 + `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子）；
-   Step 4 健康状态外化、Step 5 Dify / 阿里云接入未做。
+   Step 1–4 已落地（连接配置统一 + `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子 +
+   `IntegrationHealth` + beat 探活）；Step 5 Dify / 阿里云接入未做。
 
    `egest`（配置下发 / 消息推送）是 roadmap 的**未来功能**，不在本批实施范围内，
    此处不安排落地步骤。依赖矩阵里的 `egest` 行只表达目标态的依赖方向。

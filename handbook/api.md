@@ -39,6 +39,7 @@
 | `/api/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
 | `/api/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
 | `/api/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
+| `/api/integrations/` | 外部连接实例与健康状态（只读）：provider 自描述 + 最近一次探活（`status` / `checked_at` / `error`），未探过为 `unknown` |
 
 ## assets / configs（`assets/api/urls.py` + `configs/api/urls.py`，共用前缀 `/api/assets/`）
 

@@ -19,5 +19,7 @@ urlpatterns = [
     path("me/", auth.me, name="me"),
     # 前端配置（表格列宽等界面偏好）：按用户存取，语义见 preferences 模块
     path("me/preferences/", preferences.preferences, name="preferences"),
+    # 外部连接实例与健康状态（只读）：beat 探活写库，这里跨进程读
+    path("integrations/", views.IntegrationHealthView.as_view(), name="integration-health"),
     path("", include(router.urls)),
 ]

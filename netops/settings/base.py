@@ -162,6 +162,12 @@ ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 # - DASHBOARD_PAYLOAD_VIA_REDIS：默认 False = A（payload 随消息直接投递）；True = C
 #   （payload 暂存 Redis，只把 key 投递，避免大 payload 塞进 broker 消息）。
 DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
+
+# 外部连接健康探活（design/external-clients.md Step 4）：beat 周期任务写
+# core.IntegrationHealth，GET /api/integrations/ 只读展示。任务名与 core/tasks.py 的
+# 装饰器 name= 必须一致（tests/core/test_integration_health.py 对账）。
+INTEGRATION_PROBE_TASK = "core.integrations.probe_all"
+INTEGRATION_PROBE_SECONDS = int(os.environ.get("INTEGRATION_PROBE_SECONDS", "300"))
 DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
 DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
 
@@ -461,6 +467,11 @@ CELERY_TASK_ROUTES = {
 # （Zabbix async 客户端只活在 worker 的 event loop 里）。队列走默认 celery，与写入链共用
 # 并发槽。条目名固定，改名等于换调度（beat 的 schedule 文件按条目名记上次运行时间）。
 CELERY_BEAT_SCHEDULE = {
+    # 外部连接健康状态：探活结果落 core.IntegrationHealth（API 只读，跨进程可见）
+    "integration-health": {
+        "task": INTEGRATION_PROBE_TASK,
+        "schedule": INTEGRATION_PROBE_SECONDS,
+    },
     "dashboard-link-cache": {
         "task": "ingest.refresh_link_cache",
         "schedule": DASHBOARD_LINK_REFRESH_SECONDS,

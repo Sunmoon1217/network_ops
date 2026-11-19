@@ -207,3 +207,36 @@ class Stage(models.Model):
     def get_stage_type_display(self) -> str:
         """显示名按注册表反查（未登记的旧词回落 key）。"""
         return task_types.label_for(self.stage_type)
+
+
+class IntegrationHealth(models.Model):
+    """外部连接的健康快照（跨进程可见）。
+
+    client 实例是进程内的（ASGI / Celery / consumer / beat 各一份），admin 与 MCP 所在进程
+    看不到别的进程持有什么实例；所以健康状态必须外化。由 Celery beat 周期任务
+    ``core.integrations.probe_all`` 逐 provider 探活后 upsert，API 只读。
+
+    设计见 ``handbook/design/external-clients.md``（Step 4），现状见 ``handbook/integrations.md``。
+    """
+
+    STATUS_CHOICES = (
+        ("ok", "正常"),
+        ("degraded", "降级"),
+        ("down", "不可用"),
+        ("unknown", "未知"),
+    )
+
+    system = models.CharField(max_length=32, verbose_name="外部系统")
+    instance = models.CharField(max_length=32, default="default", verbose_name="实例")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="unknown", verbose_name="状态")
+    checked_at = models.DateTimeField(verbose_name="最近检查时间")
+    error = models.TextField(blank=True, default="", verbose_name="错误信息")
+
+    class Meta:
+        verbose_name = "外部连接健康状态"
+        verbose_name_plural = verbose_name
+        ordering = ("system", "instance")
+        constraints = (models.UniqueConstraint(fields=("system", "instance"), name="uni_integration_health_key"),)
+
+    def __str__(self):
+        return f"{self.system}/{self.instance}: {self.get_status_display()}"
