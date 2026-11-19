@@ -73,3 +73,30 @@ def test_autotask_refuses_when_disabled():
     cfg = {"base_url": "", "credential_ref": "", "timeout": 5, "enabled": False}
     with override_settings(AUTOTASK_CONFIG=cfg), pytest.raises(ImproperlyConfigured, match="AUTOTASK_BASE_URL"):
         asyncio.run(fetch_case())
+
+
+def _documented_env_names() -> set[str]:
+    """示例 env 里出现过的变量名（含被注释掉的行——示例以注释形式给默认值）。"""
+    import re
+    from pathlib import Path
+
+    from django.conf import settings as django_settings
+
+    root = Path(django_settings.BASE_DIR) / "envs" / "example"
+    text = "".join(path.read_text(encoding="utf-8") for path in sorted(root.glob("*.env")))
+    return set(re.findall(r"\b([A-Z][A-Z0-9_]{2,})\b", text))
+
+
+@pytest.mark.parametrize("prefix", ("ZABBIX_", "ALIYUN_", "DIFY_", "AUTOTASK_", "INTEGRATION_PROBE_"))
+def test_external_config_env_names_are_documented_in_example(prefix):
+    """外部连接的环境变量必须进示例 env：新部署照抄模板时不能靠猜变量名。"""
+    import re
+    from pathlib import Path
+
+    from django.conf import settings as django_settings
+
+    base = (Path(django_settings.BASE_DIR) / "netops" / "settings" / "base.py").read_text(encoding="utf-8")
+    # 只认真正从环境读的名字（os.environ.get / _env_or_file），排除 CONFIG 字典名
+    used = {name for name in re.findall(r'(?:os\.environ\.get|_env_or_file)\(\s*"([A-Z][A-Z0-9_]+)"', base) if name.startswith(prefix)}
+    missing = sorted(used - _documented_env_names())
+    assert not missing, f"{prefix}* 未收录到 envs/example/*.env：{missing}"
