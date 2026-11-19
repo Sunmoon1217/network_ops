@@ -15,8 +15,9 @@
 import core 的这个模块）。``tests/core/test_layering.py`` 会扫 core 的 import 兜住。
 
 **为什么实例不放数据库**：client 绑着 session / 连接池 / 事件循环，天然是进程内的东西；
-跨进程「谁持有什么实例」只能靠外化的健康状态（``IntegrationHealth``，见设计稿 Step 4，
-尚未落地），不是靠注册表。
+跨进程「谁持有什么实例」只能靠外化的健康状态（``IntegrationHealth``，由 beat 的
+``core.integrations.probe_all`` 周期写入，见 ``health.py`` 与 ``handbook/integrations.md``），
+不是靠注册表。
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ async def release_all() -> None:
 
 
 def describe_all() -> list[dict[str, Any]]:
-    """已注册实例的自描述快照（未来 ``GET /api/core/integrations/`` 的供数）。"""
+    """已注册实例的自描述快照（``GET /api/core/integrations/`` 的供数之一）。"""
     return [provider.describe() for provider in _providers.values()]
 
 

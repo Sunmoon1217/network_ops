@@ -2,7 +2,7 @@
 from django.contrib import admin
 
 from . import task_types
-from .models import Stage, Task, Token, User, UserPreference
+from .models import IntegrationHealth, Stage, Task, Token, User, UserPreference
 
 admin.site.site_header = "网络运维管理平台"
 admin.site.site_title = "网络运维管理平台"
@@ -173,3 +173,19 @@ class StageAdmin(admin.ModelAdmin):
     autocomplete_fields = ("task",)
     list_select_related = ("task",)
     date_hierarchy = "created_at"
+
+
+@admin.register(IntegrationHealth)
+class IntegrationHealthAdmin(admin.ModelAdmin):
+    """探活结果的只读视图：写入只走 ``core.integrations.probe_all``（beat 周期任务）。"""
+
+    list_display = ("system", "instance", "status", "checked_at")
+    list_filter = ("status", "system")
+    search_fields = ("system", "instance", "error")
+    readonly_fields = ("system", "instance", "status", "checked_at", "error")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

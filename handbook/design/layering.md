@@ -1,12 +1,15 @@
 # 域分层：依赖矩阵与职责边界
 
-> **状态：实施中（2026-11-16 起）。core 去业务依赖已全部落地；
-> configs 拆分进行中（模型 / 解析 / 写入 / 序列化器已迁，admin / API / 软资产未迁）；
-> ingest 收窄与外部连接收归 core 未动。**
-> 代码里的依赖方向在落地前仍以 `AGENTS.md` 现有描述为准。
+> **状态：基本落地（2026-11-16 起，2026-11-19 校核）。** core 去业务依赖、configs 拆分
+> （切片 1–9）、ingest 收窄、llmtools 域目录调整均已落地；`assets` 已是叶子节点
+> （AST 守卫 `tests/core/test_layering.py`）。**未落地的只剩外部连接实例统一**：Step 1–3
+> 已完成（`core/integrations/` + Zabbix 下沉 + 释放钩子 + 连接配置统一），
+> Step 5 Dify / 阿里云接入未做，见 [`external-clients.md`](external-clients.md)。
+> 代码里的依赖方向已与本文一致，`AGENTS.md` 已同步。
 
-本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**，
-消除当前三处反向依赖与两处跨 app 外键。
+本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**。
+改造前存在三处反向依赖与两处跨 app 外键：反向依赖已全部清零，`InternetAnalysis.device`
+仍是跨 app 外键（见 §「跨 app 外键」）。
 
 ## 现状实测（2026-11-16）
 
@@ -313,19 +316,15 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 ## 与 `AGENTS.md` 的关系
 
-`AGENTS.md`「项目结构」一节现在写的是：
+**已同步（2026-11-19）**。`AGENTS.md`「项目结构」一节的依赖方向已换成新分层：
 
-> **依赖方向**：`llmtools → apps`，`analysis → ingest → assets`（单向）。`assets` 不许 import
-> `ingest`；`ingest` 除 `purge_configs` 这类跨域运维工具外不许 import `analysis`
+> **依赖方向**：`llmtools → apps`，`analysis → ingest → configs → assets`（单向）……
 
-**这套描述与本文的分层不一致**（本文把 ingest 拆成 ingest + configs，把 core 的
-任务机制单列）。落地时需同步更新 `AGENTS.md`——在代码改动落地前，`AGENTS.md` 保持现状。
+切换判据是「`configs` app 首次通过全量测试那一刻」，该条件在切片 1 落地时即已满足
+（2026-11-16，全量 846 passed）。当时的临时指引「分层规范以 handbook/design/layering.md
+为准（实施中，未完全落地）」现已删除。
 
-**切换时机（唯一、可判定）**：`configs` app 首次通过全量测试那一刻。
-
-- 在此之前：`AGENTS.md` 的「项目结构 / 依赖方向」一节顶部加一行临时指引：
-  `分层规范以 handbook/design/layering.md 为准（实施中，未完全落地）`。
-- 之后：用新的分层描述替换旧的 `analysis → ingest → assets` 单向描述，删除临时指引。
+以后改分层只改本文一份，`AGENTS.md` 只保留一句方向描述并指回本文。
 
 ## 实施顺序建议
 
@@ -333,14 +332,17 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 1. **core 去除业务依赖**（✅ 2026-11-16 已落地，现状见 [`../tasks.md`](../tasks.md)）
    ——core 变叶子后，上面的拆分才有稳定的基座；
-2. **拆 configs 域**（[`assets-configs-split.md`](assets-configs-split.md)）——迁模型、
-   迁 parsers/savers、拆软资产归并；
-3. **ingest 收窄**——去掉配置语义，只留采集与编排；
-4. **外部连接收归 core**（[`external-clients.md`](external-clients.md)）。
+2. **拆 configs 域**（✅ 切片 1–9 全部落地，见 [`assets-configs-split.md`](assets-configs-split.md)）
+   ——迁模型、迁 parsers/savers、拆软资产归并；
+3. **ingest 收窄**（✅ 已落地）——配置语义随 parsers/savers 归 configs，Excel 导入从 assets
+   整体迁入，ingest 只留采集与编排；
+4. **外部连接收归 core**（⚠️ 部分落地，见 [`external-clients.md`](external-clients.md)）。
+   Step 1–4 已落地（连接配置统一 + `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子 +
+   `IntegrationHealth` + beat 探活）；Step 5 Dify / 阿里云接入未做。
 
    `egest`（配置下发 / 消息推送）是 roadmap 的**未来功能**，不在本批实施范围内，
    此处不安排落地步骤。依赖矩阵里的 `egest` 行只表达目标态的依赖方向。
-5. **llmtools 域目录调整**——按话题而非 app 划分。
+5. **llmtools 域目录调整**（✅ 已落地，`domains/assets/` → `domains/network/`）——按话题而非 app 划分。
 
    **注意（2026-11-16 评审修正）**：llmtools 的 **import 修复不能等到第 5 步**——
    第 2 步模型搬走的瞬间，`llmtools/domains/assets/` 里 ConfigBase 家族的 import

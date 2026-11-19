@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from celery import shared_task
+from django.conf import settings
 from django.utils import timezone
 
 from core import task_types
@@ -91,3 +93,11 @@ def cancel(task: Task) -> None:
 
     Task.objects.filter(pk=task.pk).update(status="cancelled", completed_at=timezone.now())
     logger.info("任务 %s 已取消", task.pk)
+
+
+@shared_task(name=settings.INTEGRATION_PROBE_TASK)
+def probe_integration_health() -> int:
+    """beat 周期任务：探活全部已注册 provider，结果写 ``core.IntegrationHealth``。"""
+    from core.integrations.health import probe_all
+
+    return probe_all()

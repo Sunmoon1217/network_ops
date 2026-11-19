@@ -14,6 +14,7 @@ from aliyunsdkasapi.ASClient import ASClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 from aliyunsdkcore.client import AcsClient
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 aliyunapi_ecs = Ns(
     list=Ns(product="Ecs", version="2014-05-26", action="DescribeInstances"),
@@ -38,6 +39,18 @@ aliyunapi = Ns(
 )
 
 
+def _config(account: str) -> dict:
+    """统一「是否已配置」：settings 算好全局 enabled，账号级再校验一次。"""
+    cfg = settings.ALIYUN_CONFIG
+    if not cfg["enabled"]:
+        raise ImproperlyConfigured("阿里云未配置：需要 ALIYUN_REGION 与至少一套 AK/SK（ALIYUN_{PROD,TEST}_ACCESS_KEY_ID/_SECRET）")
+    acc = cfg["accounts"].get(account)
+    prefix = account.upper()
+    if not acc or not acc["access_key_id"] or not acc["access_key_secret"]:
+        raise ImproperlyConfigured(f"阿里云 {account} 账号未配置访问密钥（ALIYUN_{prefix}_ACCESS_KEY_ID / ALIYUN_{prefix}_ACCESS_KEY_SECRET）")
+    return cfg
+
+
 def get_client(account: str = "prod", product: str = "") -> AcsClient:
     """按账户名 + 产品代码获取预配置的 AcsClient。
 
@@ -45,7 +58,7 @@ def get_client(account: str = "prod", product: str = "") -> AcsClient:
         account: "prod" | "test"
         product: 产品代码 "Ecs" / "Vpc" / "Slb" / "Sls"；为空则不绑定产品 endpoint
     """
-    cfg = settings.ALIYUN_CONFIG
+    cfg = _config(account)
     acc = cfg["accounts"][account]
     client = AcsClient(
         acc["access_key_id"],
@@ -61,16 +74,17 @@ def get_client(account: str = "prod", product: str = "") -> AcsClient:
 
 class AliyunASAPI:
     def __init__(self, account: str = "prod"):
+        cfg = _config(account)
         self.account = account
         self.client = ASClient(
-            accessKeyId=settings.ALIYUN_CONFIG["accounts"][account]["access_key_id"],
-            accessKeySecret=settings.ALIYUN_CONFIG["accounts"][account]["access_key_secret"],
-            regionId=settings.ALIYUN_CONFIG["region"],
-            timeout=30,
+            accessKeyId=cfg["accounts"][account]["access_key_id"],
+            accessKeySecret=cfg["accounts"][account]["access_key_secret"],
+            regionId=cfg["region"],
+            timeout=cfg["timeout"],
             verify=False,
         )
         self.client.setSdkSource("network_ops")
-        self.endpoint = settings.ALIYUN_CONFIG["endpoints"].get("Asapi")
+        self.endpoint = cfg["endpoints"].get("Asapi")
 
     def call(self, product: str, version: str, action: str, params: dict, method: str = "GET") -> dict:
         request = AsapiRequest(product=product, version=version, action_name=action, asapi_gateway=self.endpoint)

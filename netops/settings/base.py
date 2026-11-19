@@ -113,7 +113,7 @@ if DB_ENGINE not in _DB_BACKENDS:
 # 写 127.0.0.1 而不是 localhost：Windows 上 localhost 优先解析成 ::1，而 PostgreSQL / Redis
 # 通常只监听 IPv4，psycopg2 与 redis-py 会逐个地址回退——每次连接白等约 10s（实测 10.03s
 # vs 0.03s）。pytest 一个会话要建两三条连接，setup 就被拖成 40s 级。
-_DATABASE = {
+_DATABASE: dict[str, object] = {
     "ENGINE": _DB_BACKENDS[DB_ENGINE],
     "NAME": os.environ.get("DB_NAME", "netops"),
     "USER": _env_or_file("DB_USER", "netops"),
@@ -162,6 +162,12 @@ ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 # - DASHBOARD_PAYLOAD_VIA_REDIS：默认 False = A（payload 随消息直接投递）；True = C
 #   （payload 暂存 Redis，只把 key 投递，避免大 payload 塞进 broker 消息）。
 DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
+
+# 外部连接健康探活（design/external-clients.md Step 4）：beat 周期任务写
+# core.IntegrationHealth，GET /api/core/integrations/ 只读展示。任务名与 core/tasks.py 的
+# 装饰器 name= 必须一致（tests/core/test_integration_health.py 对账）。
+INTEGRATION_PROBE_TASK = "core.integrations.probe_all"
+INTEGRATION_PROBE_SECONDS = int(os.environ.get("INTEGRATION_PROBE_SECONDS", "300"))
 DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
 DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
 
@@ -182,10 +188,32 @@ DASHBOARD_LINK_CACHE_TTL = int(os.environ.get("DASHBOARD_LINK_CACHE_TTL", "600")
 DASHBOARD_LINK_REFRESH_SECONDS = int(os.environ.get("DASHBOARD_LINK_REFRESH_SECONDS", "180"))
 DASHBOARD_LINK_WINDOW_HOURS = int(os.environ.get("DASHBOARD_LINK_WINDOW_HOURS", "3"))
 
+# ---- 外部连接配置 ------------------------------------------------------------
+# 四套外部连接（Zabbix / 阿里云 / Dify / autotask）共用一套字段，域特有项各自保留：
+#   base_url        入口地址；阿里云按 region + 各产品 endpoint 接入，没有单一入口，故留空
+#   credential_ref  凭据的**环境变量名**，不是值（值仍走 *_FILE > 环境变量 > 默认值）
+#   timeout         HTTP / SDK 超时秒数
+#   enabled         地址与必填项是否齐备；消费方统一据此判断「未配置」并抛
+#                   ImproperlyConfigured（Dify 的推送接口据此返回 503）
+# 变量清单见 handbook/settings.md。
+
 # 阿里云：一朵云、两个资源集（生产/测试），两套账号共用 region，各产品 endpoint 分别传参。
-# 变量清单见 handbook/settings.md；凭据链路同为 *_FILE > 环境变量 > 空。
+_ALIYUN_REGION = os.environ.get("ALIYUN_REGION", "")
+_ALIYUN_ACCOUNTS = {
+    "prod": {
+        "access_key_id": _env_or_file("ALIYUN_PROD_ACCESS_KEY_ID"),
+        "access_key_secret": _env_or_file("ALIYUN_PROD_ACCESS_KEY_SECRET"),
+    },
+    "test": {
+        "access_key_id": _env_or_file("ALIYUN_TEST_ACCESS_KEY_ID"),
+        "access_key_secret": _env_or_file("ALIYUN_TEST_ACCESS_KEY_SECRET"),
+    },
+}
 ALIYUN_CONFIG = {
-    "region": os.environ.get("ALIYUN_REGION", ""),
+    "base_url": "",
+    "credential_ref": "ALIYUN_{PROD,TEST}_ACCESS_KEY_ID/_SECRET",
+    "timeout": int(os.environ.get("ALIYUN_TIMEOUT", "30")),
+    "region": _ALIYUN_REGION,
     "endpoints": {
         "Ecs": os.environ.get("ALIYUN_ECS_ENDPOINT", ""),
         "Vpc": os.environ.get("ALIYUN_VPC_ENDPOINT", ""),
@@ -193,43 +221,52 @@ ALIYUN_CONFIG = {
         "Sls": os.environ.get("ALIYUN_SLS_ENDPOINT", ""),
         "Asapi": os.environ.get("ALIYUN_ASAPI_ENDPOINT", ""),
     },
-    "accounts": {
-        "prod": {
-            "access_key_id": _env_or_file("ALIYUN_PROD_ACCESS_KEY_ID"),
-            "access_key_secret": _env_or_file("ALIYUN_PROD_ACCESS_KEY_SECRET"),
-        },
-        "test": {
-            "access_key_id": _env_or_file("ALIYUN_TEST_ACCESS_KEY_ID"),
-            "access_key_secret": _env_or_file("ALIYUN_TEST_ACCESS_KEY_SECRET"),
-        },
-    },
+    "accounts": _ALIYUN_ACCOUNTS,
+    "enabled": bool(_ALIYUN_REGION) and any(a["access_key_id"] and a["access_key_secret"] for a in _ALIYUN_ACCOUNTS.values()),
 }
 
-# Dify 知识库（文档转换产物的推送目标）：前三项（base_url / api_key / dataset_id）齐备才启用，
-# 缺失时推送接口返 503，转换与留档不受影响。变量清单见 handbook/settings.md。
+# Dify 知识库（文档转换产物的推送目标）：base_url / api_key / dataset_id 齐备才启用，
+# 缺失时推送接口返回 503，转换与留档不受影响。
+_DIFY_BASE_URL = os.environ.get("DIFY_API_BASE_URL", "").rstrip("/")
+_DIFY_API_KEY = _env_or_file("DIFY_API_KEY")
+_DIFY_DATASET_ID = os.environ.get("DIFY_DATASET_ID", "")
 DIFY_CONFIG = {
-    "api_base_url": os.environ.get("DIFY_API_BASE_URL", "").rstrip("/"),
-    "api_key": _env_or_file("DIFY_API_KEY"),
-    "dataset_id": os.environ.get("DIFY_DATASET_ID", ""),
-    "indexing_technique": os.environ.get("DIFY_INDEXING_TECHNIQUE", "high_quality"),
+    "base_url": _DIFY_BASE_URL,
+    "credential_ref": "DIFY_API_KEY",
     "timeout": int(os.environ.get("DIFY_TIMEOUT", "30")),
+    "enabled": bool(_DIFY_BASE_URL and _DIFY_API_KEY and _DIFY_DATASET_ID),
+    "api_key": _DIFY_API_KEY,
+    "dataset_id": _DIFY_DATASET_ID,
+    "indexing_technique": os.environ.get("DIFY_INDEXING_TECHNIQUE", "high_quality"),
     "process_mode": os.environ.get("DIFY_PROCESS_MODE", "automatic"),
     "segment_separator": os.environ.get("DIFY_SEGMENT_SEPARATOR", "\n"),
     "segment_max_tokens": int(os.environ.get("DIFY_SEGMENT_MAX_TOKENS", "500")),
 }
 
-
-# Zabbix API（ingest 采集器的数据源）：这里只放连接配置，单例与登录逻辑在
-# core/integrations/providers/zabbix/client.py（get_zapi / close_zapi，实例由 core 统管），
-# 未配置 url 则拒绝创建。
-# 变量清单与凭据链见 handbook/settings.md；zabbix_utils 自身也读同名 env 兜底，
-# 这里显式传参以 settings 为准，行为可预期。
+# Zabbix API（大屏 / 链路采集的数据源）：单例与登录逻辑在
+# core/integrations/providers/zabbix/client.py，未配置或凭据不全则拒绝创建。
+# zabbix_utils 自身也读同名 env 兜底，这里显式传参以 settings 为准，行为可预期。
+_ZABBIX_BASE_URL = os.environ.get("ZABBIX_URL", "").rstrip("/")
+_ZABBIX_TOKEN = _env_or_file("ZABBIX_TOKEN")
+_ZABBIX_USER = _env_or_file("ZABBIX_USER")
+_ZABBIX_PASSWORD = _env_or_file("ZABBIX_PASSWORD")
 ZABBIX_CONFIG = {
-    "url": os.environ.get("ZABBIX_URL", ""),
-    "token": _env_or_file("ZABBIX_TOKEN"),
-    "user": _env_or_file("ZABBIX_USER"),
-    "password": _env_or_file("ZABBIX_PASSWORD"),
+    "base_url": _ZABBIX_BASE_URL,
+    "credential_ref": "ZABBIX_TOKEN" if _ZABBIX_TOKEN else "ZABBIX_USER/ZABBIX_PASSWORD",
     "timeout": int(os.environ.get("ZABBIX_TIMEOUT", "30")),
+    "enabled": bool(_ZABBIX_BASE_URL and (_ZABBIX_TOKEN or (_ZABBIX_USER and _ZABBIX_PASSWORD))),
+    "token": _ZABBIX_TOKEN,
+    "user": _ZABBIX_USER,
+    "password": _ZABBIX_PASSWORD,
+}
+
+# autotask（大屏的工单 / 巡检 / SLB 源）：内网 HTTP 服务，无凭据。
+_AUTOTASK_BASE_URL = os.environ.get("AUTOTASK_BASE_URL", "").rstrip("/")
+AUTOTASK_CONFIG = {
+    "base_url": _AUTOTASK_BASE_URL,
+    "credential_ref": "",
+    "timeout": int(os.environ.get("AUTOTASK_TIMEOUT", "30")),
+    "enabled": bool(_AUTOTASK_BASE_URL),
 }
 
 
@@ -430,6 +467,11 @@ CELERY_TASK_ROUTES = {
 # （Zabbix async 客户端只活在 worker 的 event loop 里）。队列走默认 celery，与写入链共用
 # 并发槽。条目名固定，改名等于换调度（beat 的 schedule 文件按条目名记上次运行时间）。
 CELERY_BEAT_SCHEDULE = {
+    # 外部连接健康状态：探活结果落 core.IntegrationHealth（API 只读，跨进程可见）
+    "integration-health": {
+        "task": INTEGRATION_PROBE_TASK,
+        "schedule": INTEGRATION_PROBE_SECONDS,
+    },
     "dashboard-link-cache": {
         "task": "ingest.refresh_link_cache",
         "schedule": DASHBOARD_LINK_REFRESH_SECONDS,

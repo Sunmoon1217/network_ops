@@ -58,6 +58,7 @@ ingest 的 Excel 导入、analysis 的 overview——四个 app 抢一个前缀�
 | `/api/core/tasks/<id>/` | 任务详情（含嵌套的阶段数组） |
 | `/api/core/tasks/<id>/cancel/` | 取消任务（已结束的返回 400） |
 | `/api/core/stages/` | 阶段列表（只读，可按 `task` / `stage_type` / `status` 过滤） |
+| `/api/core/integrations/` | 外部连接实例与健康状态（只读）：provider 自描述 + 最近一次探活（`status` / `checked_at` / `error`），未探过为 `unknown` |
 
 ## assets（`assets/api/urls.py`，前缀 `/api/assets/`）
 

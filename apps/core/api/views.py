@@ -9,11 +9,12 @@ from rest_framework import mixins, viewsets
 from rest_framework import status as http_status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core import task_types
 from core.models import Stage, Task
 
-from .serializers import StageSerializer, TaskSerializer
+from .serializers import IntegrationHealthSerializer, StageSerializer, TaskSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -103,3 +104,16 @@ class StageViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         if stage_status:
             qs = qs.filter(status=stage_status)
         return qs
+
+
+class IntegrationHealthView(APIView):
+    """外部连接实例与健康状态（只读）。
+
+    实例本身是进程内的，跨进程只能看外化后的状态：``core.IntegrationHealth`` 由 beat 的
+    ``core.integrations.probe_all`` 周期写入。未探过的实例返回 ``unknown``。
+    """
+
+    def get(self, request):
+        from core.integrations.health import snapshot
+
+        return Response(IntegrationHealthSerializer(snapshot(), many=True).data)

@@ -4,17 +4,26 @@
 字段（前端表格要 zhixing / shijian / status），不再只拷 case_no / title / shenqing。
 """
 
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from httpx2 import AsyncClient
 
 from .schemas import Case, CaseResp, Inspect, InspectResp, Slb, SlbResp
 
-BASE_URL = "http://10.15.13.83:8000"
+
+def _config() -> dict:
+    """连接配置来自 ``settings.AUTOTASK_CONFIG``（base_url / timeout，见 settings.md）。"""
+    cfg = settings.AUTOTASK_CONFIG
+    if not cfg["enabled"]:
+        raise ImproperlyConfigured("autotask 未配置：需要 AUTOTASK_BASE_URL")
+    return cfg
 
 
 async def fetch_case():
     results: list[Case] = []
-    url = f"{BASE_URL}/devices/search-network-gongdan"
-    async with AsyncClient() as client:
+    cfg = _config()
+    url = f"{cfg['base_url']}/devices/search-network-gongdan"
+    async with AsyncClient(timeout=cfg["timeout"]) as client:
         response = await client.get(url)
         if response.status_code != 200:
             raise RuntimeError(f"工单接口 HTTP {response.status_code}: {url}")
@@ -41,8 +50,9 @@ async def fetch_case():
 
 async def fetch_inspect():
     results: list[Inspect] = []
-    url = f"{BASE_URL}/devices/device-inspect"
-    async with AsyncClient() as client:
+    cfg = _config()
+    url = f"{cfg['base_url']}/devices/device-inspect"
+    async with AsyncClient(timeout=cfg["timeout"]) as client:
         response = await client.get(url, timeout=300)
         if response.status_code != 200:
             raise RuntimeError(f"巡检接口 HTTP {response.status_code}: {url}")
@@ -68,8 +78,9 @@ async def fetch_inspect():
 
 async def fetch_slb():
     results: list[Slb] = []
-    url = f"{BASE_URL}/qianyun/get-slb-info"
-    async with AsyncClient() as client:
+    cfg = _config()
+    url = f"{cfg['base_url']}/qianyun/get-slb-info"
+    async with AsyncClient(timeout=cfg["timeout"]) as client:
         response = await client.get(url)
         if response.status_code != 200:
             raise RuntimeError(f"SLB 接口 HTTP {response.status_code}: {url}")

@@ -21,5 +21,7 @@ urlpatterns = [
     path("me/", auth.me, name="me"),
     # 前端配置（表格列宽等界面偏好）：按用户存取，语义见 preferences 模块
     path("me/preferences/", preferences.preferences, name="preferences"),
+    # core 的域资源一律在 /api/core/ 下（与 tasks / stages 同前缀，见 handbook/api.md）
+    path("core/integrations/", views.IntegrationHealthView.as_view(), name="integration-health"),
     path("core/", include(router.urls)),
 ]

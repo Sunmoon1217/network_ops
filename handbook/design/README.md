@@ -1,30 +1,31 @@
-# handbook/design/ —— 设计文档（尚未实现）
+# handbook/design/ —— 设计文档（提案与决策记录）
 
-本目录收**「已经想清楚、但代码里还没这么写」**的设计。
+本目录收两类东西：**尚未实施的设计提案**，以及**已落地方案的决策记录**（保留追溯用；
+其中已落地部分以 `handbook/` 根目录的现状文档为准）。
 
 与 `handbook/` 根目录的区别是硬性的：
 
 | | `handbook/` 根目录 | `handbook/design/` |
 |---|---|---|
-| 描述的是 | **已实现**的行为 | **待实施**的设计 |
-| 读者在 | 改代码前查约定 | 决定要不要做、做之前查方案 |
-| 过期风险 | 跟着代码走，改代码就改文档 | 方案落地后要迁回根目录或删掉 |
-| 与代码的一致性 | 必须一致 | **故意不一致**（代码还没改） |
+| 描述的是 | **已实现**的行为 | **待实施**的设计 / 已落地方案的决策记录 |
+| 读者在 | 改代码前查约定 | 决定要不要做、做之前查方案；已落地部分查当时的取舍 |
+| 过期风险 | 跟着代码走，改代码就改文档 | 方案落地后状态行要更新；长期只作历史记录 |
+| 与代码的一致性 | 必须一致 | 未落地部分**故意不一致**；已落地部分不一定跟着代码演进 |
 
-**代码里不要引用本目录的结论当既定事实**——这些是提案，不是现状。现状查根目录的文档。
-真要引用某条设计时，写「见 `handbook/design/` 的 X（提案）」并注明「尚未实施」。
+**代码里不要引用本目录未落地部分的结论当既定事实**。现状查根目录的文档；
+真要引用提案时，写「见 `handbook/design/` 的 X（提案）」并注明「尚未实施」。
 
 ## 目录
 
 | 文件 | 内容 | 状态 |
 |------|------|------|
-| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 实施中（core 去业务依赖已全部落地；configs 拆分 / ingest 收窄 / 外部连接未动） |
+| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 基本落地（2026-11-19 校核：core 去业务依赖 / configs 切片 1–9 / ingest 收窄 / llmtools 改名均已落地，`assets` 已是叶子；只剩外部连接 Step 5 未做） |
 | [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 已收口（切片 1–9 全部落地：26 张表 + 序列化器 + parsers/savers/mapping + admin 26/API 26 + llmtools 改名 `network/` + 软资产「configs 算 / assets 写」+ Excel 导入迁 ingest + purge 迁 scripts + `overview` 迁 analysis；assets 已是叶子，待定项 5/6 均结案，2026-11-16） |
-| [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 切片式实施中（Step 1–3 已落地：`core/integrations/` + Zabbix 下沉 + 释放钩子，现状见 [`../integrations.md`](../integrations.md)；Step 4–5 未做） |
+| [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 切片式实施中（Step 1–4 已落地：连接配置统一 / `core/integrations/` 骨架 / Zabbix 下沉 / 释放钩子 / `IntegrationHealth` + beat 探活，现状见 [`../integrations.md`](../integrations.md)；只剩 Step 5） |
 
 ## 这批设计的共同前提
 
-四份文档共享同一套分层约定，任何一份单独看都不完整：
+三份文档共享同一套分层约定，任何一份单独看都不完整：
 
 - **域只依赖它下面的域**，没有反向依赖，没有跨层。
 - **跨域调用不 import 对方的模块**，用 Celery 任务名 + `send_task`（范本见 `apps/ingest/access_flow_trigger.py`）。
