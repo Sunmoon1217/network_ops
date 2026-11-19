@@ -83,11 +83,27 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   flex: 1;
   border-right: none;
 }
-/* 一级菜单（总览与各分组标题）加一层中性底色，与侧栏白底拉开层次；
-   二级项保持透明，靠缩进区分层级。颜色只用主题变量，暗色模式自动跟随。 */
+/* 一级菜单（总览与各分组标题）用品牌色亮底，和白色侧栏形成强对比；
+   二级项保持透明、靠缩进区分层级。文字固定黑色（亮底上主题文字色在暗色模式会发白，
+   反而看不清）。 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
-  background: var(--el-fill-color-light);
+  background: var(--el-color-primary-light-3);
+  color: var(--el-color-black);
+}
+.app-nav :deep(.app-menu > .el-menu-item .el-icon),
+.app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title .el-icon) {
+  color: var(--el-color-black);
+}
+/* hover 加深一档；选中态 Element 默认会把文字改成主题色，在品牌底上不可读，显式压回黑色 */
+.app-nav :deep(.app-menu > .el-menu-item:hover),
+.app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title:hover) {
+  background: var(--el-color-primary);
+}
+.app-nav :deep(.app-menu > .el-menu-item.is-active),
+.app-nav :deep(.app-menu > .el-sub-menu.is-active > .el-sub-menu__title) {
+  background: var(--el-color-primary);
+  color: var(--el-color-black);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
