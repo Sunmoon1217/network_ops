@@ -32,7 +32,9 @@ const isCollapsed = computed(() => layoutStore.collapsed)
   overflow-y: auto;
   overflow-x: hidden;
   transition: width 0.3s;
-  background: var(--el-fill-color-blank);
+  /* 导航栏本体：品牌色混黑得到的低饱和深青，亮/暗模式都保持同一块深色底 */
+  background: var(--el-color-black);
+  background: color-mix(in srgb, var(--el-color-primary) 10%, var(--el-color-black));
   border-right: 1px solid var(--el-border-color);
 }
 .side-header {
