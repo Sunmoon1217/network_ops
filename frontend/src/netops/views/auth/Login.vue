@@ -27,7 +27,7 @@ const handleLogin = async () => {
   loading.value = true
   try {
     await authStore.login(formData.value.username, formData.value.password)
-    router.push('/')
+    router.push('/overview')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.error || '登录失败')
   } finally {

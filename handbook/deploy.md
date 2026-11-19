@@ -62,6 +62,12 @@ Vite 打的是 `index.html`（主站，挂载点 `#app`）与 `dashboard.html`�
 构建时都校验两个入口齐全，`code-init` 把整份 dist 铺进静态卷。契约由
 `tests/deploy/test_dashboard_entry.py` 守。
 
+根路径 `/` 与双入口不同：三条链路统一 **302 到 `/dashboard`**（nginx `location = /`、
+Django `path("")`、`vite dev` 中间件），主站入口挪到 `/overview`、登录页是真路由 `/login`。
+服务端不维护前端路由表，未知路径仍由 SPA 兜底返回 `index.html`，由 Vue Router 在前端渲染
+404 页（`views/common/NotFound.vue`）；nginx / Django 的 `try_files` 不变。契约由
+`tests/test_urls.py` 守。
+
 ## 四个挂载：仓库卷 / 配置源 bind / 配置目录 / 代码卷
 
 | 路径 | 形式 | 为什么 |

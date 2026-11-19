@@ -126,8 +126,9 @@ docker compose run --rm app python manage.py migrate
 docker compose run --rm app python manage.py createsuperuser
 ```
 
-访问 <http://localhost>（端口可用 `NGINX_PORT` 覆盖）；大屏是独立入口
-<http://localhost/dashboard>（也可直接访问 `/dashboard.html`），不要指望主站 SPA 路由能带到它。
+访问 <http://localhost>（端口可用 `NGINX_PORT` 覆盖），根路径会 302 到独立大屏；
+大屏也可直接访问 <http://localhost/dashboard>（或 `/dashboard.html`），不要指望主站 SPA 路由能带到它。
+主站入口是 `/overview`，登录页是 `/login`。
 
 ### 后端地址为什么用 `resolver` + 变量
 
@@ -264,6 +265,7 @@ docker compose restart nginx
 | `/index.html` | nginx 直出（主站入口） | `no-cache, no-store, must-revalidate` |
 | `/dashboard.html` | nginx 直出（大屏入口，单独处理） | `no-cache, no-store, must-revalidate` |
 | `/dashboard`、`/dashboard/` | 内部重定向到 `/dashboard.html` | 同上 |
+| `/` | `location = /` 302 到 `/dashboard`（主站入口是 `/overview`，登录页 `/login`） | — |
 | `/api/*` | 代理到 app | — |
 | `/admin/*`、`/media/*` | 代理到 app | — |
 | 其它路径 | SPA 兜底 → 主站 `index.html` | — |

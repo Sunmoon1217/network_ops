@@ -75,6 +75,19 @@ def test_nginx_proxies_mcp_without_buffering(conf_name):
     assert "proxy_send_timeout 3600s;" in block
 
 
+def test_nginx_root_redirects_to_dashboard():
+    """根路径 302 到大屏：主站入口在 /overview，/ 专门留给免认证大屏。
+
+    三条链路（nginx / Django / vite dev）必须一致；Django 侧由 tests/test_urls.py 守。
+    """
+    text = (NGINX_CONF_DIR / "netops.conf").read_text(encoding="utf-8")
+    match = re.search(r"location\s*=\s*/\s*\{([^}]*)\}", text)
+    assert match, "netops.conf 缺少 location = /"
+    block = " ".join(match.group(1).split())
+
+    assert "return 302 /dashboard;" in block
+
+
 @pytest.mark.django_db
 def test_csrf_origin_is_trusted_only_when_host_carries_port(caplog):
     """Host 带端口时同源 Origin 通过校验；Host 不带端口时同一个 Origin 被拒。

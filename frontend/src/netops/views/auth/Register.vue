@@ -65,7 +65,7 @@ const handleRegister = async () => {
       phone: formData.value.phone,
     })
     ElMessage.success('注册成功，已自动登录')
-    router.push('/')
+    router.push('/overview')
   } catch (error: any) {
     ElMessage.error(firstErrorMessage(error, '注册失败'))
   } finally {
