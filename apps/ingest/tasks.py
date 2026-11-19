@@ -1,7 +1,6 @@
 """Celery 异步任务 - 采集→解析→存储阶段式工作流"""
 
 import logging
-import time
 from functools import lru_cache
 
 from celery import shared_task
@@ -143,72 +142,60 @@ def run_storage_stage(self, stage_id):
         raise
 
 
-@shared_task(bind=True, name="ingest.run_config_parsing")
-def run_config_parsing(self, config_id):
-    """异步解析 DeviceConfig"""
-    from configs.models import DeviceConfig
-    from configs.parsers.factory import ParserFactory
-    from core.config_repo import get_config
+@shared_task(bind=True, name="ingest.run_config_pipeline_stage")
+def run_config_pipeline_stage(self, stage_id):
+    """导入配置的阶段：对 ``params.config_id`` 那条 DeviceConfig 跑「解析 → 分发 Saver」。
 
-    logger.info("Starting config parsing for DeviceConfig %s", config_id)
+    复用同步路径的 ``pipeline.run_config_pipeline``——导入、信号、reparse 只有这一份实现。
+    跳过（堆叠备机 / Git 无配置 / 无解析器）记 success + ``output_data.skipped``：
+    信号只认 success / failed，写 ``skipped`` 会让任务永远停在运行中。
+    """
+    logger.info("Starting config pipeline stage %s", stage_id)
     try:
-        config = DeviceConfig.objects.select_related("device").get(id=config_id)
-        device = config.device
+        from core.models import Stage
 
-        raw_config = get_config(device.hostname, config.git_commit_hash)
-        if not raw_config:
-            raise ValueError(f"Git 无配置: {config.git_commit_hash}")
+        stage = Stage.objects.get(id=stage_id)
+        config_id = (stage.task.params or {}).get("config_id")
+        if not config_id:
+            raise ValueError("任务参数缺少 config_id")
 
-        try:
-            parser = ParserFactory.get_parser(device)
-        except ValueError as e:
-            raise ValueError(f"设备 {device.hostname} 无可用解析器: {e}")
+        from configs.models import DeviceConfig
 
-        start = time.time()
-        parsed_data = parser.parse(raw_config)
-        duration = time.time() - start
-
-        DeviceConfig.objects.filter(id=config_id).update(
-            config_json=parsed_data,
-            parse_duration=round(duration, 3),
-        )
-        logger.info("Config parsing completed: %s (%.3fs)", config_id, duration)
-    except Exception:
-        logger.exception("Config parsing failed: %s", config_id)
-        raise
-
-
-@shared_task(bind=True, name="ingest.run_config_storage")
-def run_config_storage(self, config_id):
-    """异步存储 DeviceConfig 解析结果"""
-    from configs.models import DeviceConfig
-
-    logger.info("Starting config storage for DeviceConfig %s", config_id)
-    try:
-        config = DeviceConfig.objects.select_related("device").get(id=config_id)
-        device = config.device
-
-        if not config.config_json:
-            logger.warning("DeviceConfig %s config_json 为空，跳过", config_id)
+        config = DeviceConfig.objects.select_related("device").filter(pk=config_id).first()
+        if config is None:
+            # 设备被删会连同快照一起 CASCADE：目标已不存在，按「无事可做」收尾
+            _update_stage_status(stage_id, "success", output_data={"skipped": "配置或设备已删除"})
+            logger.info("DeviceConfig %s 已不存在，跳过", config_id)
             return
 
-        # 与 run_storage_stage 同一套分组：每个 Saver 只拿到自己注册的 key
-        from configs.savers.registry import build_saver_payloads
+        from ingest.pipeline import run_config_pipeline
 
-        total_created, total_updated = 0, 0
-        for saver, payload in build_saver_payloads(device.device_type, config.config_json):
-            created, updated = saver.save(device, payload)
-            total_created += created
-            total_updated += updated
+        result = run_config_pipeline(config.device, config)
+        output_data = {
+            "parsed": result.parsed,
+            "created": result.created,
+            "updated": result.updated,
+            "skipped": result.skipped,
+            "outcomes": [{"keys": outcome.keys, "created": outcome.created, "updated": outcome.updated} for outcome in result.outcomes],
+        }
 
-        logger.info("Config storage completed: +%d ~%d", total_created, total_updated)
+        # 配置行可能被 Saver 改过 → 请求刷新域名 / 负载均衡资产（事务提交后执行）
+        if result.outcomes:
+            from configs.signals import request_soft_asset_sync
 
-        # 批量导入链：storage 是最后一环，之后刷新软资产
-        from configs.signals import request_soft_asset_sync
+            request_soft_asset_sync(f"导入配置入库完成: DeviceConfig {config_id}")
 
-        request_soft_asset_sync(f"批量导入存储完成: DeviceConfig {config_id}")
-    except Exception:
-        logger.exception("Config storage failed: %s", config_id)
+        if result.errors:
+            # 部分 Saver 失败：数据可能已部分入库，阶段判失败让人看见
+            detail = "；".join(f"{outcome.label}: {outcome.error}" for outcome in result.errors)
+            _update_stage_status(stage_id, "failed", output_data=output_data, error_message=detail)
+            raise RuntimeError(f"配置入库部分失败: {detail}")
+
+        _update_stage_status(stage_id, "success", output_data=output_data)
+    except Exception as e:
+        # 同采集/解析/存储阶段：不抛出会让 Celery 记成 SUCCESS
+        logger.exception("Config pipeline stage %s failed", stage_id)
+        _update_stage_status(stage_id, "failed", error_message=str(e))
         raise
 
 

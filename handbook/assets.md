@@ -174,7 +174,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
    详情 / 展开才反查配置行作证据。
 5. 触发有两路（共用同一把 PG 事务级咨询锁，不会并发写重）：
    - **自动**：配置解析 / 存储完成后由 `ingest` 发 `configs.signals.soft_assets_stale`
-     （`DeviceConfig` 同步入库、阶段工作流的 storage 阶段、批量导入的 storage 任务、
+     （`DeviceConfig` 同步入库、阶段工作流的 storage 阶段、批量导入的「导入配置」阶段、
      `reparse` 命令收尾各一处）。接收器在**事务提交后**执行全量归并，同一事务多次请求
      只跑最后一次；失败只记日志，不影响配置入库。
    - **手动**：`python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]`

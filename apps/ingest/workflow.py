@@ -1,27 +1,37 @@
-"""批量导入用的配置投递：把一条 ``DeviceConfig`` 的「解析 → 存储」串成 celery 链。
+"""批量导入用的配置投递：每份配置建一条「导入配置」任务（单阶段：解析 → 入库）。
 
-通用任务控制在 ``core.tasks``，阶段推进在 ``ingest/signals.py``，见 ``handbook/ingest.md``。
+任务机制见 ``core.tasks``，阶段推进在 ``ingest/signals.py``，链路说明见 ``handbook/ingest.md``。
 """
 
+from __future__ import annotations
+
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from celery import chain
-
-from ingest.tasks import run_config_parsing, run_config_storage
+from core.tasks import create_task
 
 if TYPE_CHECKING:
-    from celery import Task as CeleryTask
+    from core.models import Task
 
 logger = logging.getLogger(__name__)
 
 
-def submit_config_job(config_id: int) -> None:
-    """把一条 ``DeviceConfig`` 的「解析 → 存储」投递成 celery 链（批量导入用）。"""
-    # 运行时它们是 Task 实例（有 .si/.delay），stubs 只看成普通函数：cast 保住 .si 的名字检查
-    parsing = cast("CeleryTask", run_config_parsing)
-    storage = cast("CeleryTask", run_config_storage)
+def submit_config_job(config_id: int) -> Task:
+    """给一条 ``DeviceConfig`` 建「导入配置」任务并投递解析入库阶段。
 
-    # 第二个任务用 .si()（immutable）：.s() 会把上一个任务的返回值（None）当参数传下去
-    chain(parsing.si(config_id), storage.si(config_id)).apply_async()
-    logger.info("已投递配置解析链: DeviceConfig %s", config_id)
+    目标设备写成软引用（``target_*``），任务列表因此能按设备过滤、显示设备名。
+    """
+    from configs.models import DeviceConfig
+
+    config = DeviceConfig.objects.select_related("device").get(pk=config_id)
+    device = config.device
+
+    task = create_task(
+        "import_config",
+        params={"config_id": config_id},
+        target_type="device",
+        target_id=device.pk,
+        target_label=device.hostname,
+    )
+    logger.info("已投递配置解析入库任务: task=%s DeviceConfig=%s", task.pk, config_id)
+    return task

@@ -181,7 +181,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
   `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`。
 - **五条 Celery 链**：① 阶段式工作流（`/api/core/tasks/` 唯一入口，采集→解析→存储由 `Stage` 回写推进）；
-  ② 批量导入配置（`.si()` 串 `run_config_parsing → run_config_storage`）；③ 访问流重建
+  ② 批量导入配置（每份配置建一条 `core.Task`，单阶段 `config_pipeline` 复用 pipeline）；③ 访问流重建
   （`ACCESS_FLOW_TASK` 投独立队列 → 单写者 consumer）；④ 大屏落库（beat 投
   `ingest.collect_dashboard` → `DASHBOARD_WRITE_TASK` → `analysis.write_dashboard` 唯一写库）；
   ⑤ 大屏链路缓存（beat 投 `ingest.refresh_link_cache` → Zabbix `history.get` → Redis
@@ -199,7 +199,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   装 stderr handler，级别 `DJANGO_LOG_LEVEL`（默认 INFO）；**不动 root**（celery 会 hijack）、
   `propagate` 保持 True（`caplog` 仍可捕获）。
 - **DeviceConfig 解析入库默认同步**（`pipeline.run_config_pipeline` 在 post_save 调用栈里跑完）；
-  **例外是批量导入**（挂 `_defer_pipeline` 后投 celery 链）。两套链路并存，别混。
+  **例外是批量导入**（挂 `_defer_pipeline` 后按份建 Task，阶段里再跑同一条 pipeline）。两套链路并存，别混。
 - **部署**：nginx 是统一入口；静态资源走「宿主机构建 → 镜像 COPY → `code-init` 铺进命名卷 →
   nginx 只读挂载」（**换代码镜像或改源码后必须重跑 `code-init`**：app 挂的是 `code` 卷，不是镜像里的
   `/app`）。`repo` 命名卷、`data` 只读 bind（首次先 `mkdir -p data`）、`conf/` 只读 bind（重跑

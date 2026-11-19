@@ -35,7 +35,7 @@ class OperatorConfig(AppConfig):
         core 只按 key 反查，见 ``handbook/tasks.md``。
         """
         from core.task_types import register_stage, register_task_type
-        from ingest.tasks import run_collection_stage, run_parsing_stage, run_storage_stage
+        from ingest.tasks import run_collection_stage, run_config_pipeline_stage, run_parsing_stage, run_storage_stage
 
         # 五个任务类型当前都从采集阶段起跑（与拆分前 start_task 的硬编码行为一致）
         for task_type, label in (
@@ -47,6 +47,10 @@ class OperatorConfig(AppConfig):
         ):
             register_task_type(task_type, label, first_stage="collection")
 
+        # 导入配置：单阶段（解析 → 入库），由 Excel 导入自己投递，不给用户手工建
+        register_task_type("import_config", "导入配置", first_stage="config_pipeline", creatable=False)
+
         register_stage("collection", "数据采集", run_collection_stage)
         register_stage("parsing", "配置解析", run_parsing_stage)
         register_stage("storage", "数据存储", run_storage_stage)
+        register_stage("config_pipeline", "配置解析入库", run_config_pipeline_stage)

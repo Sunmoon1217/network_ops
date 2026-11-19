@@ -134,10 +134,12 @@ def test_defer_pipeline_skips_sync_pipeline(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_submit_config_job_parses_then_stores(eager_celery, monkeypatch):
-    """异步链（解析 → 存储）：config_json 由解析任务写回，Saver 由存储任务跑。"""
+def test_submit_config_job_runs_pipeline_as_task(eager_celery, monkeypatch):
+    """导入投递：建一条「导入配置」任务，单阶段跑完解析 → 入库。"""
     raw = "sysname E2E\nvlan 10\nvlan 20\n"
     monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
+    soft_asset_syncs = []
+    monkeypatch.setattr("configs.signals.request_soft_asset_sync", lambda reason: soft_asset_syncs.append(reason))
     device = _switch("_t_wf_chain")
 
     config = DeviceConfig(device=device, git_commit_hash="f" * 40, config_json={})
@@ -146,25 +148,21 @@ def test_submit_config_job_parses_then_stores(eager_celery, monkeypatch):
 
     from ingest.workflow import submit_config_job
 
-    submit_config_job(config.pk)
+    task = submit_config_job(config.pk)
 
     config.refresh_from_db()
+    task.refresh_from_db()
+    assert task.task_type == "import_config"
+    assert (task.target_type, task.target_id, task.target_label) == ("device", device.pk, device.hostname)
+    assert task.status == "success", task.error_message
+    assert task.progress == 100
+    assert [stage.stage_type for stage in task.stages.all()] == ["config_pipeline"]
+
+    stage = task.stages.get()
+    assert stage.output_data["parsed"] is True
+    assert stage.output_data["created"] >= 0
+
     assert "vlans" in (config.config_json or {})
     assert config.parse_duration is not None
     assert Vlan.objects.filter(device=device).count() == 2
-
-
-def test_config_job_chain_gives_both_tasks_the_same_id():
-    """链条的两个任务都要拿到同一个 config_id —— 第二个必须用 ``.si()``（immutable）。
-
-    用 ``.s()`` 的话 celery 会把上一个任务的返回值当参数续下去，而解析任务返回 None，
-    存储任务就会收到 None。这里直接查链条结构，防止以后被改回 ``.s()``。
-    """
-    from celery import chain
-
-    from ingest.tasks import run_config_parsing, run_config_storage
-
-    sig = chain(run_config_parsing.si(7), run_config_storage.si(7))
-
-    assert [task.task for task in sig.tasks] == ["ingest.run_config_parsing", "ingest.run_config_storage"]
-    assert [tuple(task.args) for task in sig.tasks] == [(7,), (7,)]
+    assert soft_asset_syncs, "入库后必须请求刷新软资产"

@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class _TaskType(NamedTuple):
-    """任务类型：显示名 + 首个阶段。"""
+    """任务类型：显示名 + 首个阶段 + 是否允许用户手工创建。"""
 
     label: str
     first_stage: str
+    #: 能否由用户在任务页 / API 手工创建（导入这类内部任务只能由业务代码投递）
+    creatable: bool = True
 
 
 class _Stage(NamedTuple):
@@ -43,14 +45,14 @@ _TARGET_TYPES: dict[str, _TargetType] = {}
 _DEVICE_TARGET_TYPE = ""
 
 
-def register_task_type(task_type: str, label: str, first_stage: str) -> None:
+def register_task_type(task_type: str, label: str, first_stage: str, *, creatable: bool = True) -> None:
     """登记一个任务类型及其第一个阶段；重复登记覆盖旧值。"""
     if not task_type:
         raise ValueError("task_type 不能为空")
     previous = _TASK_TYPES.get(task_type)
-    if previous and previous != _TaskType(label, first_stage):
-        logger.debug("任务类型 %s 被重新登记：%s → %s", task_type, previous, (label, first_stage))
-    _TASK_TYPES[task_type] = _TaskType(label=label, first_stage=first_stage)
+    if previous and previous != _TaskType(label, first_stage, creatable):
+        logger.debug("任务类型 %s 被重新登记：%s → %s", task_type, previous, (label, first_stage, creatable))
+    _TASK_TYPES[task_type] = _TaskType(label=label, first_stage=first_stage, creatable=creatable)
 
 
 def register_stage(stage_type: str, label: str, handler: Any) -> None:
@@ -117,6 +119,12 @@ def handler_for(stage_type: str) -> Any:
 def is_registered_task_type(task_type: str) -> bool:
     """该任务类型是否已登记（API 层校验用）。"""
     return task_type in _TASK_TYPES
+
+
+def is_creatable_task_type(task_type: str) -> bool:
+    """该任务类型能否由用户手工创建；未登记或标记为不可建都返回 ``False``。"""
+    entry = _TASK_TYPES.get(task_type)
+    return bool(entry and entry.creatable)
 
 
 def task_type_choices() -> list[tuple[str, str]]:

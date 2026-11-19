@@ -57,6 +57,7 @@ register_target_type(target_type, label, resolver, *, feeds_device_fields=False)
 | `first_stage_of(task_type)` | `create_task` 决定投第一个阶段 | `LookupError` |
 | `handler_for(stage_type)` | `dispatch` 取 celery 任务 | `LookupError` |
 | `is_registered_task_type(key)` | API 层校验（未知词 → 400） | `False` |
+| `is_creatable_task_type(key)` | API 层校验（未登记或标记不可建立即拒 → 400） | `False` |
 | `resolve_target_label(type, id)` | 校验作用目标存在 + 取名字 | `None` |
 | `device_field_target_type()` | 谁填 `Task.device` / `device_hostname` | `""` |
 | `*_choices()` | 运行期快照，喂 admin `list_filter` / DRF `ChoiceField` | `[]` |
@@ -73,9 +74,13 @@ register_target_type(target_type, label, resolver, *, feeds_device_fields=False)
 有意的——`task_type` 与 `stage_type` 命名空间互不相干，将来同名也不该串。
 
 **为什么词汇不放模型字段的 `choices`**：`choices` 是类属性、会被 `makemigrations` 写进
-迁移状态，运行期往 `choices` 追加词汇必然造成「代码注册了、迁移没动」的永久漂移。
-所以 `Task.task_type` / `Stage.stage_type` 是自由字符串（迁移 `core/0005` 摘掉 `choices`），
+迁移状态，运行期往 `choices` 追加词汇必然造成「代码注册了、迁移没动」的永久漂移。所以
+`Task.task_type` / `Stage.stage_type` 是自由字符串（迁移 `core/0005` 摘掉 `choices`），
 显示名由模型方法 `get_task_type_display()` / `get_stage_type_display()` 委托 `label_for()`。
+
+**可建性标记**：`register_task_type(..., creatable=False)` 表示该类型只能由业务代码投递
+（现状是 Excel 导入的 `import_config`——手工建必然缺 `config_id`）。`/api/core/tasks/`
+据此把手工创建拒成 400，前端「新建任务」下拉也只列可建的类型。
 
 ## 作用目标：软引用
 

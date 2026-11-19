@@ -18,7 +18,7 @@ from celery.exceptions import Retry
 from django.conf import settings
 
 from analysis.tasks import rebuild_access_flows
-from ingest.tasks import run_collection_stage, run_config_storage
+from ingest.tasks import run_collection_stage, run_config_pipeline_stage
 
 
 def test_task_name_matches_settings_and_routes():
@@ -33,7 +33,7 @@ def test_acks_late_is_scoped_to_rebuild_task_only():
     assert rebuild_access_flows.acks_late is True
     assert rebuild_access_flows.reject_on_worker_lost is True
     assert not run_collection_stage.acks_late, "既有任务不该被顺手改成 acks_late"
-    assert not run_config_storage.acks_late
+    assert not run_config_pipeline_stage.acks_late
     assert getattr(settings, "CELERY_TASK_ACKS_LATE", None) is None, "不许用全局设置代替任务级"
 
 

@@ -193,11 +193,12 @@ class TaskSerializer(serializers.ModelSerializer):
         )
 
     def validate_task_type(self, value: str) -> str:
-        """只接受已注册的任务类型——未知词当场 400，别让它被视图兜成 503。"""
+        """只接受已注册、且允许用户手工创建的类型——未知词当场 400，别让它被视图兜成 503。"""
         from core import task_types
 
-        if not task_types.is_registered_task_type(value):
-            raise serializers.ValidationError(f"未知的任务类型 {value!r}，可选：{[key for key, _ in task_types.task_type_choices()]}")
+        if not task_types.is_creatable_task_type(value):
+            allowed = [key for key, _ in task_types.task_type_choices() if task_types.is_creatable_task_type(key)]
+            raise serializers.ValidationError(f"未知或不可手工创建的任务类型 {value!r}，可选：{allowed}")
         return value
 
     def validate(self, attrs):

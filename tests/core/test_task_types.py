@@ -18,6 +18,12 @@ def test_ingest_registers_vocabulary_at_startup():
     assert task_types.first_stage_of("collect_config") == "collection"
     assert task_types.is_registered_task_type("batch_collect")
 
+    # 导入配置：单阶段（解析 → 入库），只能由导入投递，不给用户手工建
+    assert task_types.first_stage_of("import_config") == "config_pipeline"
+    assert callable(task_types.handler_for("config_pipeline").delay)
+    assert not task_types.is_creatable_task_type("import_config")
+    assert task_types.is_creatable_task_type("collect_config")
+
 
 def test_labels_come_from_registry():
     assert task_types.label_for("collection") == "数据采集"

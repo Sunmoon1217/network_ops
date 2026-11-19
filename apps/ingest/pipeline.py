@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -77,6 +78,15 @@ def run_config_pipeline(device, device_config, *, force_parse: bool = False) -> 
 
     result.config_json = config_json
     _dispatch_savers(device, config_json, result)
+    # 一行摘要：同步路径与阶段任务都靠它判断「这条配置到底干了什么」
+    logger.info(
+        "设备 %s 流水线完成: 解析=%s 新建=%d 更新=%d 失败=%d",
+        device.hostname,
+        result.parsed,
+        result.created,
+        result.updated,
+        len(result.errors),
+    )
     return result
 
 
@@ -101,13 +111,16 @@ def _parse_config(device, device_config, result: PipelineResult) -> dict:
         logger.warning("设备 %s %s", device.hostname, result.skipped)
         return {}
 
+    start = time.time()
     config_json = parser.parse(raw_text)
+    duration = time.time() - start
     if not isinstance(config_json, dict):
         config_json = {}
     device_config.config_json = config_json
-    device_config.save(update_fields=["config_json", "updated_at"])
+    device_config.parse_duration = round(duration, 3)
+    device_config.save(update_fields=["config_json", "parse_duration", "updated_at"])
     result.parsed = True
-    logger.info("设备 %s 配置解析完成", device.hostname)
+    logger.info("设备 %s 配置解析完成 (%.3fs)", device.hostname, duration)
     return config_json
 
 

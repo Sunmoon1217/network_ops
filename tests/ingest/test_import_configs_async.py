@@ -1,10 +1,12 @@
-"""Excel 导入配置：批量导入改成投递 celery 链。
+"""Excel 导入配置：批量导入改成按份建「导入配置」任务。
 
 原先 `_import_configs` 每行 `get_or_create(DeviceConfig)` 都会触发同步流水线，
 几十行配置就在**一个 HTTP 请求**里串行跑几十次「解析 + 全部 Saver 入库」
-（实测单台 0.2–12 s）。现在挂 `_defer_pipeline` 让信号跳过同步处理，改投递
-`ingest.workflow.submit_config_job`（解析 → 存储）。
+（实测单台 0.2–12 s）。现在挂 `_defer_pipeline` 让信号跳过同步处理，改由
+`ingest.workflow.submit_config_job` 建任务（单阶段：解析 → 入库），任务页可追踪、可取消。
 """
+
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook
@@ -18,6 +20,16 @@ def device(db):
     vendor = Vendor.objects.create(name="V-imp")
     model = DeviceModel.objects.create(name="M-imp", vendor=vendor)
     return Device.objects.create(hostname="_t_imp_dev", device_type="switch", device_model=model)
+
+
+def _fake_submit(submitted):
+    """替代 ``submit_config_job``：记录 config_id，返回带 pk 的任务桩（导入会收集 id）。"""
+
+    def _submit(config_id):
+        submitted.append(config_id)
+        return SimpleNamespace(pk=len(submitted))
+
+    return _submit
 
 
 def _sheet(rows):
@@ -38,7 +50,7 @@ def test_import_dispatches_async_and_skips_sync(device, tmp_path, monkeypatch):
     monkeypatch.setattr("ingest.device_import.save_config", lambda hostname, text, message="": "a" * 40)
 
     submitted = []
-    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
+    monkeypatch.setattr("ingest.workflow.submit_config_job", _fake_submit(submitted))
 
     from ingest.device_import import _import_configs
 
@@ -47,6 +59,7 @@ def test_import_dispatches_async_and_skips_sync(device, tmp_path, monkeypatch):
     assert result["created"] == 1 and not result["errors"], result
     assert not sync_calls, "批量导入不该在请求里跑同步流水线"
     assert len(submitted) == 1
+    assert result["task_ids"] == [1], "导入要把建出来的任务 id 带回去"
 
     config = DeviceConfig.objects.get()
     assert config.device_id == device.pk
@@ -61,7 +74,7 @@ def test_import_skips_existing_commit_and_does_not_dispatch_again(device, tmp_pa
 
     monkeypatch.setattr("ingest.device_import.save_config", lambda hostname, text, message="": "b" * 40)
     submitted = []
-    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
+    monkeypatch.setattr("ingest.workflow.submit_config_job", _fake_submit(submitted))
 
     from ingest.device_import import _import_configs
 
@@ -93,6 +106,7 @@ def test_import_reports_dispatch_failure_per_row(device, tmp_path, monkeypatch):
 
     assert result["created"] == 1
     assert any("投递解析任务失败" in err and "broker down" in err for err in result["errors"]), result
+    assert result["task_ids"] == []
 
 
 @pytest.mark.django_db
@@ -113,7 +127,7 @@ def test_import_unchanged_config_skipped_across_devices(tmp_path, monkeypatch, s
         monkeypatch.setenv(key, value)
 
     submitted = []
-    monkeypatch.setattr("ingest.workflow.submit_config_job", lambda pk: submitted.append(pk))
+    monkeypatch.setattr("ingest.workflow.submit_config_job", _fake_submit(submitted))
 
     vendor = Vendor.objects.create(name="V-2dev")
     model = DeviceModel.objects.create(name="M-2dev", vendor=vendor)

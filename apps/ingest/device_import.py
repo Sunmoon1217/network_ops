@@ -340,6 +340,8 @@ def _import_configs(ws):
     from ingest.workflow import submit_config_job
 
     created, skipped, errors = 0, 0, []
+    #: 本次导入建出来的「导入配置」任务 id，前端据此提示「已创建 N 个后台任务」
+    task_ids: list[int] = []
 
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not row[0]:
@@ -389,12 +391,12 @@ def _import_configs(ws):
         config._defer_pipeline = True  # type: ignore[attr-defined]
         config.save()
         try:
-            submit_config_job(config.pk)
+            task_ids.append(submit_config_job(config.pk).pk)
         except Exception as e:
             errors.append(f"行 {row_idx}: 配置已保存，但投递解析任务失败: {e}")
         created += 1
 
-    return {"created": created, "skipped": skipped, "errors": errors}
+    return {"created": created, "skipped": skipped, "errors": errors, "task_ids": task_ids}
 
 
 # 导入支持的 Sheet：**清单 / 顺序 / 列头 / 导入函数的唯一来源**。
