@@ -135,11 +135,26 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 模块常量），所以测试用 `override_settings(CONFIG_REPO_PATH=tmp_path)` 就能换目录，
 `scripts/purge_configs.py --purge-repo` 也读同一个值。
 
+### 外部连接配置（统一 schema）
+
+四套外部连接（Zabbix / 阿里云 / Dify / autotask）的配置字典共用四个字段，消费方一律看
+`enabled`，不再各自判断 url / api_key / AK 是否存在：
+
+| 字段 | 含义 |
+|------|------|
+| `base_url` | 入口地址；阿里云按 `region` + 各产品 endpoint 接入，没有单一入口，固定为空 |
+| `credential_ref` | 凭据的**环境变量名**（不是值）；值的链路仍是 `*_FILE > 环境变量 > 默认值` |
+| `timeout` | HTTP / SDK 超时秒数 |
+| `enabled` | 地址与必填项是否齐备；为假时消费方抛 `ImproperlyConfigured`（Dify 推送接口返回 503） |
+
+域特有项原样保留（阿里云 `region` / `endpoints` / `accounts`、Dify 的 `dataset_id` 与分段规则、
+Zabbix 的 `token` / `user` / `password`）。
+
 ### Zabbix（`core/integrations/providers/zabbix`，实例由 core 统管）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `ZABBIX_URL` | 空 | Zabbix 前端地址；未配置则 `get_zapi` 拒绝创建 |
+| `ZABBIX_URL` | 空 | Zabbix 前端地址；未配置（或凭据不全）则 `get_zapi` 拒绝创建 |
 | `ZABBIX_TOKEN` / `ZABBIX_TOKEN_FILE` | 空 | API Token（Zabbix ≥ 5.4），**优先于**用户名密码 |
 | `ZABBIX_USER` / `ZABBIX_PASSWORD`（含 `_FILE`） | 空 | 用户名登录（Zabbix < 7.2 走 `user.login`） |
 | `ZABBIX_TIMEOUT` | `30` | HTTP 超时秒数 |
@@ -161,6 +176,7 @@ client 单例与登录逻辑在 `core/integrations/providers/zabbix/client.py`�
 | `ALIYUN_SLB_ENDPOINT` | SLB endpoint |
 | `ALIYUN_SLS_ENDPOINT` | SLS endpoint |
 | `ALIYUN_ASAPI_ENDPOINT` | ASAPI endpoint |
+| `ALIYUN_TIMEOUT` | SDK 超时秒数，默认 `30` |
 | `ALIYUN_PROD_ACCESS_KEY_ID` / `..._SECRET` | 生产账号 AK |
 | `ALIYUN_TEST_ACCESS_KEY_ID` / `..._SECRET` | 测试账号 AK |
 
@@ -179,6 +195,15 @@ client 单例与登录逻辑在 `core/integrations/providers/zabbix/client.py`�
 
 前三项（`base_url` / `api_key` / `dataset_id`）齐备才启用推送；缺失时推送接口返回 503，
 转换与留档不受影响。
+
+### autotask（大屏的工单 / 巡检 / SLB 源）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `AUTOTASK_BASE_URL` | 空 | 工单 / 巡检 / SLB 服务地址；未配置则大屏的 autotask 源失败（其余源不受影响） |
+| `AUTOTASK_TIMEOUT` | `30` | HTTP 超时秒数 |
+
+内网服务，无凭据。地址原先硬编码在 `ingest/collectors/autotask/autotask.py`，2026-11-19 起走 env。
 
 ## 守卫矩阵（什么时候拒绝启动）
 

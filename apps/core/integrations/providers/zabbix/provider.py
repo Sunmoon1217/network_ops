@@ -40,8 +40,8 @@ class ZabbixProvider:
         return {
             "system": self.system,
             "instance": self.instance,
-            "base_url": cfg["url"],
-            "configured": bool(cfg["url"] and (cfg["token"] or (cfg["user"] and cfg["password"]))),
+            "base_url": cfg["base_url"],
+            "configured": cfg["enabled"],
             "auth": "token" if cfg["token"] else "user_password",
             "timeout": cfg["timeout"],
         }

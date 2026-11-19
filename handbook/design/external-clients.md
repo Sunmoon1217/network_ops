@@ -1,7 +1,7 @@
 # core 承载外部连接实例与 client 生命周期
 
-> **状态：切片式实施中（2026-11-16 起）。Step 2 / 3 已落地（`core/integrations/` 骨架 +
-> Zabbix 下沉 + ASGI / Celery 释放钩子），Step 1 只做了 Zabbix 一处（其余三套 CONFIG 未统一），
+> **状态：切片式实施中（2026-11-16 起）。Step 1–3 已落地（Step 1 连接配置统一 + AUTOTASK 收口；
+> Step 2/3 `core/integrations/` 骨架 + Zabbix 下沉 + ASGI / Celery 释放钩子），
 > Step 4（健康状态外化）与 Step 5（Dify / 阿里云接入）未做。**
 > **现状文档见 [`../integrations.md`](../integrations.md)**——本文保留设计论证与未完成部分。
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制（已落地）见
@@ -30,6 +30,9 @@
 
 四套配置字段名各不相同（`url` / `api_base_url`）、超时散落、错误语义三套
 （`ImproperlyConfigured` / 返 503 / 直接 KeyError）、「是否已配置」的判定各写各的。
+
+> 上表是 2026-11-16 的盘点原貌。**2026-11-19 Step 1 已统一**：四套配置都有
+> `base_url` / `credential_ref` / `timeout` / `enabled`，autotask 地址走 `AUTOTASK_BASE_URL`。
 
 ### Zabbix 单例已经是目标形态，只是住错了地方
 
@@ -255,16 +258,21 @@ def register_providers():
 
 ### Step 1 — 补漏（低风险，零架构改动）
 
-**状态：部分落地（2026-11-16）**——只治了 Zabbix 这一处（`_zapi` 迁 core 时顺带把配置读取
-收紧），另三套 CONFIG 的字段统一、`autotask.BASE_URL` 收口、"是否已配置"语义统一**未做**。
+**状态：已落地（2026-11-19）**。四件事全部完成：
 
-1. `apps/ingest/collectors/autotask/autotask.py:11` 的硬编码 `BASE_URL`
-   → 收进 settings，走 env 注入。**这是全项目唯一游离在配置外的连接信息。**
-2. 三套 CONFIG 统一字段命名：`base_url` / `credential_ref` / `timeout` / `enabled`，
-   各自保留域特有项（阿里云的 `region` + `endpoints`、Dify 的 `dataset_id` 与分段规则）。
-3. 统一"是否已配置"的判定语义（现在 Zabbix 抛 `ImproperlyConfigured`、
-   Dify 返 503、阿里云直接 KeyError）。
-4. 同步更新 `handbook/settings.md` 的变量表与 `envs/README.md`。
+1. `apps/ingest/collectors/autotask/autotask.py` 的硬编码 `BASE_URL` 收进
+   `settings.AUTOTASK_CONFIG`（`AUTOTASK_BASE_URL` / `AUTOTASK_TIMEOUT`）——全项目最后一处
+   游离在配置外的连接信息清零；
+2. 四套 CONFIG 统一字段 `base_url` / `credential_ref` / `timeout` / `enabled`，域特有项保留
+   （阿里云的 `region` + `endpoints` + `accounts`、Dify 的 `dataset_id` 与分段规则、
+   Zabbix 的 `token` / `user` / `password`）；
+3. 「是否已配置」统一看 `enabled`，消费方一律抛 `ImproperlyConfigured`（Dify 的推送接口仍按
+   业务约定把它翻成 503）；阿里云账号级缺钥匙也从 `KeyError` 改成明确报错；
+4. `handbook/settings.md` 增加统一 schema 小节与 autotask / `ALIYUN_TIMEOUT` 变量，
+   `envs/example/common.env` 同步。
+
+实现与契约：`netops/settings/base.py` 的四份 CONFIG、`tests/core/test_external_config.py`
+（字段齐备 + 各系统未配置时的报错口径）。
 
 ### Step 2 — 建 `core/integrations/` 骨架（不动现有调用）
 

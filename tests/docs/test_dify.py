@@ -7,7 +7,7 @@ from django.test import override_settings
 
 from docs import dify
 
-CFG = {"api_base_url": "https://dify.example.com/v1", "api_key": "sk-test", "dataset_id": "ds-1", "indexing_technique": "high_quality", "timeout": 5}
+CFG = {"base_url": "https://dify.example.com/v1", "api_key": "sk-test", "dataset_id": "ds-1", "enabled": True, "indexing_technique": "high_quality", "timeout": 5}
 
 
 class _Resp:
@@ -19,8 +19,8 @@ class _Resp:
         return self._payload
 
 
-def test_not_configured_when_missing_bits():
-    with override_settings(DIFY_CONFIG={**CFG, "dataset_id": ""}):
+def test_not_configured_when_enabled_is_false():
+    with override_settings(DIFY_CONFIG={**CFG, "enabled": False}):
         assert dify.is_configured() is False
         with pytest.raises(dify.DifyError, match="未配置"):
             dify.create_document_by_file("a.md", b"x")

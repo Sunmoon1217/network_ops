@@ -28,6 +28,13 @@ apps/core/integrations/
     └── zabbix/          具体系统：client.py（单例）+ schemas.py（DTO）+ provider.py
 ```
 
+## 连接配置
+
+四套外部连接（Zabbix / 阿里云 / Dify / autotask）的 settings 字典共用
+`base_url` / `credential_ref` / `timeout` / `enabled` 四个字段；消费方一律看 `enabled`，
+未配置时抛 `ImproperlyConfigured`（Dify 推送接口据此返回 503）。变量全表见
+[`settings.md`](settings.md)。
+
 ## 取用
 
 ```python

@@ -19,9 +19,9 @@
 
 | 文件 | 内容 | 状态 |
 |------|------|------|
-| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 基本落地（2026-11-19 校核：core 去业务依赖 / configs 切片 1–9 / ingest 收窄 / llmtools 改名均已落地，`assets` 已是叶子；只剩外部连接 Step 1 补漏、Step 4–5 未做） |
+| [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 基本落地（2026-11-19 校核：core 去业务依赖 / configs 切片 1–9 / ingest 收窄 / llmtools 改名均已落地，`assets` 已是叶子；只剩外部连接 Step 4–5 未做） |
 | [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 已收口（切片 1–9 全部落地：26 张表 + 序列化器 + parsers/savers/mapping + admin 26/API 26 + llmtools 改名 `network/` + 软资产「configs 算 / assets 写」+ Excel 导入迁 ingest + purge 迁 scripts + `overview` 迁 analysis；assets 已是叶子，待定项 5/6 均结案，2026-11-16） |
-| [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 切片式实施中（Step 2–3 已落地：`core/integrations/` + Zabbix 下沉 + 释放钩子，现状见 [`../integrations.md`](../integrations.md)；Step 1 只治了 Zabbix 一处，另三套 CONFIG 未统一；Step 4–5 未做） |
+| [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 切片式实施中（Step 1–3 已落地：连接配置统一 / `core/integrations/` 骨架 / Zabbix 下沉 / 释放钩子，现状见 [`../integrations.md`](../integrations.md)；Step 4–5 未做） |
 
 ## 这批设计的共同前提
 

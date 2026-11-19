@@ -141,19 +141,17 @@ async def get_zapi() -> TypedZabbixAPI:
             _zapi = None
 
         cfg = settings.ZABBIX_CONFIG
-        if not cfg["url"]:
-            raise ImproperlyConfigured("ZABBIX_URL 未配置（settings.ZABBIX_CONFIG）")
+        if not cfg["enabled"]:
+            raise ImproperlyConfigured("Zabbix 未配置：需要 ZABBIX_URL 与至少一组凭据（ZABBIX_TOKEN 或 ZABBIX_USER/ZABBIX_PASSWORD）")
 
         # session 自己创建、自己关：不依赖库的 __internal_client（它只认 user/password
         # 登录后的 logout 才会关；token 登录或从未登录时没有公开的关闭出口）
         session = ClientSession(timeout=ClientTimeout(total=cfg["timeout"]))
-        _zapi = TypedZabbixAPI(url=cfg["url"], client_session=session)
+        _zapi = TypedZabbixAPI(url=cfg["base_url"], client_session=session)
 
         if cfg["token"]:
             await _zapi.login(token=cfg["token"])
         else:
-            if not cfg["user"] or not cfg["password"]:
-                raise ImproperlyConfigured("Zabbix 凭据缺失：ZABBIX_TOKEN 或 ZABBIX_USER/ZABBIX_PASSWORD 至少一组")
             await _zapi.login(user=cfg["user"], password=cfg["password"])
 
         _zapi_loop = loop

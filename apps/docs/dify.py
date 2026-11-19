@@ -14,7 +14,7 @@
   （索引进度：waiting / indexing / completed / error）。
 
 配置来自 ``settings.DIFY_CONFIG``（env 注入，见 base.py 注释）；三项
-（api_base_url / api_key / dataset_id）齐备才算 ``is_configured()``。
+（base_url / api_key / dataset_id）齐备时 ``enabled`` 为真，``is_configured()`` 直接读它。
 网络与 API 错误统一抛 :class:`DifyError`，不向上泄漏 requests 异常。
 """
 
@@ -38,8 +38,8 @@ def _config() -> dict:
 
 
 def is_configured() -> bool:
-    cfg = _config()
-    return bool(cfg.get("api_base_url") and cfg.get("api_key") and cfg.get("dataset_id"))
+    """是否够用由 settings 统一算（base_url + api_key + dataset_id 齐备）。"""
+    return bool(_config().get("enabled"))
 
 
 def _headers() -> dict:
@@ -72,7 +72,7 @@ def create_document_by_file(filename: str, content: bytes, content_type: str = "
     cfg = _config()
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
-    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/document/create-by-file"
+    url = f"{cfg['base_url']}/datasets/{cfg['dataset_id']}/document/create-by-file"
     data = {"data": json.dumps(_create_payload(), ensure_ascii=False)}
     files = {"file": (filename, content, content_type)}
     return _request("POST", url, data=data, files=files)
@@ -112,7 +112,7 @@ def create_document_by_text(name: str, text: str) -> dict:
     cfg = _config()
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
-    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/document/create_by_text"
+    url = f"{cfg['base_url']}/datasets/{cfg['dataset_id']}/document/create_by_text"
     body = {"name": name, "text": text, **_create_payload()}
     return _request("POST", url, json=body)
 
@@ -122,7 +122,7 @@ def update_document_by_text(document_id: str, name: str, text: str) -> dict:
     cfg = _config()
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
-    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update_by-text"
+    url = f"{cfg['base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update_by-text"
     body = {"name": name, "text": text}
     return _request("POST", url, json=body)
 
@@ -132,7 +132,7 @@ def update_document_by_file(document_id: str, filename: str, content: bytes, con
     cfg = _config()
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
-    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update-by-file"
+    url = f"{cfg['base_url']}/datasets/{cfg['dataset_id']}/documents/{document_id}/update-by-file"
     data = {"data": json.dumps(_create_payload(), ensure_ascii=False)}
     files = {"file": (filename, content, content_type)}
     return _request("POST", url, data=data, files=files)
@@ -143,6 +143,6 @@ def indexing_status(batch: str) -> list:
     cfg = _config()
     if not is_configured():
         raise DifyError("Dify 未配置（DIFY_API_BASE_URL / DIFY_API_KEY / DIFY_DATASET_ID）")
-    url = f"{cfg['api_base_url']}/datasets/{cfg['dataset_id']}/documents/{batch}/indexing-status"
+    url = f"{cfg['base_url']}/datasets/{cfg['dataset_id']}/documents/{batch}/indexing-status"
     body = _request("GET", url)
     return list(body.get("data") or [])
