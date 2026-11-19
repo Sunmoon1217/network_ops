@@ -83,11 +83,11 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   flex: 1;
   border-right: none;
 }
-/* 一级菜单（总览与各分组标题）加一层品牌色浅底，与侧栏白底拉开层次；
+/* 一级菜单（总览与各分组标题）加一层中性底色，与侧栏白底拉开层次；
    二级项保持透明，靠缩进区分层级。颜色只用主题变量，暗色模式自动跟随。 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
-  background: var(--el-color-primary-light-9);
+  background: var(--el-fill-color-light);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
