@@ -72,6 +72,11 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
 
 <style scoped>
 .app-nav {
+  /* el-menu 默认会铺自己的底色和 hover 底色，这里全部交给侧栏本体 */
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: transparent;
+  --el-menu-text-color: var(--el-color-white);
+  --el-menu-active-color: var(--el-color-white);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -83,27 +88,37 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   flex: 1;
   border-right: none;
 }
-/* 一级菜单做成深色块（Django admin / Zabbix 那种色阶）：与侧栏底拉开大色差，
-   但用品牌主色混黑得到低饱和深青，比纯实色柔和、不刺眼。二级项保持透明。 */
+/* 一级菜单：半透明白块叠在深色导航本体上，文字白色 */
 .app-nav :deep(.app-menu > .el-menu-item),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title) {
-  background: var(--el-color-primary-dark-2);
-  background: color-mix(in srgb, var(--el-color-primary) 35%, var(--el-color-black));
+  background: transparent;
+  background: color-mix(in srgb, var(--el-color-white) 7%, transparent);
   color: var(--el-color-white);
 }
 .app-nav :deep(.app-menu > .el-menu-item .el-icon),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title .el-icon) {
   color: var(--el-color-white);
 }
-/* hover / 选中：同色相提亮一档；Element 默认会把选中文字改成主题色，这里压回白色 */
 .app-nav :deep(.app-menu > .el-menu-item:hover),
 .app-nav :deep(.app-menu > .el-sub-menu > .el-sub-menu__title:hover) {
-  background: color-mix(in srgb, var(--el-color-primary) 45%, var(--el-color-black));
+  background: color-mix(in srgb, var(--el-color-white) 12%, transparent);
 }
 .app-nav :deep(.app-menu > .el-menu-item.is-active),
 .app-nav :deep(.app-menu > .el-sub-menu.is-active > .el-sub-menu__title) {
-  background: color-mix(in srgb, var(--el-color-primary) 40%, var(--el-color-black));
+  background: color-mix(in srgb, var(--el-color-white) 10%, transparent);
   color: var(--el-color-white);
+}
+/* 二级菜单：主题色文字，hover / 选中用主题色的半透明底 */
+.app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item) {
+  color: var(--el-color-primary);
+}
+.app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item:hover) {
+  background: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+  color: var(--el-color-primary-light-3);
+}
+.app-nav :deep(.app-menu > .el-sub-menu > .el-menu > .el-menu-item.is-active) {
+  background: color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+  color: var(--el-color-primary-light-3);
 }
 /* 整个菜单项都是 <a>：中键新开 / 右键复制链接都可用，且不影响折叠时的图标 + tooltip */
 .app-nav :deep(.nav-item) { position: relative; }
@@ -118,9 +133,10 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   justify-content: center;
   height: 42px;
   border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom-color: color-mix(in srgb, var(--el-color-white) 12%, transparent);
   flex-shrink: 0;
 }
-.logo-text { font-size: 1rem; font-weight: 600; color: var(--el-text-color-primary); }
+.logo-text { font-size: 1rem; font-weight: 600; color: var(--el-color-white); }
 .logo-icon { font-size: 1.2rem; color: var(--el-color-primary); }
 .nav-collapse {
   position: absolute;
@@ -132,9 +148,11 @@ const targetOf = (item: MenuItem) => (item.children?.length ? (firstPath(item) ?
   justify-content: center;
   height: 36px;
   border-top: 1px solid var(--el-border-color-lighter);
+  border-top-color: color-mix(in srgb, var(--el-color-white) 12%, transparent);
   cursor: pointer;
-  color: var(--el-text-color-secondary);
+  color: var(--el-color-white);
+  color: color-mix(in srgb, var(--el-color-white) 65%, transparent);
 }
-.nav-collapse:hover { background: var(--el-fill-color-light); }
+.nav-collapse:hover { background: color-mix(in srgb, var(--el-color-white) 8%, transparent); }
 .nav-collapse .collapsed { transform: rotate(180deg); }
 </style>
