@@ -279,8 +279,12 @@ db:
 都不需要重新授权。数据卷已存在（初始化脚本不会重跑）时手动执行一次：
 
 ```bash
-docker compose exec db sh /docker-entrypoint-initdb.d/01-grant-test-db.sh
+docker compose exec -u root db sh /docker-entrypoint-initdb.d/01-grant-test-db.sh
 ```
+
+初始化脚本由 entrypoint 在 `gosu mysql` **之后**执行，读不到宿主 `600` 的 secret；认证用入口在
+降权前 `file_env` 导出的 `MYSQL_ROOT_PASSWORD`。手动 `exec` 以 root 运行时没有该变量，脚本回退
+读 `DB_PASSWORD_FILE`（root 可读）。
 
 前提是 `partial_revokes=OFF`（MySQL 8 默认），否则 `_` / `%` 会被当成字面量。
 
