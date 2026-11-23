@@ -1,5 +1,5 @@
 #!/bin/bash
-# 部署前切换数据库后端（PostgreSQL / MySQL）：只改写根 .env 的 DB_SERVICE。
+# 部署前切换数据库后端（PostgreSQL / MySQL）：改写根 .env 的 DB_SERVICE，并检查/修复数据库相关键。
 #
 # 它改的是什么：
 #   * compose：compose.yml 的 db 服务用 ${DB_SERVICE} 选 compose.db.yml 的模板；
@@ -14,11 +14,20 @@
 #   * 宿主直跑（deploy-host.sh）不读根 .env，只认进程环境：
 #       export DB_SERVICE=mysql && ./scripts/deploy-host.sh deploy
 #   * 不 stop / up 容器、不 migrate、不连库、不依赖 docker。
+#
+# .env 只检查/修复数据库相关的 5 个键：
+#   DB_SERVICE / DB_IMAGE_POSTGRES / DB_IMAGE_MYSQL / DB_PORT_POSTGRES / DB_PORT_MYSQL
+#   --fix 只做安全修复：CRLF 与行尾空白归一、重复键保留最后一个（dotenv 的生效规则）、
+#   补齐缺失键（默认值取自 .example.env）、DB_SERVICE 的 pg/postgres/mariadb 别名归一。
+#   非法值不猜，报出来让人改；修不到全绿就不落盘（不写半成品）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
+ENV_KEYS="DB_SERVICE DB_IMAGE_POSTGRES DB_IMAGE_MYSQL DB_PORT_POSTGRES DB_PORT_MYSQL"
 TMP=""
+ENV_ERRORS=0
+ENV_WARNS=0
 
 cleanup() {
     if [ -n "$TMP" ] && [ -f "$TMP" ]; then rm -f "$TMP"; fi
@@ -33,13 +42,15 @@ die() { printf '错误: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 用法:
-  ./scripts/switch-db.sh                    # 显示当前后端与连接地址
-  ./scripts/switch-db.sh mysql              # 写入 .env
+  ./scripts/switch-db.sh                    # 当前后端、.env 与内置库自检结果、连接地址
+  ./scripts/switch-db.sh mysql              # 改写 .env 的 DB_SERVICE
   ./scripts/switch-db.sh mysql --dry-run    # 只显示改动
-  ./scripts/switch-db.sh --check            # 只做静态校验，不写
-  ./scripts/switch-db.sh mysql --check      # 校验切到 mysql 是否自洽，不写
+  ./scripts/switch-db.sh --check            # 只读校验 .env 的数据库键 + 配置链路
+  ./scripts/switch-db.sh --fix              # 修复 .env：CRLF/行尾空白、重复键、缺失键
+  ./scripts/switch-db.sh mysql --fix        # 先修 .env 再切换
 
-后端取值: postgresql（默认）| mysql
+  --check 与 --dry-run 都不写文件；--check 有错误时退出码 1。
+后端取值: postgresql（默认）| mysql（CLI 也接受 pg/postgres/mariadb 别名）
 EOF
 }
 
@@ -47,21 +58,40 @@ default_port() {
     case "$1" in mysql) printf '3306\n' ;; *) printf '5432\n' ;; esac
 }
 
-# 读某个 env 文件里的变量（只用于展示与告警，不参与 .env 改写）
-read_file_var() {
-    local file="$1" name="$2" value
-    value="$(sed -nE "s|^${name}=(.*)$|\1|p" "$file" 2>/dev/null | tail -n 1 | sed -E 's/["'"'"']//g')"
-    printf '%s\n' "$value"
+# 读某个 env 文件里某个键的值：去行内注释、去引号与空白
+read_key() {
+    local file="$1" key="$2"
+    sed -nE "s|^[[:space:]]*${key}=(.*)$|\1|p" "$file" 2>/dev/null \
+        | tail -n 1 \
+        | sed -E 's/(^|[[:space:]]+)#.*$//' \
+        | sed -E 's/[[:space:]]+$//; s/^["'"'"']//; s/["'"'"']$//'
 }
 
 read_var() {
     local value
-    value="$(read_file_var "$ENV_FILE" "$1")"
+    value="$(read_key "$ENV_FILE" "$1")"
     printf '%s\n' "${value:-$2}"
 }
 
-read_service() {
-    sed -nE 's|^[[:space:]]*DB_SERVICE=([^#[:space:]]*).*|\1|p' "$ENV_FILE" | tail -n 1 | sed -E 's/["'"'"']//g'
+read_service() { read_key "$ENV_FILE" DB_SERVICE; }
+
+env_key_count() {
+    grep -cE "^[[:space:]]*$2=" "$1" 2>/dev/null || true
+}
+
+env_default_value() {
+    local key="$1" value=""
+    if [ -f "$ROOT/.example.env" ]; then value="$(read_key "$ROOT/.example.env" "$key")"; fi
+    if [ -z "$value" ]; then
+        case "$key" in
+            DB_SERVICE) value=postgresql ;;
+            DB_IMAGE_POSTGRES) value=timescale/timescaledb:2.27.1-pg16 ;;
+            DB_IMAGE_MYSQL) value=mysql:8.4-oracle ;;
+            DB_PORT_POSTGRES) value=5432 ;;
+            DB_PORT_MYSQL) value=3306 ;;
+        esac
+    fi
+    printf '%s\n' "$value"
 }
 
 normalize() {
@@ -72,38 +102,102 @@ normalize() {
     esac
 }
 
-# 静态校验：只确认「一个开关」这条链路没被改断，不解析 compose、不碰任何服务
-check_config() {
-    local target="$1" image_var port_var other
-    case "$target" in
-        postgresql) image_var=DB_IMAGE_POSTGRES; port_var=DB_PORT_POSTGRES ;;
-        mysql) image_var=DB_IMAGE_MYSQL; port_var=DB_PORT_MYSQL ;;
-    esac
+env_error() { ENV_ERRORS=$((ENV_ERRORS + 1)); info "  错误: $*"; }
+env_warn() { ENV_WARNS=$((ENV_WARNS + 1)); info "  提示: $*"; }
 
-    grep -qF 'DB_ENGINE=${DB_SERVICE:-postgresql}' "$ROOT/envs/common.env" \
-        || die "envs/common.env 的 DB_ENGINE 必须是 \${DB_SERVICE:-postgresql}（切后端的唯一连接点）"
-    grep -qE "^  ${target}:[[:space:]]*$" "$ROOT/compose.db.yml" \
-        || die "compose.db.yml 缺少 ${target} 模板"
-    grep -qF 'service: ${DB_SERVICE:-postgresql}' "$ROOT/compose.yml" \
-        || die "compose.yml 的 db 服务应写 service: \${DB_SERVICE:-postgresql}"
+# 检查 .env 的数据库键：存在、唯一、取值合法；CRLF / 行尾空白只提示
+check_env_file() {
+    local file="$1" key count value
+    ENV_ERRORS=0
+    ENV_WARNS=0
 
-    grep -qE "^${image_var}=" "$ENV_FILE" || warn ".env 没有 ${image_var}=，compose 部署会用内置默认镜像"
-    grep -qE "^${port_var}=" "$ENV_FILE" || warn ".env 没有 ${port_var}=，compose 部署会用内置默认端口"
+    if [ "$file" = "$ENV_FILE" ]; then
+        info "数据库键检查（.env）："
+    else
+        info "数据库键检查（候选内容）："
+    fi
+    if grep -q $'\r' "$file"; then env_warn "文件含 CRLF 换行，值里会带上 \\r"; fi
+    if grep -qE '[[:space:]]+$' "$file"; then env_warn "存在行尾空白"; fi
 
-    for other in container host db gunicorn celery; do
-        if grep -qE '^[[:space:]]*DB_ENGINE=' "$ROOT/envs/$other.env" 2>/dev/null; then
-            warn "envs/$other.env 里出现 DB_ENGINE=，会干扰 common.env 的唯一连接点，建议删掉"
+    for key in $ENV_KEYS; do
+        count="$(env_key_count "$file" "$key")"
+        if [ "$count" -eq 0 ]; then
+            if grep -qE "^[[:space:]]*#[[:space:]]*${key}=" "$file"; then
+                env_error "$key 只有被注释掉的一行，等于没配（--fix 可修）"
+            else
+                env_error "缺少 $key（--fix 可修）"
+            fi
+            continue
         fi
+        [ "$count" -eq 1 ] || env_error "$key 出现 $count 次（dotenv 取最后一个；--fix 可修）"
+        value="$(read_key "$file" "$key")"
+        case "$key" in
+            DB_SERVICE)
+                case "$value" in
+                    postgresql|mysql) ;;
+                    "") env_error "DB_SERVICE 为空" ;;
+                    *) env_error "DB_SERVICE=$value 非法（compose 要用它选模板，只接受 postgresql / mysql；pg/postgres/mariadb 别名可由 --fix 归一，其它需手工改）" ;;
+                esac
+                ;;
+            DB_IMAGE_*)
+                [ -n "$value" ] || env_error "$key 为空（需手工改）"
+                ;;
+            DB_PORT_*)
+                if ! printf '%s' "$value" | grep -qE '^[0-9]+$'; then
+                    env_error "$key=$value 不是端口号（需手工改）"
+                elif [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+                    env_error "$key=$value 超出 1-65535（需手工改）"
+                fi
+                ;;
+        esac
     done
 
-    # 凭据只在容器里走 /run/secrets/*；缺了说明还没在部署机上生成，不是配置错误
-    local missing=""
-    for other in db_user db_password; do
-        [ -s "$ROOT/envs/secrets/$other" ] || missing="$missing $other"
-    done
-    [ -z "$missing" ] || warn "envs/secrets/ 缺少:$missing（容器部署需要，在部署机上生成：bash envs/secrets/generate.sh）"
+    if [ "$ENV_ERRORS" -eq 0 ] && [ "$ENV_WARNS" -eq 0 ]; then
+        info "  通过：5 个数据库键齐全且合法"
+    elif [ "$ENV_ERRORS" -eq 0 ]; then
+        info "  通过（${ENV_WARNS} 处提示，--fix 可修）"
+    fi
+}
 
-    check_internal_db "$target"
+# 生成修复后的候选文件：CRLF/行尾空白、重复键（保最后一个）、缺失键补齐
+fix_into() {
+    local dest="$1" key value added=0
+    sed -E 's/\r$//; s/[[:space:]]+$//' "$ENV_FILE" \
+        | awk -v keys="$ENV_KEYS" '
+            BEGIN { nk = split(keys, K, " ") }
+            {
+                line[NR] = $0
+                for (i = 1; i <= nk; i++)
+                    if ($0 ~ "^[[:space:]]*" K[i] "=") { seen[K[i]] = 1; last[K[i]] = NR }
+            }
+            END {
+                for (n = 1; n <= NR; n++) {
+                    drop = 0
+                    for (i = 1; i <= nk; i++) {
+                        k = K[i]
+                        if (seen[k] && line[n] ~ "^[[:space:]]*" k "=" && n != last[k]) drop = 1
+                    }
+                    if (!drop) print line[n]
+                }
+            }
+        ' > "$dest"
+
+    for key in $ENV_KEYS; do
+        [ "$(env_key_count "$dest" "$key")" -eq 0 ] || continue
+        value="$(env_default_value "$key")"
+        if [ "$added" -eq 0 ]; then
+            printf '\n# switch-db.sh --fix：补齐数据库键\n' >> "$dest"
+            added=1
+        fi
+        printf '%s=%s\n' "$key" "$value" >> "$dest"
+    done
+
+    # DB_SERVICE 的别名归一（compose 只认 postgresql / mysql）
+    value="$(read_key "$dest" DB_SERVICE)"
+    case "$value" in
+        postgres|pg) sed -i -E 's|^([[:space:]]*DB_SERVICE=)[^#[:space:]]*|\1postgresql|' "$dest" ;;
+        mariadb) sed -i -E 's|^([[:space:]]*DB_SERVICE=)[^#[:space:]]*|\1mysql|' "$dest" ;;
+    esac
 }
 
 # 取 compose 文件里某个 service / volume / secret 的块（按 2 空格缩进切）
@@ -180,8 +274,8 @@ check_internal_db() {
 
     # common.env：库名 / 账号只定义一次，镜像认的名字靠同文件嵌套
     local db_name db_user
-    db_name="$(read_file_var "$common" DB_NAME)"
-    db_user="$(read_file_var "$common" DB_USER)"
+    db_name="$(read_key "$common" DB_NAME)"
+    db_user="$(read_key "$common" DB_USER)"
     [ -n "$db_name" ] || die "envs/common.env 的 DB_NAME 为空"
     [ -n "$db_user" ] || die "envs/common.env 的 DB_USER 为空"
     grep -qF 'POSTGRES_DB=${DB_NAME}' "$common" || die "envs/common.env 的 POSTGRES_DB 应嵌套 \${DB_NAME}"
@@ -198,13 +292,44 @@ check_internal_db() {
     fi
 }
 
+# 静态校验：后端链路 + 内置库配套
+check_config() {
+    local target="$1" image_var port_var other
+    case "$target" in
+        postgresql) image_var=DB_IMAGE_POSTGRES; port_var=DB_PORT_POSTGRES ;;
+        mysql) image_var=DB_IMAGE_MYSQL; port_var=DB_PORT_MYSQL ;;
+    esac
+
+    grep -qF 'DB_ENGINE=${DB_SERVICE:-postgresql}' "$ROOT/envs/common.env" \
+        || die "envs/common.env 的 DB_ENGINE 必须是 \${DB_SERVICE:-postgresql}（切后端的唯一连接点）"
+    grep -qE "^  ${target}:[[:space:]]*$" "$ROOT/compose.db.yml" \
+        || die "compose.db.yml 缺少 ${target} 模板"
+    grep -qF 'service: ${DB_SERVICE:-postgresql}' "$ROOT/compose.yml" \
+        || die "compose.yml 的 db 服务应写 service: \${DB_SERVICE:-postgresql}"
+
+    for other in container host db gunicorn celery; do
+        if grep -qE '^[[:space:]]*DB_ENGINE=' "$ROOT/envs/$other.env" 2>/dev/null; then
+            warn "envs/$other.env 里出现 DB_ENGINE=，会干扰 common.env 的唯一连接点，建议删掉"
+        fi
+    done
+
+    # 凭据只在容器里走 /run/secrets/*；缺了说明还没在部署机上生成，不是配置错误
+    local missing="" s
+    for s in db_user db_password; do
+        [ -s "$ROOT/envs/secrets/$s" ] || missing="$missing $s"
+    done
+    [ -z "$missing" ] || warn "envs/secrets/ 缺少:$missing（容器部署需要，在部署机上生成：bash envs/secrets/generate.sh）"
+
+    check_internal_db "$target"
+}
+
 # 连接地址：切换后端不会改 DB_HOST / DB_PORT，提示清楚库在哪里
 show_endpoints() {
     local target="$1" c_host c_port h_host h_port volume
-    c_host="$(read_file_var "$ROOT/envs/container.env" DB_HOST)"
-    c_port="$(read_file_var "$ROOT/envs/container.env" DB_PORT)"
-    h_host="$(read_file_var "$ROOT/envs/host.env" DB_HOST)"
-    h_port="$(read_file_var "$ROOT/envs/host.env" DB_PORT)"
+    c_host="$(read_key "$ROOT/envs/container.env" DB_HOST)"
+    c_port="$(read_key "$ROOT/envs/container.env" DB_PORT)"
+    h_host="$(read_key "$ROOT/envs/host.env" DB_HOST)"
+    h_port="$(read_key "$ROOT/envs/host.env" DB_PORT)"
 
     if [ -z "$c_host" ]; then c_host=db; fi
     if [ -z "$c_port" ]; then c_port="$(default_port "$target")"; fi
@@ -224,12 +349,12 @@ show_endpoints() {
 
     # 显式写了 DB_PORT 时，切后端不会跟着改端口——最常见的连错库来源
     local explicit_port
-    explicit_port="$(read_file_var "$ROOT/envs/container.env" DB_PORT)"
+    explicit_port="$(read_key "$ROOT/envs/container.env" DB_PORT)"
     [ -z "$explicit_port" ] || case "$explicit_port" in
         "$(default_port "$target")") ;;
         *) warn "envs/container.env 显式写了 DB_PORT=$explicit_port，与 ${target} 默认端口不一致，切换后端不会改它" ;;
     esac
-    explicit_port="$(read_file_var "$ROOT/envs/host.env" DB_PORT)"
+    explicit_port="$(read_key "$ROOT/envs/host.env" DB_PORT)"
     [ -z "$explicit_port" ] || case "$explicit_port" in
         "$(default_port "$target")") ;;
         *) warn "envs/host.env 显式写了 DB_PORT=$explicit_port，与 ${target} 默认端口不一致" ;;
@@ -254,6 +379,15 @@ show_status() {
     info "  镜像   : $image（仅内置 db 服务使用）"
     info "  可用   : postgresql | mysql"
     info "  切换   : ./scripts/switch-db.sh mysql    （只改配置，部署仍走 compose）"
+
+    if check_env_file "$ENV_FILE" >/dev/null; then
+        if [ "$ENV_ERRORS" -eq 0 ]; then
+            info "  .env   : 数据库键正常（${ENV_WARNS} 处提示）"
+        else
+            info "  .env   : ${ENV_ERRORS} 个错误 / ${ENV_WARNS} 处提示（--check 看详情，--fix 修可修的）"
+        fi
+    fi
+
     if [ "$current" = mysql ] || [ "$current" = postgresql ]; then
         if ( check_internal_db "$current" ) 2>/dev/null; then
             info "  内部库 : 自检通过"
@@ -284,68 +418,103 @@ report() {
 }
 
 main() {
-    local target="" dry_run=0 check_only=0 arg
+    local target="" dry_run=0 check_only=0 fix=0 arg
     for arg in "$@"; do
         case "$arg" in
             -h|--help) usage; return 0 ;;
             --dry-run) dry_run=1 ;;
             --check) check_only=1 ;;
+            --fix) fix=1 ;;
             -*) die "未知参数: $arg（用 --help 看用法）" ;;
             *) [ -z "$target" ] || die "一次只能指定一个后端"; target="$arg" ;;
         esac
     done
 
     [ -f "$ENV_FILE" ] || die ".env 不存在：先 cp .example.env .env 再按需修改"
+    [ -z "$target" ] || target="$(normalize "$target")"
 
     local current
     current="$(read_service)"
-    [ -n "$current" ] || die ".env 里缺少 DB_SERVICE= 这一行（容器侧靠它选后端）"
-
-    if [ -z "$target" ]; then
-        if [ "$check_only" -eq 1 ]; then
-            check_config "$current"
-            info "校验通过：${current} 的后端链路与内置库配置自洽（未写入，未连库）"
-            show_endpoints "$current"
-            return 0
+    if [ -z "$current" ]; then
+        if [ "$fix" -eq 1 ]; then
+            current=postgresql
+        else
+            die ".env 缺少 DB_SERVICE=（用 --fix 补齐，或手工加一行按 postgresql 兜底）"
         fi
+    fi
+
+    # 只看现状
+    if [ -z "$target" ] && [ "$fix" -eq 0 ] && [ "$check_only" -eq 0 ]; then
         show_status "$current"
         return 0
     fi
 
-    target="$(normalize "$target")"
-    check_config "$target"
-
-    # 候选文件：保留行内注释，只换值
+    # 1) 候选文件：--fix 先做安全修复
     TMP="$(mktemp "$ROOT/.env.tmp.XXXXXX")"
-    sed -E "s|^([[:space:]]*DB_SERVICE=)[^#[:space:]]*(.*)$|\1${target}\2|" "$ENV_FILE" > "$TMP"
-    chmod --reference="$ENV_FILE" "$TMP" 2>/dev/null || true
-
-    if [ "$check_only" -eq 1 ]; then
-        info "校验通过：切到 ${target} 的后端链路与内置库配置自洽（未写入，未连库）"
-        show_endpoints "$target"
-        return 0
+    if [ "$fix" -eq 1 ]; then
+        fix_into "$TMP"
+    else
+        cp "$ENV_FILE" "$TMP"
     fi
 
-    if [ "$target" = "$current" ]; then
-        info "当前已经是 ${target}，无需改写 .env"
-        report "$target"
+    # 2) 按目标改 DB_SERVICE
+    if [ -n "$target" ]; then
+        sed -i -E "s|^([[:space:]]*DB_SERVICE=)[^#[:space:]]*(.*)$|\1${target}\2|" "$TMP"
+    fi
+    chmod --reference="$ENV_FILE" "$TMP" 2>/dev/null || true
+
+    # 3) 落盘前必须检查通过：不写半成品
+    check_env_file "$TMP"
+
+    # 4) --check 或切换时，同时校验后端链路与内置库配套
+    if [ "$check_only" -eq 1 ] || [ -n "$target" ]; then
+        check_config "${target:-$current}"
+    fi
+
+    if [ "$ENV_ERRORS" -gt 0 ]; then
+        if [ "$check_only" -eq 1 ]; then
+            info ""
+            info "共 ${ENV_ERRORS} 处错误（--fix 可修 CRLF / 行尾空白 / 重复键 / 缺失键）"
+            return 1
+        fi
+        if [ "$fix" -eq 1 ]; then
+            die "还有 ${ENV_ERRORS} 处需要手工改（见上），.env 未改动；改掉后再跑一次 --fix"
+        fi
+        die "先处理上面的 ${ENV_ERRORS} 处错误（--fix 可修 CRLF/重复/缺失），.env 未改动"
+    fi
+
+    if cmp -s "$ENV_FILE" "$TMP"; then
+        info ".env 无需改动"
+        if [ "$check_only" -eq 1 ]; then
+            info "校验通过：数据库键、后端链路与内置库配置自洽（未写入，未连库）"
+            show_endpoints "${target:-$current}"
+        elif [ -n "$target" ]; then
+            report "$target"
+        fi
         return 0
     fi
 
     info "--- .env 改动 ---"
     diff -u --label .env --label .env.new "$ENV_FILE" "$TMP" || true
 
-    if [ "$dry_run" -eq 1 ]; then
+    if [ "$dry_run" -eq 1 ] || [ "$check_only" -eq 1 ]; then
         info ""
-        info "dry-run：未写入。去掉 --dry-run 即生效。"
+        info "未写入（--dry-run / --check 只读）。去掉后即生效。"
+        if [ "$check_only" -eq 1 ]; then
+            show_endpoints "${target:-$current}"
+        fi
         return 0
     fi
 
     mv "$TMP" "$ENV_FILE"
     TMP=""
     info ""
-    info "已写入 $ENV_FILE"
-    report "$target"
+    if [ -n "$target" ]; then
+        info "已写入 $ENV_FILE"
+        report "$target"
+    else
+        info "已修复 $ENV_FILE"
+    fi
 }
 
 main "$@"

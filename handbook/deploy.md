@@ -232,9 +232,15 @@ DB_SERVICE=mysql          # postgresql（默认）/ mysql
 也可以用 `./scripts/switch-db.sh mysql`：只改写这一行，静态校验「`DB_SERVICE` → `DB_ENGINE`」这条链路，
 并核对**内置 db 服务的配套**——模板是否加载 `envs/db.env`、`POSTGRES_*` / `MYSQL_*` 的 `_FILE` 嵌套、
 顶层卷与 secret 声明、`db_user` 凭据内容与 `DB_USER` 是否一致，最后打印容器 / 宿主各自的连接地址
-（`DB_HOST` / `DB_PORT` 与所选后端不匹配时告警）。它不依赖 docker、不连库、不假设库在本地：
-`--dry-run` 只看 diff，`--check` 只校验。脚本不负责部署，宿主直跑仍需 `export DB_SERVICE=mysql`
-（根 `.env` 只服务 compose）。
+（`DB_HOST` / `DB_PORT` 与所选后端不匹配时告警）。
+
+同一脚本还负责 `.env` 里 5 个数据库键（`DB_SERVICE` / `DB_IMAGE_POSTGRES` / `DB_IMAGE_MYSQL` /
+`DB_PORT_POSTGRES` / `DB_PORT_MYSQL`）的检查与修复：`--check` 只读校验（存在、唯一、取值合法，
+有错误退出码 1）；`--fix` 只做安全修复——CRLF 与行尾空白归一、重复键保留最后一个、补齐缺失键
+（默认值取自 `.example.env`）、`pg` / `mariadb` 等别名归一；修不到全绿就不落盘。
+
+脚本不依赖 docker、不连库、不假设库在本地；`--dry-run` 只看 diff。它不负责部署，宿主直跑仍需
+`export DB_SERVICE=mysql`（根 `.env` 只服务 compose）。
 
 `compose.yml` 里的 `db` 服务用 **`extends`** 引入 `compose.db.yml` 的同名模板：
 
