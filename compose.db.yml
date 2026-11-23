@@ -51,6 +51,8 @@ services:
       - db_password
     volumes:
       - mysql_data:/var/lib/mysql
+      # 首次初始化（数据目录为空）时给应用账号授予测试库权限；已有数据卷手动跑一次，见脚本头部注释
+      - ./entrypoint/mysql_init.sh:/docker-entrypoint-initdb.d/01-grant-test-db.sh:ro
     ports:
       - "${DB_PORT_MYSQL:-3306}:3306"
     networks:
