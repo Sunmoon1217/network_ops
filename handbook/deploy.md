@@ -272,6 +272,18 @@ db:
 `envs/secrets/db_password`（root 复用同一份，不新增轮换流程）。两个后端共用
 `envs/secrets/db_user` / `db_password`。
 
+**测试库权限**：官方镜像在**首次初始化**（数据目录为空）时执行 `/docker-entrypoint-initdb.d/`
+下的脚本；`compose.db.yml` 的 mysql 模板挂入了 `entrypoint/mysql_init.sh`，按 `MYSQL_DATABASE` /
+`MYSQL_USER` 给应用账号授予 `test_<库名>%` 的全部权限。MySQL 的库级权限按**库名模式**存在
+`mysql.db`，不绑定库对象，所以 Django 每次测试 DROP/CREATE `test_<库名>`（xdist 再加 `_gwN`）
+都不需要重新授权。数据卷已存在（初始化脚本不会重跑）时手动执行一次：
+
+```bash
+docker compose exec db sh /docker-entrypoint-initdb.d/01-grant-test-db.sh
+```
+
+前提是 `partial_revokes=OFF`（MySQL 8 默认），否则 `_` / `%` 会被当成字面量。
+
 **不能复用 PG 的数据卷**：换后端等于换一套库（`network-ops-pgdata` ↔ `network-ops-mysqldata`），
 数据不会互通。
 
