@@ -229,6 +229,19 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 DB_SERVICE=mysql          # postgresql（默认）/ mysql
 ```
 
+也可以用 `./scripts/switch-db.sh mysql`：只改写这一行，静态校验「`DB_SERVICE` → `DB_ENGINE`」这条链路，
+并核对**内置 db 服务的配套**——模板是否加载 `envs/db.env`、`POSTGRES_*` / `MYSQL_*` 的 `_FILE` 嵌套、
+顶层卷与 secret 声明、`db_user` 凭据内容与 `DB_USER` 是否一致，最后打印容器 / 宿主各自的连接地址
+（`DB_HOST` / `DB_PORT` 与所选后端不匹配时告警）。
+
+同一脚本还负责 `.env` 里 5 个数据库键（`DB_SERVICE` / `DB_IMAGE_POSTGRES` / `DB_IMAGE_MYSQL` /
+`DB_PORT_POSTGRES` / `DB_PORT_MYSQL`）的检查。`--check` 是只读自检：先报当前后端（给了后端参数
+则同时报目标），再逐项给出「数据库键 / 后端链路 / 内置库」的结论与容器 / 宿主连接地址，异常逐条列出，
+有错误退出码 1；切换时同样先检查目标后端的候选内容，不通过就不落盘。无参数运行只打印用法。
+
+脚本不依赖 docker、不连库、不假设库在本地；`--dry-run` 只看 diff。它不负责部署，宿主直跑仍需
+`export DB_SERVICE=mysql`（根 `.env` 只服务 compose）。
+
 `compose.yml` 里的 `db` 服务用 **`extends`** 引入 `compose.db.yml` 的同名模板：
 
 ```yaml
