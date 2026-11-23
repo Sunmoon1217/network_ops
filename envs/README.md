@@ -39,7 +39,9 @@ beat:
 | `REDIS_PORT` | `common.env`（容器内端口） | 宿主映射已改名 `REDIS_HOST_PORT`，不再同名 | — |
 
 **`DB_ENGINE` / `DB_NAME` / `DB_USER` 不在此表**：它们与部署方式无关，收敛在 `common.env` 里只定义一次
-（`DB_ENGINE=${DB_SERVICE:-postgresql}`，镜像名在同一文件内嵌套）。
+（`DB_ENGINE=${DB_SERVICE:-<默认值>}`，镜像名在同一文件内嵌套）。`${}` 里的默认值是**宿主直跑的
+兜底后端**：容器侧由根 `.env` 的 `DB_SERVICE` 插值、与默认值无关；`switch-db.sh` 切换后端时会同步
+改写它，所以宿主不用再 `export DB_SERVICE`。新部署从 `envs/example/common.env` 复制，默认仍是 postgresql。
 
 `envs/example/*` 与 `envs/*` 的同名是**模板与实例**的关系（实例不入库）。
 

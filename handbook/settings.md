@@ -84,8 +84,9 @@
 `DB_PORT`）：settings 只认这一套名字，两种部署一致。各数据库镜像自己认的 `POSTGRES_*` /
 `MYSQL_*` 在 `envs/common.env` 里用 `${}` 嵌套出来（`DB_NAME → POSTGRES_DB/MYSQL_DATABASE`、
 `DB_USER → MYSQL_USER`），不进 settings。`DB_ENGINE` / `DB_NAME` / `DB_USER` **只在 common.env
-定义一次**（两种部署一致）：容器侧 `DB_ENGINE=${DB_SERVICE:-postgresql}` 由根 `.env` 的
-`DB_SERVICE` 决定，宿主直跑同名变量不设时取默认 `postgresql`，也可 `export DB_SERVICE=mysql`。
+定义一次**（两种部署一致）：容器侧 `DB_ENGINE=${DB_SERVICE:-<默认值>}` 由根 `.env` 的
+`DB_SERVICE` 插值决定；宿主直跑同名变量不设时取 `${}` 里的默认值，`switch-db.sh` 切换后端时
+会同步改写它（因此宿主无需再 `export DB_SERVICE`），真实进程环境仍永远优先。
 
 MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylinux 轮子，宿主直跑要先装
 `pkg-config` 与 `libmariadb-dev`（`uv sync` 才编得出来）；镜像里由 `dockerfile.venv` 的两阶段

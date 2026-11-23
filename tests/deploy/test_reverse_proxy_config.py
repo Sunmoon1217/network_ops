@@ -171,7 +171,7 @@ def test_db_deployment_independent_vars_live_once_in_common_env():
     """`DB_ENGINE` / `DB_NAME` / `DB_USER` 与部署方式无关 → 只在 common.env 定义一次，
     镜像认的名字在同一文件内用 ${} 嵌套；层文件（container/host/db.env）不再重复。"""
     common = _env_file("common.env")
-    assert "DB_ENGINE=${DB_SERVICE:-postgresql}" in common
+    assert re.search(r"^DB_ENGINE=\$\{DB_SERVICE:-(postgresql|mysql)\}$", common, re.M), "DB_ENGINE 必须用 ${DB_SERVICE:-<后端>} 形式；默认值由 switch-db.sh 同步，允许两种后端"
     assert "POSTGRES_DB=${DB_NAME}" in common
     assert "MYSQL_DATABASE=${DB_NAME}" in common
     assert "MYSQL_USER=${DB_USER}" in common
