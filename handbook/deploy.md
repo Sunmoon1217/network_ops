@@ -229,6 +229,10 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 DB_SERVICE=mysql          # postgresql（默认）/ mysql
 ```
 
+也可以用 `./scripts/switch-db.sh mysql`：改这一行并做静态检查 + `compose config` 解析自检（不起容器）；
+`--dry-run` 只看 diff，`--check` 只校验。脚本不负责部署，宿主直跑仍需
+`export DB_SERVICE=mysql`（根 `.env` 只服务 compose）。
+
 `compose.yml` 里的 `db` 服务用 **`extends`** 引入 `compose.db.yml` 的同名模板：
 
 ```yaml
