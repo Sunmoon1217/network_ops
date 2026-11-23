@@ -235,8 +235,9 @@ DB_SERVICE=mysql          # postgresql（默认）/ mysql
 （`DB_HOST` / `DB_PORT` 与所选后端不匹配时告警）。
 
 同一脚本还负责 `.env` 里 5 个数据库键（`DB_SERVICE` / `DB_IMAGE_POSTGRES` / `DB_IMAGE_MYSQL` /
-`DB_PORT_POSTGRES` / `DB_PORT_MYSQL`）的检查：`--check` 只读校验存在性、唯一性与取值合法性
-（有错误退出码 1，不改文件）；切换时同样先检查候选内容，不通过就不落盘。无参数运行只打印用法。
+`DB_PORT_POSTGRES` / `DB_PORT_MYSQL`）的检查。`--check` 是只读自检：先报当前后端（给了后端参数
+则同时报目标），再逐项给出「数据库键 / 后端链路 / 内置库」的结论与容器 / 宿主连接地址，异常逐条列出，
+有错误退出码 1；切换时同样先检查目标后端的候选内容，不通过就不落盘。无参数运行只打印用法。
 
 脚本不依赖 docker、不连库、不假设库在本地；`--dry-run` 只看 diff。它不负责部署，宿主直跑仍需
 `export DB_SERVICE=mysql`（根 `.env` 只服务 compose）。

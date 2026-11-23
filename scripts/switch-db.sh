@@ -25,6 +25,7 @@ ENV_KEYS="DB_SERVICE DB_IMAGE_POSTGRES DB_IMAGE_MYSQL DB_PORT_POSTGRES DB_PORT_M
 TMP=""
 ENV_ERRORS=0
 ENV_WARNS=0
+CFG_ERRORS=0
 
 cleanup() {
     if [ -n "$TMP" ] && [ -f "$TMP" ]; then rm -f "$TMP"; fi
@@ -42,7 +43,7 @@ usage() {
   ./scripts/switch-db.sh                    # 本帮助
   ./scripts/switch-db.sh mysql              # 改写 .env 的 DB_SERVICE（检查通过才落盘）
   ./scripts/switch-db.sh mysql --dry-run    # 只显示改动，不写文件
-  ./scripts/switch-db.sh --check            # 只读校验：.env 数据库键 + 后端链路 + 内置库配套
+  ./scripts/switch-db.sh --check            # 只读自检：当前后端、.env 键、后端链路、内置库、连接地址
 
   --check 只报告问题、不改文件；有错误时退出码 1。
 后端取值: postgresql（默认）| mysql（CLI 也接受 pg/postgres/mariadb 别名）
@@ -70,6 +71,15 @@ read_var() {
 
 read_service() { read_key "$ENV_FILE" DB_SERVICE; }
 
+# 某后端用的内置库镜像（只用于展示）
+image_for() {
+    case "$1" in
+        mysql) read_var DB_IMAGE_MYSQL mysql:8.4-oracle ;;
+        postgresql) read_var DB_IMAGE_POSTGRES timescale/timescaledb:2.27.1-pg16 ;;
+        *) printf '未知\n' ;;
+    esac
+}
+
 env_key_count() {
     grep -cE "^[[:space:]]*$2=" "$1" 2>/dev/null || true
 }
@@ -84,6 +94,7 @@ normalize() {
 
 env_error() { ENV_ERRORS=$((ENV_ERRORS + 1)); info "  错误: $*"; }
 env_warn() { ENV_WARNS=$((ENV_WARNS + 1)); info "  提示: $*"; }
+cfg_error() { CFG_ERRORS=$((CFG_ERRORS + 1)); info "  错误: $*"; }
 
 # 检查 .env 的数据库键：存在、唯一、取值合法；CRLF / 行尾空白只提示
 check_env_file() {
@@ -157,23 +168,26 @@ check_internal_db() {
     local block vol_block s vol name
 
     block="$(block_of "$ROOT/compose.db.yml" "$target")"
-    [ -n "$block" ] || die "compose.db.yml 缺少 ${target} 模板"
+    if [ -z "$block" ]; then
+        cfg_error "compose.db.yml 缺少 ${target} 模板"
+        return
+    fi
 
     case "$target" in
         postgresql)
-            has "$block" 'envs/db.env'                           || die "postgresql 模板没加载 envs/db.env，库拿不到 POSTGRES_*"
-            has "$block" '- db_user'                             || die "postgresql 模板没挂 db_user secret，POSTGRES_USER_FILE 读不到"
-            has "$block" '- db_password'                         || die "postgresql 模板没挂 db_password secret"
-            has "$block" 'postgres_data:/var/lib/postgresql/data' || die "postgresql 模板的数据卷挂载点被改了"
-            has "$block" '}:5432"'                               || die "postgresql 模板的容器端口不是 5432"
-            has "$block" 'pg_isready'                            || die "postgresql 模板的 healthcheck 不是 pg_isready"
+            has "$block" 'envs/db.env'                           || cfg_error "postgresql 模板没加载 envs/db.env，库拿不到 POSTGRES_*"
+            has "$block" '- db_user'                             || cfg_error "postgresql 模板没挂 db_user secret，POSTGRES_USER_FILE 读不到"
+            has "$block" '- db_password'                         || cfg_error "postgresql 模板没挂 db_password secret"
+            has "$block" 'postgres_data:/var/lib/postgresql/data' || cfg_error "postgresql 模板的数据卷挂载点被改了"
+            has "$block" '}:5432"'                               || cfg_error "postgresql 模板的容器端口不是 5432"
+            has "$block" 'pg_isready'                            || cfg_error "postgresql 模板的 healthcheck 不是 pg_isready"
             ;;
         mysql)
-            has "$block" 'envs/db.env'                           || die "mysql 模板没加载 envs/db.env，库拿不到 MYSQL_*"
-            has "$block" '- db_password'                         || die "mysql 模板没挂 db_password secret，MYSQL_ROOT_PASSWORD_FILE 读不到"
-            has "$block" 'mysql_data:/var/lib/mysql'             || die "mysql 模板的数据卷挂载点被改了"
-            has "$block" '}:3306"'                               || die "mysql 模板的容器端口不是 3306"
-            has "$block" 'mysqladmin ping'                       || die "mysql 模板的 healthcheck 不是 mysqladmin ping"
+            has "$block" 'envs/db.env'                           || cfg_error "mysql 模板没加载 envs/db.env，库拿不到 MYSQL_*"
+            has "$block" '- db_password'                         || cfg_error "mysql 模板没挂 db_password secret，MYSQL_ROOT_PASSWORD_FILE 读不到"
+            has "$block" 'mysql_data:/var/lib/mysql'             || cfg_error "mysql 模板的数据卷挂载点被改了"
+            has "$block" '}:3306"'                               || cfg_error "mysql 模板的容器端口不是 3306"
+            has "$block" 'mysqladmin ping'                       || cfg_error "mysql 模板的 healthcheck 不是 mysqladmin ping"
             ;;
     esac
 
@@ -181,33 +195,36 @@ check_internal_db() {
     for s in postgres_data:network-ops-pgdata mysql_data:network-ops-mysqldata; do
         vol="${s%%:*}"; name="${s#*:}"
         vol_block="$(block_of "$ROOT/compose.yml" "$vol")"
-        [ -n "$vol_block" ] || die "compose.yml 的 volumes 没声明 ${vol}（extends 不继承顶层 volumes）"
-        has "$vol_block" "name: $name" || die "compose.yml 的 ${vol} 名字应为 $name"
+        [ -n "$vol_block" ] || cfg_error "compose.yml 的 volumes 没声明 ${vol}（extends 不继承顶层 volumes）"
+        has "$vol_block" "name: $name" || cfg_error "compose.yml 的 ${vol} 名字应为 $name"
     done
     for s in db_user db_password; do
         vol_block="$(block_of "$ROOT/compose.yml" "$s")"
-        [ -n "$vol_block" ] || die "compose.yml 的 secrets 没声明 $s（${target} 模板引用了它）"
-        has "$vol_block" 'file:' || die "compose.yml 的 secrets.$s 没有 file: 源"
+        [ -n "$vol_block" ] || cfg_error "compose.yml 的 secrets 没声明 $s（${target} 模板引用了它）"
+        has "$vol_block" 'file:' || cfg_error "compose.yml 的 secrets.$s 没有 file: 源"
     done
 
     # envs/db.env：只给 *_FILE，且按后端嵌套到镜像认的名字
-    [ -f "$db_env" ] || die "envs/db.env 不存在（容器凭据层）"
-    grep -qE '^DB_USER_FILE=/run/secrets/db_user$' "$db_env" || die "envs/db.env 的 DB_USER_FILE 应指向 /run/secrets/db_user"
-    grep -qE '^DB_PASSWORD_FILE=/run/secrets/db_password$' "$db_env" || die "envs/db.env 的 DB_PASSWORD_FILE 应指向 /run/secrets/db_password"
+    if [ ! -f "$db_env" ]; then
+        cfg_error "envs/db.env 不存在（容器凭据层）"
+        return
+    fi
+    grep -qE '^DB_USER_FILE=/run/secrets/db_user$' "$db_env" || cfg_error "envs/db.env 的 DB_USER_FILE 应指向 /run/secrets/db_user"
+    grep -qE '^DB_PASSWORD_FILE=/run/secrets/db_password$' "$db_env" || cfg_error "envs/db.env 的 DB_PASSWORD_FILE 应指向 /run/secrets/db_password"
     if grep -qE '^POSTGRES_USER=' "$db_env" || grep -qE '^POSTGRES_PASSWORD=' "$db_env"; then
-        die "envs/db.env 不能同时给 POSTGRES_USER / POSTGRES_PASSWORD：与 *_FILE 冲突，官方 entrypoint 会直接退出"
+        cfg_error "envs/db.env 不能同时给 POSTGRES_USER / POSTGRES_PASSWORD：与 *_FILE 冲突，官方 entrypoint 会直接退出"
     fi
     if grep -qE '^MYSQL_USER_FILE=' "$db_env"; then
-        die "envs/db.env 不能给 MYSQL_USER_FILE：MySQL 镜像没有这个机制（用户名走 MYSQL_USER）"
+        cfg_error "envs/db.env 不能给 MYSQL_USER_FILE：MySQL 镜像没有这个机制（用户名走 MYSQL_USER）"
     fi
     case "$target" in
         postgresql)
-            grep -qF 'POSTGRES_USER_FILE=${DB_USER_FILE}' "$db_env" || die "envs/db.env 需要 POSTGRES_USER_FILE=\${DB_USER_FILE}"
-            grep -qF 'POSTGRES_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 POSTGRES_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            grep -qF 'POSTGRES_USER_FILE=${DB_USER_FILE}' "$db_env" || cfg_error "envs/db.env 需要 POSTGRES_USER_FILE=\${DB_USER_FILE}"
+            grep -qF 'POSTGRES_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || cfg_error "envs/db.env 需要 POSTGRES_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
             ;;
         mysql)
-            grep -qF 'MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 MYSQL_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
-            grep -qF 'MYSQL_ROOT_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 MYSQL_ROOT_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            grep -qF 'MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || cfg_error "envs/db.env 需要 MYSQL_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            grep -qF 'MYSQL_ROOT_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || cfg_error "envs/db.env 需要 MYSQL_ROOT_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
             ;;
     esac
 
@@ -215,11 +232,11 @@ check_internal_db() {
     local db_name db_user
     db_name="$(read_key "$common" DB_NAME)"
     db_user="$(read_key "$common" DB_USER)"
-    [ -n "$db_name" ] || die "envs/common.env 的 DB_NAME 为空"
-    [ -n "$db_user" ] || die "envs/common.env 的 DB_USER 为空"
-    grep -qF 'POSTGRES_DB=${DB_NAME}' "$common" || die "envs/common.env 的 POSTGRES_DB 应嵌套 \${DB_NAME}"
-    grep -qF 'MYSQL_DATABASE=${DB_NAME}' "$common" || die "envs/common.env 的 MYSQL_DATABASE 应嵌套 \${DB_NAME}"
-    grep -qF 'MYSQL_USER=${DB_USER}' "$common" || die "envs/common.env 的 MYSQL_USER 应嵌套 \${DB_USER}"
+    [ -n "$db_name" ] || cfg_error "envs/common.env 的 DB_NAME 为空"
+    [ -n "$db_user" ] || cfg_error "envs/common.env 的 DB_USER 为空"
+    grep -qF 'POSTGRES_DB=${DB_NAME}' "$common" || cfg_error "envs/common.env 的 POSTGRES_DB 应嵌套 \${DB_NAME}"
+    grep -qF 'MYSQL_DATABASE=${DB_NAME}' "$common" || cfg_error "envs/common.env 的 MYSQL_DATABASE 应嵌套 \${DB_NAME}"
+    grep -qF 'MYSQL_USER=${DB_USER}' "$common" || cfg_error "envs/common.env 的 MYSQL_USER 应嵌套 \${DB_USER}"
 
     # 凭据内容与 DB_USER 对齐：PG 用文件的用户名建库，MySQL 用 MYSQL_USER 建账号
     if [ -s "$ROOT/envs/secrets/db_user" ]; then
@@ -231,20 +248,16 @@ check_internal_db() {
     fi
 }
 
-# 静态校验：后端链路 + 内置库配套
-check_config() {
-    local target="$1" image_var port_var other
-    case "$target" in
-        postgresql) image_var=DB_IMAGE_POSTGRES; port_var=DB_PORT_POSTGRES ;;
-        mysql) image_var=DB_IMAGE_MYSQL; port_var=DB_PORT_MYSQL ;;
-    esac
+# 后端链路：一个开关 → Django 驱动 / compose 模板选择
+check_chain() {
+    local target="$1" other
 
     grep -qF 'DB_ENGINE=${DB_SERVICE:-postgresql}' "$ROOT/envs/common.env" \
-        || die "envs/common.env 的 DB_ENGINE 必须是 \${DB_SERVICE:-postgresql}（切后端的唯一连接点）"
+        || cfg_error "envs/common.env 的 DB_ENGINE 必须是 \${DB_SERVICE:-postgresql}（切后端的唯一连接点）"
     grep -qE "^  ${target}:[[:space:]]*$" "$ROOT/compose.db.yml" \
-        || die "compose.db.yml 缺少 ${target} 模板"
+        || cfg_error "compose.db.yml 缺少 ${target} 模板"
     grep -qF 'service: ${DB_SERVICE:-postgresql}' "$ROOT/compose.yml" \
-        || die "compose.yml 的 db 服务应写 service: \${DB_SERVICE:-postgresql}"
+        || cfg_error "compose.yml 的 db 服务应写 service: \${DB_SERVICE:-postgresql}"
 
     for other in container host db gunicorn celery; do
         if grep -qE '^[[:space:]]*DB_ENGINE=' "$ROOT/envs/$other.env" 2>/dev/null; then
@@ -258,8 +271,12 @@ check_config() {
         [ -s "$ROOT/envs/secrets/$s" ] || missing="$missing $s"
     done
     [ -z "$missing" ] || warn "envs/secrets/ 缺少:$missing（容器部署需要，在部署机上生成：bash envs/secrets/generate.sh）"
+}
 
-    check_internal_db "$target"
+# 后端链路 + 内置库一并检查（切换路径用）
+check_config() {
+    check_chain "$1"
+    check_internal_db "$1"
 }
 
 # 连接地址：切换后端不会改 DB_HOST / DB_PORT，提示清楚库在哪里
@@ -309,10 +326,7 @@ show_endpoints() {
 
 report() {
     local target="$1" image
-    case "$target" in
-        mysql) image="$(read_var DB_IMAGE_MYSQL mysql:8.4-oracle)" ;;
-        postgresql) image="$(read_var DB_IMAGE_POSTGRES timescale/timescaledb:2.27.1-pg16)" ;;
-    esac
+    image="$(image_for "$target")"
     info ""
     info "后端     : $target"
     info "镜像     : $image（仅内置 db 服务使用）"
@@ -351,20 +365,41 @@ main() {
     current="$(read_service)"
     [ -n "$current" ] || die ".env 缺少 DB_SERVICE= 这一行（容器侧靠它选后端）"
 
-    # --check：只读自检 + 校验，发现问题就列出来，不改文件
+    # --check：只读自检 + 校验，逐项打印结果，发现问题全部列出来，不改文件
     if [ "$check_only" -eq 1 ]; then
-        local backend="${target:-$current}"
+        local backend="$current" before
+        if [ -n "$target" ]; then backend="$target"; fi
+
+        info "当前后端 : DB_SERVICE=$current（$(image_for "$current")，仅内置 db 服务使用）"
+        if [ "$backend" != "$current" ]; then
+            info "目标后端 : $backend（$(image_for "$backend")）"
+        fi
+
         check_env_file "$ENV_FILE"
-        check_config "$backend"
-        info ""
+
+        before=$CFG_ERRORS
+        info "后端链路 :"
+        check_chain "$backend"
+        if [ "$CFG_ERRORS" -eq "$before" ]; then
+            info "  通过：DB_SERVICE → DB_ENGINE 连接点、compose 模板与 extends 写法"
+        fi
+
+        before=$CFG_ERRORS
+        info "内置库（$backend）："
+        check_internal_db "$backend"
+        if [ "$CFG_ERRORS" -eq "$before" ]; then
+            info "  通过：模板 / 卷与 secret 声明 / envs 嵌套 / 凭据一致"
+        fi
+
+        info "连接地址 :"
         show_endpoints "$backend"
-        if [ "$ENV_ERRORS" -gt 0 ]; then
-            info ""
-            info "共 ${ENV_ERRORS} 处错误、${ENV_WARNS} 处提示（--check 只报告，不改文件）"
+
+        info ""
+        if [ "$ENV_ERRORS" -gt 0 ] || [ "$CFG_ERRORS" -gt 0 ]; then
+            info "共 $ENV_ERRORS 处 .env 错误、$CFG_ERRORS 处配置错误、$ENV_WARNS 处提示（只报告，不改文件）"
             return 1
         fi
-        info ""
-        info "校验通过（${backend}）：数据库键、后端链路与内置库配置自洽（未写入，未连库；${ENV_WARNS} 处提示）"
+        info "全部通过（$backend）：数据库键、后端链路与内置库配置自洽（未写入，未连库；$ENV_WARNS 处提示）"
         return 0
     fi
 
@@ -382,7 +417,9 @@ main() {
 
     check_env_file "$TMP"
     check_config "$target"
-    [ "$ENV_ERRORS" -eq 0 ] || die "先处理上面的 ${ENV_ERRORS} 处错误，.env 未改动"
+    if [ "$ENV_ERRORS" -gt 0 ] || [ "$CFG_ERRORS" -gt 0 ]; then
+        die "配置检查未通过（.env 错误 $ENV_ERRORS / 配置错误 $CFG_ERRORS），.env 未改动"
+    fi
 
     if cmp -s "$ENV_FILE" "$TMP"; then
         info "当前已经是 ${target}，无需改动"
