@@ -1,7 +1,7 @@
 """统一关系表（T3）的契约测试。
 
-现阶段只做信息录入与查询：六类关系、唯一约束、自环拒绝、ci_id 存在性校验、
-正反向过滤、最近一跳不展开，以及关系台账不被 ``purge_configs`` 误清。
+现阶段 API 只读，关系由配置解析 / 导入落库：六类关系、唯一约束、自环拒绝、
+ci_id 存在性校验、正反向过滤、最近一跳不展开，以及关系台账不被 ``purge_configs`` 误清。
 """
 
 import pytest
@@ -50,36 +50,44 @@ def test_self_loop_rejected_by_db_and_api(operator_client):
     a = _ci("a")
     with pytest.raises(IntegrityError), transaction.atomic():
         _rel(a, a, CIRelationType.DEPENDS_ON)
+    # API 只读：同样没有写入口，自环数据进不来
     res = operator_client.post(
         CI_URL,
         {"src_ci_id": a.ci_id, "dst_ci_id": a.ci_id, "relation_type": CIRelationType.DEPENDS_ON},
         format="json",
     )
-    assert res.status_code == 400
+    assert res.status_code == 405
+    assert not CIRelationship.objects.exists()
 
 
 @pytest.mark.django_db
 def test_api_rejects_unknown_ci_id(operator_client):
-    """弱关联不等于允许脏数据：录入时校验两端 ci_id 都存在"""
+    """只读 API 没有写入口：弱关联不等于允许脏数据，未登记的 ci_id 也进不来。"""
     a = _ci("a")
     res = operator_client.post(
         CI_URL,
         {"src_ci_id": a.ci_id, "dst_ci_id": "CI-does-not-exist", "relation_type": CIRelationType.RUNS_ON},
         format="json",
     )
-    assert res.status_code == 400
+    assert res.status_code == 405
+    assert not CIRelationship.objects.exists()
 
 
 @pytest.mark.django_db
-def test_api_create_returns_relation_type_display(operator_client):
+def test_api_list_returns_relation_type_display(operator_client):
+    """只读 API：列表返回 display 字段；写入口不存在。"""
     a, b = _ci("a"), _ci("b")
-    res = operator_client.post(
+    _rel(a, b, CIRelationType.RUNS_ON)
+
+    res = operator_client.get(CI_URL)
+    assert res.status_code == 200
+    assert res.json()["results"][0]["relation_type_display"] == "运行于"
+    write = operator_client.post(
         CI_URL,
         {"src_ci_id": a.ci_id, "dst_ci_id": b.ci_id, "relation_type": CIRelationType.RUNS_ON},
         format="json",
     )
-    assert res.status_code == 201, res.content
-    assert res.json()["relation_type_display"] == "运行于"
+    assert write.status_code == 405
 
 
 @pytest.mark.django_db

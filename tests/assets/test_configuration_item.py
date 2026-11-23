@@ -1,7 +1,8 @@
 """统一配置项体系（T1）的契约测试。
 
-现阶段只做信息录入与查询：ci_id 稳定锚点、类型匹配、扩展一对一、
-API 分页 / 搜索 / 过滤，以及 CI 台账不被 ``purge_configs`` 误清。
+现阶段 API 只读，录入走配置解析 / Excel 导入：ci_id 稳定锚点、类型匹配、扩展一对一
+在模型层保证；API 侧覆盖分页 / 搜索 / 过滤与只读契约，以及 CI 台账不被
+``purge_configs`` 误清。
 """
 
 import pytest
@@ -84,38 +85,43 @@ def test_api_list_search_filter_and_pagination(api_client):
 
 
 @pytest.mark.django_db
-def test_api_create_ignores_ci_id_and_monitor_status(operator_client):
-    """ci_id 服务端生成、monitor_status 是 T15 预留字段，都不接受客户端指定"""
+def test_ci_id_is_server_sided_and_api_is_read_only(operator_client):
+    """ci_id 由服务端（模型）生成、monitor_status 是 T15 预留字段；API 只读，
+    客户端没有任何写入口可以指定它们。"""
+    ci = _ci(CIType.APPLICATION_SERVICE, "svc-01")
+    assert ci.ci_id.startswith("CI-") and ci.monitor_status == ""
+
     res = operator_client.post(
         CI_URL,
         {
             "ci_id": "CI-FORGED",
             "ci_type": CIType.APPLICATION_SERVICE,
-            "name": "svc-01",
+            "name": "svc-02",
             "monitor_status": "down",
         },
         format="json",
     )
-    assert res.status_code == 201, res.content
-    ci = ConfigurationItem.objects.get(name="svc-01")
-    assert ci.ci_id.startswith("CI-") and ci.ci_id != "CI-FORGED"
-    assert ci.monitor_status == ""
+    assert res.status_code == 405, res.content
+    assert ConfigurationItem.objects.count() == 1
 
 
 @pytest.mark.django_db
-def test_api_create_extension(operator_client):
+def test_physical_server_api_is_read_only(operator_client):
+    """扩展表也不接受 API 写入；一对一与类型匹配由模型层保证。"""
     ci = _ci(CIType.PHYSICAL_SERVER, "host-01")
     res = operator_client.post(PHY_URL, {"ci": ci.pk, "hostname": "host-01", "cpu_cores": 32}, format="json")
-    assert res.status_code == 201, res.content
-    assert PhysicalServer.objects.get(ci=ci).cpu_cores == 32
+    assert res.status_code == 405, res.content
+    assert not PhysicalServer.objects.exists()
 
 
 @pytest.mark.django_db
-def test_api_rejects_mismatched_ci_type(operator_client):
-    """扩展模型不能挂到别的类型上：序列化器层挡住，返回 400 而不是 500"""
+def test_mismatched_ci_type_rejected_by_model(operator_client):
+    """API 只读（POST 405）；类型不匹配在模型层拦住，返回 ValueError 而不是 500。"""
     ci = _ci(CIType.VIRTUAL_MACHINE, "vm-01")
     res = operator_client.post(PHY_URL, {"ci": ci.pk, "hostname": "wrong"}, format="json")
-    assert res.status_code == 400
+    assert res.status_code == 405
+    with pytest.raises(ValueError, match="ci_type"):
+        PhysicalServer.objects.create(ci=ci, hostname="wrong")
 
 
 def test_ci_type_only_registers_assets():
