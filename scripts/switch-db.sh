@@ -1,18 +1,19 @@
 #!/bin/bash
-# 部署前切换数据库后端（PostgreSQL / MySQL）：改写根 .env 的 DB_SERVICE，并检查数据库相关键。
+# 部署前切换数据库后端（PostgreSQL / MySQL）：同步改写根 .env 的 DB_SERVICE 与
+# envs/common.env 里 DB_ENGINE 的宿主默认值，并检查数据库相关键。
 #
-# 它改的是什么：
-#   * compose：compose.yml 的 db 服务用 ${DB_SERVICE} 选 compose.db.yml 的模板；
-#   * 两种部署都相关的一点：envs/common.env 的 DB_ENGINE=${DB_SERVICE:-postgresql} 由加载方
-#     （compose 的 env_file / 宿主侧的 python-dotenv）插值，决定 Django 用哪个驱动。
+# 它改的是什么（两处，保持同一个开关）：
+#   * 根 .env 的 DB_SERVICE：compose.yml 的 db 服务用它选 compose.db.yml 的模板；
+#     compose 加载 envs/common.env 时也会用它插值出 DB_ENGINE（容器侧不受默认值影响）；
+#   * envs/common.env 的 DB_ENGINE=${DB_SERVICE:-<默认值>} 里的默认值：宿主直跑不读根 .env，
+#     进程里没有 DB_SERVICE 时取这个默认值。同步成目标后端，宿主就不用再 export。
 #
 # 它不管什么（数据库可以在任何地方）：
 #   * 连到哪由 DB_HOST / DB_PORT 决定（container.env / host.env / 进程环境），本脚本不改；
 #     库在外部时，切后端只是换驱动，目标库里必须本来就是对应的库；
 #   * 只有用内置 db 服务时才谈数据卷（network-ops-pgdata / network-ops-mysqldata）：
 #     两套卷互不相通，卷不删、切回去旧数据还在；
-#   * 宿主直跑（deploy-host.sh）不读根 .env，只认进程环境：
-#       export DB_SERVICE=mysql && ./scripts/deploy-host.sh deploy
+#   * 宿主直跑（deploy-host.sh）：默认值已同步，直接 deploy 即可；进程环境仍可覆盖。
 #   * 不 stop / up 容器、不 migrate、不连库、不依赖 docker。
 #
 # .env 只检查数据库相关的 5 个键（--check 只报告，不改文件）：
@@ -21,14 +22,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
+COMMON_FILE="$ROOT/envs/common.env"
 ENV_KEYS="DB_SERVICE DB_IMAGE_POSTGRES DB_IMAGE_MYSQL DB_PORT_POSTGRES DB_PORT_MYSQL"
 TMP=""
+COMMON_TMP=""
 ENV_ERRORS=0
 ENV_WARNS=0
 CFG_ERRORS=0
 
 cleanup() {
     if [ -n "$TMP" ] && [ -f "$TMP" ]; then rm -f "$TMP"; fi
+    if [ -n "$COMMON_TMP" ] && [ -f "$COMMON_TMP" ]; then rm -f "$COMMON_TMP"; fi
     return 0
 }
 trap cleanup EXIT
@@ -41,8 +45,8 @@ usage() {
     cat <<'EOF'
 用法:
   ./scripts/switch-db.sh                    # 本帮助
-  ./scripts/switch-db.sh mysql              # 改写 .env 的 DB_SERVICE（检查通过才落盘）
-  ./scripts/switch-db.sh mysql --dry-run    # 只显示改动，不写文件
+  ./scripts/switch-db.sh mysql              # 同步改写 .env 与 envs/common.env（检查通过才落盘）
+  ./scripts/switch-db.sh mysql --dry-run    # 只显示两个文件的改动，不写文件
   ./scripts/switch-db.sh --check            # 只读自检：当前后端、.env 键、后端链路、内置库、连接地址
 
   --check 只报告问题、不改文件；有错误时退出码 1。
@@ -164,7 +168,7 @@ has() { printf '%s\n' "$1" | grep -qF -- "$2"; }
 # 内置 db 服务相关配置是否自洽：模板引用、envs 嵌套、卷与 secret 声明、凭据内容。
 # 纯文本核对——不解析 compose、不连库、不依赖 docker。
 check_internal_db() {
-    local target="$1" db_env="$ROOT/envs/db.env" common="$ROOT/envs/common.env"
+    local target="$1" db_env="$ROOT/envs/db.env" common="${2:-$ROOT/envs/common.env}"
     local block vol_block s vol name
 
     block="$(block_of "$ROOT/compose.db.yml" "$target")"
@@ -250,10 +254,11 @@ check_internal_db() {
 
 # 后端链路：一个开关 → Django 驱动 / compose 模板选择
 check_chain() {
-    local target="$1" other
+    local target="$1" common="${2:-$ROOT/envs/common.env}" other
+    local expected="DB_ENGINE=\${DB_SERVICE:-${target}}"
 
-    grep -qF 'DB_ENGINE=${DB_SERVICE:-postgresql}' "$ROOT/envs/common.env" \
-        || cfg_error "envs/common.env 的 DB_ENGINE 必须是 \${DB_SERVICE:-postgresql}（切后端的唯一连接点）"
+    grep -qF "$expected" "$common" \
+        || cfg_error "envs/common.env 的 DB_ENGINE 应为 ${expected}（宿主默认值跟随当前后端；运行 ./scripts/switch-db.sh ${target} 同步）"
     grep -qE "^  ${target}:[[:space:]]*$" "$ROOT/compose.db.yml" \
         || cfg_error "compose.db.yml 缺少 ${target} 模板"
     grep -qF 'service: ${DB_SERVICE:-postgresql}' "$ROOT/compose.yml" \
@@ -273,10 +278,10 @@ check_chain() {
     [ -z "$missing" ] || warn "envs/secrets/ 缺少:$missing（容器部署需要，在部署机上生成：bash envs/secrets/generate.sh）"
 }
 
-# 后端链路 + 内置库一并检查（切换路径用）
+# 后端链路 + 内置库一并检查（切换路径用；第二个参数是候选 common.env）
 check_config() {
-    check_chain "$1"
-    check_internal_db "$1"
+    check_chain "$1" "$2"
+    check_internal_db "$1" "$2"
 }
 
 # 连接地址：切换后端不会改 DB_HOST / DB_PORT，提示清楚库在哪里
@@ -331,7 +336,7 @@ report() {
     info "后端     : $target"
     info "镜像     : $image（仅内置 db 服务使用）"
     info "部署     : docker compose up -d        # 应用按 container.env 的 DB_HOST 连库"
-    info "宿主直跑 : export DB_SERVICE=$target && ./scripts/deploy-host.sh deploy"
+    info "宿主直跑 : ./scripts/deploy-host.sh deploy（common.env 默认值已同步为 $target；进程环境仍可覆盖）"
     info "回滚     : ./scripts/switch-db.sh <另一个后端>    # 内置库的旧卷仍在，外部库不受影响"
     show_endpoints "$target"
     if [ "$target" = mysql ]; then
@@ -359,6 +364,7 @@ main() {
     fi
 
     [ -f "$ENV_FILE" ] || die ".env 不存在：先 cp .example.env .env 再按需修改"
+    [ -f "$COMMON_FILE" ] || die "envs/common.env 不存在：先 cp envs/example/*.env envs/"
     [ -z "$target" ] || target="$(normalize "$target")"
 
     local current
@@ -409,19 +415,24 @@ main() {
         return 0
     fi
 
-    # 候选文件：换 DB_SERVICE 后先检查，通过才落盘
+    # 候选文件：同时换 DB_SERVICE 与 common.env 的宿主默认值，检查通过才落盘
     TMP="$(mktemp "$ROOT/.env.tmp.XXXXXX")"
+    COMMON_TMP="$(mktemp "$ROOT/common.env.tmp.XXXXXX")"
     cp "$ENV_FILE" "$TMP"
+    cp "$COMMON_FILE" "$COMMON_TMP"
     sed -i -E "s|^([[:space:]]*DB_SERVICE=)[^#[:space:]]*(.*)$|\1${target}\2|" "$TMP"
+    # 只替换 ${DB_SERVICE:-...} 里的默认值，保留 ${} 插值链路与行尾内容
+    sed -i -E 's|^([[:space:]]*DB_ENGINE=\$\{DB_SERVICE:-)[^}]*\}|\1'"${target}"'}|' "$COMMON_TMP"
     chmod --reference="$ENV_FILE" "$TMP" 2>/dev/null || true
+    chmod --reference="$COMMON_FILE" "$COMMON_TMP" 2>/dev/null || true
 
     check_env_file "$TMP"
-    check_config "$target"
+    check_config "$target" "$COMMON_TMP"
     if [ "$ENV_ERRORS" -gt 0 ] || [ "$CFG_ERRORS" -gt 0 ]; then
-        die "配置检查未通过（.env 错误 $ENV_ERRORS / 配置错误 $CFG_ERRORS），.env 未改动"
+        die "配置检查未通过（.env 错误 $ENV_ERRORS / 配置错误 $CFG_ERRORS），两个文件都未改动"
     fi
 
-    if cmp -s "$ENV_FILE" "$TMP"; then
+    if cmp -s "$ENV_FILE" "$TMP" && cmp -s "$COMMON_FILE" "$COMMON_TMP"; then
         info "当前已经是 ${target}，无需改动"
         report "$target"
         return 0
@@ -429,6 +440,8 @@ main() {
 
     info "--- .env 改动 ---"
     diff -u --label .env --label .env.new "$ENV_FILE" "$TMP" || true
+    info "--- envs/common.env 改动 ---"
+    diff -u --label envs/common.env --label envs/common.env.new "$COMMON_FILE" "$COMMON_TMP" || true
 
     if [ "$dry_run" -eq 1 ]; then
         info ""
@@ -438,8 +451,10 @@ main() {
 
     mv "$TMP" "$ENV_FILE"
     TMP=""
+    mv "$COMMON_TMP" "$COMMON_FILE" || die "envs/common.env 写入失败；请重跑 ./scripts/switch-db.sh ${target} 修正"
+    COMMON_TMP=""
     info ""
-    info "已写入 $ENV_FILE"
+    info "已写入 $ENV_FILE 与 $COMMON_FILE"
     report "$target"
 }
 
