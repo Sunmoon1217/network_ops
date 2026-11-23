@@ -102,6 +102,100 @@ check_config() {
         [ -s "$ROOT/envs/secrets/$other" ] || missing="$missing $other"
     done
     [ -z "$missing" ] || warn "envs/secrets/ 缺少:$missing（容器部署需要，在部署机上生成：bash envs/secrets/generate.sh）"
+
+    check_internal_db "$target"
+}
+
+# 取 compose 文件里某个 service / volume / secret 的块（按 2 空格缩进切）
+block_of() {
+    awk -v key="$2" '
+        !inside && $0 ~ "^  " key ":[[:space:]]*$" { inside = 1; next }
+        inside && ($0 ~ /^[^[:space:]]/ || $0 ~ "^  [A-Za-z0-9_.-]+:[[:space:]]*$") { exit }
+        inside { print }
+    ' "$1"
+}
+
+has() { printf '%s\n' "$1" | grep -qF -- "$2"; }
+
+# 内置 db 服务相关配置是否自洽：模板引用、envs 嵌套、卷与 secret 声明、凭据内容。
+# 纯文本核对——不解析 compose、不连库、不依赖 docker。
+check_internal_db() {
+    local target="$1" db_env="$ROOT/envs/db.env" common="$ROOT/envs/common.env"
+    local block vol_block s vol name
+
+    block="$(block_of "$ROOT/compose.db.yml" "$target")"
+    [ -n "$block" ] || die "compose.db.yml 缺少 ${target} 模板"
+
+    case "$target" in
+        postgresql)
+            has "$block" 'envs/db.env'                           || die "postgresql 模板没加载 envs/db.env，库拿不到 POSTGRES_*"
+            has "$block" '- db_user'                             || die "postgresql 模板没挂 db_user secret，POSTGRES_USER_FILE 读不到"
+            has "$block" '- db_password'                         || die "postgresql 模板没挂 db_password secret"
+            has "$block" 'postgres_data:/var/lib/postgresql/data' || die "postgresql 模板的数据卷挂载点被改了"
+            has "$block" '}:5432"'                               || die "postgresql 模板的容器端口不是 5432"
+            has "$block" 'pg_isready'                            || die "postgresql 模板的 healthcheck 不是 pg_isready"
+            ;;
+        mysql)
+            has "$block" 'envs/db.env'                           || die "mysql 模板没加载 envs/db.env，库拿不到 MYSQL_*"
+            has "$block" '- db_password'                         || die "mysql 模板没挂 db_password secret，MYSQL_ROOT_PASSWORD_FILE 读不到"
+            has "$block" 'mysql_data:/var/lib/mysql'             || die "mysql 模板的数据卷挂载点被改了"
+            has "$block" '}:3306"'                               || die "mysql 模板的容器端口不是 3306"
+            has "$block" 'mysqladmin ping'                       || die "mysql 模板的 healthcheck 不是 mysqladmin ping"
+            ;;
+    esac
+
+    # 顶层 volumes / secrets 不被 extends 继承，必须在 compose.yml 里声明
+    for s in postgres_data:network-ops-pgdata mysql_data:network-ops-mysqldata; do
+        vol="${s%%:*}"; name="${s#*:}"
+        vol_block="$(block_of "$ROOT/compose.yml" "$vol")"
+        [ -n "$vol_block" ] || die "compose.yml 的 volumes 没声明 ${vol}（extends 不继承顶层 volumes）"
+        has "$vol_block" "name: $name" || die "compose.yml 的 ${vol} 名字应为 $name"
+    done
+    for s in db_user db_password; do
+        vol_block="$(block_of "$ROOT/compose.yml" "$s")"
+        [ -n "$vol_block" ] || die "compose.yml 的 secrets 没声明 $s（${target} 模板引用了它）"
+        has "$vol_block" 'file:' || die "compose.yml 的 secrets.$s 没有 file: 源"
+    done
+
+    # envs/db.env：只给 *_FILE，且按后端嵌套到镜像认的名字
+    [ -f "$db_env" ] || die "envs/db.env 不存在（容器凭据层）"
+    grep -qE '^DB_USER_FILE=/run/secrets/db_user$' "$db_env" || die "envs/db.env 的 DB_USER_FILE 应指向 /run/secrets/db_user"
+    grep -qE '^DB_PASSWORD_FILE=/run/secrets/db_password$' "$db_env" || die "envs/db.env 的 DB_PASSWORD_FILE 应指向 /run/secrets/db_password"
+    if grep -qE '^POSTGRES_USER=' "$db_env" || grep -qE '^POSTGRES_PASSWORD=' "$db_env"; then
+        die "envs/db.env 不能同时给 POSTGRES_USER / POSTGRES_PASSWORD：与 *_FILE 冲突，官方 entrypoint 会直接退出"
+    fi
+    if grep -qE '^MYSQL_USER_FILE=' "$db_env"; then
+        die "envs/db.env 不能给 MYSQL_USER_FILE：MySQL 镜像没有这个机制（用户名走 MYSQL_USER）"
+    fi
+    case "$target" in
+        postgresql)
+            grep -qF 'POSTGRES_USER_FILE=${DB_USER_FILE}' "$db_env" || die "envs/db.env 需要 POSTGRES_USER_FILE=\${DB_USER_FILE}"
+            grep -qF 'POSTGRES_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 POSTGRES_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            ;;
+        mysql)
+            grep -qF 'MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 MYSQL_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            grep -qF 'MYSQL_ROOT_PASSWORD_FILE=${DB_PASSWORD_FILE}' "$db_env" || die "envs/db.env 需要 MYSQL_ROOT_PASSWORD_FILE=\${DB_PASSWORD_FILE}"
+            ;;
+    esac
+
+    # common.env：库名 / 账号只定义一次，镜像认的名字靠同文件嵌套
+    local db_name db_user
+    db_name="$(read_file_var "$common" DB_NAME)"
+    db_user="$(read_file_var "$common" DB_USER)"
+    [ -n "$db_name" ] || die "envs/common.env 的 DB_NAME 为空"
+    [ -n "$db_user" ] || die "envs/common.env 的 DB_USER 为空"
+    grep -qF 'POSTGRES_DB=${DB_NAME}' "$common" || die "envs/common.env 的 POSTGRES_DB 应嵌套 \${DB_NAME}"
+    grep -qF 'MYSQL_DATABASE=${DB_NAME}' "$common" || die "envs/common.env 的 MYSQL_DATABASE 应嵌套 \${DB_NAME}"
+    grep -qF 'MYSQL_USER=${DB_USER}' "$common" || die "envs/common.env 的 MYSQL_USER 应嵌套 \${DB_USER}"
+
+    # 凭据内容与 DB_USER 对齐：PG 用文件的用户名建库，MySQL 用 MYSQL_USER 建账号
+    if [ -s "$ROOT/envs/secrets/db_user" ]; then
+        local sec_user
+        sec_user="$(tr -d '\r\n' < "$ROOT/envs/secrets/db_user")"
+        if [ -n "$sec_user" ] && [ "$sec_user" != "$db_user" ]; then
+            warn "envs/secrets/db_user 与 envs/common.env 的 DB_USER 不一致：两种后端的建库账号会不同，应用可能连不上"
+        fi
+    fi
 }
 
 # 连接地址：切换后端不会改 DB_HOST / DB_PORT，提示清楚库在哪里
@@ -161,6 +255,11 @@ show_status() {
     info "  可用   : postgresql | mysql"
     info "  切换   : ./scripts/switch-db.sh mysql    （只改配置，部署仍走 compose）"
     if [ "$current" = mysql ] || [ "$current" = postgresql ]; then
+        if ( check_internal_db "$current" ) 2>/dev/null; then
+            info "  内部库 : 自检通过"
+        else
+            info "  内部库 : 自检未通过（./scripts/switch-db.sh --check 看原因）"
+        fi
         show_endpoints "$current"
     fi
 }
@@ -203,6 +302,12 @@ main() {
     [ -n "$current" ] || die ".env 里缺少 DB_SERVICE= 这一行（容器侧靠它选后端）"
 
     if [ -z "$target" ]; then
+        if [ "$check_only" -eq 1 ]; then
+            check_config "$current"
+            info "校验通过：${current} 的后端链路与内置库配置自洽（未写入，未连库）"
+            show_endpoints "$current"
+            return 0
+        fi
         show_status "$current"
         return 0
     fi
@@ -216,7 +321,7 @@ main() {
     chmod --reference="$ENV_FILE" "$TMP" 2>/dev/null || true
 
     if [ "$check_only" -eq 1 ]; then
-        info "静态校验通过：切到 ${target} 的配置链路完整（未写入，未连库）"
+        info "校验通过：切到 ${target} 的后端链路与内置库配置自洽（未写入，未连库）"
         show_endpoints "$target"
         return 0
     fi
