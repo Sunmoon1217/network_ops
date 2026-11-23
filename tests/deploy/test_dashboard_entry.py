@@ -37,8 +37,11 @@ def test_django_serves_each_entry_from_its_own_html(tmp_path, monkeypatch):
         assert res.headers["Content-Type"].startswith("text/html")
         assert b'id="dashboard"' in res.content
 
-    for path in ("/", "/devices"):
-        assert b'id="app"' in client.get(path).content
+    # 根路径专门留给免认证的大屏（302 到 /dashboard）；其余前端路由仍由 SPA 兜底回主站。
+    root = client.get("/")
+    assert root.status_code == 302
+    assert root.headers["Location"] == "/dashboard"
+    assert b'id="app"' in client.get("/devices").content
 
 
 @pytest.mark.django_db

@@ -3,12 +3,13 @@
 幂等：按 `(source_type, source_id)` 找已有映射；只更新名字变化的 CI，`ci_id` 保持不变。
 批量：CI 与映射都走 bulk_create / bulk_update，IPAM 万级也能一次跑完。
 
-并发：与软资产归并共用「事务级咨询锁」的做法（`pg_advisory_xact_lock`，项目强绑 PostgreSQL），
-多个进程同时跑命令时串行化，避免 `get_or_create` 撞唯一约束。
+并发：与软资产归并共用按后端分派的咨询锁（PG 事务级 advisory lock / MySQL 会话级
+GET_LOCK），多个进程同时跑命令时串行化，避免 `get_or_create` 撞唯一约束。
 """
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 from django.db import connection, transaction
@@ -16,6 +17,7 @@ from django.utils import timezone
 
 from assets.models import CIObjectLink, CIType, ConfigurationItem, Device, IPAddress, Subnet
 from assets.models.ci import _new_ci_id
+from assets.services.db_locks import mysql_named_lock
 
 #: 登记锁（"REGI"）；与软资产的 "SOFT" 分开，两件事可以并行
 _REGISTRY_LOCK_KEY = 0x52454749
@@ -56,11 +58,13 @@ def register_existing_assets(kinds: list[str] | None = None, dry_run: bool = Fal
     if unknown:
         raise ValueError(f"不支持的存量资产类型：{unknown}；可选 {sorted(_SOURCES)}")
 
-    with transaction.atomic():
-        if not dry_run:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_REGISTRY_LOCK_KEY])
-        return {kind: _register_kind(kind, *_SOURCES[kind], dry_run=dry_run) for kind in wanted}
+    lock = nullcontext() if dry_run else mysql_named_lock("asset_registry")
+    with lock:
+        with transaction.atomic():
+            if not dry_run and connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_REGISTRY_LOCK_KEY])
+            return {kind: _register_kind(kind, *_SOURCES[kind], dry_run=dry_run) for kind in wanted}
 
 
 def _register_kind(kind: str, model, name_field: str, dry_run: bool) -> RegistryStats:
@@ -92,6 +96,11 @@ def _register_kind(kind: str, model, name_field: str, dry_run: bool) -> Registry
 
     if new_cis:
         ConfigurationItem.objects.bulk_create(new_cis, batch_size=500)
+        # MySQL 的 bulk_create 不回填主键（不支持 RETURNING），而 new_links 持的是内存里的
+        # ci 对象；按 ci_id 查回主键再回填，否则 Django 会拒绝保存未保存的关联对象。
+        pk_by_ci_id = dict(ConfigurationItem.objects.filter(ci_id__in=[ci.ci_id for ci in new_cis]).values_list("ci_id", "pk"))
+        for ci in new_cis:
+            ci.pk = pk_by_ci_id[ci.ci_id]
         CIObjectLink.objects.bulk_create(new_links, batch_size=500)
     if changed_cis:
         now = timezone.now()

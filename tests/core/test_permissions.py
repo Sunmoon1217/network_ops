@@ -4,8 +4,8 @@
 
 - 匿名：一律 401（连读都不行）
 - 普通用户（role=normal）：读 200，写 403
-- 操作员（role=operator）：读 200，写 201/200
-- 超管：恒放行（is_superuser 不看 role）
+- 操作员（role=operator）：读 200；只读 API 下写 405（方法不被允许）
+- 超管：读恒放行（is_superuser 不看 role）；写同样 405
 - login / register 保持公开（匿名可用）
 - /api/me/ 返回 role，注册出来的账号 role=normal
 """
@@ -51,36 +51,34 @@ def test_normal_user_cannot_write(normal_user):
 
     assert client.post(DEVICES_URL, {"hostname": "x", "device_type": "switch"}, format="json").status_code == 403
     assert client.patch(f"{DEVICES_URL}{device.pk}/", {"remark": "x"}, format="json").status_code == 403
-    assert client.put(
-        f"{DEVICES_URL}{device.pk}/", {"hostname": "x", "device_type": "switch"}, format="json"
-    ).status_code == 403
+    assert client.put(f"{DEVICES_URL}{device.pk}/", {"hostname": "x", "device_type": "switch"}, format="json").status_code == 403
     assert client.delete(f"{DEVICES_URL}{device.pk}/").status_code == 403
     # 被拒的写没有落库
     assert not Device.objects.filter(hostname="x").exists()
 
 
 @pytest.mark.django_db
-def test_operator_can_write(operator_user):
-    """操作员：增删改放行"""
+def test_operator_is_read_only(operator_user):
+    """只读 API：操作员也只有查询权，增删改一律 405（方法不被允许）"""
     client = _auth_client(operator_user)
+    device = Device.objects.create(hostname="perm-op-dev", device_type="switch")
 
-    created = client.post(DEVICES_URL, {"hostname": "perm-op-dev", "device_type": "switch"}, format="json")
-    assert created.status_code == 201, created.content
-
-    patched = client.patch(f"{DEVICES_URL}{created.json()['id']}/", {"remark": "改过"}, format="json")
-    assert patched.status_code == 200
-
-    assert client.delete(f"{DEVICES_URL}{created.json()['id']}/").status_code == 204
+    assert client.get(DEVICES_URL).status_code == 200
+    assert client.post(DEVICES_URL, {"hostname": "x", "device_type": "switch"}, format="json").status_code == 405
+    assert client.patch(f"{DEVICES_URL}{device.pk}/", {"remark": "改过"}, format="json").status_code == 405
+    assert client.put(f"{DEVICES_URL}{device.pk}/", {"hostname": "x", "device_type": "switch"}, format="json").status_code == 405
+    assert client.delete(f"{DEVICES_URL}{device.pk}/").status_code == 405
+    assert not Device.objects.filter(hostname="x").exists()
 
 
 @pytest.mark.django_db
-def test_superuser_always_allowed_to_write():
-    """超管不看 role，恒可写（ensure_superuser 建的 admin 不需要另配 role）"""
-    admin = User.objects.create_superuser(username="_t_perm_admin", password="x")
+def test_superuser_is_read_only():
+    """超管恒放行读，但只读 API 不因角色放开写入口"""
+    admin = User.objects.create_superuser(username="_t_perm_admin", email="", password="x")
+    client = _auth_client(admin)
 
-    resp = _auth_client(admin).post(DEVICES_URL, {"hostname": "perm-admin-dev", "device_type": "switch"}, format="json")
-
-    assert resp.status_code == 201
+    assert client.get(DEVICES_URL).status_code == 200
+    assert client.post(DEVICES_URL, {"hostname": "perm-admin-dev", "device_type": "switch"}, format="json").status_code == 405
 
 
 @pytest.mark.django_db
@@ -134,7 +132,7 @@ def test_me_endpoint_returns_role_and_can_write(normal_user, operator_user):
 @pytest.mark.django_db
 def test_superuser_can_write_even_with_normal_role():
     """超管 role 仍是 normal（默认），但 can_write 必须为 True"""
-    admin = User.objects.create_superuser(username="_t_perm_admin2", password="x")
+    admin = User.objects.create_superuser(username="_t_perm_admin2", email="", password="x")
     assert admin.role == "normal"
 
     payload = _auth_client(admin).get("/api/me/").json()
