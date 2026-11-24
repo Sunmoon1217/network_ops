@@ -249,6 +249,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **测试**：pytest + pytest-django，`testpaths = ["tests"]`，统一放 `tests/<应用>/`（应用目录下
   不留脚手架的 `tests.py`）。测试内资源定位用包路径（`Path(ingest.__file__).parent / ...`）或
   `settings.BASE_DIR`，**不要** `Path(__file__).parent.parent`（目录一挪就静默失效）。
+- **注释只留简单说明（代码与环境变量文件都是）**：代码文件、`.env` / `envs/*.env` / 脚本里的注释
+  只写「这段在做什么、怎么用」一两句；函数与类要为**参数 / 返回值**（含单位、边界、副作用）写简短说明。
+  **复杂解释、原理推演、跨文件链路、改动历史一律进 `handbook/`**（对应域那份，或
+  [`handbook/README.md`](handbook/README.md) 注释规范），代码里最多留一行指针指向它。
+  分隔横线、复述下一行代码、注释掉的死代码不写；改动顺手删掉被本次改动作废的旧注释。
 - **提交与分支（本仓分支模型，2026-11 从技能 `git-branch-flow` 上收为约定）**：`master` 只整批接收
   `Merge branch 'develop'`（发布线），`develop` 是汇聚线——**feature / fix 一律从 `develop` 切**，
   合并在 develop 侧（`--no-ff`，中文说明）。**一需求 = `feature/<主题>`，一 bug = `fix/<主题>`**；
