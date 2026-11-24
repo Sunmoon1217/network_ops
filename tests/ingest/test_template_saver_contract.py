@@ -106,9 +106,7 @@ def test_flat_manual_payload_still_accepted():
     assert Interface.objects.get(device=device, interface="eth9").mode == "access"
 
 
-# ---------------------------------------------------------------------------
 # 全厂商样例端到端：有产出 + 有 Saver 的键必须入库 >0 行
-# ---------------------------------------------------------------------------
 
 SAMPLES = [
     ("cisco_fw", "Cisco", "firewall"),
@@ -145,9 +143,7 @@ def test_sample_config_lands_in_db(fname, vendor, dtype):
         assert created + updated > 0, f"{fname}: {type(saver).__name__} 收到键 {sorted(payload)} 却 0 行入库——模板产出结构/字段与 Saver 不匹配（hillstone service 同类问题）"
 
 
-# ---------------------------------------------------------------------------
 # 无样例文件厂商的内联配置端到端（F5 / A10 / Maipu / Ruijie）
-# ---------------------------------------------------------------------------
 
 _INLINE = [
     (
@@ -288,9 +284,7 @@ def test_inline_config_lands_in_db(cid, vendor, dtype, cfg):
         assert created + updated > 0, f"{cid}: {type(saver).__name__} 收到 {sorted(payload)} 却 0 行入库"
 
 
-# ---------------------------------------------------------------------------
 # 接口 enabled 三态：启用行 / 禁用行 / 无行（真机默认启用）
-# ---------------------------------------------------------------------------
 
 _H3C_STYLE = """interface GigabitEthernet1/0/1
  {up}
@@ -399,9 +393,7 @@ interface GigabitEthernet0/1
     assert first.get("nameif") == "outside"
 
 
-# ---------------------------------------------------------------------------
 # 状态行统一模式（禁用词 {{ enabled | set(0) | default(1) }}）的落库两态
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

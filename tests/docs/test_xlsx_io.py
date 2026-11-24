@@ -112,9 +112,7 @@ def test_upload_with_corrupted_styles(operator_client):
     assert resp.json()["data"] == {"sheets": [{"name": "数据", "rows": EXPECTED_ROWS}]}
 
 
-# ---------------------------------------------------------------------------
 # 合并单元格：拆分填充（区域内每格写上左上角的值）
-# ---------------------------------------------------------------------------
 
 
 def _build_merged_xlsx() -> BytesIO:

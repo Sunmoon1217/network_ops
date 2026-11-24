@@ -15,9 +15,7 @@ def _switch(hostname: str) -> Device:
     return Device.objects.create(hostname=hostname, device_type="switch", device_model=model)
 
 
-# ---------------------------------------------------------------------------
 # 阶段推进
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -111,9 +109,7 @@ def test_cancel_task_marks_cancelled():
     assert task.completed_at is not None
 
 
-# ---------------------------------------------------------------------------
 # DeviceConfig：同步默认 + 批量导入的异步开关
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

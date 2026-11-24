@@ -30,9 +30,7 @@ def eager_celery(settings):
     app.conf.task_always_eager, app.conf.task_eager_propagates = prev
 
 
-# ---------------------------------------------------------------------------
 # 用户权限（core.permissions.IsOperatorOrReadOnly）的测试基建
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture

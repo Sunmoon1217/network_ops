@@ -5,9 +5,7 @@ import pytest
 from docs.diff import MAX_CHANGES, diff_data, is_empty
 from docs.schema import DataError, normalize_data
 
-# ---------------------------------------------------------------------------
 # diff
-# ---------------------------------------------------------------------------
 
 
 def _data(*sheets):
@@ -97,9 +95,7 @@ def test_diff_header_rows_change():
     assert summary["header_rows_changed"] == 1
 
 
-# ---------------------------------------------------------------------------
 # schema
-# ---------------------------------------------------------------------------
 
 
 def test_normalize_ok_and_cell_coercion():
