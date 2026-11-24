@@ -8,12 +8,17 @@
 
 | 文件 | 层 | 谁加载 | 放什么 |
 |------|----|--------|--------|
-| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的值（`DB_ENGINE`/`DB_NAME`/`DB_USER` 及镜像认的 `POSTGRES_DB`/`MYSQL_DATABASE`/`MYSQL_USER`、Redis、`DJANGO_*`、阿里云/Dify/Zabbix 非密钥项）——日常维护的主要文件 |
+| `common.env` | **共享层** | 容器：compose `env_file`；宿主：`settings/base.py` 启动时 `load_dotenv` | 两种部署**完全一致**的现场值（`DB_ENGINE`/`DB_NAME`/`DB_USER` 及镜像认的 `POSTGRES_DB`/`MYSQL_DATABASE`/`MYSQL_USER`、Redis、`DJANGO_ALLOWED_HOSTS`/`DJANGO_CSRF_TRUSTED_ORIGINS`、阿里云/Dify/Zabbix/autotask 地址）——日常维护的主要文件 |
 | `container.env` | 容器差异层 | compose `env_file`（排在**最后**，只给四个应用进程） | 只在容器成立的东西：`DB_HOST=db` / `REDIS_HOST=redis`、阿里云 `*_FILE`、`CONFIG_REPO_PATH=/configs`、`DJANGO_ENV=container`、`MIGRATE_ON_START` |
 | `db.env` | **数据库凭据层（仅容器）** | compose `env_file`（四个应用进程 + db 容器） | docker secrets 的文件路径，并 `${}` 嵌套成镜像认的 `POSTGRES_*_FILE` / `MYSQL_*_FILE`；库名/账号在 `common.env`，`DB_HOST` 在 `container.env` |
-| `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`DB_ENGINE` / `DB_HOST=127.0.0.1` / `DB_NAME` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
+| `host.env` | 宿主差异层 | `base.py` 启动时 `load_dotenv`（`DJANGO_ENV ≠ container` 时） | 只在宿主成立的东西：`DB_HOST=127.0.0.1` / `REDIS_HOST=127.0.0.1`（**不写 localhost**：Windows 上会先试 `::1`、每次连接白等约 10s）、服务器那份写 `DJANGO_ENV=prod`；可选：把 `*_FILE` 指到 `envs/secrets/*` 与容器共用同一份密钥（相对路径按 `BASE_DIR` 解析） |
 | `gunicorn.env` / `celery.env` | 服务层 | compose `env_file`（只给对应服务） | 每个服务自己的旋钮，与部署方式无关 |
 | `secrets/*` | 密钥 | 容器：`secrets` 挂载 `/run/secrets/*`；宿主：经 `host.env` 的相对 `*_FILE` | 数据库/阿里云凭据；只有密钥被 `.gitignore` 排除，见 `secrets/README.md` |
+
+> **策略参数不进 env 文件**：MCP 开关与限流、API 文档鉴权、AccessFlow 阈值、大屏采集周期、
+> 各 HTTP 超时、Dify 分段等，默认值集中在 `netops/settings/defaults.py`（按 `DJANGO_ENV`
+> 区分 dev / container / prod），需要现场覆盖时 export 同名变量或在 env 文件里取消注释。
+> 变量清单见 `handbook/settings.md`。
 
 `common.env` / `container.env` / `host.env` 的注入组合（compose.yml）：
 

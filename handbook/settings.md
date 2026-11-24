@@ -24,6 +24,17 @@
 把 `BASE_DIR` 与 `apps/` 插进 `sys.path`（根下 `llmtools`、`apps/` 下的 `core/ingest/...`
 以顶层包出现，不依赖 CWD）。
 
+### 策略参数：代码默认 + 按环境区分
+
+`settings/defaults.py` 集中放**确实随环境不同**的策略默认值（目前是 `MCP_ENABLED` 与
+`DJANGO_API_DOCS_REQUIRE_LOGIN`），`base.py` 按 `DJANGO_ENV` 选一套，读取顺序是
+`env > defaults.py > 代码兜底`。`compose.yml` 把 `DJANGO_ENV` 显式注入四个应用进程，
+所以生产容器写 `DJANGO_ENV=prod` 就能生效。
+
+其余旋钮（AccessFlow 阈值、大屏周期、各 HTTP 超时、Dify 分段等）的默认值仍写在 base，
+**通常不用写进 `envs/*.env`**；要现场调整时 export 同名变量或在 env 文件里取消注释即可。
+下表「谁注入」只说明常规来源，不代表必须写进 env 文件。
+
 ## 凭据链
 
 统一为 **`<NAME>_FILE` > 同名环境变量 > 默认值**，实现在 `base._env_or_file`：
@@ -62,7 +73,7 @@
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔；nginx 用 `proxy_set_header Host $http_host` 透传原样 Host（含端口），Django 校验时剥端口再比对，所以必须放行；prod 必填且不许 `*` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 正常拓扑留空（Origin 天然等于当前 host）。只在「浏览器看到的来源 ≠ 转给 Django 的 Host」时才需要（外层 LB 改写 Host、TLS 提前终结）；值带 scheme，逗号分隔 |
 | `DJANGO_LOG_LEVEL` | `INFO` | 业务命名空间（`core/ingest/assets/analysis/cloud/docs/llmtools/netops`）的日志级别，见下方 `LOGGING` |
-| `DJANGO_API_DOCS_REQUIRE_LOGIN` | 空 | 给 `1/true/yes` 才把 `/api/schema/*` 收紧成 `IsAuthenticated`；内网默认放开 |
+| `DJANGO_API_DOCS_REQUIRE_LOGIN` | dev/container 关、prod 开 | 控制 `/api/schema/*` 是否收紧成 `IsAuthenticated`；默认值在 `settings/defaults.py`，env 可覆盖 |
 
 ### 数据库 / Redis
 
@@ -130,7 +141,7 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `MCP_ENABLED` | `1` | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。见 [`llmtools.md`](llmtools.md) |
+| `MCP_ENABLED` | dev/container 开、prod 关 | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。默认值在 `settings/defaults.py`，env 可覆盖。见 [`llmtools.md`](llmtools.md) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
 
 ### Git 配置仓库（`core/config_repo.py`）
@@ -253,5 +264,6 @@ WARNING 以上，INFO 全被静默丢弃。常驻的 consumer 运行期输出全
 `REST_FRAMEWORK.DEFAULT_SCHEMA_CLASS` 指向 `drf_spectacular.openapi.AutoSchema`；
 `SPECTACULAR_SETTINGS` 的 UI 资源一律 `SIDECAR`（内网不通外网，随 `collectstatic` 进
 `/static/` 由 nginx 直出），`SERVE_INCLUDE_SCHEMA=False`；权限取 `API_DOCS_PERMISSION`
-（默认 `AllowAny`，`DJANGO_API_DOCS_REQUIRE_LOGIN=1` 收紧成 `IsAuthenticated`）。
+（dev/container 默认 `AllowAny`、prod 默认 `IsAuthenticated`，见 `settings/defaults.py`；
+env 设 `DJANGO_API_DOCS_REQUIRE_LOGIN` 可覆盖）。
 路由见 [`api.md`](api.md)。
