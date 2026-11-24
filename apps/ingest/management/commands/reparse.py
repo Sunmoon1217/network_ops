@@ -1,21 +1,10 @@
-"""重新解析已保存到 Git 的设备配置，并重跑 Saver 入库。
+"""重新解析已保存到 Git 的设备配置并重跑 Saver（改模板 / 补厂商型号 / 修 Saver 后用）。
 
-用途：改了 TTP 模板、补上设备的厂商/型号、或修好某个 Saver 之后，
-对已有的 DeviceConfig 重跑一遍整条链路——正常流程只在 DeviceConfig 新建时触发，
-重复导入同一 commit 是空操作，所以需要一个显式入口。
+    python manage.py reparse --device sw-bj-01 [--device ...]
+    python manage.py reparse --all [--no-parse] [--workers 4]
 
-    python manage.py reparse --device sw-bj-01
-    python manage.py reparse --device sw-bj-01 --device fw-bj-01
-    python manage.py reparse --all
-    python manage.py reparse --all --no-parse     # 只重跑 Saver，沿用已有 config_json
-    python manage.py reparse --all --workers 4    # 跨设备并行
-
-``--workers`` 的并行单位是**设备**：解析（TTP）与 Saver 里的 DRF 校验都是 CPU
-密集型，进程比线程更能扩展，所以用进程池而不是线程池。每个设备只派一个任务，
-任务之间没有共享行，因此并行不会让它们互相写坏。
-
-⚠️ 只保证「本命令内部」不会让同一台设备并发。信号路径（Web 导入配置）没有
-设备级互斥，如果一边跑 reparse 一边有请求导入同一台设备，两边仍会同时写同一批行。
+``--workers`` 用进程池（解析与 DRF 校验是 CPU 密集型），并行单位是设备。
+只保证本命令内部不并发写同一台设备；信号路径（Web 导入）没有设备级互斥。
 """
 
 import multiprocessing

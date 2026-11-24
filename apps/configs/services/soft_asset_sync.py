@@ -1,14 +1,7 @@
-"""软资产归并的**编排**：先算（configs）后写（assets），同一事务、一把咨询锁。
+"""软资产归并的编排：先算（configs）后写（assets），同一事务、一把咨询锁。
 
-两步必须在同一事务里串起来，不能拆成「算完 → Celery → 写」：
-
-1. 事务原子性——拆开后计算与写入分属两个事务，中间有窗口期；
-2. 咨询锁按后端分派（PG 事务级 advisory lock / MySQL 会话级 GET_LOCK），
-   拆开就得换 Redis 之类的跨进程锁；
-3. 锁的粒度——现在是「整个归并串行」，拆开后只有写入阶段串行，计算阶段可能并发。
-
-依赖方向也因此干净：``configs → assets``（矩阵允许，上层调下层的写入能力），
-``assets`` 完全不认识 configs。
+两步不能拆成「算完 → Celery → 写」：原子性、锁粒度与依赖方向都会被破坏。
+细节见 handbook/assets.md「归并链路」。
 """
 
 from __future__ import annotations

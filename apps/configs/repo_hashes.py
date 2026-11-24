@@ -1,19 +1,7 @@
 """配置仓库重放旧历史后，把 ``DeviceConfig.git_commit_hash`` 改指新 hash。
 
-**为什么在 configs 而不是 core**：``DeviceConfig`` 是 configs 的表。core 的
-``config_repo`` 只提供两个钩子点——「重放完成 + 新老 hash 映射」（``register_hash_remapper``）
-与「旧共享仓库里某 hash 的锚点提交」（``legacy_commit_for``），自己不认识任何业务模型，
-这样 core 才能保持「零业务依赖」（``tests/core/test_layering.py`` 守着）。
-
-两种要回写的行：
-
-1. **正常重放**：hash 在映射表里，直接换成重放后的 hash；
-2. **脏行**（历史 bug：内容未变时早退返回 HEAD，拿到的是别的设备的 commit）：那个 hash
-   没被重放，先用 ``legacy_commit_for`` 反查「≤ 该时点、真正改过本设备文件」的提交，
-   再按映射换成重放后的版本。
-
-回写失败的旧 hash 不会让数据丢失：``core.config_repo.get_config`` / ``diff_configs``
-查不到时会回退读旧共享仓库。
+``DeviceConfig`` 是 configs 的表，所以回写实现住本域；core 只提供钩子与锚点查询。
+两种要回写的行（正常重放 / 历史脏行）见 handbook/deploy.md「配置仓库」。
 """
 
 import logging

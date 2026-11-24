@@ -36,9 +36,8 @@ def get_savers_for_config(device_type: str, config_json: dict) -> list[tuple[lis
 def build_saver_payloads(device_type: str, config_json: dict) -> list[tuple[BaseSaver, dict]]:
     """按 Saver 分组，返回 ``(saver 实例, 该 Saver 应该看到的 payload)``。
 
-    **调用方不要自己拼 payload**：同一个 Saver 的多个 key 必须一起传，且只传有值的键。
-    这条规则曾散在 pipeline 与两个 Celery 任务里各写一遍，其中一处把 key 列表当单 key
-    用而整批存不进去——收敛到这里，别再加第三份。
+    同一个 Saver 的多个 key 必须一起传，且只传有值的键；调用方不要自己拼 payload。
+    规则见 handbook/ingest.md
     """
     payloads: list[tuple[BaseSaver, dict]] = []
     for keys, saver in get_savers_for_config(device_type, config_json):

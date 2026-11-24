@@ -258,9 +258,8 @@ class GTMWideipSaver(BaseSaver):
     def _normalize_pools(self, pools_raw: object) -> list[dict]:
         """wideip 的关联池 → `[{"name", "order", "ratio"}, ...]`。
 
-        `f5_gtm.ttp` 的 wideip 组里，每个池带自己的 `pool_order` / `pool_ratio`
-        （同一个池被不同 wideip 引用时权重各不相同，所以必须跟着 wideip 走）。
-        原实现只留池名，这两个值直接丢了。缺省按 F5 语义兜底：order=0、ratio=1。
+        每个池自带 `pool_order` / `pool_ratio`（同一池被不同 wideip 引用时权重不同），
+        必须跟着 wideip 走；缺省按 F5 语义兜底 order=0、ratio=1。
         """
         if isinstance(pools_raw, str):
             items: list = [pools_raw]
@@ -349,7 +348,7 @@ class GtmServerSaver(BaseSaver):
 
         created, updated = self.bulk_upsert(GtmServer, device, server_rows, key_fields=("name",), serializer_cls=GtmServerSerializer)
 
-        # 父记录刚批量写完，一次取回 pk；原先每个 server 都要再 filter().first() 查一次
+        # 父记录批量写完后一次取回 pk，避免逐条查询
         server_ids = dict(GtmServer.objects.filter(device=device).values_list("name", "pk"))
         vs_rows = []
         for server_name, vs in pending_vservers:
@@ -420,8 +419,7 @@ class GtmPoolSaver(BaseSaver):
             server = self._leaf(member.get("server_name"))
             if not server:
                 continue
-            # 显式 0 要原样留住（ratio=0 = 不参与调度），只有缺值才兜底——
-            # 原先写成 `or 1` 会把 ratio=0 静默改成 1
+            # 显式 0 必须留住（ratio=0 = 不参与调度），只有缺值才兜底
             order = self._safe_int(member.get("member_order"))
             ratio = self._safe_int(member.get("member_ratio"))
             members.append(

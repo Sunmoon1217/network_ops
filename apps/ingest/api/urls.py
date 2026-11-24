@@ -2,9 +2,8 @@ from django.urls import include, path
 
 from . import configs, imports, parsers
 
-# 采集域一个前缀收全部：配置仓库读取（config-repo/）、Excel 批量导入（import-*）、
-# 解析器（parsers/）。此前这四类分散在 /api/configs/、/api/assets/、/api/parsers/ 三处，
-# 与实际归属对不上；路由表见 handbook/api.md。
+# 采集域一个前缀收全部：配置仓库读取（config-repo/）、Excel 批量导入（import-*）、解析器
+# （parsers/）；路由表见 handbook/api.md
 urlpatterns = [
     path(
         "ingest/",

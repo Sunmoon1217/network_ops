@@ -1,23 +1,7 @@
-"""访问流（AccessFlow）重建任务的**投递触点**——configs 侧与 analysis 解耦的接缝。
+"""访问流重建任务的投递触点：PolicySaver（configs）→ analysis 任务。
 
-链路的触发方是 ``PolicySaver``（策略落库后要重建该设备的访问流），它随解析/写入链路
-从 ingest 迁到 configs；任务本体 ``analysis.rebuild_access_flows`` 仍住在 analysis。
-依赖方向是 **analysis → configs 单向，configs 不许 import analysis**。所以这里不 import 任务对象，而是按
-``settings.ACCESS_FLOW_TASK`` 的**任务名字符串** send_task：
-
-- celery 的消息本来就只有 ``{"task": <名字>, "args": [...]}``，worker 收到后拿名字查
-  自己的注册表（autodiscover 已加载 analysis.tasks）执行，与投递方是否 import 过
-  任务无关；
-- 任务名的唯一定义处是 ``settings.ACCESS_FLOW_TASK``，任务装饰器的 ``name=`` 与
-  ``CELERY_TASK_ROUTES`` 的 key 必须与之一致（tests/analysis/test_access_flow_task.py
-  有对账断言，改名不同步直接红）。
-
-开关与降级语义（与拆分前的 access_stream.request_rebuild 一致）：
-
-- ``ACCESS_FLOW_DISPATCH`` 供测试默认关闭（conftest 统一置 False）——否则
-  PolicySaver 每保存一次就把消息发进真实 Redis；
-- broker 不可达**只告警不抛出**：解析入库已经成功，重建晚一点没关系
-  （``manage.py rebuild_access_flows --device <H>`` 可以手工补）。
+configs 不许 import analysis，所以按 ``settings.ACCESS_FLOW_TASK`` 的任务名 ``send_task``。
+任务名与路由 key 必须一致（测试对账）；开关与降级语义见 handbook/analysis.md。
 """
 
 from logging import getLogger

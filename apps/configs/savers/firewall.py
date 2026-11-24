@@ -52,7 +52,7 @@ class AddressBookSaver(BaseSaver):
             serializer_cls=AddressBookSerializer,
         )
 
-        # 父记录刚批量写完，一次把 pk 取回来；原先每本书都要再 filter().first() 查一次
+        # 父记录批量写完后一次取回 pk，避免逐条查询
         parent_ids = dict(AddressBook.objects.filter(device=device, address_type="addressbook").values_list("name", "pk"))
 
         child_rows = []
@@ -217,8 +217,7 @@ class ServiceSaver(BaseSaver):
         if not entries:
             return (0, 0)
 
-        # 按服务名分组后做**自然键差量**：一个 service 块的多行是同一个名字下的多个端口
-        # 定义，逐行落库不合并；在的行原样复用（pk 稳定 → 策略 M2M 不被级联打断），
+        # 按服务名分组做自然键差量：逐行不合并，已有行原样复用（pk 稳定 → 策略 M2M 不被打断），
         # 只建缺失、删多余。细节见 handbook/ingest.md
         by_name: dict[str, list[dict]] = {}
         for svc in entries:
@@ -357,8 +356,8 @@ class PolicySaver(BaseSaver):
         if not policy_rows:
             return (0, 0)
 
-        # 地址簿与服务先落库，拿到 pk 供 M2M 使用。计数只上报策略本身：
-        # 地址簿/服务的账由各自的 Saver 报，这里再计一遍会让流水线汇总重复。
+        # 地址簿与服务先落库，拿到 pk 供 M2M 使用；计数只上报策略本身，
+        # 地址簿 / 服务的账由各自 Saver 报，避免汇总重复
         self.bulk_upsert(
             AddressBook,
             device,

@@ -1,18 +1,8 @@
-"""Zabbix 查询编排层：**按业务意图**提供 4 个入口。
+"""Zabbix 查询编排层：按业务意图提供入口（device_count / items / problems / link_peak / link_history）。
 
-``TypedZabbixAPI``（在 ``core/integrations/providers/zabbix/client.py``）只提供
-``<object>_get`` 扩展方法（一次官方 API 调用 + 有限参数固化 + response 校验实例化）；
-本层负责全部编排：范围解析、条件组合、触发器关联、峰值计算。名称→ID、纯透传、
-单条详情这类实现细节都不是业务意图，已收进私有助手，不对外暴露。
-
-    device_count(...)   某主机组有多少台设备
-    items(...)          查监控项当前值（可给 name / key_ 组合条件并发查）
-    problems(...)       看当前告警（自动补齐触发器与主机）
-    link_peak(...)      某主机某接口的带宽峰值（不给时间取当前值，给时间取区间峰值）
-    link_history(...)   某主机某接口在区间内的历史样本（保留时间维度，供大屏分桶）
-
-文件名不叫 ``tools.py``：与 ``apps/<域>/mcp/tools.py``（MCP 工具注册）语义不同；
-未来 Zabbix 的 MCP 工具按约定住 ``apps/ingest/mcp/tools.py``，工具名以 ``zabbix_`` 开头。
+``TypedZabbixAPI`` 只提供 ``<object>_get``（一次 API 调用 + 校验实例化），范围解析、
+条件组合、触发器关联、峰值计算都在这层；名称→ID 等实现细节收进私有助手。
+文件名不叫 ``tools.py``：Zabbix 的 MCP 工具按约定住 ``apps/ingest/mcp/tools.py``。
 """
 
 from asyncio import gather

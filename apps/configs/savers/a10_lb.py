@@ -1,29 +1,4 @@
-"""A10 SLB 数据保存器。
-
-A10 与 F5 共享同一套 ``Ltm*`` 模型，但配置语义不同，字段对应关系：
-
-service-group → LtmPool / LtmPoolMember：
-
-- ``service-group`` ≈ F5 ``pool``：name→name、method→mode、monitor→monitors；
-- A10 成员直接写 ``address:port``（没有 F5 的 node 名），``LtmPoolMember.name``
-  用地址充当成员名，``address`` 列原样落地址——path_tracer 拿 ``address`` 做
-  下一跳匹配，两者同值不影响匹配。
-
-virtual-server → LtmVirtualServer / LtmProfile / LtmPersist：
-
-- A10 一个 ``virtual-server`` 是「一个 VIP 地址 + 多个 port 的 virtual-service」，
-  F5 一个 ``ltm virtual`` 只有一个 destination（address:port）——所以 A10 的
-  「virtual-server + virtual-service」组合才对应一行 ``LtmVirtualServer``，
-  ``name`` 用 ``{vs_name}:{port}`` 保证唯一（唯一键 (device, name)）；
-- address→vs_address、port→vs_port、protocol→protocol、enabled→status、
-  service-group→pool、source-nat 的 snat_type/snat_pool→snat_type/snat_pool；
-- ``template http`` / ``template client-ssl`` → LtmProfile（type 是模板里的
-  固定词 http / client-ssl，不是从名字推导）；
-- ``template persist`` → LtmPersist（type = persist_type、name = persist_name）。
-
-``servers``（slb server 节点清单）没有对应的 ``Ltm*`` 模型，与 F5 的 ``nodes``
-一样保持「产出无消费」，落在 ``KNOWN_UNCONSUMED_PRODUCTS``。
-"""
+"""A10 SLB 数据保存器：与 F5 共用一个 ``Ltm*`` 模型，配置语义的差异见 handbook/ingest.md「A10 SLB Saver」。"""
 
 from logging import getLogger
 

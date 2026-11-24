@@ -48,7 +48,7 @@ def run_collection_stage(self, stage_id):
         if not device:
             raise ValueError("任务无关联设备")
 
-        connection = device.connections.filter(enabled=True).first()
+        connection = device.connections.filter(enabled=True).first()  # type: ignore[attr-defined]
         if not connection:
             raise ValueError(f"设备 {device.hostname} 无可用连接")
 
@@ -199,9 +199,7 @@ def run_config_pipeline_stage(self, stage_id):
         raise
 
 
-# ---------------------------------------------------------------------------
 # Dashboard 采集任务：采集与存储分离（采集编排见 ingest/collectors/dashboard.py）
-# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=1)
@@ -284,16 +282,8 @@ def collect_dashboard(source):
 def refresh_link_cache_task():
     """大屏链路带宽：Zabbix 直取 → Redis（不落库）。
 
-    失败分两类，刻意区别对待：
-
-    - **全部链路采集失败**（``LinkCollectionError``，外部数据源整体不可用）属可预期故障：
-      只记一条 ``logger.error``（消息里是各 target 的原因摘要，单行），任务返回
-      ``{"status": "failed", ...}``，**不 raise**——Celery 不会打整段 traceback，下个周期
-      自动重试。这是为了压掉 180s 一轮的刷屏日志。
-    - **其它异常**（Redis 不可用、``conf/links.json`` 非法等真实故障）照常向上抛，
-      让 Celery 记 FAILURE 并保留 traceback。
-
-    单条链路失败只在 ``link_cache`` 里 warning，本任务照常返回摘要。
+    全部链路不可用（``LinkCollectionError``）只记单行 error、不 raise，等下个周期重试；
+    其它异常照常上抛让 Celery 记 FAILURE。口径见 handbook/analysis.md。
     """
     from ingest.collectors.link_cache import LinkCollectionError, refresh_link_cache
 

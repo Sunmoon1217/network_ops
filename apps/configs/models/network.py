@@ -1,11 +1,7 @@
-"""配置行模型：ConfigBase 的 25 个子类（设备上的一条配置行）。
+"""配置行模型：``ConfigBase`` 的 25 个子类（设备上的一条配置行）。
 
-从 ``assets/models/network.py`` 迁入（拆分切片 2；``Vlan`` 是切片 1 的首个模型）。
-模型之间仍沿用原来的类名直接引用：Vrf / AddressBook / Service / GtmServer 都在本模块里，
-不需要跨模块 import。``DeviceConfig`` 是配置快照（不继承 ConfigBase），单独放
-``device_config.py``。
-判定依据见 ``handbook/assets.md``「资产分类边界」与
-``handbook/design/assets-configs-split.md``。
+模型间直接用类名引用（同在本模块）；``DeviceConfig`` 是配置快照、不继承 ConfigBase。
+分类判据见 handbook/assets.md「资产分类边界」。
 """
 
 from typing import TYPE_CHECKING

@@ -1,16 +1,9 @@
 """把 GTM / LTM 配置行归并成软资产（T4）。
 
-    python manage.py sync_soft_assets                 # 域名 + 负载均衡服务
-    python manage.py sync_soft_assets --type domain   # 只归并域名
-    python manage.py sync_soft_assets --type lb
-    python manage.py sync_soft_assets --dry-run       # 只试算，不写库
+    python manage.py sync_soft_assets [--type all|domain|lb] [--dry-run]
 
-只读 ``GtmWideip`` / ``LtmVirtualServer`` 等配置行，只写 ``DomainAsset`` /
-``LoadBalancerService``；重复执行幂等（不新增、不改 ``ci_id``）。已消失的配置不会删除资产。
-
-**归属**：命令住 configs——它本质是「从配置行重建资产」，计算段也在 configs；落库段调
-``assets.services.soft_asset_sync``（configs → assets 是矩阵允许的方向）。命令名不变，
-Django 的命令发现与 app 标签无关，调用方式一个字不用改。
+只读配置行、只写 ``DomainAsset`` / ``LoadBalancerService``；幂等，消失的配置不删资产。
+归属与落库分工见 handbook/assets.md「归并链路」。
 """
 
 from django.core.management.base import BaseCommand

@@ -10,8 +10,7 @@ class OperatorConfig(AppConfig):
     verbose_name = "数据摄入（采集与解析入库）"
 
     def ready(self):
-        # Saver 注册表已随 parsers / savers / mapping 迁入 configs，注册点移到
-        # configs.apps.ConfigsConfig.ready()（见该文件注释），本域不再负责触发。
+        # Saver 注册点已随 Registry 迁到 configs.apps（本域不再负责触发）
         import ingest.signals  # noqa: F401
 
         self._register_integrations()
