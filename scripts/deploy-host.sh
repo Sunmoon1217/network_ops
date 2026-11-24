@@ -1,38 +1,7 @@
 #!/bin/bash
-#
-# 服务器直接部署（宿主直跑，不经容器编排）。
-#
-# 与 compose 部署共用同一套配置：settings/base.py 启动时自动 load_dotenv
-# envs/common.env + envs/host.env（DJANGO_ENV ≠ container 时），进程环境 export 的值
-# 永远优先（override=False）——所以本脚本**不导出**任何业务 env，Django 自己会读。
-#
-# 用法：
-#   ./scripts/deploy-host.sh build     # 装依赖 + 前端构建 + collectstatic
-#   ./scripts/deploy-host.sh migrate   # migrate_if_needed（带库级锁）+ ensure_superuser
-#   ./scripts/deploy-host.sh start     # 后台启动 app / worker / consumer / beat 四个进程
-#   ./scripts/deploy-host.sh stop      # 停止四个进程
-#   ./scripts/deploy-host.sh restart   # stop + start
-#   ./scripts/deploy-host.sh status    # 查看四个进程状态
-#   ./scripts/deploy-host.sh deploy    # build + migrate + restart（完整发布）
-#
-# start / stop / restart / status 可追加服务名子参数，只操作单个进程：
-#   ./scripts/deploy-host.sh start app      # 只启动 app
-#   ./scripts/deploy-host.sh restart beat   # 只重启 beat
-#   ./scripts/deploy-host.sh stop worker    # 只停 worker
-#   服务名取值：app / worker / consumer / beat
-#
-# 四个进程与 compose 的 app / worker / consumer / beat 一一对应，命令与 entrypoint/*.sh 保持一致：
-#   app      gunicorn + UvicornWorker，监听 0.0.0.0:8000（与 nginx upstream 耦合，勿改 bind）
-#   worker   celery worker，同时消费 celery,access_flow 两个队列，并发固定 2
-#            （同设备并发入库会写坏数据，见 AGENTS.md；默认池按 CPU 起会空载爆炸）
-#   consumer 访问流消费者，AccessFlow 的唯一写者——**全机只能起一个实例**，
-#            本脚本对已存活进程跳过启动，靠 PID 文件防止误起第二份
-#   beat     大屏三条链（链路缓存 / 设备组 / Autotask）的周期投递，**单实例**；
-#            启动前先同步刷一次链路缓存
-#
-# PID 与日志：data/run/*.pid、data/logs/*.log（data/ 是运行期目录，不入库）。
-# gunicorn / celery 的可调旋钮沿用 envs/gunicorn.env、envs/celery.env（存在则 source，
-# 不存在用内置默认值）——与容器侧同一份文件，不存在「两边各调各的」漂移。
+# 服务器直接部署（宿主直跑）：四个进程与 compose 的 app / worker / consumer / beat 一一对应，
+# 启动命令与 entrypoint/*.sh 保持一致。用法见下方 case，进程语义与旋钮见 handbook/deploy.md。
+# 不导出业务 env：settings/base.py 自己 load_dotenv（进程环境永远优先）。
 
 set -euo pipefail
 
@@ -43,7 +12,7 @@ RUN_DIR="$PROJECT_DIR/data/run"
 LOG_DIR="$PROJECT_DIR/data/logs"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
-# ---- 运行时旋钮：与容器共用 envs/gunicorn.env / envs/celery.env，缺省即内置默认 ----
+# 运行时旋钮：与容器共用 envs/gunicorn.env、envs/celery.env，缺省用内置默认值
 [ -f envs/gunicorn.env ] && source envs/gunicorn.env
 [ -f envs/celery.env ] && source envs/celery.env
 
@@ -59,8 +28,7 @@ GUNICORN_LOG_LEVEL="${GUNICORN_LOG_LEVEL:-info}"
 CELERY_CONCURRENCY="${CELERY_CONCURRENCY:-2}"
 CELERY_LOGLEVEL="${CELERY_LOGLEVEL:-info}"
 
-# ---- 前置检查 ----------------------------------------------------------------
-
+# 前置检查
 need_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "错误：缺少命令 $1 —— $2" >&2
@@ -76,8 +44,7 @@ check_envs() {
     fi
 }
 
-# ---- build：依赖 + 前端 + 静态 ------------------------------------------------
-
+# build：依赖 + 前端 + 静态
 do_build() {
     check_envs
     need_cmd uv "Python 依赖管理（https://docs.astral.sh/uv/）"
@@ -102,8 +69,7 @@ do_build() {
     echo "==> build 完成"
 }
 
-# ---- migrate：迁移 + 初始管理员 ----------------------------------------------
-
+# migrate：迁移 + 初始管理员
 do_migrate() {
     check_envs
     echo "==> migrate_if_needed（只跑未应用的迁移，库级命名锁串行化）"
@@ -113,18 +79,14 @@ do_migrate() {
     uv run python manage.py ensure_superuser
 }
 
-# ---- 进程管理 ----------------------------------------------------------------
-
-# 所有服务名称列表
+# 进程管理
 SERVICES=("app" "worker" "consumer" "beat")
 
-# 辅助函数：根据服务名获取 PID 文件路径
 get_pid_file() {
     local service="$1"
     echo "$RUN_DIR/${service}.pid"
 }
 
-# 辅助函数：验证服务名是否合法
 validate_service() {
     local service="$1"
     local valid=false
@@ -152,11 +114,9 @@ start_service() {
     # 残留的陈旧 PID 文件（进程已死）清掉再启动
     rm -f "$pidfile"
 
-    # nohup 是外部命令，只会 exec 可执行文件，接 shell 函数（cmd_*）会直接报
-    # "nohup: failed to run command 'cmd_app': No such file or directory"。
-    # 这里在 fork 出的子 shell 里手动做 nohup 的两件事：忽略 SIGHUP、断开 stdin；
-    # 函数与变量随 fork 继承，cmd_* 内部用 exec 顶替子 shell，于是 $! 就是服务进程
-    # 本身（stop 的 kill 能命中），而 SIG_IGN 经 exec 仍保留，效果等同 nohup。
+    # nohup 只 exec 可执行文件，接 shell 函数会失败；这里在子 shell 里手动实现
+    # nohup 的两件事（忽略 SIGHUP、断开 stdin），cmd_* 内部用 exec 顶替子 shell，
+    # 使 $! 就是服务进程本身，且 SIG_IGN 经 exec 保留。
     ( trap '' HUP; "$@" ) </dev/null >>"$LOG_DIR/$name.log" 2>&1 &
     echo $! >"$pidfile"
     sleep 1
@@ -199,9 +159,7 @@ status_service() {
     fi
 }
 
-# 三个命令封装成函数，与容器入口一一对应；函数体用 exec 顶替 fork 出的子 shell，
-# 让 start_service 记录的 $! 就是服务进程，stop 时 kill 能直接命中（见 start_service）。
-
+# 命令封装：与容器入口一一对应，用 exec 顶替子 shell（见 start_service）。
 cmd_app() {
     # 命令与 entrypoint/app.sh 一致：硬要求（worker-class / bind）写死，旋钮取 envs/gunicorn.env
     exec uv run gunicorn netops.asgi:application \
@@ -230,9 +188,7 @@ cmd_consumer() {
 }
 
 cmd_beat() {
-    # 与 entrypoint/beat.sh 一致：先同步刷一次链路缓存、投递一次设备组 / Autotask 采集
-    # （interval 条目首轮要等满一个周期，autotask 默认 600s），再打印调度自检、起调度；
-    # --schedule / --pidfile 放 data/run，避免往项目根写运行期文件。
+    # 与 entrypoint/beat.sh 一致：先刷链路缓存、补投一次采集，再打印调度自检并起调度。
     uv run python manage.py refresh_link_cache || echo "警告：启动时链路缓存刷新失败，beat 继续启动" >&2
     uv run python manage.py collect_dashboard || echo "警告：启动时大屏采集投递失败，beat 继续启动" >&2
     uv run python manage.py shell -c "from netops.celery import app; print('[beat] 生效调度:', {name: (entry['task'], entry['schedule']) for name, entry in app.conf.beat_schedule.items()})" \
@@ -295,8 +251,7 @@ do_status() {
     fi
 }
 
-# ---- 入口 --------------------------------------------------------------------
-
+# 入口
 case "${1:-}" in
     build)   do_build ;;
     migrate) do_migrate ;;

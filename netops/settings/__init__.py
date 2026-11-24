@@ -1,9 +1,7 @@
-"""settings 包入口：base 定义（env 动态项唯一一处）→ 按 DJANGO_ENV 白名单选环境文件。
+"""settings 包入口：base 打底 → 按 DJANGO_ENV 白名单选环境文件。
 
-环境旋钮唯一：DJANGO_ENV（dev 默认 / container / prod），未知值直接拒绝启动；覆盖顺序与
-守卫矩阵见 handbook/settings.md。DJANGO_SETTINGS_MODULE 恒为 netops.settings。
-容器由 envs/container.env 注入 DJANGO_ENV=container；把 apps/ 与根目录加进 sys.path
-（core/ingest/assets/analysis 与 llmtools 以顶层包出现）。
+DJANGO_ENV 只有 dev / container / prod，未知值拒绝启动；覆盖顺序与守卫矩阵见 handbook/settings.md。
+这里还把 BASE_DIR 与 apps/ 插进 sys.path，让 llmtools 与各域以顶层包出现。
 """
 
 import os
@@ -13,8 +11,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from .base import *
 
-# import * 不带下划线开头的名字，但 tests/deploy 直接用 netops.settings._env_or_file，
-# 这两个助手必须显式补导出，否则测试 AttributeError。
+# import * 不带下划线名字，但 tests/deploy 直接用这两个助手，必须显式补导出。
 from .base import _env_list, _env_or_file  # noqa: F401
 
 _ENV = os.environ.get("DJANGO_ENV", "dev")
@@ -28,9 +25,7 @@ else:
     raise ImproperlyConfigured(f"未知 DJANGO_ENV={_ENV!r}，可选 dev / container / prod")
 
 APPS_DIR = BASE_DIR / "apps"
-# 根目录也在 sys.path 里：根目录下的 llmtools（LLM 工具出口层）以顶层包出现。
-# 它通常已由 manage.py / 容器 WORKDIR 带进来，但 gunicorn --chdir、从别处跑 pytest
-# 会丢掉它——显式补上，别让出口层的可用性依赖 CWD。
+# 显式补根目录，避免出口层可用性依赖 CWD（gunicorn --chdir、从别处跑 pytest）。
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 if str(APPS_DIR) not in sys.path:

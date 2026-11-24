@@ -1,15 +1,7 @@
 #!/bin/sh
-# 为应用账号授予「测试库」的全部权限（MySQL 初始化脚本）。
-#
-# 为什么用库名模式：MySQL 的库级权限存放在 mysql.db，键是「库名模式」，不绑定库对象。
-# Django 每次测试会 DROP/CREATE test_<库名>（pytest-xdist 还会追加 _gwN），
-# 授权一次后，之后新建的测试库自动继承，不需要每次重建后再授权。
-#
-# 生产环境（DJANGO_ENV=prod）直接跳过：不授予 CREATE/DROP test_* 的权限。
-#
-# 触发时机：官方 mysql 镜像只在数据目录为空（首次初始化）时执行
-# /docker-entrypoint-initdb.d/ 下的脚本。数据卷已存在时手动跑一次：
-#   docker compose exec -u root db sh /docker-entrypoint-initdb.d/01-grant-test-db.sh
+# 为应用账号授予测试库权限（MySQL 首次初始化脚本）：授权按库名模式 test_<库>% 生效；
+# prod 直接跳过。触发时机与手动执行方式见 handbook/deploy.md。
+
 set -eu
 
 # 环境类型：初始化阶段由 env_file 注入；手动 exec 不继承容器环境，回退读 PID 1 的 environ。

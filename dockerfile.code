@@ -1,10 +1,6 @@
 # syntax=docker/dockerfile:1
-#
 # 代码镜像：busybox + 代码 + 静态成品（~6.8MB），跨沙箱传输用。
-# tag 规则、构建与部署命令：.env.example「镜像构建」一节
-#
-# 布局：镜像内代码根是 /opt/netops（源）；code-init 把它复制到 code_data 卷（挂 /app）
-# 与 static_data 卷（挂 /static）。镜像源码路径与运行时卷路径分开，不绕圈。
+# code-init 把 /opt/netops 铺进 code / static 两个卷；构建与 tag 规则见 handbook/deploy.md。
 
 FROM busybox:1.38
 

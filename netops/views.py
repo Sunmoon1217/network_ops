@@ -21,8 +21,7 @@ def vue_index(request):
 def vue_dashboard(request):
     """大屏入口 dashboard.html（挂载点 #dashboard），必须单独返回。
 
-    两个 Vite 入口共用同一份 main chunk，靠页面里的挂载点决定启动哪个应用；
-    若把大屏请求交给 SPA 兜底返回 index.html，页面里没有 #dashboard，大屏就是空白。
+    两个入口共用 main chunk，靠挂载点决定启动哪个应用；返回 index.html 会白屏。
     """
     return _frontend_html("dashboard.html")
 

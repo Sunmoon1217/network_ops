@@ -1,23 +1,7 @@
 #!/bin/bash
-# 部署前切换数据库后端（PostgreSQL / MySQL）：同步改写根 .env 的 DB_SERVICE 与
-# envs/common.env 里 DB_ENGINE 的宿主默认值，并检查数据库相关键。
-#
-# 它改的是什么（两处，保持同一个开关）：
-#   * 根 .env 的 DB_SERVICE：compose.yml 的 db 服务用它选 compose.db.yml 的模板；
-#     compose 加载 envs/common.env 时也会用它插值出 DB_ENGINE（容器侧不受默认值影响）；
-#   * envs/common.env 的 DB_ENGINE=${DB_SERVICE:-<默认值>} 里的默认值：宿主直跑不读根 .env，
-#     进程里没有 DB_SERVICE 时取这个默认值。同步成目标后端，宿主就不用再 export。
-#
-# 它不管什么（数据库可以在任何地方）：
-#   * 连到哪由 DB_HOST / DB_PORT 决定（container.env / host.env / 进程环境），本脚本不改；
-#     库在外部时，切后端只是换驱动，目标库里必须本来就是对应的库；
-#   * 只有用内置 db 服务时才谈数据卷（network-ops-pgdata / network-ops-mysqldata）：
-#     两套卷互不相通，卷不删、切回去旧数据还在；
-#   * 宿主直跑（deploy-host.sh）：默认值已同步，直接 deploy 即可；进程环境仍可覆盖。
-#   * 不 stop / up 容器、不 migrate、不连库、不依赖 docker。
-#
-# .env 只检查数据库相关的 5 个键（--check 只报告，不改文件）：
-#   DB_SERVICE / DB_IMAGE_POSTGRES / DB_IMAGE_MYSQL / DB_PORT_POSTGRES / DB_PORT_MYSQL
+# 切换数据库后端（postgresql / mysql）：同步改写根 .env 的 DB_SERVICE 与 envs/common.env
+# 里 DB_ENGINE 的宿主默认值，并做只读自检（.env 五个数据库键、后端链路、内置库配置）。
+# 不改连接地址、不连库、不启停容器；完整语义见 handbook/deploy.md「MySQL 后端」。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -326,3 +326,21 @@ MySQL 侧要求 **8.0.17+**（多值索引；函数索引只要 8.0.13，Django 
 `code-init`。compose 的 app / worker / consumer 共用 `VENV_IMAGE`（根 `.env`，`x-app-base` 锚点
 保证不漂移），`code-init` 用 `CODE_IMAGE`（git SHA 做 tag 便于回滚）；换私有 registry 只改这两个
 镜像变量，不必改 compose。
+
+**跨沙箱传代码镜像**（内网 ↔ 服务器只传镜像，不复制源码）：
+
+```bash
+# 内网开发机
+TAG=$(git rev-parse --short HEAD)
+docker build -t network-ops-code:$TAG -f dockerfile.code .
+docker save network-ops-code:$TAG | gzip -9 > code-$TAG.tar.gz
+scp code-$TAG.tar.gz server:/opt/images/
+# 服务器
+gunzip -c /opt/images/code-$TAG.tar.gz | docker load
+cd /opt/netops && CODE_IMAGE=network-ops-code:$TAG docker compose up -d code-init app
+# 回滚（旧镜像已在服务器上）
+CODE_IMAGE=network-ops-code:<旧SHA> docker compose up -d code-init app
+```
+
+换源构建加 `--build-arg APT_MIRROR=... --build-arg UV_DEFAULT_INDEX=...`（uv 不读 pip 配置，
+换源后必须重新 `uv lock`，见 [`settings.md`](settings.md) 与技能 `uv-package-and-lockfile`）。

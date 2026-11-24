@@ -1,30 +1,7 @@
 #!/bin/bash
-#
-# 生成 docker secrets 文件：
-#   envs/secrets/db_user       → 容器内 /run/secrets/db_user
-#   envs/secrets/db_password   → 容器内 /run/secrets/db_password
-#   envs/secrets/{prod,test}_{ak,sk} → /run/secrets/同名
-#
-# 数据库密码可以本地随机生成；阿里云 AK/SK **不能**——先从环境变量或根 .env 读取，
-# 读不到就写空文件（compose 要求文件存在），运行期调用云 API 会因空凭据失败直到填入。
-#
-# 谁用它们：
-#   * db 容器     —— envs/db.env 把 DB_USER_FILE / DB_PASSWORD_FILE 嵌套成镜像认的
-#                    POSTGRES_USER_FILE / MYSQL_PASSWORD_FILE
-#   * app / worker —— settings/base.py 的 _env_or_file() 读 DB_*_FILE / ALIYUN_*_FILE
-# 全部**不入库**（.gitignore 已排除），权限是 600。
-#
-# 用法：
-#   bash envs/secrets/generate.sh            # 默认：沿用 .env 里现有的 DB_USER / DB_PASSWORD
-#   bash envs/secrets/generate.sh --random   # 生成随机强密码（**只适用于全新的数据卷**）
-#   bash envs/secrets/generate.sh --force    # 覆盖已存在的文件
-#
-# 为什么默认沿用 .env 的值：postgres 只在**首次初始化数据卷**时应用这套凭据，之后再改
-# 文件也不会改库里的密码。已有部署把 .env 的值搬进 envs/secrets 才不会在重启后连不上；
-# 想要真正换密码，要么 --random + 删 postgres_data 卷重建，要么进库 `ALTER USER ...`。
-#
-# 注意：这里对 .env 的解析是**简化版**（去行内注释、去成对引号、$$ → $）。
-# 密码里带空格、引号等复杂字符时，请直接手工创建 envs/secrets/db_password。
+# 生成 docker secrets 文件到 envs/secrets/（db_user / db_password / 四个 aliyun_*）。
+# 默认沿用 .env 的值（避免已有数据卷密码被改）；--random 生成随机密码，--force 覆盖。
+# 凭据语义与轮换注意见 envs/secrets/README.md 与 handbook/deploy.md。
 
 set -eu
 
@@ -60,8 +37,7 @@ for arg in "$@"; do
     esac
 done
 
-# 从 .env 取一个变量的值：取最后一条定义；处理行内注释（# 前须有空格）、行尾空格、
-# 成对引号、以及 compose 的 $$ 转义。取不到就输出空。
+# 从 .env 取值（简化解析：行内注释、行尾空格、成对引号、$$ → $；复杂密码请手工建文件）
 env_value() {
     [ -f .env ] || return 0
     sed -n "s/^$1=//p" .env | tail -n 1 |
