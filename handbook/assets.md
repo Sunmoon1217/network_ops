@@ -256,6 +256,18 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
   `translated_*` 指向整张地址簿/服务表（下拉动辄上千项），所以改用有限取值的 `nat_type`，
   按具体地址找规则走搜索。
 
+## 序列化器（`serializers/`）
+
+- `base.py` 的 `@model(model=...)` 只注入 `Meta`：`fields="__all__"`、`id` 只读。子类自己
+  定义 `Meta` 就完全尊重（列表页要精简大 JSON 时在类体里写）；判断用 `cls.__dict__` 而不是
+  `hasattr`，避免把父类继承来的 `Meta` 当成子类的。
+- 两个基类：`ParentClass` 给没有 `device` 外键的模型；`DeviceRelatedSerializer` 给有 `device`
+  的模型，统一提供 `device_hostname` 展示字段。判断依据是 `hasattr(model, "device")`，**不看
+  是否继承 `ConfigBase`**（`Vlan` / `ArpMac` 有 device 字段但不继承）；继承错基类会在类定义
+  时直接 `TypeError`——否则 `source="device.hostname"` 带 `default` 会静默返回空串。
+- 展示字段（`*_name` / `*_count` / `*_display`）只写在各自序列化器里；MCP 工具按序列化器
+  口径取字段，所以 `*_display` 不能省（否则 `list_records` 里只剩 `ha` 这种内部值）。
+
 ## Excel 导入 → 归 ingest
 
 Excel 批量导入（导入器 `ingest/device_import.py` + 接口 `ingest/api/imports.py`）已随域拆分

@@ -1,14 +1,7 @@
 """按用户保存的前端配置（表格列宽等界面偏好）。
 
-一个接口管三种动词：
-
-- ``GET``  返回当前用户的全部偏好 ``{key: value}``（可 ``?key=`` 只取一条）；
-- ``PUT``  按 ``{"key": ..., "value": ...}`` 单条 upsert——**不是全量替换**，
-  前端每张表只回写自己那个 key，避免并发页面互相覆盖；
-- ``DELETE ?key=`` 删除一条（value 传 ``null`` 也走删除，见下）。
-
-约定 ``value=None`` 即删除：偏好值本身用不到 null（列宽是 ``{列: 宽度}``），用它表达
-「清除」省掉一个专门的语义。所有读写都限定 ``request.user``，偏好不跨用户共享。
+GET 全量（可 ``?key=`` 取一条）/ PUT 单条 upsert（不是全量替换）/ DELETE ``?key=``；
+``value=null`` 等价删除。接口说明见 handbook/api.md「core」。
 """
 
 from rest_framework import status
@@ -58,7 +51,6 @@ def preferences(request):
 
     value = request.data["value"]
     if value is None:
-        # null 即清除该条（见模块 docstring）
         user.preferences.filter(key=key).delete()
         return Response({"key": key, "value": None})
 

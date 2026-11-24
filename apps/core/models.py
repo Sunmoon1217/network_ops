@@ -9,14 +9,9 @@ from core import task_types
 
 
 class User(AbstractUser):
-    """扩展用户模型。
+    """扩展用户模型：``role`` 是业务角色（normal 只读 / operator 可写），与 is_staff 无关。
 
-    ``role`` 是业务角色，与 Django 自带的 ``is_staff`` / ``is_superuser`` 无关：
-    - ``normal``   普通用户：登录后只能读（查询）
-    - ``operator`` 操作员：登录后可读 + 增删改
-
-    写权限由 ``core.permissions.IsOperatorOrReadOnly`` 判定（``is_superuser`` 恒放行）。
-    注册接口只创建 ``normal``；``operator`` 由管理员在 Django admin 里赋给。
+    写权限由 ``IsOperatorOrReadOnly`` 判定（``is_superuser`` 恒放行）；注册只建 normal。
     """
 
     ROLE_CHOICES = (
@@ -67,11 +62,9 @@ class Token(models.Model):
 
 
 class UserPreference(models.Model):
-    """按用户保存的前端配置（表格列宽等界面偏好）。
+    """按用户保存的前端配置（表格列宽等），``(user, key)`` 唯一。
 
-    key 是「页面/表」粒度的命名空间（如 ``table:devices.interfaces:column-widths``），
-    value 是任意 JSON（列宽存 ``{列key: 宽度}``）；同一用户的同一 key 只有一行，
-    读写都限定在 ``request.user`` 上——偏好不跨用户共享。
+    key 是「页面/表」粒度的命名空间（如 ``table:devices.interfaces:column-widths``）。
     """
 
     user = models.ForeignKey(
@@ -210,13 +203,9 @@ class Stage(models.Model):
 
 
 class IntegrationHealth(models.Model):
-    """外部连接的健康快照（跨进程可见）。
+    """外部连接的健康快照（跨进程可见），由 beat 探活 upsert，API 只读。
 
-    client 实例是进程内的（ASGI / Celery / consumer / beat 各一份），admin 与 MCP 所在进程
-    看不到别的进程持有什么实例；所以健康状态必须外化。由 Celery beat 周期任务
-    ``core.integrations.probe_all`` 逐 provider 探活后 upsert，API 只读。
-
-    设计见 ``handbook/design/external-clients.md``（Step 4），现状见 ``handbook/integrations.md``。
+    client 实例是进程内的，别的进程看不到；设计见 handbook/integrations.md。
     """
 
     STATUS_CHOICES = (

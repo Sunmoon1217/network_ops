@@ -1,30 +1,11 @@
-"""Git 配置仓库管理
+"""Git 配置仓库管理：每台设备一个独立仓库 ``<CONFIG_REPO_PATH>/<hostname>/``。
 
-**每台设备一个独立仓库**：``settings.CONFIG_REPO_PATH/<hostname>/``，仓库根就是该设备目录，
-入库的只有 ``running-config.txt``（设备目录里放的其它源文件不入库）。
+仓库里只入库 ``running-config.txt``。独立仓库让 HEAD 永远是本设备的上次提交，
+``configs`` 表按 ``(device, hash)`` 去重才不会被别的设备污染；首次打开时会把旧共享仓库
+里该设备的历史重放进来。背景与迁移见 handbook/deploy.md，归 core 的原因见 layering.md。
 
-为什么不再共用一条线性链：共享链的 HEAD 属于「最后提交的那台设备」，``save_config``
-在新旧内容相同时直接返回 HEAD——设备交替导入时会把**别的设备的 commit** 当结果返回，
-configs 表按 ``(device, git_commit_hash)`` 去重便误判成新版本（重复记录 + 重复解析，
-且该 commit 在本设备的文件历史里根本不存在）。独立仓库后每台设备的 HEAD 就是自己
-最后一次提交，内容未变即返回自己的旧 hash，去重天然正确。
-
-存量迁移（**首次打开某设备仓库时自动执行**）：若存在旧的共享仓库（``settings.CONFIG_REPO_PATH/.git``，
-只读兜底、不主动创建），把该设备在其中的历史**逐条重放**进新仓库（保留 message / 作者 /
-提交时间；父链变了，hash 必然不同），随后通过**注册的 hash 回写钩子**把 configs 表
-``DeviceConfig.git_commit_hash`` 指向旧 hash 的记录回写成新 hash。回写覆盖不到的旧 hash
-（回写失败、历史 bug 产生的脏行）由读取路径兜底：``get_config`` / ``diff_configs``
-查不到时回退读共享仓库，不会出现「Git 无配置」。
-
-**为什么在 core**：它是「配置原文的存储层」——写侧是 ingest 的入库链路，读侧是
-``ingest/api/configs.py`` 的快照 / diff / 历史接口，`scripts/purge_configs.py` 还要删整个
-目录。放在任一业务域里，另一边就只能反向依赖；git 操作与设备台账、解析规则都无关，
-属于平台级基础设施（同 ``core/queue_*`` 的定位）。
-
-**为什么 DeviceConfig 的 hash 回写是钩子**：core 不许 import 任何业务域（见
-``tests/core/test_layering.py``），而 ``DeviceConfig`` 是 configs 的表。所以 core 只提供
-「重放完成 + 新老 hash 映射」这个钩子点（``register_hash_remapper``）与锚点查询
-（``legacy_commit_for``），实现放在 ``configs/repo_hashes.py``，由 configs 在 ``ready()`` 注册。
+core 不认识 ``DeviceConfig``：重放后的新老 hash 通过 ``register_hash_remapper()`` 钩子
+交给 configs 回写（由 configs 在 ``ready()`` 注册）。
 """
 
 import logging
@@ -42,12 +23,7 @@ REPO_FILE = "running-config.txt"  # 设备仓库内的配置文件名（仓库�
 
 
 def repo_root() -> Path:
-    """仓库根目录：读 ``settings.CONFIG_REPO_PATH``。
-
-    **每次调用都读**，不缓存成模块常量：路径的唯一来源是 settings（env ``CONFIG_REPO_PATH``
-    覆盖），测试用 ``override_settings(CONFIG_REPO_PATH=tmp_path)`` 即可换目录，不必 monkeypatch
-    模块属性——那种做法会让「配置从哪来」在代码里出现两份答案。
-    """
+    """仓库根目录。每次调用都读 ``settings.CONFIG_REPO_PATH``（测试用 override_settings 换目录）。"""
     return Path(settings.CONFIG_REPO_PATH)
 
 
@@ -75,11 +51,7 @@ def _legacy_repo() -> git.Repo | None:
 
 
 def _tree_text(tree: git.Tree, hostname: str) -> str | None:
-    """从提交树里取配置原文。
-
-    设备仓库的树根下就是 ``REPO_FILE``；旧共享仓库的历史提交在 ``<hostname>/`` 子目录下。
-    两条路径互不重名，顺序试一遍即可同时服务两种仓库。
-    """
+    """从提交树取配置原文：先找设备仓库的 ``REPO_FILE``，再找旧共享仓库的 ``<hostname>/...``。"""
     for fp in (REPO_FILE, f"{hostname}/{REPO_FILE}"):
         try:
             return tree[fp].data_stream.read().decode("utf-8")
@@ -91,12 +63,8 @@ def _tree_text(tree: git.Tree, hostname: str) -> str | None:
 def init_repo(hostname: str | None = None) -> git.Repo:
     """打开配置仓库。
 
-    ``hostname`` 给定时返回**该设备的独立仓库**（不存在则初始化：``git init`` +
-    ``.gitignore`` 初始提交，保证 HEAD 可用；首次初始化会顺带把旧共享仓库里该设备的
-    历史重放进来并回写 configs 表的 commit hash）。
-
-    不传参数保持原语义，返回共享仓库根——仅留给兼容调用方；读旧数据走
-    :func:`_legacy_repo`（它不会创建仓库）。
+    给 ``hostname`` 返回该设备的独立仓库（不存在则初始化并重放旧共享仓库历史）；
+    不传参数返回旧的共享仓库根，仅留给兼容调用方。
     """
     if hostname is None:
         root = repo_root()
@@ -123,11 +91,9 @@ def init_repo(hostname: str | None = None) -> git.Repo:
 
 
 def _adopt_legacy_history(device_repo: git.Repo, hostname: str) -> None:
-    """首次打开设备仓库时：把旧共享仓库里该设备的历史重放进来，并回写 configs 表的 hash。
+    """首次打开设备仓库时，把旧共享仓库里该设备的历史逐个版本重放进新仓库并通知回写 hash。
 
-    重放 = 逐个版本读出原文、在新仓库里按旧的 message / 作者 / 时间重新提交。
-    父链不同 ⇒ hash 必然改变，所以 DeviceConfig 里指向旧 hash 的记录必须回写，
-    否则配置历史页与 configs 表对不上、重解析会拿到「Git 无配置」。
+    父链不同 ⇒ hash 必然改变，指向旧 hash 的记录必须回写。
     """
     legacy = _legacy_repo()
     if legacy is None:
@@ -179,8 +145,7 @@ def register_hash_remapper(remapper: HashRemapper) -> None:
 def legacy_commit_for(hostname: str, commit_hash: str) -> str | None:
     """旧共享仓库里「≤ 该 hash 时点、真正改过本设备文件」的提交 hash（查不到返回 None）。
 
-    给 hash 回写钩子用：历史 bug（内容未变时早退返回 HEAD）留下过指向**其它设备 commit**
-    的脏行，那个 hash 不在重放映射里，需要用这个锚点换算出重放后的对应版本。
+    给回写钩子用：历史 bug 留下过指向其它设备 commit 的脏行，需用此锚点换算重放后的版本。
     """
     legacy = _legacy_repo()
     if legacy is None:
@@ -211,8 +176,7 @@ def save_config(hostname: str, config_text: str, message: str = "") -> str:
     try:
         old = repo.head.commit.tree[REPO_FILE].data_stream.read().decode("utf-8")
         if old == config_text:
-            # 内容没变：不写文件、不建提交，返回**本设备**自己的上一次提交
-            # （独立仓库保证 HEAD 不会是别人的 commit，configs 表去重因此天然命中）
+            # 内容没变：返回本设备自己的上一次提交，configs 表去重天然命中
             return repo.head.commit.hexsha
     except (KeyError, git.exc.GitCommandError, gitdb.exc.BadName, ValueError, TypeError):
         pass

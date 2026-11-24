@@ -28,8 +28,7 @@ from .models import (
     VirtualMachine,
 )
 
-# 全库约 500 台设备：外键过滤器一律 RelatedOnly——只列「库里实际出现过」的对象，
-# 下拉不再混入从未被引用的行；表单侧同理统一 autocomplete（可搜索），不用裸 select。
+# 全库约 500 台设备：外键过滤器一律 RelatedOnly，表单侧统一 autocomplete（可搜索）
 DEVICE_FILTER = ("device", admin.RelatedOnlyFieldListFilter)
 
 
@@ -134,7 +133,6 @@ class DeviceAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    # device_type 是最高频的过滤维度（原先只按日期过滤，类型筛不了）
     list_filter = (
         "device_type",
         ("idc", admin.RelatedOnlyFieldListFilter),
@@ -149,7 +147,7 @@ class DeviceAdmin(admin.ModelAdmin):
 
 @admin.register(DeviceConnection)
 class DeviceConnectionAdmin(admin.ModelAdmin):
-    # 明文密码不进列表，详情页查看/编辑
+    # 明文密码不进列表，只在详情页查看 / 编辑
     list_display = (
         "id",
         "device",
@@ -249,7 +247,6 @@ class IPAddressAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    # status（已使用/预留/可用）原先筛不了
     list_filter = (
         "status",
         ("subnet", admin.RelatedOnlyFieldListFilter),
@@ -303,9 +300,7 @@ class ServerOwnerAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
 
 
-# 统一配置项体系（T1）：ci_id 只读，按类型过滤；扩展模型列表直接显示所属 CI
-
-
+# 统一配置项体系（T1）：ci_id 只读
 @admin.register(ConfigurationItem)
 class ConfigurationItemAdmin(admin.ModelAdmin):
     list_display = ("id", "ci_id", "ci_type", "name", "monitor_status", "created_at")
@@ -347,7 +342,7 @@ class ApplicationServiceAdmin(admin.ModelAdmin):
     autocomplete_fields = ("ci",)
 
 
-# 统一关系表（T3）：两端是 ci_id 字符串，不是外键，列表直接按标识扫读
+# 统一关系表（T3）：两端是 ci_id 字符串，不是外键
 @admin.register(CIRelationship)
 class CIRelationshipAdmin(admin.ModelAdmin):
     list_display = ("id", "src_ci_id", "relation_type", "dst_ci_id", "created_at")

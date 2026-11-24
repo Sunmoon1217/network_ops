@@ -389,6 +389,15 @@ LtmProfile / LtmIRule / LtmPersist 走「Saver 调用序列化器」路径（`Ba
 | `manage.py import_server_owners` | xlsx 导入服务器负责人 |
 | `python scripts/purge_configs.py` | 清理配置解析产物（默认 dry-run，含 analysis 的缓存）——**独立脚本，不是管理命令** |
 
+### `import_server_owners` 的导入约定
+
+- **按列名取，不按位置**：表头顺序可变、允许多余列；缺列直接报错并列出实际表头
+  （静默按位置会把 `ip` 串到 `hostname` 上，很难发现）。
+- **`ip` 是唯一键**：再次导入同一 IP 就是更新；文件内重复取最后一行。
+- **不动 `status`**：这份表没有该列，更新时保持原值，避免把手工停用的记录又导成启用。
+- **有非法行整批不导入**（非零退出码）：不做「写一半再报错」，否则操作者不知道落了哪些行。
+  整行空白只跳过，不算错误。
+
 ### `purge_configs` 为什么存在
 
 配置**原文**只存在一份（Git 仓库），但**解析结果**写进了各资产表，而这些表与

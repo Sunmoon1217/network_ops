@@ -1,10 +1,6 @@
-"""存量资产登记（T4）：`Device` / `IPAddress` / `Subnet` → `ConfigurationItem` + `CIObjectLink`。
+"""存量资产登记（T4）：``Device`` / ``IPAddress`` / ``Subnet`` → CI 主表 + ``CIObjectLink``。
 
-幂等：按 `(source_type, source_id)` 找已有映射；只更新名字变化的 CI，`ci_id` 保持不变。
-批量：CI 与映射都走 bulk_create / bulk_update，IPAM 万级也能一次跑完。
-
-并发：与软资产归并共用按后端分派的咨询锁（PG 事务级 advisory lock / MySQL 会话级
-GET_LOCK），多个进程同时跑命令时串行化，避免 `get_or_create` 撞唯一约束。
+幂等，批量 bulk 写入，并发靠数据库命名锁串行化（键 ``REGI``）。细节见 handbook/assets.md。
 """
 
 from __future__ import annotations
@@ -96,8 +92,8 @@ def _register_kind(kind: str, model, name_field: str, dry_run: bool) -> Registry
 
     if new_cis:
         ConfigurationItem.objects.bulk_create(new_cis, batch_size=500)
-        # MySQL 的 bulk_create 不回填主键（不支持 RETURNING），而 new_links 持的是内存里的
-        # ci 对象；按 ci_id 查回主键再回填，否则 Django 会拒绝保存未保存的关联对象。
+        # MySQL 的 bulk_create 不回填主键，new_links 持的是内存里的 ci 对象；
+        # 按 ci_id 查回主键再回填，否则 Django 会拒绝保存未保存的关联对象。
         pk_by_ci_id = dict(ConfigurationItem.objects.filter(ci_id__in=[ci.ci_id for ci in new_cis]).values_list("ci_id", "pk"))
         for ci in new_cis:
             ci.pk = pk_by_ci_id[ci.ci_id]

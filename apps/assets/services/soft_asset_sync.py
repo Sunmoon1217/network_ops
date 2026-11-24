@@ -1,15 +1,7 @@
-"""软资产「写」这一半：候选值 → CI 台账 + 两张扩展表（**只写 assets 自己的表**）。
+"""软资产「写」这一半：候选值 → CI 台账 + 两张扩展表（只写 assets 自己的表）。
 
-输入是 ``configs.services.soft_asset_builder`` 算好的 draft：``kind`` + 归一键 ``key`` +
-扩展表字段 ``values``。本模块不认识 configs——它只按 ``kind`` 查表往前写，
-用 ``Protocol`` 做结构化类型，连 import 都不需要。
-
-幂等：重复执行只更新取值变化的资产，不新增、不改 ``ci_id``。已消失的配置不会删除对应
-资产（可能已有人工标注），需要时另行处理。
-
-为什么拆成两半：拆分前这个模块同时读 configs 的表、写 assets 的表，是整库唯一横跨两域
-做读写的地方（``assets → configs`` 是依赖矩阵禁止的方向）。现在 assets 只提供写入能力，
-编排（先算后写、同一事务）在 configs 侧。
+输入是 configs 侧算好的 draft；本模块不认识 configs，按 ``kind`` 查表写入。
+幂等，已消失的配置不删对应资产。拆分缘由见 handbook/assets.md「归并链路」。
 """
 
 from __future__ import annotations

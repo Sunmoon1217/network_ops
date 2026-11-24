@@ -17,15 +17,13 @@ class AssetsConfig(AppConfig):
     verbose_name = "资产管理"
 
     def ready(self):
-        # 软资产刷新信号已随「配置变了」的语义迁到 configs.signals（见该模块 docstring）：
-        # assets 只提供落库能力，不认识 configs，接收器不在本域注册。
+        # 软资产刷新信号在 configs.signals（assets 不认识 configs），本域不注册接收器
         self._register_task_target()
 
     def _register_task_target(self):
         """把「设备」登记成任务的作用目标类型。
 
-        ``feeds_device_fields=True``：``Task.device`` / ``Task.device_hostname`` 这两个
-        历史字段（前端还在用）由本类型填充——core 因此不用硬编码 ``"device"`` 这个词。
+        ``feeds_device_fields=True``：Task 的历史字段 device / device_hostname 由本类型填。
         """
         from core.task_types import register_target_type
 

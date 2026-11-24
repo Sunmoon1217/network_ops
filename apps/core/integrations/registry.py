@@ -1,23 +1,8 @@
 """provider 注册表与实例取用：纯 dict，不 import models、不 import 任何业务域。
 
-注册方向永远是「业务域 → core」：
-
-.. code-block:: python
-
-    # apps/ingest/apps.py
-    def ready(self):
-        from core.integrations import register_provider
-        from core.integrations.providers.zabbix import ZabbixProvider
-
-        register_provider(ZabbixProvider())
-
-这条约束是为了避免 ``core → ingest`` 反向依赖（会直接循环导入：ingest 的 ready() 正在
-import core 的这个模块）。``tests/core/test_layering.py`` 会扫 core 的 import 兜住。
-
-**为什么实例不放数据库**：client 绑着 session / 连接池 / 事件循环，天然是进程内的东西；
-跨进程「谁持有什么实例」只能靠外化的健康状态（``IntegrationHealth``，由 beat 的
-``core.integrations.probe_all`` 周期写入，见 ``health.py`` 与 ``handbook/integrations.md``），
-不是靠注册表。
+注册方向永远「业务域 → core」（各域在 ``ready()`` 里 ``register_provider``），否则会循环
+导入。实例刻意不放数据库：client 绑着 session / 连接池 / 事件循环，是进程内的东西；
+跨进程只能看外化的 ``IntegrationHealth``。见 handbook/integrations.md。
 """
 
 from __future__ import annotations
@@ -54,11 +39,9 @@ async def acquire(system: str, instance: str = DEFAULT_INSTANCE) -> Any:
 
 
 def acquire_sync(system: str, instance: str = DEFAULT_INSTANCE) -> Any:
-    """同步栈（DRF 线程池 / management command）取 client 实例。
+    """同步栈取 client 实例；只有实现了 ``acquire_sync()`` 的 provider 可用。
 
-    **只有显式提供 ``acquire_sync()`` 的 provider 可用**。Zabbix 这类 async client 不提供，
-    这里直接 ``TypeError``——绝不在同步栈里偷偷 ``asyncio.run``（会跟 Celery 任务自己的
-    循环打架，也会让 session 绑到错误的 loop 上）。
+    绝不在同步栈里偷偷 ``asyncio.run``（会跟 Celery 任务自己的循环打架）。
     """
     provider = get_provider(system, instance)
     acquire_fn = getattr(provider, "acquire_sync", None)

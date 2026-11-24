@@ -1,21 +1,8 @@
-"""从 xlsx 导入「服务器 IP ↔ 负责人」。
+"""从 xlsx 导入「服务器 IP ↔ 负责人」（sheet: servers，列: hostname / ip / owner）。
 
-    python manage.py import_server_owners --file servers.xlsx
-    python manage.py import_server_owners --file servers.xlsx --dry-run
-    python manage.py import_server_owners --file servers.xlsx --sheet servers
+    python manage.py import_server_owners --file servers.xlsx [--sheet servers] [--dry-run]
 
-表结构：sheet 名 ``servers``，表头列 ``hostname`` / ``ip`` / ``owner``。
-
-几点约定：
-
-- **按列名取，不按位置**：表头顺序可以变，也能容忍多出来的列。缺列直接报错并
-  列出实际表头，而不是静默按位置串位（``ip`` 串到 ``hostname`` 上很难发现）。
-- **``ip`` 是唯一键**：同一个 IP 再次导入就是更新；文件内重复取最后一行。
-- **不动 ``status``**：这份表里没有这一列，所以更新时保持原值，避免把手工停用的
-  记录又导成启用。
-- 有非法行（``ip`` 为空或不是合法地址）时**整批不导入**并以非零退出码收尾。
-  不做「写一半再报错」：那样操作者不知道到底落了哪些行，比全不导更难处理。
-  整行空白只是跳过，不算错误。
+导入约定见 handbook/ingest.md「管理命令」。
 """
 
 import ipaddress
@@ -73,11 +60,7 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         verb = "将新建" if options["dry_run"] else "新建"
-        self.stdout.write(
-            f"完成：{verb} {len(to_create)} 条，"
-            f"{'将更新' if options['dry_run'] else '更新'} {len(to_update)} 条，"
-            f"文件内重复 {len(duplicates)} 个 ip"
-        )
+        self.stdout.write(f"完成：{verb} {len(to_create)} 条，{'将更新' if options['dry_run'] else '更新'} {len(to_update)} 条，文件内重复 {len(duplicates)} 个 ip")
 
     def _read(self, sheet):
         """按列名解析，返回 ``(有效行, 错误清单, 重复的 ip)``。

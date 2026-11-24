@@ -13,18 +13,7 @@ from core.models import Stage, Task, User
 
 
 class RegisterSerializer(serializers.Serializer):
-    """注册入参 → 新用户（**只**创建普通账号）。
-
-    - 只开放 ``username`` / ``password`` / ``email`` / ``phone``：``is_staff``、``is_superuser``、
-      ``is_active`` 一律由服务端决定，注册出来的账号没有任何管理权限（见 ``create()`` 用
-      ``create_user`` 而不是 ``create_superuser``）。
-    - 密码交给 Django 的 ``AUTH_PASSWORD_VALIDATORS`` 那四条规则（与 ``createsuperuser`` /
-      ``changepassword`` 完全同一套），所以「太短 / 纯数字 / 与用户名相似 / 常见密码」都会在这里被拒。
-    - ``email`` / ``phone`` 可选：``AbstractUser.email`` 本身不是 unique，这里也不做强唯一约束
-      （同一个人可能有多个账号），但邮箱要过 ``EmailField`` 校验。
-    - 用户名用 ``iexact`` 判重：数据库层是**大小写敏感**的唯一约束，只查 ``exact`` 会放过
-      ``Admin``／``admin`` 这种极易混淆的并存账号。
-    """
+    """注册入参 → 新用户（只创建普通账号）；字段与校验约定见 handbook/api.md「认证约定」。"""
 
     username = serializers.CharField(
         max_length=150,
@@ -44,7 +33,7 @@ class RegisterSerializer(serializers.Serializer):
         return username
 
     def validate(self, attrs):
-        """密码校验要带上「候选用户」：``UserAttributeSimilarityValidator`` 会拿 username / email 比对。"""
+        """密码校验要带上候选用户，相似度校验才生效。"""
         candidate = User(username=attrs.get("username", ""), email=attrs.get("email", ""))
         try:
             validate_password(attrs["password"], user=candidate)
@@ -57,8 +46,6 @@ class RegisterSerializer(serializers.Serializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    """修改密码序列化器"""
-
     old_password = serializers.CharField(
         required=True,
         write_only=True,
@@ -87,13 +74,11 @@ class ChangePasswordSerializer(serializers.Serializer):
     )
 
     def validate_old_password(self, value):
-        """校验原密码是否正确"""
         if self.instance and not self.instance.check_password(value):
             raise serializers.ValidationError("原密码不正确")
         return value
 
     def validate_new_password(self, value):
-        """校验新密码强度"""
         user = self.instance
         try:
             validate_password(value, user)
@@ -102,16 +87,13 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        """跨字段校验"""
         old_password = attrs.get("old_password")
         new_password = attrs.get("new_password")
         confirm_password = attrs.get("confirm_password")
 
-        # 两次新密码一致
         if new_password != confirm_password:
             raise serializers.ValidationError({"confirm_password": "两次输入的新密码不一致"})
 
-        # 新旧密码不能相同
         if old_password == new_password:
             raise serializers.ValidationError({"new_password": "新密码不能与原密码相同"})
 

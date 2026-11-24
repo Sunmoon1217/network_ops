@@ -5,23 +5,20 @@ from rest_framework.urls import app_name
 from . import auth, preferences, views
 
 router = SimpleRouter(trailing_slash=True)
-# 任务工作流：列表 / 详情 / 新建（新建即投递采集阶段）/ 取消，阶段只读。
-# 此前这两个模型只有定义、没有任何接口，于是 celery 那条链路在产品里不可达。
+# 任务工作流：新建任务即投递采集阶段，阶段只读
 router.register(r"tasks", views.TaskViewSet, basename="task")
 router.register(r"stages", views.StageViewSet, basename="stage")
 
 app_name = "core-api"  # noqa: F811
 urlpatterns = [
-    # auth / me 是横切入口（认证与「当前用户」），不属于任何业务域资源，故意留在 /api/ 根下；
-    # 域资源（tasks / stages）一律进 /api/core/，与其余域保持「一个顶层前缀一个 owner」。
+    # auth / me 是横切入口，留在 /api/ 根下；域资源一律进 /api/core/
     path("auth/register/", auth.register, name="register"),
     path("auth/login/", auth.login, name="login"),
     path("auth/change-password/", auth.changepassword, name="change-password"),
     path("auth/logout/", auth.logout, name="logout"),
     path("me/", auth.me, name="me"),
-    # 前端配置（表格列宽等界面偏好）：按用户存取，语义见 preferences 模块
+    # 前端界面偏好（表格列宽等），按用户存取
     path("me/preferences/", preferences.preferences, name="preferences"),
-    # core 的域资源一律在 /api/core/ 下（与 tasks / stages 同前缀，见 handbook/api.md）
     path("core/integrations/", views.IntegrationHealthView.as_view(), name="integration-health"),
     path("core/", include(router.urls)),
 ]

@@ -1,36 +1,15 @@
-"""统一配置项体系（T1）：CI 主表与 4 类 CI 专属扩展（1 类实物资产 + 3 类软资产）。
-
-从单文件 models.py 拆出；``__init__.py`` 显式 re-export，保持
-``from assets.models import ConfigurationItem`` 等导入路径与 ``app_label`` 不变，
-历史迁移 0031_ci_foundation 不受影响。
-"""
+"""统一配置项体系（T1）：CI 主表与 4 类 CI 专属扩展（1 类实物资产 + 3 类软资产）。"""
 
 import uuid
 
 from django.db import models
 
-# 统一配置项体系（T1）：现阶段只做信息录入与查询，不含生命周期管理
-
 
 class CIType:
-    """资产类型标识（字符串常量，刻意不用 Enum）。
+    """资产类型标识（字符串常量，刻意不用 Enum：同值字符串与 Enum 成员哈希不同）。
 
-    ``Enum`` 成员与同值字符串的哈希不同，作为 dict 键会查不到（见
-    ``llmtools.domains.network.nodes.NodeType`` 的同一条坑）。
-
-    **只登记资产**，按 ``PHYSICAL_TYPES`` / ``SOFT_TYPES`` 分两类：
-    实物资产有物理实体；软资产的身份来自自身全局标识，设备只是部署位置之一。
-
-    不进本清单的三类：
-    - **设备内部功能 / 状态**：``Vlan`` / ``Vrf`` / ``Interface`` / ``Route`` / ``ArpMac``
-      及 24 个 ``ConfigBase`` 子类的其余部分。身份是 ``(设备, 名称/编号)``，
-      强依赖所属设备、跨设备无独立身份，只作资产明细 / 证据。
-    - **DCIM 位置维度**：``DataCenter`` / ``Room`` / ``Cabinet`` 算位置，不算资产。
-    - **关系 / 元数据 / 日志**：``DeviceGroup*``、T3 关系表、字典表、时序日志等。
-
-    ``DOMAIN`` / ``LOAD_BALANCER_SERVICE`` 是**软资产类型**，不是配置模型名：
-    域名 / 负载均衡服务资产由 T4 从 ``GtmWideip`` / ``LtmVirtualServer`` 配置行
-    按归一键（FQDN / ``VIP#port``）跨设备归并生成，配置行本身不是资产实体。
+    **只登记资产**，按 ``PHYSICAL_TYPES`` / ``SOFT_TYPES`` 分组；设备内部配置行、
+    DCIM 位置、关系 / 日志都不是资产。分类边界见 handbook/assets.md「资产分类边界」。
     """
 
     # 实物资产
@@ -75,23 +54,14 @@ CI_TYPE_CHOICES = (
 
 
 def _new_ci_id() -> str:
-    """跨类型稳定的 CI 标识：短、无特殊字符、可直接写进 Zabbix 主机标签（T15 纳管锚点）。
-
-    不带类型前缀——类型在 ``ci_type`` 字段里，纳管时按它路由实例即可；把类型塞进
-    标识反而会在类型改名 / 归并时破坏稳定性。
-    """
+    """生成 ``CI-<12位hex>``：不透明锚点，不含类型前缀，可直接写进 Zabbix 主机标签。"""
     return f"CI-{uuid.uuid4().hex[:12]}"
 
 
 class ConfigurationItem(models.Model):
-    """统一配置项主表：跨类型的身份 + 公共属性 + 查询索引。
+    """统一配置项主表：跨类型身份与公共属性；专属属性留 ``_CIExtension`` 子类。
 
-    刻意**不继承** ``ConfigBase``：``purge_configs`` 靠 ``ConfigBase.__subclasses__()``
-    枚举清理配置解析产物，CI 是人工录入 / Excel 导入维护的资产台账，不能被一并清掉。
-
-    ``ci_id`` 生成后永不改（T15 自动纳管会把它写进 Zabbix 主机标签，改名等于锚点失效）；
-    ``monitor_status`` 是 T15 状态回写的**预留落点**，与业务状态分离，现阶段只是空字段，
-    不接任何回写 / 对账逻辑。公共属性上收到本表，各类型专属属性留 ``_CIExtension`` 子类。
+    ``ci_id`` 创建后永不改；刻意**不继承** ``ConfigBase``（不能被 ``purge_configs`` 清掉）。
     """
 
     ci_id = models.CharField(max_length=64, unique=True, editable=False, verbose_name="CI 标识")
@@ -119,11 +89,7 @@ class ConfigurationItem(models.Model):
 
 
 class _CIExtension(models.Model):
-    """CI 专属属性扩展的抽象基类：统一 ``ci`` 关联与「类型必须匹配」校验。
-
-    关系（VM→宿主机、DB→主机等）不在这里建外键，统一归 T3 的关系表；跨类型关联
-    走 ``ci_id``，否则每加一类资产都要回改这里的字段。
-    """
+    """CI 专属属性扩展的抽象基类：统一 ``ci`` 关联，并在 save 时校验类型匹配。"""
 
     EXPECTED_CI_TYPE = ""
 

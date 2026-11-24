@@ -1,11 +1,6 @@
-"""资产域模型（包形式）。
+"""资产域模型包：本文件**只做 re-export**，模型定义在子模块（见 handbook/assets.md）。
 
-历史上是单文件 ``assets/models.py``；现在拆成 ``network.py``（历史网络域模型）与
-``ci.py``（T1 统一配置项体系），**本文件只做 re-export**：``from assets.models import X``
-与 ``app_label`` 不变，历史 0001_initial ~ 0031_ci_foundation 迁移照样对得上
-（与 ``analysis/models/`` 同一套做法：模型定义在子模块，``__init__`` 只收集名字）。
-配置行家族与 DeviceConfig 已迁 ``configs.models``，本包不再 re-export 它们。
-注意不能同时留 ``models.py`` 与 ``models/``：Python 导入时包优先，那个文件会被静默忽略。
+不能同时留 ``models.py`` 与 ``models/``：包优先，单文件会被静默忽略。
 """
 
 from .ci import (

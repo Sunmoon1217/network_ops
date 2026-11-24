@@ -13,8 +13,6 @@ from ..serializers.views import (
     VendorSerializer,
 )
 
-# DCIM ViewSets
-
 
 class SecurityZoneViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SecurityZone.objects.all()
@@ -141,24 +139,6 @@ class DeviceConnectionViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
-# Network ViewSets
-
-
-# Baseline ViewSets
-
-
-# SLB (LTM) ViewSets
-
-
-# GSLB (GTM) ViewSets
-
-
-# Firewall Policy ViewSets
-
-
-# IPAM ViewSets
-
-
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Tag
 
@@ -243,9 +223,7 @@ class SubnetUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
-# 统一配置项体系（T1）：全站序列化器在 assets.serializers.views，与解析入库 / MCP 共用同一套字段口径
-
-
+# 统一配置项体系（T1）：序列化器口径见 assets/serializers/views.py
 class ConfigurationItemViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import ConfigurationItem
     from assets.serializers.views import ConfigurationItemSerializer
@@ -303,9 +281,7 @@ class ApplicationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ("service_type", "created_at")
 
 
-# 统一关系表（T3）：按 CI 查上下游，正反向都走索引
-
-
+# 统一关系表（T3）：支持 ?ci_id= 命中任一端
 class CIRelationshipViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import CIRelationship
     from assets.serializers.views import CIRelationshipSerializer
@@ -331,9 +307,7 @@ class CIRelationshipViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
-# 软资产归并（T4）：只读接口，写入只由 sync_soft_assets 归并链路负责
-
-
+# 软资产归并（T4）：只读，写入只由 sync_soft_assets 负责
 class DomainAssetViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DomainAsset
     from assets.serializers.views import DomainAssetSerializer

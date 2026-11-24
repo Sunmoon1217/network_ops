@@ -1,15 +1,7 @@
-"""统一关系表（T3）：跨类型 CI 关系的登记与查询。
+"""统一关系表（T3）：跨类型 CI 之间的直接关系。
 
-蓝图要求「只存 ci_id + 关系类型」：两端用 ``ConfigurationItem.ci_id`` 字符串而不是外键，
-因为关系两端可以是任意 CI 类型（含 T4 才接入统一 CI 的现有资产模型），用 FK 会把类型绑死；
-引用完整性由序列化器在录入时校验存在性，不在数据库层建强约束。
-
-**上级归属只存最近一跳**：表里只登记直接关系，不物化传递闭包——
-VM ``runs_on`` 物理机、物理机 ``located_in`` 机柜，就只存这两条，
-不额外存 VM ``located_in`` 机柜。多跳遍历是 T7 关系图谱的事，
-别在这里加 ``depth`` / ``path`` 之类的字段。
-
-现有模型之间的专用外键 / M2M 全部保留为强约束，本表只补跨类型的弱关联，不替代它们。
+两端存 ``ci_id`` 字符串而非外键（类型不绑死），只存最近一跳、不物化传递闭包。
+约定与取舍见 handbook/assets.md「统一关系表」。
 """
 
 from django.db import models
@@ -39,9 +31,7 @@ CI_RELATION_CHOICES = (
 class CIRelationship(models.Model):
     """一条直接关系：``src --[relation_type]--> dst``。
 
-    两端存 ``ci_id`` 字符串而非 FK，所以 CI 被删除后这里会留孤儿行；
-    现阶段靠录入校验减少脏数据，批量清理命令等 T4 接入现有模型后再补。
-    刻意不继承 ``ConfigBase``：关系登记是人工维护的台账，不能被 ``purge_configs`` 清掉。
+    两端存 ``ci_id`` 字符串，CI 删除后可能留孤儿行（现阶段靠录入校验兜）。
     """
 
     src_ci_id = models.CharField(max_length=64, verbose_name="源 CI 标识")

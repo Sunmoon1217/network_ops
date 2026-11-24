@@ -107,11 +107,7 @@ class StageViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
 
 
 class IntegrationHealthView(APIView):
-    """外部连接实例与健康状态（只读）。
-
-    实例本身是进程内的，跨进程只能看外化后的状态：``core.IntegrationHealth`` 由 beat 的
-    ``core.integrations.probe_all`` 周期写入。未探过的实例返回 ``unknown``。
-    """
+    """外部连接实例与健康状态（只读）：provider 自描述 + 最近一次探活，未探过为 ``unknown``。"""
 
     def get(self, request):
         from core.integrations.health import snapshot
