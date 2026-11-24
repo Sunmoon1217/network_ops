@@ -24,6 +24,10 @@ x-app-secrets: &app-secrets
 x-app-base: &app-base
   image: ${VENV_IMAGE:-network-ops-venv:latest}
   init: true
+  # 环境分发：容器默认 container；生产机在根 .env 写 DJANGO_ENV=prod 就切到 settings/prod.py
+  # （environment 的优先级高于 env_file，所以能盖掉 envs/container.env 里的同名值）。
+  environment:
+    DJANGO_ENV: ${DJANGO_ENV:-container}
 
 services:
   # 初始化代码卷（一次性）：从 code 镜像复制代码到命名卷
