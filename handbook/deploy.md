@@ -115,8 +115,13 @@ docker compose exec app python scripts/purge_configs.py --all --purge-repo --yes
 - `docker compose run --rm app python manage.py migrate`（换整条）
 - worker 的 `entrypoint: ["/bin/sh","-c"]` + `command:`（`exec celery ...`）
 
+**环境分发在 compose 层**：`x-app-base.environment` 注入 `DJANGO_ENV: ${DJANGO_ENV:-container}`，
+四个应用进程共用；生产容器在根 `.env` 写 `DJANGO_ENV=prod` 即切到 `settings/prod.py`
+（`DEBUG` 硬关 + 5 项守卫）。`environment` 的优先级高于 `env_file`，所以能盖掉
+`envs/container.env` 里的同名值。
+
 **gunicorn 可调参数在 `envs/gunicorn.env`**（app 用
-`env_file: [envs/common.env, envs/gunicorn.env, envs/container.env]`；worker 只有
+`env_file: [envs/common.env, envs/gunicorn.env, envs/db.env, envs/container.env]`；worker 只有
 `common.env` + `celery.env` + `container.env`，**拿不到**这些旋钮）：`GUNICORN_WORKERS` /
 `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` / `GUNICORN_KEEP_ALIVE` /
 `GUNICORN_MAX_REQUESTS` / `GUNICORN_MAX_REQUESTS_JITTER` / `GUNICORN_LOG_LEVEL`（空值/未设置

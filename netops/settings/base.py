@@ -19,6 +19,8 @@ from pathlib import Path
 import pymysql
 from dotenv import load_dotenv
 
+from .defaults import ENV_DEFAULTS
+
 pymysql.install_as_MySQLdb()
 
 
@@ -37,6 +39,19 @@ if os.environ.get("NETOPS_SKIP_DOTENV") != "1":
     load_dotenv(ENVS_DIR / "common.env")
     if os.environ.get("DJANGO_ENV", "dev") != "container":
         load_dotenv(ENVS_DIR / "host.env")
+
+# 环境默认值：只在代码里定义、按 DJANGO_ENV 选一套；env 仍可覆盖（见 settings/defaults.py）。
+# 放在 load_dotenv 之后读，host.env 里写的 DJANGO_ENV=prod 才能生效。
+_ENV_NAME = os.environ.get("DJANGO_ENV", "dev")
+_ENV_DEFAULTS = ENV_DEFAULTS.get(_ENV_NAME, ENV_DEFAULTS["dev"])
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """布尔环境变量：1/true/yes/on 为真；未设置或空串时用 default。"""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _env_list(name: str, default: str = "") -> list[str]:
@@ -75,7 +90,7 @@ def _env_or_file(name: str, default: str = "") -> str:
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or "django-insecure-bua49zfleexo##5iy2q^dm@880a5kdvh5q6%1zss&p#xe1y13$"
 
 # 默认开；prod.py 硬覆盖为 False——生产的 DEBUG 不吃环境变量后门。
-DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes")
+DEBUG = _env_bool("DJANGO_DEBUG", True)
 
 # 业务日志级别（见下方 LOGGING）：默认 INFO——consumer 这类常驻进程正常运行时只有
 # INFO 级输出，调高就又回到「日志文件是空的」。生产嫌吵可设 WARNING。
@@ -150,13 +165,14 @@ CELERY_RESULT_BACKEND = REDIS_URL
 # MCP 工具出口（/mcp）两个旋钮。出口**匿名**：能访问到端点就能调工具，身份与配额只到
 # 「客户端 IP」这一层（netops/mcp_gateway.py），要收紧就加鉴权而不是加开关。
 # - MCP_ENABLED=0：asgi 不建 MCP 子应用也不 import llmtools，/mcp 直接回 404；
+#   默认值按环境给（dev/container 开、prod 关），见 settings/defaults.py；
 # - MCP_RATE_LIMIT_PER_MINUTE：按 IP 的分钟窗口，0 = 不限流（Redis 不可用时放行）。
-MCP_ENABLED = os.environ.get("MCP_ENABLED", "1").lower() in ("1", "true", "yes")
+MCP_ENABLED = _env_bool("MCP_ENABLED", _ENV_DEFAULTS["MCP_ENABLED"])
 MCP_RATE_LIMIT_PER_MINUTE = int(os.environ.get("MCP_RATE_LIMIT_PER_MINUTE", "60"))
 
 # 访问流（AccessFlow）重建链路的旋钮：阈值口径、取值理由与任务名三处对账见 handbook/analysis.md
 ACCESS_FLOW_MAX_QUEUE = int(os.environ.get("ACCESS_FLOW_MAX_QUEUE", "500"))
-ACCESS_FLOW_DISPATCH = os.environ.get("ACCESS_FLOW_DISPATCH", "1").lower() in ("1", "true", "yes")
+ACCESS_FLOW_DISPATCH = _env_bool("ACCESS_FLOW_DISPATCH", True)
 ACCESS_FLOW_TASK = "analysis.rebuild_access_flows"
 
 # Dashboard 采集 / 写库两段链路（采集在 ingest、存储在 analysis，两者只认任务名字符串）：
@@ -172,7 +188,7 @@ DASHBOARD_WRITE_TASK = "analysis.write_dashboard"
 # 装饰器 name= 必须一致（tests/core/test_integration_health.py 对账）。
 INTEGRATION_PROBE_TASK = "core.integrations.probe_all"
 INTEGRATION_PROBE_SECONDS = int(os.environ.get("INTEGRATION_PROBE_SECONDS", "300"))
-DASHBOARD_PAYLOAD_VIA_REDIS = os.environ.get("DASHBOARD_PAYLOAD_VIA_REDIS", "0").lower() in ("1", "true", "yes")
+DASHBOARD_PAYLOAD_VIA_REDIS = _env_bool("DASHBOARD_PAYLOAD_VIA_REDIS", False)
 DASHBOARD_PAYLOAD_TTL = int(os.environ.get("DASHBOARD_PAYLOAD_TTL", "600"))
 
 # 设备组（zabbix）与工单 / SLB / 巡检（autotask）的采集周期：两条链都由内置 beat 投递
@@ -426,12 +442,10 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 50,
 }
 
-# API 文档（OpenAPI 3）：env 动态项按约定只在 base 定义一遍，三个环境文件不重复接线。
-# 内网默认放开：schema 只暴露接口元数据、不含业务数据；要收紧就给容器注入
-# DJANGO_API_DOCS_REQUIRE_LOGIN=1（IsAuthenticated，可用 /admin/ 登录后的 session 或 Token）。
-API_DOCS_PERMISSION = (
-    "rest_framework.permissions.IsAuthenticated" if os.environ.get("DJANGO_API_DOCS_REQUIRE_LOGIN", "").lower() in ("1", "true", "yes") else "rest_framework.permissions.AllowAny"
-)
+# API 文档（OpenAPI 3）：是否登录按环境给默认（dev/container 放开、prod 收紧，见
+# settings/defaults.py），env 可覆盖；schema 只暴露接口元数据、不含业务数据。
+_DOCS_REQUIRE_LOGIN = _env_bool("DJANGO_API_DOCS_REQUIRE_LOGIN", _ENV_DEFAULTS["DJANGO_API_DOCS_REQUIRE_LOGIN"])
+API_DOCS_PERMISSION = "rest_framework.permissions.IsAuthenticated" if _DOCS_REQUIRE_LOGIN else "rest_framework.permissions.AllowAny"
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "网络运维管理平台 API",

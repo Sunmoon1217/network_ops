@@ -35,6 +35,8 @@ _MANAGED_KEYS = (
     "REDIS_PORT",
     "REDIS_DB",
     "REDIS_PASSWORD",
+    "MCP_ENABLED",
+    "DJANGO_API_DOCS_REQUIRE_LOGIN",
 )
 
 
@@ -79,9 +81,9 @@ def test_dev_is_default(monkeypatch):
 def test_container_overrides_via_injection(monkeypatch):
     """container 的差异靠 env 注入表达：HOST=db/redis 覆盖 base 的本机默认。"""
     m = _dispatch(monkeypatch, "container", DB_HOST="db", REDIS_HOST="redis")
-    assert m.DATABASES["default"]["HOST"] == "db"    # 注入值胜过 base 默认
+    assert m.DATABASES["default"]["HOST"] == "db"  # 注入值胜过 base 默认
     assert m.REDIS_HOST == "redis"
-    assert m.DEBUG is True                            # 未设 DJANGO_DEBUG 时默认开
+    assert m.DEBUG is True  # 未设 DJANGO_DEBUG 时默认开
 
 
 def test_django_debug_env_dynamic(monkeypatch):
@@ -181,7 +183,7 @@ def test_prod_rejects_wildcard_hosts(monkeypatch):
 def test_prod_reports_all_missing_at_once(monkeypatch):
     """一次报全：五项全缺只抛一条异常，消息同时点名全部缺失项（不做挤牙膏式失败）。"""
     with pytest.raises(ImproperlyConfigured) as exc:
-        _dispatch(monkeypatch, "prod")   # _dispatch 会清空 PROD_REQUIRED 全部键
+        _dispatch(monkeypatch, "prod")  # _dispatch 会清空 PROD_REQUIRED 全部键
     message = str(exc.value)
     for key in PROD_REQUIRED:
         assert key in message, f"报错未点名 {key}：{message}"
@@ -211,7 +213,7 @@ def test_prod_debug_hard_false(monkeypatch):
 def test_credential_chain_file_env_default(monkeypatch, tmp_path):
     """同一段 base 代码三级链各命中一次；宿主（dev 分发）与容器共用，不分叉。"""
     secret = tmp_path / "pg_password"
-    secret.write_text("from-file\n", encoding="utf-8")   # 尾换行必须被 strip
+    secret.write_text("from-file\n", encoding="utf-8")  # 尾换行必须被 strip
 
     m = _dispatch(monkeypatch, DB_PASSWORD_FILE=str(secret))
     assert m.DATABASES["default"]["PASSWORD"] == "from-file"
@@ -245,3 +247,26 @@ def test_log_level_env_dynamic(monkeypatch):
     assert m.LOG_LEVEL == "WARNING"
     assert m.LOGGING["handlers"]["netops_console"]["level"] == "WARNING"
     assert m.LOGGING["loggers"]["analysis"]["level"] == "WARNING"
+
+
+# ---------------------------------------------------------------------------
+# 按环境区分的代码默认值（settings/defaults.py）
+# ---------------------------------------------------------------------------
+
+
+def test_env_defaults_tighten_mcp_and_docs_in_prod(monkeypatch):
+    """策略项不再依赖 env 文件：prod 默认收紧，dev 默认放开。"""
+    prod = _dispatch(monkeypatch, "prod", **PROD_REQUIRED)
+    assert prod.MCP_ENABLED is False
+    assert prod.API_DOCS_PERMISSION == "rest_framework.permissions.IsAuthenticated"
+
+    dev = _dispatch(monkeypatch)
+    assert dev.MCP_ENABLED is True
+    assert dev.API_DOCS_PERMISSION == "rest_framework.permissions.AllowAny"
+
+
+def test_env_defaults_can_be_overridden_by_env(monkeypatch):
+    """默认值只是默认：env 仍可覆盖（与 prod 的 DEBUG 硬覆盖区分开）。"""
+    m = _dispatch(monkeypatch, "prod", MCP_ENABLED="1", DJANGO_API_DOCS_REQUIRE_LOGIN="0", **PROD_REQUIRED)
+    assert m.MCP_ENABLED is True
+    assert m.API_DOCS_PERMISSION == "rest_framework.permissions.AllowAny"
