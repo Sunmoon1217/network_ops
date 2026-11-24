@@ -22,25 +22,22 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      // 登录页（真路由）：未登录访问任何受保护页面都会被守卫送到这里。
-      // 用 skipLayout 交给 router-view 渲染，不再靠 App.vue 按「未登录」兜底。
-      // 公开路由只有 /、/dashboard、/login、/register。
+      // 登录页真路由，公开路由只有 /、/dashboard、/login、/register。
       path: '/login',
       name: 'login',
       component: () => import('@netops/views/auth/Login.vue'),
       meta: { skipLayout: true },
     },
     {
-      // 总览：根路径已交给大屏（服务端 302），主站入口固定为 /overview。
+      // 总览：根路径已交给大屏（服务端 302），主站入口是 /overview
       path: '/overview',
       name: 'home',
       component: () => import('@netops/views/Home.vue'),
       meta: { requiresAuth: true },
     },
     {
-      // 资产域（对应导航「资产」分组）。前缀用 /asset 而不是 /assets：
-      // /assets/* 是 Vite 构建产物保留前缀（Django 的 serve_frontend_assets 与
-      // nginx 的 location /assets/ 都会先吃掉它），刷新必 404。
+      // 资产域。前缀用 /asset 而不是 /assets：/assets/* 是构建产物保留前缀
+      // （Django 与 nginx 都会先吃掉它），刷新必 404。
       path: '/asset',
       meta: { requiresAuth: true },
       children: [
@@ -178,16 +175,13 @@ const router = createRouter({
     // 旧 /tools/spreadsheet* 路径兼容（表格编辑器已移入「文档」菜单）
     { path: '/tools/spreadsheet', redirect: '/docs/spreadsheet' },
     { path: '/tools/spreadsheet/:id', redirect: '/docs/spreadsheet/:id' },
-    // 兜底：未注册路径一律 404（HTTP 仍是 200，SPA 内渲染 404 页）。
-    // 未登录时先被守卫送到 /login，登录后再落到这里。
-    // 只做前端判定，nginx / Django 的 SPA 兜底保持不变——服务端不维护路由表。
+    // 兜底 404：未登录先被守卫送到 /login；服务端不维护路由表，SPA 兜底不变
     { path: '/:pathMatch(.*)*', meta: { requiresAuth: true }, component: () => import('@netops/views/common/NotFound.vue') },
   ],
 })
 
 router.beforeEach(async (to) => {
-  // 登录页：已登录用户直接回总览，未登录放行渲染 Login
-  // 用 name 判断而不是 path，/login/ 带尾斜杠（strict=false 仍匹配本条）也能命中
+  // 登录页：已登录直接回总览（用 name 判断，带尾斜杠也能命中）
   if (to.name === 'login') {
     return getToken() ? '/overview' : true
   }
