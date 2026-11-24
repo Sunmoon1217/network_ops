@@ -82,8 +82,7 @@ def register() -> None:
             register_edge(edge)
 
 
-# 刻意**不在**模块底部自动调用：注册由 llmtools/__init__.py 经 network.register() 显式触发——
-# import 一个声明模块不应悄悄改写全局注册表，与工具侧「TOOLS 名单 + register_all()」同一套语义。
+# 不在模块底部自动注册：由 llmtools/__init__.py 经 network.register() 显式触发
 
 
 __all__ = [

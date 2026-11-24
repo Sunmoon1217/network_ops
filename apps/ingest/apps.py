@@ -36,7 +36,7 @@ class OperatorConfig(AppConfig):
         from core.task_types import register_stage, register_task_type
         from ingest.tasks import run_collection_stage, run_config_pipeline_stage, run_parsing_stage, run_storage_stage
 
-        # 五个任务类型当前都从采集阶段起跑（与拆分前 start_task 的硬编码行为一致）
+        # 五个任务类型当前都从采集阶段起跑
         for task_type, label in (
             ("collect_config", "采集配置"),
             ("backup_config", "备份配置"),

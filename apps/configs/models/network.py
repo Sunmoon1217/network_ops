@@ -237,9 +237,8 @@ class LtmPoolMember(ConfigBase):
     """LTM 池成员
 
     ``pool_name`` 是池名称而不是外键，归属靠 ``device`` 限定：``LtmPool`` 的
-    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池。此前没有
-    ``device``，不同设备上的同名池成员会互相串（资产分析、路径追踪都按
-    ``pool_name`` 全局匹配，删池成员时也会跨设备误删）。
+    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池；去掉 ``device``
+    会让不同设备的同名池成员互相串（分析 / 路径追踪按名字全局匹配，删池会跨设备误删）。
     """
 
     pool_name = models.CharField(max_length=255, blank=True, default="", verbose_name="关联池名称")

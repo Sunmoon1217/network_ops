@@ -1,26 +1,9 @@
 """Dashboard 供数模型：当前值读模型 / 时序样本 / 工单实体 / 采集批次 / 链路目标。
 
-分工（依赖方向 ``analysis → ingest → assets`` 单向）：
-
-- ``ingest/collectors/`` 定义采集方法**与 Celery 采集任务**（``@shared_task`` +
-  ``asyncio.run``），产出普通 dict / list；任务是采集器的一部分，归属 ingest，
-  **不 import 本模块、不碰数据库**；
-- 采集任务结束时按 ``settings.DASHBOARD_WRITE_TASK`` 的**任务名字符串**
-  ``current_app.send_task(...)`` 把结果投递给 analysis 的写库任务——沿用
-  ``configs/access_flow_trigger.py`` 的接缝（``tests/ingest/test_access_flow_trigger.py``
-  守着「投递侧不 import analysis」这条边界）；
-- ``analysis/tasks.py`` 的写库任务消费 payload，同步 upsert 到下列表（**唯一写入口**）；
-- ``analysis/api/dashboard.py`` 只读，把表数据组装成旧 dashboard 前端的
-  ``DashboardData[]`` 形状（``value`` 标量 + ``list_value`` 数组）。
-
-``DashboardMetric`` 保留前端契约的双列，而不是合并成一个 JSON 字段：大屏各卡片按
-``name`` 过滤后分别读 ``value`` / ``list_value.length`` / ``list_value[0]``，单列会让读
-接口多一层易错的拆分映射。``value`` 用 JSONField 存标量以保住 ``string | number`` 类型
-（CharField 会把数字变成字符串）。
-
-时序另立 ``MetricSample``：旧项目把时间编码进 ``name``（``bandwidth_HH:MM``）、把整条
-时间轴塞进 ``list_value``，无法按时间范围查询与清理；这里时间独立成列，补历史就是
-upsert 同一个 ``sampled_at``，3 小时折线由 API 聚合回 EAV 行视图。
+采集在 ingest（产 dict、不碰库），写库唯一入口是 analysis 的写库任务（按任务名投递），
+API 只读组装成旧大屏契约。``DashboardMetric`` 保留 ``value`` / ``list_value`` 双列：
+大屏各卡片按 ``name`` 过滤后分别读，合并成单 JSON 会让读接口多一层易错拆分。
+时序另立 ``MetricSample``（时间独立成列），补历史就是 upsert 同一 ``sampled_at``。
 """
 
 from django.db import models

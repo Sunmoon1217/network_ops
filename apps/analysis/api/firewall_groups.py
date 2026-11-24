@@ -1,18 +1,7 @@
-"""防火墙主备设备组的配置合并接口（只读）。
+"""防火墙主备设备组的配置合并接口（只读）：策略 / NAT 规则按自然键去重。
 
-把同一主备组（``ha`` / ``failover``）内多台防火墙（各厂商，``device_type=firewall``）的
-**策略 / NAT 规则**合并成一行：
-
-- **策略按 ``policy_id`` 去重**（``Policy`` 的自然键是 ``(device, policy_id)``）；
-  同一 policy_id 在两台上内容不同时**取主机名第一台 + 标注**——策略是有序的，并集会把
-  顺序语义搞坏，这正是与 GTM/LTM「集合并集」不同的地方；
-- **NAT 规则按 ``order`` 去重**（``NatRule`` 的自然键是 ``(device, order)``，名字不唯一）；
-- 三个 M2M（源/目的地址、服务）与 ``translated_*`` 也按「第一台 + 标注」比较；
-- 每个合并条目都带 ``device``（出现它的设备主机名逗号拼接）、``inconsistent``、
-  ``conflict_fields``。
-
-组口径复用 ``analysis.api.group_merge``：主备参与合并、单机/堆叠不参与、未入组设备
-各自成单机组。展示串复用 assets 序列化器的格式化助手，保证与旧页面口径一致。
+策略按 ``policy_id``（有序，冲突取第一台 + 标注，不做并集）、NAT 按 ``order``；
+组口径与信封复用 ``analysis.api.group_merge``。见 handbook/analysis.md「设备组配置合并」。
 """
 
 from __future__ import annotations

@@ -47,8 +47,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"完成（sync）：{len(devices)} 台，+{total_created} ~{total_updated}"))
             return
 
-        # 延迟 import：让测试可以 monkeypatch configs.access_flow_trigger.request_rebuild
-        # （触发器住 ingest——它是 PolicySaver 侧的投递触点，依赖方向只许 analysis → ingest）
+        # 延迟 import：便于测试 monkeypatch 投递触点（PolicySaver 侧，方向 configs → analysis）
         from configs.access_flow_trigger import request_rebuild
 
         for device in devices:

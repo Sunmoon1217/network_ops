@@ -1,16 +1,7 @@
 """xlsx ↔ data 结构的互转（openpyxl 只在本模块出现）。
 
-data 结构见 ``docs.models.Spreadsheet`` 的文档串；本模块负责两件事：
-
-- ``parse_xlsx``：上传的 xlsx → data（每张表的第 1 行即表头行；**合并单元格拆分
-  填充**——区域内每格写上左上角的值；尾部空行/空列裁掉）；
-- ``build_xlsx``：data → xlsx 字节串（导出当前版本或历史版本共用）。
-
-``parse_xlsx`` 是**两层解析**：先正常走 openpyxl；失败则降级为「跳过样式表」重试——
-样式与单元格值无关，不能让样式拖垮上传。真实文件踩过：有导出器写出缺
-patternFill/gradientFill 的空 ``<fill/>``，openpyxl 的 apply_stylesheet 直接
-``TypeError: expected <class 'openpyxl.styles.fills.Fill'>``，整个文件判死。
-降级路径自扫 numFmt 保住日期识别（日期格不会退化成序列号），其余样式全部放弃。
+``parse_xlsx``：上传 xlsx → data（首行表头、合并单元格拆填、裁掉尾部空行空列），
+样式表损坏时降级解析；``build_xlsx``：data → xlsx 字节串。细节见 handbook/docs-domain.md。
 """
 
 import re

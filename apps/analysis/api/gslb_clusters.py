@@ -1,27 +1,6 @@
-"""GSLB 集群分析接口（只读）。
+"""GSLB 集群分析接口（只读）：WideIP → 池 → 成员逐层合并成一行。
 
-把同一 GSLB 集群内多台设备的 GTM 配置**逐层合并**成一行：
-
-    WideIP（按 域名 + 记录类型 去重）
-      └─ 池（按池名并集去重）
-          └─ 成员（按 server/vserver 并集去重）
-
-集群口径：``DeviceGroup.group_type == "cluster"`` 的组成员（只取 ``device_type == "gslb"``
-的设备）；不在任何集群组里的 GSLB 设备各自成为一个**单机集群**（集群名取设备 hostname，
-集群键 ``device-<id>``）——需求口径「单机 gslb 也算集群」。同一设备若落在多个集群组里，
-按组名 + id 排序取第一个（其余组忽略，已在文档与测试里固定）。
-
-合并规则：
-
-- 每个合并条目的 ``device`` 字段 = **出现该条目的设备主机名用英文逗号拼接**
-  （按主机名排序，如 ``gtm-a,gtm-b``）；
-- 标量字段以**主机名排序第一台**设备的取值为准；
-- 同名条目的标量 / 子集合不一致时，条目带 ``inconsistent: true`` 与
-  ``conflict_fields``（列出不一致的字段名），前端据此打「配置不一致」标记；
-- 列表型字段（池 monitor、成员 monitor 合集）取并集去重，不算冲突。
-
-URL 前缀 ``/api/analysis/`` 是本接口新开的独立前缀：合并口径与返回结构都带上了
-cluster 维度，刻意不混进 ``/api/analysis/lb-chain/gslb/``（旧接口 / 旧页面零影响）。
+集群口径（含单机集群与多组取舍）、冲突取值与返回信封见 handbook/analysis.md「设备组配置合并」。
 """
 
 from __future__ import annotations
