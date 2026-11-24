@@ -203,13 +203,13 @@ healthcheck 的 `CMD-SHELL` 里（要留给容器内的 `sh` 展开）。
 - `envs/common.env` 里定义部署无关的 `DB_ENGINE` / `DB_NAME` / `DB_USER`，并在同一文件内嵌套出
   `POSTGRES_DB=${DB_NAME}`、`MYSQL_DATABASE=${DB_NAME}`、`MYSQL_USER=${DB_USER}`；
   `envs/db.env` 只补容器特有的凭据路径并嵌套 `POSTGRES_USER_FILE=${DB_USER_FILE}`、
-  `MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}`；`DB_HOST=db` 在 `container.env`（db 容器自己不读它）。
+  `MYSQL_PASSWORD_FILE=${DB_PASSWORD_FILE}`；`DB_HOST=db` 在 `container.env`（mysql 模板也加载该文件，但只为 `DJANGO_ENV`，不使用 `DB_HOST`）。
   这是 **env_file 自身的插值**（Compose 加载时展开）：`DB_ENGINE` 的右侧 `DB_SERVICE` 来自
   根 `.env`，而 `DB_NAME` / `DB_USER` 与镜像名同文件定义，与部署方式无关的这三项只在
   `common.env` 出现一次；
 - 四个应用进程与 db 容器都 `env_file: envs/db.env`：应用只认 `DB_*`（settings 的 `_env_or_file()`
   读 `*_FILE`），db 镜像各取自己那份 `POSTGRES_*` / `MYSQL_*`，对方的变量被忽略；
-- `envs/container.env` 不再放数据库连接（它同时注入四个应用进程，放这里对 db 容器毫无意义）。
+- `envs/container.env` 不放数据库连接；mysql 模板加载它只为 `DJANGO_ENV`（初始化脚本判断生产），db 容器不使用其中的 `DB_HOST` / `REDIS_HOST`。
 
 **两条别改回去**：
 
@@ -287,6 +287,9 @@ docker compose exec -u root db sh /docker-entrypoint-initdb.d/01-grant-test-db.s
 读 `DB_PASSWORD_FILE`（root 可读）。
 
 前提是 `partial_revokes=OFF`（MySQL 8 默认），否则 `_` / `%` 会被当成字面量。
+
+`DJANGO_ENV=prod` 时脚本**直接跳过**（不授予 `CREATE/DROP test_*`），手动 exec 也一样；
+判断用白名单 `dev|container`，未设置或拼错一律跳过（宁可不授权，也不在 prod 放权）。
 
 **不能复用 PG 的数据卷**：换后端等于换一套库（`network-ops-pgdata` ↔ `network-ops-mysqldata`），
 数据不会互通。

@@ -47,6 +47,8 @@ services:
     env_file:
       - envs/common.env
       - envs/db.env
+      # 只为把 DJANGO_ENV 带进来：初始化脚本据此判断生产环境（prod 不授权测试库）
+      - envs/container.env
     secrets:
       - db_password
     volumes:
