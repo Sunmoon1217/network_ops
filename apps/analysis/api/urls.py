@@ -17,6 +17,9 @@ router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-
 # 巡检日指标（每日任务写入）：只读，date 缺省取最新有数据的一天
 router.register("inspection-devices", inspection.DeviceMetricDailyViewSet, basename="inspection-device")
 router.register("inspection-interfaces", inspection.InterfaceMetricDailyViewSet, basename="inspection-interface")
+# 巡检批次（只读）与带宽采集目标（可写）：巡检项目页展示结果 / 调整采集对象
+router.register("inspection-runs", inspection.InspectionRunViewSet, basename="inspection-run")
+router.register("inspection-targets", inspection.InspectionTargetViewSet, basename="inspection-target")
 
 urlpatterns = [
     path(

@@ -132,6 +132,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/tools/path-trace' },
         { path: 'path-trace', name: 'tools-path-trace', component: () => import('@netops/views/tools/path-trace/index.vue') },
+        { path: 'inspection', name: 'tools-inspection', component: () => import('@netops/views/tools/inspection.vue') },
         { path: 'rack-view', name: 'tools-rack-view', component: () => import('@netops/views/tools/rack-view.vue') },
         { path: 'subnet-calc', name: 'tools-subnet-calc', component: () => import('@netops/views/tools/subnet-calc.vue') },
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@netops/views/tools/dns-query.vue') },

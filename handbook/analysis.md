@@ -395,5 +395,8 @@ analysis.prune_inspection()             # beat：删除 date < today - INSPECTIO
 - **保留**：按业务日期滚存 `INSPECTION_RETENTION_DAYS`（默认 365，0 = 永久保留直接跳过）。
 - **读接口**：`GET /api/analysis/inspection-devices/`、`inspection-interfaces/`（只读，
   `?date=` 缺省取最新有数据的一天，`?host=` 模糊）；`inspection-devices/summary/` 给当天概览。
+- **批次与采集对象**：`GET /api/analysis/inspection-runs/` 只读返回每日批次；`inspection-targets/`
+  对登录用户只读、operator / 超管可增删改（itemids 留空时采集器按主机名 + 接口名自动搜索）。
+  前端入口「工具 → 巡检项目」（`/tools/inspection`），在一个页面里展示结果并维护采集对象。
 - **旧来源**：Autotask 的 `fetch_inspect` 保留给独立定时任务，但不再写大屏
   `inspection/device/list`——该行由本链路独占，避免两套来源互相覆盖。

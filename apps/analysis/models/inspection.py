@@ -8,7 +8,7 @@ from django.db import models
 
 
 class InspectionTarget(models.Model):
-    """接口带宽巡检目标：采集器的输入配置，admin 维护。
+    """接口带宽巡检目标：采集器的输入配置，admin 或「巡检项目」页维护。
 
     与 ``LinkTarget`` 同类职责：执行采集的 ingest 任务是按任务参数拿到这份清单的
     （``analysis → ingest`` 正向），ingest 不反向 import 本表。
