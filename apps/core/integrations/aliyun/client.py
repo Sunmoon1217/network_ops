@@ -57,6 +57,10 @@ def get_client(account: str = "prod", product: str = "") -> AcsClient:
     Args:
         account: "prod" | "test"
         product: 产品代码 "Ecs" / "Vpc" / "Slb" / "Sls"；为空则不绑定产品 endpoint
+
+    Note:
+        直连产品 endpoint 的路径，现场只有 ASAPI 网关时不可用——出站请求一律走
+        ``AliyunASAPI``。见 handbook/integrations.md「阿里云通道」。
     """
     cfg = _config(account)
     acc = cfg["accounts"][account]

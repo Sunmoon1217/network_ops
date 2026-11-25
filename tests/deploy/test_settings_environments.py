@@ -227,7 +227,7 @@ def test_logging_covers_business_namespaces(monkeypatch):
     assert handler["stream"] == "ext://sys.stderr"
     assert handler["level"] == "INFO"
     assert m.LOGGING["disable_existing_loggers"] is False
-    for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "netops"):
+    for name in ("core", "ingest", "assets", "analysis", "docs", "netops"):
         assert m.LOGGING["loggers"][name]["handlers"] == ["netops_console"]
 
 

@@ -32,7 +32,7 @@ def test_zabbix_refuses_when_disabled(monkeypatch):
 
 
 def test_aliyun_refuses_when_disabled():
-    from cloud.client import get_client
+    from core.integrations.aliyun.client import get_client
 
     cfg = {
         "base_url": "",
@@ -49,7 +49,7 @@ def test_aliyun_refuses_when_disabled():
 
 def test_aliyun_refuses_incomplete_account():
     """全局 enabled 只表示「至少一套可用」，具体账号缺钥匙仍要单独拒掉（不再抛 KeyError）。"""
-    from cloud.client import get_client
+    from core.integrations.aliyun.client import get_client
 
     cfg = {
         "base_url": "",
@@ -68,7 +68,7 @@ def test_aliyun_refuses_incomplete_account():
 
 
 def test_autotask_refuses_when_disabled():
-    from ingest.collectors.autotask.autotask import fetch_case
+    from ingest.collectors.autotask.client import fetch_case
 
     cfg = {"base_url": "", "credential_ref": "", "timeout": 5, "enabled": False}
     with override_settings(AUTOTASK_CONFIG=cfg), pytest.raises(ImproperlyConfigured, match="AUTOTASK_BASE_URL"):

@@ -4,7 +4,7 @@
 > （切片 1–9）、ingest 收窄、llmtools 域目录调整均已落地；`assets` 已是叶子节点
 > （AST 守卫 `tests/core/test_layering.py`）。**未落地的只剩外部连接实例统一**：Step 1–3
 > 已完成（`core/integrations/` + Zabbix 下沉 + 释放钩子 + 连接配置统一），
-> Step 5 Dify / 阿里云接入未做，见 [`external-clients.md`](external-clients.md)。
+> Step 5 阿里云已落地（无状态通道，不注册 provider）、Dify 未做，见 [`external-clients.md`](external-clients.md)。
 > 代码里的依赖方向已与本文一致，`AGENTS.md` 已同步。
 
 本文定义 network_ops 的域分层。目标不是「拆得好看」，而是让每个域**只依赖它下面的域**。
@@ -47,13 +47,13 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 端点随迁、URL 前缀不变；设备台账 sheet 由 ingest 调 assets 服务落库（ingest → assets ✓）。
 ② → `resolve_config_owner` **迁 configs**（读 `DeviceGroup` 是 configs → assets ✓，
 `DeviceConfigViewSet` 本就随 DeviceConfig 归 configs）。细节见
-[`assets-configs-split.md`](assets-configs-split.md)。
+[`assets-configs.md`](assets-configs.md)。
 
 ### 跨 app 外键（指向 assets）
 
 | 位置 | 目标 |
 |---|---|
-| `apps/analysis/models/internet_analysis.py:16` | `InternetAnalysis.device → assets.Device` |
+| `apps/analysis/models/internet.py:16` | `InternetAnalysis.device → assets.Device` |
 
 `Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
 见 [`../tasks.md`](../tasks.md) §作用目标），现在 core 侧一处也不剩。
@@ -74,7 +74,7 @@ target_label = models.CharField(max_length=255, blank=True, default="")
 ```
 
 「作用目标是设备时怎么校验、怎么显示名字」由 assets 在 `ready()` 里注册进
-`core/task_types`（`register_target_type("device", ..., feeds_device_fields=True)`），
+`core/tasktypes`（`register_target_type("device", ..., feeds_device_fields=True)`），
 core 自己既没有那个外键，也不认识 `"device"` 这个词。
 
 core 的其余模型（`User` / `Token` / `UserPreference`）只依赖 `settings.AUTH_USER_MODEL`。
@@ -88,14 +88,14 @@ core 曾传递依赖 `ingest → assets`。
 >
 > **同时实测出原文漏数的两处 core → analysis**：
 > `core/management/commands/queue_status.py:25`、`queue_backlog.py:26` 都
-> `from analysis.queue_monitor import ...`。按本表「例外与豁免」登记为运维工具例外
+> `from analysis.monitor.queue import ...`。按本表「例外与豁免」登记为运维工具例外
 > （精确到「文件 + 模块」），由 `tests/core/test_layering.py` 的 AST 断言守住，
 > 且例外失效会被 `test_operational_exceptions_are_still_needed` 抓出来。
 
 ## 分层总图
 
 ```
-netops         项目基建：settings / urls / schema / pagination / mcp_gateway / lifespan
+netops         项目基建：settings / urls / schema / pagination / mcp / lifespan
                 ← 不属于业务分层，任何域都可引用
 
 core           底层服务：用户 / 认证 / Token / 权限 / 用户偏好
@@ -142,7 +142,7 @@ llmtools ← assets, configs, analysis
 | **assets** | ✓ | — | ✗ | ✗ | ✗ | ✗ |
 | **configs** | ✓ | ✓ | — | ✗ | ✗ | ✗ |
 | **ingest** | ✓ | ✓ | ✓ | — | ✗ | ✗ |
-| **egest** | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| **egest** | ✓ | ✓ | ✓ | ✗ | ✗ | — |
 | **analysis** | ✓ | ✓ | ✓ | ✓ | — | ✗ |
 | **docs** | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
@@ -162,15 +162,15 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 读采集产物（链路缓存、大屏供数）是它的本职。现状三处依赖里，`dashboard.py` 的 `link_cache`
 与 `rebuild_access_flows.py` 的 `request_rebuild` 方向合法、保持不动；仅 `trace.py` 的
 `TMPLS_DIR` 会随 `parsers/` 归 configs 而变成 `analysis -> configs`（见
-[`assets-configs-split.md`](assets-configs-split.md)）。
+[`assets-configs.md`](assets-configs.md)）。
 
 ### 例外与豁免
 
 | 位置 | 例外 | 理由 |
 |---|---|---|
-| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
-| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.queue_monitor`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
-| `ingest/access_flow_trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
+| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs.md`](assets-configs.md) |
+| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.monitor.queue`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
+| `configs/trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
 | `ingest/collectors/dashboard.py` | 不 import analysis，用任务名 | 同上 |
 
 ## 各域职责边界
@@ -180,7 +180,7 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 **装什么**：用户 / 认证 / Token / 权限 / 用户偏好；`Task` / `Stage` 模型与通用任务控制
 （`create_task` / `dispatch` / `cancel`）；外部连接实例与 client 生命周期
 （`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）；
-Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
+Git 配置仓库（`repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
 还要删目录——放任一业务域都会让另一边反向依赖，故归平台层；`DeviceConfig` 的 hash 回写
 走 configs 注册的钩子，core 不认识那张表）。
 
@@ -198,13 +198,24 @@ Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、
 （`assets.DeviceConnection`，SSH / napalm / netmiko）**是两回事**：
 前者是「平台 ↔ 外部平台」，后者是「平台 ↔ 被管设备」，不要混。
 
+**阿里云通道**（`core/integrations/aliyun/`，2026-11-25 自 `apps/cloud` 迁入）是这条规则的
+无状态例外：它不持有 session / 登录态，没有需要 core 托管的资源，因此**不注册 provider**，
+调用方（采集器 / 未来 egest / MCP）直接 `from core.integrations.aliyun import ...`。
+判据是「手里有没有需要托管的进程内资源」，不是「是不是外部平台」。
+
 ### assets —— 基础资产信息与 CI 统一台账
 
 **装什么**：DCIM（SecurityZone / DataCenter / Room / Cabinet）、设备台账
 （Vendor / DeviceModel / Device / DeviceConnection / DeviceGroup*）、IPAM
 （Tag / Subnet / IPAddress / SubnetUsageLog）、CI 统一台账（`ConfigurationItem` +
 4 类 `_CIExtension` + `CIObjectLink` + `CIRelationship`）、软资产扩展表
-（`DomainAsset` / `LoadBalancerService`）、DCIM 与位置维度。
+（`DomainAsset` / `LoadBalancerService`）、云资源缓存（`AliyunVPC` / `AliyunVSwitch` /
+`AliyunLoadBalancer`）、DCIM 与位置维度。
+
+**云资源缓存为什么在 assets**：它们与 IPAM / 软资产是同一张资产图上的节点（VPC ⊃ VSwitch ⊃
+ECS / SLB），只有放在同域，将来才能与 `ConfigurationItem` 做跨类型关联。但它们是
+**外部事实的副本**（可整表重建、不挂源表外键、不参与人工归并），与人工维护的台账有本质区别——
+见 `handbook/assets.md`「云资源缓存」。
 
 **不装什么**：配置行（ConfigBase 家族）、设备配置快照（`DeviceConfig`）、
 解析器、Saver。
@@ -240,8 +251,10 @@ Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、
 
 **装什么**：配置下发、设备侧写操作、消息推送；自己的阶段实现。
 
-**待定**：是否复用 ingest 的采集通道（`napalm` / `netmiko` 连接管理）。若复用，
-egest 会依赖 ingest 的连接管理代码——那可能更适合做成 ingest 的子模块而非独立 app。
+**不 import ingest**（2026-11-25 定）。egest 与 ingest 是**方向相反的两个域**，不是上下游：
+两者都要连设备、但一个读一个写，复用同一份连接管理不代表要在代码上叠加依赖。若确实需要
+共享 `napalm` / `netmiko` 的连接管理，把它**上提到 core** 作为平台能力，而不是让 egest 反向
+依赖 ingest——否则 ingest 的采集语义会顺着这条边漏进下发路径，两边都无法独立演进。
 
 ### analysis —— 前端资源整合
 
@@ -261,7 +274,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 上层要触发下层、或同级要触发对方时，**不 import 对方的模块**，用任务名 + `send_task`。
 
-范本 `apps/ingest/access_flow_trigger.py`（原文口径）：
+范本 `apps/configs/trigger.py`（原文口径）：
 
 > ingest 不许 import analysis。所以这里不 import 任务对象，而是按
 > `settings.ACCESS_FLOW_TASK` 的**任务名字符串** send_task。
@@ -285,7 +298,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 （如软资产归并：configs 计算 + assets 落库共享一个 `pg_advisory_xact_lock`），
 用**同进程服务函数调用**串联，不走任务名。判断标准：**跨域协作是否需要与调用方
 共享事务边界**——需要就同进程调用，不需要就走 Celery 任务名。详见
-[`assets-configs-split.md`](assets-configs-split.md)。
+[`assets-configs.md`](assets-configs.md)。
 
 ## 跨域写入：写入权归属
 
@@ -295,6 +308,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 |---|---|---|
 | `ConfigurationItem`（CI 主表） | **assets** | 调 assets 的 service |
 | `DomainAsset` / `LoadBalancerService` | **assets** | 调 assets 的 `apply_soft_assets` |
+| `AliyunVPC` / `AliyunVSwitch` / `AliyunLoadBalancer` | **assets** | 调 assets 的 service（采集器不直接 ORM 写） |
 | ConfigBase 家族 25 表（含 ArpMac） | **configs** | 调 configs 的 Saver |
 | `DeviceConfig` | **configs** | — |
 | `Task` / `Stage` | **core** | 调 core 的任务 API |
@@ -332,13 +346,15 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 1. **core 去除业务依赖**（✅ 2026-11-16 已落地，现状见 [`../tasks.md`](../tasks.md)）
    ——core 变叶子后，上面的拆分才有稳定的基座；
-2. **拆 configs 域**（✅ 切片 1–9 全部落地，见 [`assets-configs-split.md`](assets-configs-split.md)）
+2. **拆 configs 域**（✅ 切片 1–9 全部落地，见 [`assets-configs.md`](assets-configs.md)）
    ——迁模型、迁 parsers/savers、拆软资产归并；
 3. **ingest 收窄**（✅ 已落地）——配置语义随 parsers/savers 归 configs，Excel 导入从 assets
    整体迁入，ingest 只留采集与编排；
 4. **外部连接收归 core**（⚠️ 部分落地，见 [`external-clients.md`](external-clients.md)）。
    Step 1–4 已落地（连接配置统一 + `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子 +
-   `IntegrationHealth` + beat 探活）；Step 5 Dify / 阿里云接入未做。
+   `IntegrationHealth` + beat 探活）；Step 5 中**阿里云已落地**（2026-11-25：通道迁
+   `core/integrations/aliyun/`、缓存表迁 `assets`、`apps/cloud` 撤销，不注册 provider），
+   Dify 未做。
 
    `egest`（配置下发 / 消息推送）是 roadmap 的**未来功能**，不在本批实施范围内，
    此处不安排落地步骤。依赖矩阵里的 `egest` 行只表达目标态的依赖方向。

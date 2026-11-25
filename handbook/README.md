@@ -27,7 +27,6 @@
 | [`assets.md`](assets.md) | 资产模型与 API：查询约定、导入流程、序列化器分工 |
 | [`docs-domain.md`](docs-domain.md) | 文档转换规则（md / 自包含 html / pdf）与 Dify 知识库推送 |
 | [`llmtools.md`](llmtools.md) | MCP 工具子系统：注册表、查询计划编译、域接入契约、生命周期约束 |
-| [`cloud.md`](cloud.md) | 阿里云接入：客户端封装、产品语义映射、云资源缓存 |
 | [`roadmap.md`](roadmap.md) | 产品路线图：四阶段 18 项开发任务（含模块指针与状态）、MCP 工具域路线、硬约束 |
 | [`design/`](design/README.md) | 设计提案与决策记录：域分层依赖矩阵（基本落地）、assets/configs 拆分方案（已收口）、core 外部连接实例（部分落地） |
 

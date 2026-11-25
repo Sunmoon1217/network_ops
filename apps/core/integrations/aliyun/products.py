@@ -12,6 +12,10 @@ request_cls 支持两种导入方式：::
     # 方式二（简写）：直接 import 模块，_call 自动取同名类
     from aliyunsdkecs.request.v20140526 import DescribeInstancesRequest
     result = ecs_call("prod", DescribeInstancesRequest, PageSize=50)
+
+Note:
+    这些封装走的是产品 endpoint 直连（``get_client`` + 产品 request 类），现场只有
+    ASAPI 网关时不可用；出站请求请走 ``AliyunASAPI``。
 """
 
 import json

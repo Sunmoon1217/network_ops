@@ -15,6 +15,7 @@ from .ci import (
     VirtualMachine,
     _CIExtension,
 )
+from .cloud import AliyunLoadBalancer, AliyunVPC, AliyunVSwitch
 from .network import (
     Cabinet,
     DataCenter,
@@ -55,6 +56,9 @@ __all__ = [
     "PhysicalServer",
     "VirtualMachine",
     "_CIExtension",
+    "AliyunLoadBalancer",
+    "AliyunVPC",
+    "AliyunVSwitch",
     "Cabinet",
     "DataCenter",
     "Device",
