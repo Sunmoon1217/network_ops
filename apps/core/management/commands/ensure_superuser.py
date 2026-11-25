@@ -35,7 +35,12 @@ class Command(BaseCommand):
         existing = manager.filter(**{user_model.USERNAME_FIELD: username}).first()
 
         # 常态分支：已经有超管，而这次调用没要求具体做什么（entrypoint 就是这么调的）
-        if existing is None and not explicit_password and not options["update_password"] and manager.filter(is_superuser=True).exists():
+        if (
+            existing is None
+            and not explicit_password
+            and not options["update_password"]
+            and manager.filter(is_superuser=True).exists()
+        ):
             self.stdout.write("[ensure_superuser] 已存在超级用户，跳过")
             return
 
@@ -43,7 +48,12 @@ class Command(BaseCommand):
             if existing.is_superuser:
                 self.stdout.write(f"[ensure_superuser] 管理员 {username!r} 已存在，跳过")
             else:
-                self.stdout.write(self.style.WARNING(f"[ensure_superuser] {username!r} 已存在但**不是**超级用户，不自动提权。要提权请手工处理（或先删掉该账号再重跑本命令）"))
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"[ensure_superuser] {username!r} 已存在但**不是**超级用户，不自动提权。"
+                        f"要提权请手工处理（或先删掉该账号再重跑本命令）"
+                    )
+                )
             return
 
         password = explicit_password or secrets.token_urlsafe(18)
