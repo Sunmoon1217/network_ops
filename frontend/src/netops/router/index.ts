@@ -51,10 +51,10 @@ const router = createRouter({
         { path: 'devices/:id/config', name: 'asset-device-config', component: () => import('@netops/views/devices/config.vue') },
         { path: 'devices/:id/history', name: 'asset-device-history', component: () => import('@netops/views/devices/history.vue') },
         { path: 'devices/:id/compare', name: 'asset-device-compare', component: () => import('@netops/views/devices/compare.vue') },
-        // 组件：网卡/接口、VLAN
-        { path: 'interfaces', name: 'asset-interface-list', component: () => import('@netops/views/devices/interfaces.vue') },
-        { path: 'interfaces/:id/edit', name: 'asset-interface-edit', component: () => import('@netops/views/devices/forms/InterfaceForm.vue'), meta: { requiresOperator: true } },
-        { path: 'vlans', name: 'asset-vlans', component: () => import('@netops/views/devices/vlans.vue') },
+        // ConfigBase 子类迁配置域，资产侧旧路径重定向
+        { path: 'interfaces', redirect: '/config/interfaces' },
+        { path: 'interfaces/:id/edit', redirect: legacyRedirect((to) => `/config/interfaces/${to.params.id}/edit`) },
+        { path: 'vlans', redirect: '/config/vlans' },
         // 网络服务：IP 地址、网段（ipam 视图搬进资产前缀）
         { path: 'ip-addresses', name: 'asset-ip-addresses', component: () => import('@netops/views/ipam/ip-address.vue') },
         { path: 'ip-addresses/create', name: 'asset-ip-create', component: () => import('@netops/views/ipam/forms/IpAddressForm.vue'), meta: { requiresOperator: true } },
@@ -64,6 +64,7 @@ const router = createRouter({
         { path: 'subnets/:id/edit', name: 'asset-subnet-edit', component: () => import('@netops/views/ipam/forms/SubnetForm.vue'), meta: { requiresOperator: true } },
         { path: 'load-balancer', name: 'asset-load-balancer', component: () => import('@netops/views/asset/load-balancer.vue'), meta: { title: '负载均衡（资产）' } },
         { path: 'domain', name: 'asset-domain', component: () => import('@netops/views/asset/domain.vue'), meta: { title: '域名（资产）' } },
+        { path: 'cloud-network', name: 'asset-cloud-network', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '云资产（VPC/VSwitch）' } },
         { path: 'link', name: 'asset-link', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '链路信息' } },
         // 应用服务：应用系统、数据库实例
         { path: 'application', name: 'asset-application', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '应用系统' } },
@@ -88,13 +89,23 @@ const router = createRouter({
       path: '/config',
       meta: { requiresAuth: true },
       children: [
-        { path: '', redirect: '/config/slb' },
+        { path: '', redirect: '/config/policy' },
+        // 防火墙
+        { path: 'policy', name: 'config-policy', component: () => import('@netops/views/config/firewall/policy.vue') },
+        { path: 'firewall', name: 'config-firewall', component: () => import('@netops/views/config/firewall/firewall.vue') },
+        { path: 'address-service', name: 'config-address-service', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '地址与服务对象' } },
+        // 负载均衡
         { path: 'slb', name: 'config-slb', component: () => import('@netops/views/config/lb/slb.vue') },
         { path: 'gslb', name: 'config-gslb', component: () => import('@netops/views/config/lb/gslb.vue') },
-        { path: 'firewall', name: 'config-firewall', component: () => import('@netops/views/config/firewall/firewall.vue') },
+        { path: 'cloud-lb', name: 'config-cloud-lb', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '云LB配置' } },
+        // 网络基础
         { path: 'routing-table', name: 'config-routing-table', component: () => import('@netops/views/config/network/routing-table.vue') },
         { path: 'arp-mac', name: 'config-arp-mac', component: () => import('@netops/views/config/network/arp-mac.vue') },
-        { path: 'policy', name: 'config-policy', component: () => import('@netops/views/config/firewall/policy.vue') },
+        { path: 'interfaces', name: 'config-interfaces', component: () => import('@netops/views/devices/interfaces.vue') },
+        { path: 'interfaces/:id/edit', name: 'config-interface-edit', component: () => import('@netops/views/devices/forms/InterfaceForm.vue'), meta: { requiresOperator: true } },
+        { path: 'vlans', name: 'config-vlans', component: () => import('@netops/views/devices/vlans.vue') },
+        { path: 'vrf', name: 'config-vrf', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: 'VRF 实例' } },
+        // 基线配置
         { path: 'baseline', name: 'config-baseline', component: () => import('@netops/views/devices/baseline.vue') },
         { path: 'baseline/snmp/create', name: 'config-snmp-create', component: () => import('@netops/views/devices/forms/SnmpForm.vue'), meta: { requiresOperator: true } },
         { path: 'baseline/snmp/:id/edit', name: 'config-snmp-edit', component: () => import('@netops/views/devices/forms/SnmpForm.vue'), meta: { requiresOperator: true } },
@@ -102,8 +113,9 @@ const router = createRouter({
         { path: 'baseline/ntp/:id/edit', name: 'config-ntp-edit', component: () => import('@netops/views/devices/forms/NtpForm.vue'), meta: { requiresOperator: true } },
         { path: 'baseline/syslog/create', name: 'config-syslog-create', component: () => import('@netops/views/devices/forms/SyslogForm.vue'), meta: { requiresOperator: true } },
         { path: 'baseline/syslog/:id/edit', name: 'config-syslog-edit', component: () => import('@netops/views/devices/forms/SyslogForm.vue'), meta: { requiresOperator: true } },
-        { path: 'parsers', name: 'config-parsers', component: () => import('@netops/views/devices/parsers.vue') },
         { path: 'accounts', name: 'config-accounts', component: () => import('@netops/views/devices/accounts.vue') },
+        { path: 'cloud-accounts', name: 'config-cloud-accounts', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: '云平台账号' } },
+        { path: 'parsers', name: 'config-parsers', component: () => import('@netops/views/devices/parsers.vue') },
       ],
     },
     {
@@ -150,6 +162,7 @@ const router = createRouter({
         { path: 'rack-view', name: 'tools-rack-view', component: () => import('@netops/views/tools/rack-view.vue') },
         { path: 'subnet-calc', name: 'tools-subnet-calc', component: () => import('@netops/views/tools/subnet-calc.vue') },
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@netops/views/tools/dns-query.vue') },
+        { path: 'sls-query', name: 'tools-sls-query', component: () => import('@netops/views/common/UnderConstruction.vue'), meta: { title: 'SLS 日志查询' } },
         { path: 'internet-asset', name: 'tools-internet-asset', component: () => import('@netops/views/tools/internet-asset.vue') },
         { path: 'parser-mapping', name: 'tools-parser-mapping', component: () => import('@netops/views/tools/parser-mapping.vue') },
       ],
@@ -161,9 +174,9 @@ const router = createRouter({
     { path: '/devices/:id/config', redirect: legacyRedirect((to) => `/asset/devices/${to.params.id}/config`) },
     { path: '/devices/:id/history', redirect: legacyRedirect((to) => `/asset/devices/${to.params.id}/history`) },
     { path: '/devices/:id/compare', redirect: legacyRedirect((to) => `/asset/devices/${to.params.id}/compare`) },
-    { path: '/devices/interfaces', redirect: '/asset/interfaces' },
-    { path: '/devices/interfaces/:id/edit', redirect: legacyRedirect((to) => `/asset/interfaces/${to.params.id}/edit`) },
-    { path: '/devices/vlans', redirect: '/asset/vlans' },
+    { path: '/devices/interfaces', redirect: '/config/interfaces' },
+    { path: '/devices/interfaces/:id/edit', redirect: legacyRedirect((to) => `/config/interfaces/${to.params.id}/edit`) },
+    { path: '/devices/vlans', redirect: '/config/vlans' },
     { path: '/devices/baseline', redirect: '/config/baseline' },
     { path: '/devices/baseline/snmp/create', redirect: '/config/baseline/snmp/create' },
     { path: '/devices/baseline/snmp/:id/edit', redirect: legacyRedirect((to) => `/config/baseline/snmp/${to.params.id}/edit`) },
