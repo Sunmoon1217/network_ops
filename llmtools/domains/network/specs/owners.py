@@ -6,7 +6,7 @@ IPAM 关联），这里的 ``key``/``Filter`` 路径才需要跟着改。
 """
 
 from assets import models
-from assets.serializers import views as s
+from assets.serializers import asset as s
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType

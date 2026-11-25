@@ -124,7 +124,7 @@ else:
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
-# MCP 工具出口（/mcp）：匿名，身份与配额只到客户端 IP（netops/mcp_gateway.py）。
+# MCP 工具出口（/mcp）：匿名，身份与配额只到客户端 IP（netops/mcp.py）。
 # MCP_ENABLED=0 时不建子应用、/mcp 回 404；限流 0 = 不限流。默认值见 settings/defaults.py。
 MCP_ENABLED = _env_bool("MCP_ENABLED", _ENV_DEFAULTS["MCP_ENABLED"])
 MCP_RATE_LIMIT_PER_MINUTE = int(os.environ.get("MCP_RATE_LIMIT_PER_MINUTE", "60"))

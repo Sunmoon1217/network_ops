@@ -68,7 +68,7 @@ def test_aliyun_refuses_incomplete_account():
 
 
 def test_autotask_refuses_when_disabled():
-    from ingest.collectors.autotask.autotask import fetch_case
+    from ingest.collectors.autotask.client import fetch_case
 
     cfg = {"base_url": "", "credential_ref": "", "timeout": 5, "enabled": False}
     with override_settings(AUTOTASK_CONFIG=cfg), pytest.raises(ImproperlyConfigured, match="AUTOTASK_BASE_URL"):

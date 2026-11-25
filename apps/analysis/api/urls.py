@@ -8,7 +8,8 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, overview, trace
+from . import accessflows, analysis, dashboard, lb_chain, overview, runtime, trace
+from .groups import firewall, gslb, ltm
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：只读，列表即策略展开结果
@@ -37,22 +38,22 @@ urlpatterns = [
                 path("lb-chain/gslb/facets/", lb_chain.gtm_facets, name="lb-chain-gslb-facets"),
                 path("lb-chain/gslb/export/", lb_chain.gtm_export, name="lb-chain-gslb-export"),
                 # GSLB 集群分析：同集群多台设备的 GTM 配置逐层合并，device 字段逗号拼接
-                path("gslb-clusters/", gslb_clusters.gslb_clusters, name="gslb-clusters"),
-                path("gslb-clusters/facets/", gslb_clusters.gslb_cluster_facets, name="gslb-clusters-facets"),
-                path("gslb-clusters/export/", gslb_clusters.gslb_cluster_export, name="gslb-clusters-export"),
+                path("gslb-clusters/", gslb.gslb_clusters, name="gslb-clusters"),
+                path("gslb-clusters/facets/", gslb.gslb_cluster_facets, name="gslb-clusters-facets"),
+                path("gslb-clusters/export/", gslb.gslb_cluster_export, name="gslb-clusters-export"),
                 # LTM 主备合并：同主备组多台 SLB 的 VS→池→成员逐层合并，device 字段逗号拼接
-                path("ltm-groups/", ltm_groups.ltm_groups, name="ltm-groups"),
-                path("ltm-groups/facets/", ltm_groups.ltm_group_facets, name="ltm-groups-facets"),
-                path("ltm-groups/export/", ltm_groups.ltm_group_export, name="ltm-groups-export"),
+                path("ltm-groups/", ltm.ltm_groups, name="ltm-groups"),
+                path("ltm-groups/facets/", ltm.ltm_group_facets, name="ltm-groups-facets"),
+                path("ltm-groups/export/", ltm.ltm_group_export, name="ltm-groups-export"),
                 # 防火墙主备合并：同主备组多台防火墙的策略 / NAT 合并，policy_id 冲突取主机名第一台
-                path("firewall-groups/policies/", firewall_groups.firewall_policies, name="firewall-groups-policies"),
-                path("firewall-groups/nat-rules/", firewall_groups.firewall_nat_rules, name="firewall-groups-nat-rules"),
-                path("firewall-groups/facets/", firewall_groups.firewall_group_facets, name="firewall-groups-facets"),
+                path("firewall-groups/policies/", firewall.firewall_policies, name="firewall-groups-policies"),
+                path("firewall-groups/nat-rules/", firewall.firewall_nat_rules, name="firewall-groups-nat-rules"),
+                path("firewall-groups/facets/", firewall.firewall_group_facets, name="firewall-groups-facets"),
                 # 队列积压巡检（celery 队列 / 访问流 Stream / 消费者心跳）：只读，Home 页卡片轮询
-                path("queue-status/", monitor.queue_status, name="queue-status"),
+                path("queue-status/", runtime.queue_status, name="queue-status"),
                 # 运行监控（只读）：Redis 服务状态（INFO）/ Celery worker 与任务（inspect），运行监控页轮询
-                path("redis-status/", monitor.redis_status, name="redis-status"),
-                path("celery-status/", monitor.celery_status, name="celery-status"),
+                path("redis-status/", runtime.redis_status, name="redis-status"),
+                path("celery-status/", runtime.celery_status, name="celery-status"),
             ]
             + router.urls
         ),

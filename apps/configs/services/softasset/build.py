@@ -1,7 +1,7 @@
 """软资产「算」这一半：配置行 → 候选资产值（纯计算，零写操作）。
 
 ``GtmWideip`` → 域名资产，``LtmVirtualServer`` → 负载均衡服务资产；配置行只读。
-落库在 ``assets.services.soft_asset_sync``；``kind`` 用字符串以免 import assets。
+落库在 ``assets.services.softasset``；``kind`` 用字符串以免 import assets。
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def lb_asset_key(vip: str, port: str | None) -> str:
 
 
 def _differs(values) -> bool:
-    """一组取值是否不一致（与 ``analysis.api.group_merge._differs`` 同一口径）。"""
+    """一组取值是否不一致（与 ``analysis.api.groups.common._differs`` 同一口径）。"""
     seen = {json.dumps(value, sort_keys=True, default=str) for value in values}
     return len(seen) > 1
 

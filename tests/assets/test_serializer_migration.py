@@ -1,6 +1,6 @@
 """序列化器合并后的对账：旧模块已删除，公共能力与字段口径都还在。
 
-原测试逐字段对比 `assets/api/serializers.py`（旧）与 `assets/serializers/views.py`（新）；
+原测试逐字段对比 `assets/api/serializers.py`（旧）与 `assets/serializers/asset.py`（新）；
 旧模块删除后对账对象没了，改锁三件仍然重要的契约：
 
 1. 旧模块确实删掉（防止有人为了兼容又把它加回来）；
@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from assets.serializers.asset import _format_address_entry, _format_service_entry
 from assets.serializers.base import DeviceRelatedSerializer, ParentClass, model
-from assets.serializers.views import _format_address_entry, _format_service_entry
-from configs.serializers.views import LtmVirtualServerSerializer
+from configs.serializers.config import LtmVirtualServerSerializer
 
 
 def test_old_serializer_module_removed():
@@ -24,7 +24,7 @@ def test_old_serializer_module_removed():
 
 
 def test_format_helpers_survive_merge():
-    """两个展示串函数并入后行为不变（analysis/api/firewall_groups.py 依赖）。"""
+    """两个展示串函数并入后行为不变（analysis/api/groups/firewall.py 依赖）。"""
     address = _format_address_entry(
         SimpleNamespace(
             address_type="subnet",

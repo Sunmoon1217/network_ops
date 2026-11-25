@@ -10,7 +10,7 @@
 from django.core.management.base import BaseCommand
 
 from assets.models import CIType
-from assets.services.existing_asset_registry import register_existing_assets
+from assets.services.registry import register_existing_assets
 
 #: CLI 简写到 CI 类型的映射（`--type` 的取值）
 _TYPE_ALIASES = {

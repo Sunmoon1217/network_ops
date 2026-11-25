@@ -36,7 +36,7 @@ from configs.models import (
     Vlan,
     Vrf,
 )
-from configs.serializers.views import (
+from configs.serializers.config import (
     AddressBookSerializer,
     ArpMacSerializer,
     DeviceAccountSerializer,

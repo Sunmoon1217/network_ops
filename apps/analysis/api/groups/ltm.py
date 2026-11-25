@@ -1,6 +1,6 @@
 """LTM（SLB）主备设备组的配置合并接口（只读）：VS → 池 → 成员逐层合并。
 
-组口径与合并信封复用 ``analysis.api.group_merge``；LTM 的标量冲突取主机名第一台，
+组口径与合并信封复用 ``analysis.api.groups.common``；LTM 的标量冲突取主机名第一台，
 条目与列表字段取并集。细节见 handbook/analysis.md「设备组配置合并」。
 """
 
@@ -13,10 +13,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.analysis import _join_ip_port
-from analysis.api.group_merge import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 from analysis.api.lb_chain import _xlsx_response
 from configs.models import LtmPool, LtmPoolMember, LtmVirtualServer
 from netops.pagination import StandardPagination
+
+from .common import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 
 # VS 上逐字段比较的标量（profiles / rules 是列表，取并集不算冲突）
 _VS_SCALARS = ("vs_address", "vs_port", "protocol", "status", "snat_type", "persist", "pool")

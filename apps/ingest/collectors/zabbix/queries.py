@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 
 from core.integrations.providers.zabbix.schemas import ZAPIHost, ZAPIItem, ZAPIProblem, ZAPITrigger
 
-from .zabbix import get_zapi
+from .client import get_zapi
 
 logger = getLogger(__name__)
 

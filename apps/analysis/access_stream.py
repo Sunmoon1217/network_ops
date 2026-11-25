@@ -2,7 +2,7 @@
 
 celery worker 并行展开 → XADD → 唯一 consumer 摘旧上下文 + 合并入库 → 成功才 XACK。
 **单写者**是「先查后合并 + bulk」成立的前提，也意味着 consumer 只能跑一个实例。
-恢复语义与积压口径见 handbook/analysis.md；投递触发在 ``configs.access_flow_trigger``。
+恢复语义与积压口径见 handbook/analysis.md；投递触发在 ``configs.trigger``。
 """
 
 from __future__ import annotations

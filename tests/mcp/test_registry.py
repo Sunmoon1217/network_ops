@@ -10,7 +10,7 @@ from mcp import Client
 
 import llmtools  # noqa: F401 — 包初始化即接线：注册资产实体 + 全部工具
 from assets import models
-from assets.serializers import views as s
+from assets.serializers import asset as s
 from llmtools import mcpserver as netops_mcp
 from llmtools.registry import SPEC, Edge, EntitySpec, Filter, register_edge, register_entity, unregister_entity
 

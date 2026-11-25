@@ -454,7 +454,7 @@ def test_command_sync_rebuilds_in_process():
 def test_command_dispatches_by_default(monkeypatch):
     device = _device("_t_af_cmd2")
     calls: list[int] = []
-    monkeypatch.setattr("configs.access_flow_trigger.request_rebuild", calls.append)
+    monkeypatch.setattr("configs.trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname)
 
@@ -465,7 +465,7 @@ def test_command_dispatches_by_default(monkeypatch):
 def test_command_dedupes_repeated_devices(monkeypatch):
     device = _device("_t_af_cmd3")
     calls: list[int] = []
-    monkeypatch.setattr("configs.access_flow_trigger.request_rebuild", calls.append)
+    monkeypatch.setattr("configs.trigger.request_rebuild", calls.append)
 
     _run_command("--device", device.hostname, "--device", device.hostname)
 

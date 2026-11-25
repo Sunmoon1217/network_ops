@@ -1,4 +1,4 @@
-"""配置行序列化器（从 assets/serializers/views.py 迁入）。
+"""配置行序列化器（从 assets/serializers/asset.py 迁入）。
 
 继承 assets/serializers/base.py 的统一装饰器与基类——configs → assets 是合法依赖；
 本模块只服务 configs 的模型，savers 与 MCP 工具都直接用这里的类。
@@ -6,8 +6,8 @@
 
 from rest_framework import serializers
 
+from assets.serializers.asset import _format_address_entry, _format_service_entry
 from assets.serializers.base import DeviceRelatedSerializer, ParentClass, model
-from assets.serializers.views import _format_address_entry, _format_service_entry
 from configs import models as cm
 
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from . import task_types
+from . import tasktypes
 from .models import IntegrationHealth, Stage, Task, Token, User, UserPreference
 
 admin.site.site_header = "网络运维管理平台"
@@ -9,7 +9,7 @@ admin.site.index_title = "后台管理"
 
 
 class VocabularyListFilter(admin.SimpleListFilter):
-    """按 ``core.task_types`` 注册表快照出过滤项（字段已无 ``choices``，直接写字段会退化）。"""
+    """按 ``core.tasktypes`` 注册表快照出过滤项（字段已无 ``choices``，直接写字段会退化）。"""
 
     def vocabulary(self) -> list[tuple[str, str]]:
         """子类返回 ``[(值, 显示名)]``，通常是某个 ``*_choices()`` 快照。"""
@@ -31,7 +31,7 @@ class TaskTypeFilter(VocabularyListFilter):
     parameter_name = "task_type"
 
     def vocabulary(self):
-        return task_types.task_type_choices()
+        return tasktypes.task_type_choices()
 
 
 class StageTypeFilter(VocabularyListFilter):
@@ -39,7 +39,7 @@ class StageTypeFilter(VocabularyListFilter):
     parameter_name = "stage_type"
 
     def vocabulary(self):
-        return task_types.stage_type_choices()
+        return tasktypes.stage_type_choices()
 
 
 class TargetTypeFilter(VocabularyListFilter):
@@ -47,7 +47,7 @@ class TargetTypeFilter(VocabularyListFilter):
     parameter_name = "target_type"
 
     def vocabulary(self):
-        return task_types.target_type_choices()
+        return tasktypes.target_type_choices()
 
 
 @admin.register(User)

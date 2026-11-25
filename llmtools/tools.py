@@ -1,6 +1,6 @@
 """MCP 工具注册表：**唯一注册点**。
 
-工具**实现**分两处：通用工具在 ``llmtools.entity_tools``（只认注册表、不认具体域），
+工具**实现**分两处：通用工具在 ``llmtools.entities``（只认注册表、不认具体域），
 域专属工具在 ``llmtools.domains.<域>.tools``（只知道本域业务）。本模块只做三件事：
 汇总名单 → 统一套执行包装 → 一次性挂到根 server 上。
 
@@ -20,18 +20,18 @@
 from collections.abc import Callable
 from typing import Any
 
-from llmtools import entity_tools
+from llmtools import entities
 from llmtools.domains import network
 from llmtools.server import mcpserver, with_db_lifecycle
 
 #: 对外暴露的工具名单（顺序即 ``list_tools`` 的返回顺序）
 TOOLS: tuple[Callable[..., Any], ...] = (
-    entity_tools.find,
-    entity_tools.list_records,
-    entity_tools.query,
-    entity_tools.get_record,
-    entity_tools.bundle,
-    entity_tools.relations,
+    entities.find,
+    entities.list_records,
+    entities.query,
+    entities.get_record,
+    entities.bundle,
+    entities.relations,
     *network.TOOLS,
 )
 

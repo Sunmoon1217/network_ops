@@ -2,7 +2,7 @@ from rest_framework import viewsets
 
 from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceModel, Room, SecurityZone, Vendor
 
-from ..serializers.views import (
+from ..serializers.asset import (
     CabinetSerializer,
     DataCenterSerializer,
     DeviceConnectionSerializer,
@@ -79,7 +79,7 @@ class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
 class DeviceGroupViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DeviceGroup
 
-    from ..serializers.views import DeviceGroupSerializer
+    from ..serializers.asset import DeviceGroupSerializer
 
     queryset = DeviceGroup.objects.prefetch_related("members").all()
     serializer_class = DeviceGroupSerializer
@@ -90,7 +90,7 @@ class DeviceGroupViewSet(viewsets.ReadOnlyModelViewSet):
 class DeviceGroupMemberViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DeviceGroupMember
 
-    from ..serializers.views import DeviceGroupMemberSerializer
+    from ..serializers.asset import DeviceGroupMemberSerializer
 
     queryset = DeviceGroupMember.objects.select_related("group", "device").all()
     serializer_class = DeviceGroupMemberSerializer
@@ -142,7 +142,7 @@ class DeviceConnectionViewSet(viewsets.ReadOnlyModelViewSet):
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Tag
 
-    from ..serializers.views import TagSerializer
+    from ..serializers.asset import TagSerializer
 
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
@@ -153,7 +153,7 @@ class TagViewSet(viewsets.ReadOnlyModelViewSet):
 class SubnetViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Subnet
 
-    from ..serializers.views import SubnetSerializer
+    from ..serializers.asset import SubnetSerializer
 
     queryset = Subnet.objects.prefetch_related("tags").all()
     serializer_class = SubnetSerializer
@@ -174,7 +174,7 @@ class SubnetViewSet(viewsets.ReadOnlyModelViewSet):
 class IPAddressViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import IPAddress
 
-    from ..serializers.views import IPAddressSerializer
+    from ..serializers.asset import IPAddressSerializer
 
     queryset = IPAddress.objects.select_related("subnet", "device", "security_zone").all()
     serializer_class = IPAddressSerializer
@@ -198,7 +198,7 @@ class IPAddressViewSet(viewsets.ReadOnlyModelViewSet):
 class TopologyViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import Topology
 
-    from ..serializers.views import TopologySerializer
+    from ..serializers.asset import TopologySerializer
 
     queryset = Topology.objects.all()
     serializer_class = TopologySerializer
@@ -209,7 +209,7 @@ class TopologyViewSet(viewsets.ReadOnlyModelViewSet):
 class SubnetUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import SubnetUsageLog
 
-    from ..serializers.views import SubnetUsageLogSerializer
+    from ..serializers.asset import SubnetUsageLogSerializer
 
     queryset = SubnetUsageLog.objects.select_related("subnet").all()
     serializer_class = SubnetUsageLogSerializer
@@ -223,10 +223,10 @@ class SubnetUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
-# 统一配置项体系（T1）：序列化器口径见 assets/serializers/views.py
+# 统一配置项体系（T1）：序列化器口径见 assets/serializers/asset.py
 class ConfigurationItemViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import ConfigurationItem
-    from assets.serializers.views import ConfigurationItemSerializer
+    from assets.serializers.asset import ConfigurationItemSerializer
 
     queryset = ConfigurationItem.objects.all()
     serializer_class = ConfigurationItemSerializer
@@ -243,7 +243,7 @@ class ConfigurationItemViewSet(viewsets.ReadOnlyModelViewSet):
 
 class PhysicalServerViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import PhysicalServer
-    from assets.serializers.views import PhysicalServerSerializer
+    from assets.serializers.asset import PhysicalServerSerializer
 
     queryset = PhysicalServer.objects.select_related("ci").all()
     serializer_class = PhysicalServerSerializer
@@ -253,7 +253,7 @@ class PhysicalServerViewSet(viewsets.ReadOnlyModelViewSet):
 
 class VirtualMachineViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import VirtualMachine
-    from assets.serializers.views import VirtualMachineSerializer
+    from assets.serializers.asset import VirtualMachineSerializer
 
     queryset = VirtualMachine.objects.select_related("ci").all()
     serializer_class = VirtualMachineSerializer
@@ -263,7 +263,7 @@ class VirtualMachineViewSet(viewsets.ReadOnlyModelViewSet):
 
 class DatabaseInstanceViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DatabaseInstance
-    from assets.serializers.views import DatabaseInstanceSerializer
+    from assets.serializers.asset import DatabaseInstanceSerializer
 
     queryset = DatabaseInstance.objects.select_related("ci").all()
     serializer_class = DatabaseInstanceSerializer
@@ -273,7 +273,7 @@ class DatabaseInstanceViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ApplicationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import ApplicationService
-    from assets.serializers.views import ApplicationServiceSerializer
+    from assets.serializers.asset import ApplicationServiceSerializer
 
     queryset = ApplicationService.objects.select_related("ci").all()
     serializer_class = ApplicationServiceSerializer
@@ -284,7 +284,7 @@ class ApplicationServiceViewSet(viewsets.ReadOnlyModelViewSet):
 # 统一关系表（T3）：支持 ?ci_id= 命中任一端
 class CIRelationshipViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import CIRelationship
-    from assets.serializers.views import CIRelationshipSerializer
+    from assets.serializers.asset import CIRelationshipSerializer
 
     queryset = CIRelationship.objects.all()
     serializer_class = CIRelationshipSerializer
@@ -310,7 +310,7 @@ class CIRelationshipViewSet(viewsets.ReadOnlyModelViewSet):
 # 软资产归并（T4）：只读，写入只由 sync_soft_assets 负责
 class DomainAssetViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import DomainAsset
-    from assets.serializers.views import DomainAssetSerializer
+    from assets.serializers.asset import DomainAssetSerializer
 
     queryset = DomainAsset.objects.select_related("ci").all()
     serializer_class = DomainAssetSerializer
@@ -332,7 +332,7 @@ class DomainAssetViewSet(viewsets.ReadOnlyModelViewSet):
 
 class LoadBalancerServiceViewSet(viewsets.ReadOnlyModelViewSet):
     from assets.models import LoadBalancerService
-    from assets.serializers.views import LoadBalancerServiceSerializer
+    from assets.serializers.asset import LoadBalancerServiceSerializer
 
     queryset = LoadBalancerService.objects.select_related("ci").all()
     serializer_class = LoadBalancerServiceSerializer

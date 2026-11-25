@@ -5,9 +5,9 @@
 """
 
 from assets import models
-from assets.serializers import views as s
+from assets.serializers import asset as s
 from configs import models as cm
-from configs.serializers import views as cs
+from configs.serializers import config as cs
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType

@@ -6,8 +6,8 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from analysis import celery_monitor, redis_monitor
-from analysis.queue_monitor import collect
+from analysis.monitor import celery, redis
+from analysis.monitor.queue import collect
 
 
 @api_view(["GET"])
@@ -18,10 +18,10 @@ def queue_status(request):
 @api_view(["GET"])
 def redis_status(request):
     """Redis 服务状态（INFO 口径）：内存 / 连接 / 命中率 / 键空间 / 运行时长。"""
-    return Response(redis_monitor.collect())
+    return Response(redis.collect())
 
 
 @api_view(["GET"])
 def celery_status(request):
     """Celery worker 与任务：worker 名单 / 执行中 / 排队 / 延迟（inspect 口径）。"""
-    return Response(celery_monitor.collect())
+    return Response(celery.collect())

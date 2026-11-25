@@ -1,7 +1,7 @@
 """防火墙主备设备组的配置合并接口（只读）：策略 / NAT 规则按自然键去重。
 
 策略按 ``policy_id``（有序，冲突取第一台 + 标注，不做并集）、NAT 按 ``order``；
-组口径与信封复用 ``analysis.api.group_merge``。见 handbook/analysis.md「设备组配置合并」。
+组口径与信封复用 ``analysis.api.groups.common``。见 handbook/analysis.md「设备组配置合并」。
 """
 
 from __future__ import annotations
@@ -10,10 +10,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from analysis.api.group_merge import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, resolve_groups
-from assets.serializers.views import _format_address_entry, _format_service_entry
+from assets.serializers.asset import _format_address_entry, _format_service_entry
 from configs.models import NatRule, Policy
 from netops.pagination import StandardPagination
+
+from .common import HA_GROUP_TYPES, GroupKey, _differs, _join_devices, resolve_groups
 
 # 策略 / NAT 的标量比较字段（M2M 另算）
 _POLICY_SCALARS = ("order", "name", "action", "enabled", "log", "description")

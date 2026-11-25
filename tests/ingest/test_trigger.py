@@ -1,4 +1,4 @@
-"""访问流重建的投递触点（configs.access_flow_trigger）：任务名字符串 send_task、开关语义。
+"""访问流重建的投递触点（configs.trigger）：任务名字符串 send_task、开关语义。
 
 守护三点：
 
@@ -25,7 +25,7 @@ def _patch_send(monkeypatch, settings) -> list:
     """把 trigger 的 celery 句柄换成记账桩，返回 ``(task_name, args)`` 的记录列表。"""
     calls: list[tuple[str, list]] = []
     monkeypatch.setattr(
-        "configs.access_flow_trigger.current_app",
+        "configs.trigger.current_app",
         SimpleNamespace(send_task=lambda name, args=None: calls.append((name, list(args or [])))),
     )
     assert settings.ACCESS_FLOW_TASK == "analysis.rebuild_access_flows", "任务名唯一定义处"
@@ -38,7 +38,7 @@ def _patch_send(monkeypatch, settings) -> list:
 @pytest.mark.django_db
 def test_request_rebuild_sends_task_name_string(settings, monkeypatch):
     """投递物是任务名字符串 + args——不是函数对象，worker 端拿名字查注册表执行"""
-    from configs.access_flow_trigger import request_rebuild
+    from configs.trigger import request_rebuild
 
     calls = _patch_send(monkeypatch, settings)
 
@@ -49,7 +49,7 @@ def test_request_rebuild_sends_task_name_string(settings, monkeypatch):
 
 @pytest.mark.django_db
 def test_request_rebuild_respects_settings_switch(settings, monkeypatch):
-    from configs.access_flow_trigger import request_rebuild
+    from configs.trigger import request_rebuild
 
     calls = _patch_send(monkeypatch, settings)
 

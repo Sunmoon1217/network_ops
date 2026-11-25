@@ -179,7 +179,7 @@ def test_facets_include_groups_protocols_and_statuses(api):
 
 @pytest.mark.django_db
 def test_export_flat_rows_show_joined_device_and_conflict(api):
-    from analysis.api.ltm_groups import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS
+    from analysis.api.groups.ltm import EXPORT_COLUMN_WIDTHS, EXPORT_HEADERS
 
     a, b = _device("slb-a"), _device("slb-b")
     _group("slb-pair", "ha", [a, b])

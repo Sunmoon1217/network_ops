@@ -35,7 +35,7 @@ class AddressBookSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import AddressBook
-        from configs.serializers.views import AddressBookSerializer
+        from configs.serializers.config import AddressBookSerializer
 
         # addresses 别名已由 configs.mapping 在 save 入口归一为 address_books
         raw = parsed_data.get("address_books")
@@ -152,7 +152,7 @@ class NatRuleSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import NatRule
-        from configs.serializers.views import NatRuleSerializer
+        from configs.serializers.config import NatRuleSerializer
 
         created, updated = 0, 0
         for index, rule in enumerate(as_list(parsed_data.get("nat"))):
@@ -308,7 +308,7 @@ class PolicySaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import AddressBook, Policy, Service
-        from configs.serializers.views import AddressBookSerializer, PolicySerializer
+        from configs.serializers.config import AddressBookSerializer, PolicySerializer
 
         # acl / rules 别名已由 configs.mapping 在 save 入口归一为 policies
         policies = parsed_data.get("policies")
@@ -402,7 +402,7 @@ class PolicySaver(BaseSaver):
 
         # 策略落库后重建该设备的访问流：投递即返回，展开与入库走独立队列 + 单写者
         # consumer（见 handbook/analysis.md）。broker 不可达只告警不抛——入库已成功，可手工补。
-        from configs.access_flow_trigger import request_rebuild
+        from configs.trigger import request_rebuild
 
         request_rebuild(device.pk)
         return (created, updated)

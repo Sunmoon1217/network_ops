@@ -1,6 +1,6 @@
 """Redis 服务状态巡检（INFO 口径），web 监控页「Redis」面板轮询。
 
-与 ``queue_monitor`` 分工：这个看 Redis 自身（内存 / 连接 / 命中率 / 键空间 / 运行时长），
+与 ``monitor.queue`` 分工：这个看 Redis 自身（内存 / 连接 / 命中率 / 键空间 / 运行时长），
 那个看消费链路；两者都只读、O(1)，共用 ``access_stream.get_redis``。
 Redis 不可达不抛异常（返回 ``redis_ok=False`` + ``error``）。
 """

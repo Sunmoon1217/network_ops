@@ -10,7 +10,7 @@ import sys
 
 from django.core.management.base import BaseCommand
 
-from analysis.queue_monitor import DEFAULT_THRESHOLDS, collect
+from analysis.monitor.queue import DEFAULT_THRESHOLDS, collect
 
 
 class Command(BaseCommand):

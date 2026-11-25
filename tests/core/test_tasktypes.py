@@ -6,36 +6,36 @@
 
 import pytest
 
-from core import task_types
+from core import tasktypes
 from core.models import Stage, Task
 
 
 def test_ingest_registers_vocabulary_at_startup():
     """Django 启动后（ingest 的 ready() 已跑过），三个阶段与任务类型都在表里。"""
     for stage_type in ("collection", "parsing", "storage"):
-        assert callable(task_types.handler_for(stage_type).delay), f"{stage_type} 的 handler 不是 celery 任务"
+        assert callable(tasktypes.handler_for(stage_type).delay), f"{stage_type} 的 handler 不是 celery 任务"
 
-    assert task_types.first_stage_of("collect_config") == "collection"
-    assert task_types.is_registered_task_type("batch_collect")
+    assert tasktypes.first_stage_of("collect_config") == "collection"
+    assert tasktypes.is_registered_task_type("batch_collect")
 
     # 导入配置：单阶段（解析 → 入库），只能由导入投递，不给用户手工建
-    assert task_types.first_stage_of("import_config") == "config_pipeline"
-    assert callable(task_types.handler_for("config_pipeline").delay)
-    assert not task_types.is_creatable_task_type("import_config")
-    assert task_types.is_creatable_task_type("collect_config")
+    assert tasktypes.first_stage_of("import_config") == "config_pipeline"
+    assert callable(tasktypes.handler_for("config_pipeline").delay)
+    assert not tasktypes.is_creatable_task_type("import_config")
+    assert tasktypes.is_creatable_task_type("collect_config")
 
 
 def test_labels_come_from_registry():
-    assert task_types.label_for("collection") == "数据采集"
-    assert task_types.label_for("collect_config") == "采集配置"
+    assert tasktypes.label_for("collection") == "数据采集"
+    assert tasktypes.label_for("collect_config") == "采集配置"
 
 
 def test_unknown_label_falls_back_to_key():
     """未知词汇的 display 回落原字符串：前端看得见 key，比抛异常有用。"""
-    assert task_types.label_for("no_such_type") == "no_such_type"
+    assert tasktypes.label_for("no_such_type") == "no_such_type"
 
 
-@pytest.mark.parametrize("func", [task_types.first_stage_of, task_types.handler_for])
+@pytest.mark.parametrize("func", [tasktypes.first_stage_of, tasktypes.handler_for])
 def test_unknown_type_is_loud(func):
     """未注册的类型必须显式失败——静默返回空会让任务建了却不推进。"""
     with pytest.raises(LookupError, match="未知的"):
@@ -57,11 +57,11 @@ LEGACY_STAGE_TYPES = {"collection": "数据采集", "parsing": "配置解析", "
 def test_registry_covers_historical_vocabulary():
     """模型上的 ``choices`` 摘掉后，注册表是这些词的唯一出处——一个都不能漏。"""
     for key, label in LEGACY_TASK_TYPES.items():
-        assert task_types.is_registered_task_type(key)
-        assert task_types.label_for(key) == label
+        assert tasktypes.is_registered_task_type(key)
+        assert tasktypes.label_for(key) == label
     for key, label in LEGACY_STAGE_TYPES.items():
-        assert task_types.label_for(key) == label
-        assert callable(task_types.handler_for(key).delay)
+        assert tasktypes.label_for(key) == label
+        assert callable(tasktypes.handler_for(key).delay)
 
 
 @pytest.mark.parametrize(("model", "field"), [(Task, "task_type"), (Stage, "stage_type")])
@@ -105,9 +105,9 @@ def test_admin_filters_read_the_registry():
 
 def test_assets_registers_device_target():
     """「设备」这个作用目标由 assets 在 ``ready()`` 里登记——core 自己不认识这个词。"""
-    assert task_types.device_field_target_type() == "device"
-    assert task_types.target_label_for("device") == "设备"
-    assert ("device", "设备") in task_types.target_type_choices()
+    assert tasktypes.device_field_target_type() == "device"
+    assert tasktypes.target_label_for("device") == "设备"
+    assert ("device", "设备") in tasktypes.target_type_choices()
 
 
 @pytest.mark.django_db
@@ -117,12 +117,12 @@ def test_device_target_resolves_hostname():
 
     device = Device.objects.create(hostname="_t_target_dev", device_type="switch")
 
-    assert task_types.resolve_target_label("device", device.pk) == "_t_target_dev"
-    assert task_types.resolve_target_label("device", device.pk + 999) is None
-    assert task_types.resolve_target_label("no_such_type", device.pk) is None
+    assert tasktypes.resolve_target_label("device", device.pk) == "_t_target_dev"
+    assert tasktypes.resolve_target_label("device", device.pk + 999) is None
+    assert tasktypes.resolve_target_label("no_such_type", device.pk) is None
 
 
 def test_register_stage_rejects_non_celery_handler():
     """handler 没有 ``.delay()`` 就是接错对象了（比如传了普通函数），当场报错。"""
     with pytest.raises(TypeError, match="celery"):
-        task_types.register_stage("_t_stage", "测试阶段", object())
+        tasktypes.register_stage("_t_stage", "测试阶段", object())

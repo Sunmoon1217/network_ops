@@ -29,8 +29,8 @@ ASSETS_UPPER_DOMAINS = {"configs", "ingest", "egest", "analysis", "docs", "cloud
 #: （AGENTS.md 约定「运维命令统一放 core」）——采集逻辑与 API / 前端卡片同源，
 #: 复制一份到 core 会让同一份口径裂成两处实现。精确到 (文件, 模块) 而不是整个目录。
 OPERATIONAL_EXCEPTIONS: set[tuple[str, str]] = {
-    ("apps/core/management/commands/queue_status.py", "analysis.queue_monitor"),
-    ("apps/core/management/commands/queue_backlog.py", "analysis.queue_monitor"),
+    ("apps/core/management/commands/queue_status.py", "analysis.monitor.queue"),
+    ("apps/core/management/commands/queue_backlog.py", "analysis.monitor.queue"),
 }
 
 
@@ -84,7 +84,7 @@ def test_operational_exceptions_are_still_needed():
 def test_assets_imports_no_upper_domain():
     """assets 是叶子节点：不许 import configs / ingest / analysis 等上层域。
 
-    拆分（``handbook/design/assets-configs-split.md``）把配置行家族搬走之后，assets 只该
+    拆分（``handbook/design/assets-configs.md``）把配置行家族搬走之后，assets 只该
     剩「基础资产」——一旦这里报出 configs，说明又有跨域聚合（如曾经的 ``overview``）
     挂回了 assets。跨域读取放上层域（configs 之上）或让调用方传入，别从叶子往上够。
     """

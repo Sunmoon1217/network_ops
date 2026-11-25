@@ -33,7 +33,7 @@ def test_request_sync_runs_after_commit(django_capture_on_commit_callbacks):
 @pytest.mark.django_db
 def test_requests_in_one_transaction_are_coalesced(django_capture_on_commit_callbacks, monkeypatch):
     """一个事务里多台设备各请求一次，只跑最后一次全量归并"""
-    from configs.services import soft_asset_sync as service
+    from configs.services.softasset import sync as service
 
     calls: list[int] = []
 
@@ -54,7 +54,7 @@ def test_requests_in_one_transaction_are_coalesced(django_capture_on_commit_call
 @pytest.mark.django_db
 def test_sync_failure_does_not_propagate(django_capture_on_commit_callbacks, monkeypatch):
     """派生资产刷新失败只记日志：配置入库已经成功，不能因此回滚或让任务失败"""
-    from configs.services import soft_asset_sync as service
+    from configs.services.softasset import sync as service
 
     def _boom(*args, **kwargs):
         raise RuntimeError("boom")

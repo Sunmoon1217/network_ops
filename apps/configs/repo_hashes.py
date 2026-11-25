@@ -7,7 +7,7 @@
 import logging
 
 from configs.models import DeviceConfig
-from core import config_repo
+from core import repo
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def remap_device_config_hashes(hostname: str, mapping: dict[str, str]) -> None:
             DeviceConfig.objects.bulk_update(rows, ["git_commit_hash"])
 
         for row in DeviceConfig.objects.filter(device__hostname=hostname).exclude(git_commit_hash__in=mapping):
-            anchor = config_repo.legacy_commit_for(hostname, row.git_commit_hash)
+            anchor = repo.legacy_commit_for(hostname, row.git_commit_hash)
             if anchor is None:
                 continue  # 假 hash（测试数据等）：保持原样，读取兜底也查不到
             new = mapping.get(anchor)

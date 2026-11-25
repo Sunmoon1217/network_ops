@@ -1,6 +1,6 @@
 """Dashboard 采集侧边界：任务留在 ingest、只按任务名字符串投递、不写数据库。
 
-对照 ``tests/ingest/test_access_flow_trigger.py`` 的同一条边界：投递侧不 import analysis。
+对照 ``tests/ingest/test_trigger.py`` 的同一条边界：投递侧不 import analysis。
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch

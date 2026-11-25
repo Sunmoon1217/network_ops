@@ -3,7 +3,7 @@
 这是拆分的目的本身（``handbook/design/layering.md`` 的矩阵：``configs → assets`` ✓、
 ``assets → configs`` ✗），靠人眼守不住，用 AST 扫源码。
 
-编排（``configs/services/soft_asset_sync.py``）**可以** import assets——那是矩阵允许的
+编排（``configs/services/softasset/sync.py``）**可以** import assets——那是矩阵允许的
 向下调用；这里只钉住两个实现模块。
 """
 
@@ -11,8 +11,8 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILDER = ROOT / "apps" / "configs" / "services" / "soft_asset_builder.py"
-WRITER = ROOT / "apps" / "assets" / "services" / "soft_asset_sync.py"
+BUILDER = ROOT / "apps" / "configs" / "services" / "softasset" / "build.py"
+WRITER = ROOT / "apps" / "assets" / "services" / "softasset.py"
 
 
 def _imported_modules(path: Path) -> set[str]:

@@ -37,7 +37,7 @@ def _no_dispatch(monkeypatch):
         def delay(stage_id):
             raise RuntimeError("broker down")
 
-    monkeypatch.setattr("core.task_types.handler_for", lambda stage_type: _FailTask)
+    monkeypatch.setattr("core.tasktypes.handler_for", lambda stage_type: _FailTask)
 
 
 @pytest.mark.django_db

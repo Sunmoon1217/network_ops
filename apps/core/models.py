@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-from core import task_types
+from core import tasktypes
 
 
 class User(AbstractUser):
@@ -133,18 +133,18 @@ class Task(models.Model):
 
     def get_task_type_display(self) -> str:
         """显示名按注册表反查（未登记的旧词回落 key），替代 ``choices`` 自动生成的方法。"""
-        return task_types.label_for(self.task_type)
+        return tasktypes.label_for(self.task_type)
 
     @property
     def device(self) -> int | None:
         """**历史契约**：作用目标是设备时返回设备 ID，否则 ``None``。"""
-        device_type = task_types.device_field_target_type()
+        device_type = tasktypes.device_field_target_type()
         return self.target_id if device_type and self.target_type == device_type else None
 
     @property
     def device_hostname(self) -> str:
         """**历史契约**：作用目标是设备时返回建任务时记下的设备名，否则空串。"""
-        device_type = task_types.device_field_target_type()
+        device_type = tasktypes.device_field_target_type()
         return self.target_label if device_type and self.target_type == device_type else ""
 
     @property
@@ -199,7 +199,7 @@ class Stage(models.Model):
 
     def get_stage_type_display(self) -> str:
         """显示名按注册表反查（未登记的旧词回落 key）。"""
-        return task_types.label_for(self.stage_type)
+        return tasktypes.label_for(self.stage_type)
 
 
 class IntegrationHealth(models.Model):

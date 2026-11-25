@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from core.config_repo import diff_configs, get_config, get_history, list_devices
+from core.repo import diff_configs, get_config, get_history, list_devices
 
 
 @api_view(["GET"])

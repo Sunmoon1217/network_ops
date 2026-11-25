@@ -25,6 +25,6 @@ class AssetsConfig(AppConfig):
 
         ``feeds_device_fields=True``：Task 的历史字段 device / device_hostname 由本类型填。
         """
-        from core.task_types import register_target_type
+        from core.tasktypes import register_target_type
 
         register_target_type("device", "设备", resolve_device_label, feeds_device_fields=True)

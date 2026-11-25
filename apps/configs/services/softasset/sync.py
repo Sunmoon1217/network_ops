@@ -9,8 +9,8 @@ from __future__ import annotations
 from django.db import connection, transaction
 
 from assets.services.db_locks import mysql_named_lock
-from assets.services.soft_asset_sync import SyncStats, apply_soft_assets
-from configs.services import soft_asset_builder as builder
+from assets.services.softasset import SyncStats, apply_soft_assets
+from configs.services.softasset import build as builder
 
 __all__ = ["SyncStats", "sync_domain_assets", "sync_load_balancer_services", "sync_soft_assets"]
 

@@ -5,7 +5,7 @@
 """
 
 from configs import models as cm
-from configs.serializers import views as cs
+from configs.serializers import config as cs
 from llmtools.registry import EntitySpec, Filter
 
 from ..nodes import NodeType

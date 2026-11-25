@@ -48,7 +48,7 @@ class Command(BaseCommand):
             return
 
         # 延迟 import：便于测试 monkeypatch 投递触点（PolicySaver 侧，方向 configs → analysis）
-        from configs.access_flow_trigger import request_rebuild
+        from configs.trigger import request_rebuild
 
         for device in devices:
             request_rebuild(device.pk)
