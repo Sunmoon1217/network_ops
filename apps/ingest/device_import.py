@@ -9,7 +9,7 @@ from pathlib import Path
 
 from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceGroup, DeviceGroupMember, DeviceModel, Room, SecurityZone, Vendor
 from configs.models import DeviceConfig
-from core.config_repo import save_config
+from core.repo import save_config
 
 # Excel「配置文件」sheet 的 config_dir 列为空时的默认目录（容器内的 data 卷）；
 # 宿主直跑通常不存在，表里显式填写 config_dir 即可。

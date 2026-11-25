@@ -16,7 +16,7 @@
 各域只交出一个**工厂函数**，不交实现；core 负责实例的懒建、复用与释放。
 
 这不是「新建一层抽象」，而是**搬家 + 统一生命周期**：Zabbix 的 client 现在就已经是
-进程级单例（`apps/ingest/collectors/zabbix/zabbix.py`），只是住在域里。
+进程级单例（`apps/ingest/collectors/zabbix/client.py`），只是住在域里。
 
 ## 现状实测（2026-11-16）
 
@@ -27,7 +27,7 @@
 | 阿里云 | `settings.ALIYUN_CONFIG`（region + endpoints + accounts） | `core/integrations/aliyun/client.py` | 同步 SDK，per-call `AcsClient` / ASAPI |
 | Zabbix | `settings.ZABBIX_CONFIG`（url + token/user/password） | `apps/ingest/collectors/zabbix/zabbix.py` | **异步进程级单例**，绑事件循环 |
 | Dify | `settings.DIFY_CONFIG`（api_base_url + api_key + dataset_id） | `apps/docs/dify.py` | 同步 `requests`，无状态 |
-| Autotask | **代码里硬编码 `BASE_URL`**（`collectors/autotask/autotask.py:11`） | `apps/ingest/collectors/autotask/autotask.py` | 异步 `httpx2`，per-call |
+| Autotask | **代码里硬编码 `BASE_URL`**（`collectors/autotask/client.py:11`） | `apps/ingest/collectors/autotask/client.py` | 异步 `httpx2`，per-call |
 
 四套配置字段名各不相同（`url` / `api_base_url`）、超时散落、错误语义三套
 （`ImproperlyConfigured` / 返 503 / 直接 KeyError）、「是否已配置」的判定各写各的。
@@ -37,7 +37,7 @@
 
 ### Zabbix 单例已经是目标形态，只是住错了地方
 
-`apps/ingest/collectors/zabbix/zabbix.py` 现有实现：
+`apps/ingest/collectors/zabbix/client.py` 现有实现：
 
 ```python
 _zapi: TypedZabbixAPI | None = None       # :118 模块级全局
@@ -261,7 +261,7 @@ def register_providers():
 
 **状态：已落地（2026-11-19）**。四件事全部完成：
 
-1. `apps/ingest/collectors/autotask/autotask.py` 的硬编码 `BASE_URL` 收进
+1. `apps/ingest/collectors/autotask/client.py` 的硬编码 `BASE_URL` 收进
    `settings.AUTOTASK_CONFIG`（`AUTOTASK_BASE_URL` / `AUTOTASK_TIMEOUT`）——全项目最后一处
    游离在配置外的连接信息清零；
 2. 四套 CONFIG 统一字段 `base_url` / `credential_ref` / `timeout` / `enabled`，域特有项保留
@@ -291,7 +291,7 @@ def register_providers():
 | client + DTO | `core/integrations/providers/zabbix/{client,schemas}.py`（`schemas.py` 一起搬，否则 core → ingest 反向依赖） |
 | provider | `core/integrations/providers/zabbix/provider.py`（只转发 `get_zapi` / `close_zapi`，不持第二份状态） |
 | 注册 | `apps/ingest/apps.py.ready()`（「用不用 Zabbix」是采集域的决定） |
-| 薄转发 | `apps/ingest/collectors/zabbix/zabbix.py` 只 re-export core 的符号，`queries.py` 的 9 处调用与 `patch.object(queries, "get_zapi")` 全不动 |
+| 薄转发 | `apps/ingest/collectors/zabbix/client.py` 只 re-export core 的符号，`queries.py` 的 9 处调用与 `patch.object(queries, "get_zapi")` 全不动 |
 | 释放钩子 | `netops/asgi.py` 的 `LIFESPAN_HOOKS`（`_release_integrations`，排最后 → 逆序先执行）+ `netops/celery.py` 的 `worker_process_shutdown` |
 | 收尾健壮性 | `_dispose` 对 `logout` / `session.close()` 都兜异常：进程收尾时实例常绑在已关闭的 loop 上，**关不掉也不能炸** |
 

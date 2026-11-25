@@ -20,7 +20,7 @@
 | 文件 | 内容 | 状态 |
 |------|------|------|
 | [`layering.md`](layering.md) | 域分层总图、依赖矩阵、各域职责边界、跨域调用与写入规范 | 基本落地（2026-11-19 校核：core 去业务依赖 / configs 切片 1–9 / ingest 收窄 / llmtools 改名均已落地，`assets` 已是叶子；只剩外部连接 Step 5 未做） |
-| [`assets-configs-split.md`](assets-configs-split.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 已收口（切片 1–9 全部落地：26 张表 + 序列化器 + parsers/savers/mapping + admin 26/API 26 + llmtools 改名 `network/` + 软资产「configs 算 / assets 写」+ Excel 导入迁 ingest + purge 迁 scripts + `overview` 迁 analysis；assets 已是叶子，待定项 5/6 均结案，2026-11-16） |
+| [`assets-configs.md`](assets-configs.md) | assets / configs 域拆分方案：模型归属、软资产归并、Saver 与解析器归属、迁移手法 | 已收口（切片 1–9 全部落地：26 张表 + 序列化器 + parsers/savers/mapping + admin 26/API 26 + llmtools 改名 `network/` + 软资产「configs 算 / assets 写」+ Excel 导入迁 ingest + purge 迁 scripts + `overview` 迁 analysis；assets 已是叶子，待定项 5/6 均结案，2026-11-16） |
 | [`external-clients.md`](external-clients.md) | core 承载外部连接实例与 client 生命周期：provider 注册、实例持有、释放钩子、健康状态 | 切片式实施中（Step 1–4 已落地：连接配置统一 / `core/integrations/` 骨架 / Zabbix 下沉 / 释放钩子 / `IntegrationHealth` + beat 探活，现状见 [`../integrations.md`](../integrations.md)；只剩 Step 5） |
 
 ## 这批设计的共同前提
@@ -28,7 +28,7 @@
 三份文档共享同一套分层约定，任何一份单独看都不完整：
 
 - **域只依赖它下面的域**，没有反向依赖，没有跨层。
-- **跨域调用不 import 对方的模块**，用 Celery 任务名 + `send_task`（范本见 `apps/ingest/access_flow_trigger.py`）。
+- **跨域调用不 import 对方的模块**，用 Celery 任务名 + `send_task`（范本见 `apps/configs/trigger.py`）。
 - **跨域写入走服务调用**，不直接 ORM 写对方的表；写入权归属明确写在分层文档里。
 - **URL 前缀不变**——拆分是内部结构调整，前端零改动（范本：analysis 拆分时沿用了当时的 `/api/trace/`、`/api/internet-analysis/`；**2026-11 已改为按域收口**，见 `handbook/api.md`）。
 - **core 零业务依赖**——core 只持有各域在 `ready()` 里注册进来的对象（业务词汇、provider），

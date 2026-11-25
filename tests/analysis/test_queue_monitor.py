@@ -1,4 +1,4 @@
-"""队列积压巡检（analysis.queue_monitor）：采集口径、告警阈值、命令退出码、API。
+"""队列积压巡检（analysis.monitor.queue）：采集口径、告警阈值、命令退出码、API。
 
 不碰真实 Redis：全部用假 client（与 test_access_stream 的做法一致）——巡检是只读的，
 假 client 只需要实现 collect 用到的几个方法（llen / hlen / xlen / xinfo_groups /
@@ -14,7 +14,7 @@ from rest_framework.authtoken.models import Token as DRFToken
 from rest_framework.test import APIClient
 
 from analysis.access_stream import GROUP, backlog
-from analysis.queue_monitor import DEFAULT_THRESHOLDS, collect, evaluate
+from analysis.monitor.queue import DEFAULT_THRESHOLDS, collect, evaluate
 from core.models import User
 
 API_URL = "/api/analysis/queue-status/"
@@ -244,7 +244,7 @@ def test_backlog_fallbacks_and_degrades_gracefully(monkeypatch):
 
 @pytest.mark.django_db
 def test_command_exits_zero_when_healthy(monkeypatch, capsys):
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: _healthy_client())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: _healthy_client())
     call_command("queue_status")
     out = capsys.readouterr().out
     assert "celery 队列" in out and "访问流 Stream" in out
@@ -253,7 +253,7 @@ def test_command_exits_zero_when_healthy(monkeypatch, capsys):
 @pytest.mark.django_db
 def test_command_json_output_and_exit_one_on_alert(monkeypatch, capsys):
     client = _healthy_client(queues={"celery": 1500}, groups=[_group_info(lag=500, pending=80)])
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: client)
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: client)
     with pytest.raises(SystemExit) as exc:
         call_command("queue_status", "--json")
     assert exc.value.code == 1
@@ -276,7 +276,7 @@ def api_client(db):
 
 @pytest.mark.django_db
 def test_queue_status_api_returns_collect_shape(api_client, monkeypatch):
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: _healthy_client())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: _healthy_client())
     resp = api_client.get(API_URL)
     assert resp.status_code == 200
     body = resp.json()
@@ -288,7 +288,7 @@ def test_queue_status_api_returns_collect_shape(api_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_queue_status_api_requires_auth(monkeypatch):
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: _healthy_client())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: _healthy_client())
     resp = APIClient().get(API_URL)
     assert resp.status_code == 401
 
@@ -299,7 +299,7 @@ def test_queue_status_api_surfaces_redis_outage(api_client, monkeypatch):
         def llen(self, name):
             raise ConnectionError("redis down")
 
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: Broken())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: Broken())
     resp = api_client.get(API_URL)
     assert resp.status_code == 200  # 巡检自身不炸：redis_ok=False + critical 告警
     body = resp.json()

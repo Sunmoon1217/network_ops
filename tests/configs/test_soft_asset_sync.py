@@ -1,17 +1,17 @@
 """软资产归并（T4）的契约测试：GTM → DomainAsset、LTM → LoadBalancerService。
 
-归并拆成两段：configs 侧算候选值（``soft_asset_builder``）、assets 侧落库
-（``assets.services.soft_asset_sync.apply_soft_assets``）。对外仍是一个 ``sync_*`` 入口
-（``configs.services.soft_asset_sync``），事务与并发锁在那里。
+归并拆成两段：configs 侧算候选值（``softasset.build``）、assets 侧落库
+（``assets.services.softasset.apply_soft_assets``）。对外仍是一个 ``sync_*`` 入口
+（``configs.services.softasset.sync``），事务与并发锁在那里。
 """
 
 import pytest
 
 from assets.models import CIType, ConfigurationItem, Device, DomainAsset, LoadBalancerService
-from assets.services.soft_asset_sync import apply_soft_assets
+from assets.services.softasset import apply_soft_assets
 from configs.models import ConfigBase, GtmPool, GtmServer, GtmVServer, GtmWideip, LtmPoolMember, LtmVirtualServer
-from configs.services.soft_asset_builder import build_domain_drafts, build_lb_drafts, lb_asset_key, normalize_fqdn
-from configs.services.soft_asset_sync import sync_domain_assets, sync_load_balancer_services, sync_soft_assets
+from configs.services.softasset.build import build_domain_drafts, build_lb_drafts, lb_asset_key, normalize_fqdn
+from configs.services.softasset.sync import sync_domain_assets, sync_load_balancer_services, sync_soft_assets
 
 
 def _device(hostname: str, device_type: str) -> Device:

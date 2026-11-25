@@ -12,7 +12,7 @@ from django.conf import settings
 from django.core.asgi import get_asgi_application
 
 from netops.lifespan import LifespanApp
-from netops.mcp_gateway import McpGuardMiddleware, is_mcp_path, send_disabled
+from netops.mcp import McpGuardMiddleware, is_mcp_path, send_disabled
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "netops.settings")
 

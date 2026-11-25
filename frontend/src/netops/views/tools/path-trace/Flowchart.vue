@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { actionColor, actionLabel, deviceLabel, hasTranslation } from './usePathTrace'
+import { actionColor, actionLabel, deviceLabel, hasTranslation } from './useTrace'
 import type { TraceResult } from '@/types'
 
 defineProps<{ result: TraceResult; srcIp: string }>()

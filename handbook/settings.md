@@ -222,7 +222,7 @@ client 单例与登录逻辑在 `core/integrations/providers/zabbix/client.py`�
 | `AUTOTASK_BASE_URL` | 空 | 工单 / 巡检 / SLB 服务地址；未配置则大屏的 autotask 源失败（其余源不受影响） |
 | `AUTOTASK_TIMEOUT` | `30` | HTTP 超时秒数 |
 
-内网服务，无凭据。地址原先硬编码在 `ingest/collectors/autotask/autotask.py`，2026-11-19 起走 env。
+内网服务，无凭据。地址原先硬编码在 `ingest/collectors/autotask/client.py`，2026-11-19 起走 env。
 
 ## 守卫矩阵（什么时候拒绝启动）
 

@@ -19,7 +19,7 @@ from configs.savers.interface import InterfaceSaver
 from configs.savers.lb import LBSnatSaver
 from configs.savers.registry import get_savers_for_config
 from configs.savers.routing import VrfSaver
-from core.config_repo import get_config
+from core.repo import get_config
 
 # ---------- 单条命中（dict）不应崩溃 ----------
 
@@ -108,7 +108,7 @@ def test_signal_parses_then_dispatches_to_savers(monkeypatch):
     用 monkeypatch 替换 get_config，避免测试依赖真实的 Git 仓库内容。
     """
     raw = "sysname E2E\nvlan 10\nvlan 20\n"
-    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.repo.get_config", lambda hostname, commit=None: raw)
 
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X", vendor=vendor)
@@ -127,7 +127,7 @@ def test_signal_parses_then_dispatches_to_savers(monkeypatch):
 def test_signal_is_idempotent_on_reimport(monkeypatch):
     """同一 commit 再次导入（created=False）不重复写入"""
     raw = "sysname E2E\nvlan 10\n"
-    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.repo.get_config", lambda hostname, commit=None: raw)
 
     vendor = Vendor.objects.create(name="H3C")
     model = DeviceModel.objects.create(name="S5560X", vendor=vendor)

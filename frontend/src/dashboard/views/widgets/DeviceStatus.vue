@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
 import GaugeCharts from '@dashboard/ui/GaugeCharts.vue'
-import DeviceTopList from './DeviceTopList.vue'
+import TopList from './TopList.vue'
 import { getDashboard } from '@/api/dashboard'
 import type { DashboardData, DeviceTopItem } from '@dashboard/types'
 import { useInterval } from '@dashboard/utils/timer'
@@ -147,7 +147,7 @@ onMounted(() => {
       >
         <GaugeCharts :data="card.gaugeData" />
         <div v-show="hoveredIndex === index" class="toplist-popover" :style="popoverStyle">
-          <DeviceTopList :data="card.top" />
+          <TopList :data="card.top" />
         </div>
       </div>
       <div class="metrics">

@@ -11,7 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core import task_types
+from core import tasktypes
 from core.models import Stage, Task
 
 from .serializers import IntegrationHealthSerializer, StageSerializer, TaskSerializer
@@ -38,7 +38,7 @@ class TaskViewSet(
         qs = super().get_queryset()
         device = self.request.query_params.get("device")
         if device:
-            device_type = task_types.device_field_target_type()
+            device_type = tasktypes.device_field_target_type()
             if device_type:
                 qs = qs.filter(target_type=device_type, target_id=device)
             else:

@@ -43,7 +43,7 @@
 network_ops/
 ├── netops/          # Django 项目配置与基建（settings / urls / asgi / lifespan / celery / pagination）
 ├── apps/
-│   ├── core/        # 用户认证、Token、Task/Stage、外部连接实例（integrations/）、Git 配置仓库（config_repo.py）、运维命令
+│   ├── core/        # 用户认证、Token、Task/Stage、外部连接实例（integrations/）、Git 配置仓库（repo.py）、运维命令
 │   ├── assets/      # 基础资产（叶子域）：DCIM / 设备台账 / IPAM / CI 统一台账 + 软资产扩展表
 │   ├── configs/     # 配置域：ConfigBase 25 子类 + DeviceConfig 快照、TTP 解析（parsers/）、入库（savers/ + mapping.py）、软资产归并计算、admin / API / 序列化器
 │   ├── ingest/      # 采集与入库编排（pipeline / workflow / 信号 / Celery 任务）+ Excel 导入（device_import.py）+ collectors/（Zabbix 查询编排、Autotask）
@@ -119,7 +119,7 @@ sh scripts/setup-git-hooks.sh    # 等价于 git config core.hooksPath .githooks
 
 - **端点**：`/mcp`（Streamable HTTP，官方 Python SDK 2.x，由 `netops/asgi.py` 的路径分发器挂载；`/mcp*` 走 MCP，其余走 Django）
 - **反向代理**：Vite（`vite.config.ts`）与 nginx（`conf.d/netops.conf`）都已代理 `/mcp`——缺这条时请求会落到 SPA 兜底返回 `index.html`，表现是「被 Vue Router 守卫拦截跳登录」，其实根本没到 Django。新增反代层别漏。MCP 是 SSE 长连接，代理要 `proxy_buffering off` + 长读超时
-- **工具**：根目录 `llmtools/`（基建 + 工具注册表，`__init__.py` 即组合根），域接入在 `llmtools/domains/network/`（`specs/` 里的 `EntitySpec`、`edges.py` 的 `EDGES`、`tools.py` 的 `locate`）；通用六工具在 `llmtools/entity_tools.py`（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations`），字段口径复用各域序列化器（`assets/serializers` / `configs/serializers`）——新增表 = 注册表加一行，工具层零改动
+- **工具**：根目录 `llmtools/`（基建 + 工具注册表，`__init__.py` 即组合根），域接入在 `llmtools/domains/network/`（`specs/` 里的 `EntitySpec`、`edges.py` 的 `EDGES`、`tools.py` 的 `locate`）；通用六工具在 `llmtools/entities.py`（`find` / `list_records` / `query` / `get_record` / `bundle` / `relations`），字段口径复用各域序列化器（`assets/serializers` / `configs/serializers`）——新增表 = 注册表加一行，工具层零改动
 - **本地运行与验证**（`manage.py runserver` 走 WSGI，没有 `/mcp`）：
 
 ```bash

@@ -25,7 +25,7 @@ from typing import Any, TypedDict
 
 from django.utils import timezone
 
-from .autotask.autotask import fetch_case, fetch_slb
+from .autotask.client import fetch_case, fetch_slb
 from .zabbix import queries
 
 logger = getLogger(__name__)

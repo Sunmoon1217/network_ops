@@ -307,7 +307,7 @@ docker compose exec -u root db sh /docker-entrypoint-initdb.d/01-grant-test-db.s
 | `Service` 五列自然键 | 3108 字节没问题 | 超 InnoDB 3072 字节上限（1071） | 按后端分建：PG 普通唯一约束，MySQL 函数唯一索引 `(device_id, MD5(CONCAT_WS(...)))`（`assets.0029`） |
 | 大小写 | 唯一键与 `exact` 区分大小写 | `utf8mb4_0900_ai_ci` 不区分 | 已知差异：普通唯一键会把 `SW-01` / `sw-01` 判重；上面那个函数索引按字节哈希，仍区分 |
 | DDL 回滚 | 迁移失败可回滚 | DDL 隐式提交，回滚不了 | 迁移失败会留半套 schema；MySQL 部署以「删库重建」为恢复手段，见下 |
-| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | `existing_asset_registry` 按 `ci_id` 查回主键再回填；其余代码不用返回值 |
+| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | `assets/services/registry.py` 按 `ci_id` 查回主键再回填；其余代码不用返回值 |
 | 事务级串行锁 | `pg_advisory_xact_lock`，事务结束自动释放 | 只有会话级 `GET_LOCK`，必须**提交后**释放 | `apps/assets/services/db_locks.py`：MySQL 锁放 `atomic()` 外层（获取 → 事务 → 释放）；提前释放会让别的进程在提交前拿锁、读到旧数据。锁名带库名前缀，xdist 各 worker 不互阻塞 |
 
 MySQL 侧要求 **8.0.17+**（多值索引；函数索引只要 8.0.13，Django 6.1 的下限是 8.0.11）。迁移失败（MySQL 上不可回滚）

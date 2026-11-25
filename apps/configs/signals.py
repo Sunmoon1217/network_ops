@@ -24,7 +24,7 @@ def request_soft_asset_sync(reason: str = "") -> None:
 
 
 def _run_sync() -> None:
-    from configs.services.soft_asset_sync import sync_soft_assets
+    from configs.services.softasset.sync import sync_soft_assets
 
     try:
         stats = sync_soft_assets()

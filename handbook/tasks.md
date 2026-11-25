@@ -14,12 +14,12 @@
 |---|---|---|
 | `apps/core/models.py` | `Task` / `Stage` 两张表 | ✗ |
 | `apps/core/tasks.py` | `create_task` / `dispatch` / `cancel` | ✗ |
-| `apps/core/task_types.py` | 词汇注册表（任务类型 / 阶段 / 作用目标） | ✗（纯 dict） |
+| `apps/core/tasktypes.py` | 词汇注册表（任务类型 / 阶段 / 作用目标） | ✗（纯 dict） |
 | `apps/core/api/` | `/api/core/tasks/`、`/api/core/stages/` 与 admin | ✗ |
 | `apps/<域>/apps.py` | `ready()` 里登记词汇 | ✓ |
 | `apps/<域>/tasks.py` | 阶段实现（`@shared_task`） | ✓ |
 
-`core/task_types.py` 是第一张表，`core/tasks.py` 是唯一控制入口。**其他域不要自己
+`core/tasktypes.py` 是第一张表，`core/tasks.py` 是唯一控制入口。**其他域不要自己
 `Task.objects.create()` + `.delay()`**——绕过 `create_task` 就没有投递失败的收尾逻辑。
 
 ## 链路
@@ -43,7 +43,7 @@ worker         执行阶段任务 → UPDATE Stage/Task → Stage 的 post_save 
 - **`Task.celery_task_id` 表达「当前在跑的那次投递」**，不是整个任务的生命周期——
   一个任务推进多个阶段，每投递一次就被覆盖，用于排错与取消。
 
-## 注册表（`core/task_types.py`）
+## 注册表（`core/tasktypes.py`）
 
 ```python
 register_task_type(task_type, label, first_stage)          # 词汇 + 首个阶段
@@ -161,7 +161,7 @@ AddField(target_type) → AddField(target_id) → AddField(target_label)
 | `test_operational_exceptions_are_still_needed` | 例外白名单不许腐化（例外修好要删） |
 
 **例外白名单精确到「文件 + 模块」**，现有一条：`core/management/commands/queue_*.py`
-读 `analysis.queue_monitor`——平台级队列巡检，AGENTS.md 约定运维命令统一放 core，
+读 `analysis.monitor.queue`——平台级队列巡检，AGENTS.md 约定运维命令统一放 core，
 复制一份会让同一口径裂成两处。
 
 ## 踩坑

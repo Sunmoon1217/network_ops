@@ -7,7 +7,7 @@
 import pytest
 
 from assets.models import CIObjectLink, CIType, ConfigurationItem, Device, IPAddress, Subnet
-from assets.services.existing_asset_registry import register_existing_assets
+from assets.services.registry import register_existing_assets
 
 
 def _seed() -> None:

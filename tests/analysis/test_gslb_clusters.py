@@ -279,7 +279,7 @@ def test_facets_match_legacy_gtm_endpoint(api):
 @pytest.mark.django_db
 def test_export_flat_rows_includes_device_join_and_inconsistency(api):
     """导出：设备列是逗号拼接串，末列标出不一致；列宽与表头一一对应。"""
-    from analysis.api.gslb_clusters import CLUSTER_EXPORT_COLUMN_WIDTHS, CLUSTER_EXPORT_HEADERS
+    from analysis.api.groups.gslb import CLUSTER_EXPORT_COLUMN_WIDTHS, CLUSTER_EXPORT_HEADERS
 
     a, b = _device("gtm-a"), _device("gtm-b")
     _cluster_group("cs-gtm", [a, b])

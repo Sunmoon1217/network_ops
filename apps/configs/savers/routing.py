@@ -57,7 +57,7 @@ class RouteSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import Route
-        from configs.serializers.views import RouteSerializer
+        from configs.serializers.config import RouteSerializer
 
         routes = as_list(parsed_data.get("static_routes"))
         if not routes:

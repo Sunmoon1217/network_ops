@@ -4,6 +4,6 @@ client 单例与 DTO 已迁 ``core/integrations/providers/zabbix/``（实例归 
 ``handbook/integrations.md``）；本包只剩「查什么、怎么组装」的业务语义。
 """
 
-from .zabbix import TypedZabbixAPI, close_zapi, get_zapi
+from .client import TypedZabbixAPI, close_zapi, get_zapi
 
 __all__ = ["TypedZabbixAPI", "close_zapi", "get_zapi"]

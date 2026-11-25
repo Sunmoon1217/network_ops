@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import echarts from './utils/echarts'
+import echarts from '@dashboard/utils/echarts'
 import type { GaugeChartsProps } from '@dashboard/types'
 
 // 默认值

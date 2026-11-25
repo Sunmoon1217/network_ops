@@ -230,7 +230,7 @@ def _deliver(payload):
 def collect_dashboard(source):
     """采集一个数据源 → 按任务名投递给 analysis 的写库任务；**本任务不写数据库**。
 
-    ingest 侧只认 ``settings.DASHBOARD_WRITE_TASK`` 这个字符串（与 access_flow_trigger
+    ingest 侧只认 ``settings.DASHBOARD_WRITE_TASK`` 这个字符串（与 configs.trigger
     同一套接缝），绝不 import analysis；async 采集与同步投递分开，ORM 不会进 event loop。
     采集失败仍投递一条 failed 记录让大屏可见数据新鲜度，随后向上抛让 Celery 记 FAILURE。
     """

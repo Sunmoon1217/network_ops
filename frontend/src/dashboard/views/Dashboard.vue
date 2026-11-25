@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { stylevar } from '@dashboard/ui/theme/dashboard_stylevar'
+import { stylevar } from '@dashboard/ui/theme/stylevar'
 import { getDashboard, getLinkSeries } from '@/api/dashboard'
 import type { DashboardData, InspectItem, LinkPoint } from '@dashboard/types'
 import { useInterval } from '@dashboard/utils/timer'
-import DeviceStatusWidget from './components/DeviceStatusWidget.vue'
-import InspectionWidget from './components/InspectionWidget.vue'
-import SlbOverviewWidget from './components/SlbOverviewWidget.vue'
-import LinkBandwidthWidget from './components/LinkBandwidthWidget.vue'
-import CabinetUsageWidget from './components/CabinetUsageWidget.vue'
-import AutomationTicketWidget from './components/AutomationTicketWidget.vue'
+import DeviceStatus from './widgets/DeviceStatus.vue'
+import Inspection from './widgets/Inspection.vue'
+import SlbOverview from './widgets/SlbOverview.vue'
+import Bandwidth from './widgets/Bandwidth.vue'
+import Cabinet from './widgets/Cabinet.vue'
+import Ticket from './widgets/Ticket.vue'
 
 const StyleVar = stylevar
 
@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
               <span class="tag">CPU / 内存 / 硬件告警</span>
             </div>
             <div class="panel-body">
-              <DeviceStatusWidget />
+              <DeviceStatus />
             </div>
           </section>
 
@@ -186,7 +186,7 @@ onBeforeUnmount(() => {
               <span class="tag">健康检查</span>
             </div>
             <div class="panel-body">
-              <InspectionWidget />
+              <Inspection />
             </div>
           </section>
 
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
               <span class="tag">实例 / 监听</span>
             </div>
             <div class="panel-body">
-              <SlbOverviewWidget />
+              <SlbOverview />
             </div>
           </section>
 
@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
               <span class="tag">近 3 小时峰值</span>
             </div>
             <div class="panel-body">
-              <LinkBandwidthWidget />
+              <Bandwidth />
             </div>
           </section>
 
@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
               <span class="tag">资产库 U 位</span>
             </div>
             <div class="panel-body">
-              <CabinetUsageWidget />
+              <Cabinet />
             </div>
           </section>
 
@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
               <span class="tag">执行明细</span>
             </div>
             <div class="panel-body">
-              <AutomationTicketWidget />
+              <Ticket />
             </div>
           </section>
         </main>

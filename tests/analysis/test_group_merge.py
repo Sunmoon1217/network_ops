@@ -1,4 +1,4 @@
-"""设备组配置合并公共层（``analysis.api.group_merge``）测试。
+"""设备组配置合并公共层（``analysis.api.groups.common``）测试。
 
 覆盖组划分口径：主备（``ha`` / ``failover``）参与合并、单机与堆叠不参与、
 一台设备多组时取第一个、未入组设备各自单机组、按组键/组名/设备收窄。
@@ -6,7 +6,7 @@
 
 import pytest
 
-from analysis.api.group_merge import HA_GROUP_TYPES, resolve_groups
+from analysis.api.groups.common import HA_GROUP_TYPES, resolve_groups
 from assets.models import Device, DeviceGroup, DeviceGroupMember
 
 

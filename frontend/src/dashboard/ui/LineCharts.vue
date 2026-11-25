@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import echarts from './utils/echarts'
+import echarts from '@dashboard/utils/echarts'
 import type { TooltipComponentFormatterCallbackParams as LineParams } from 'echarts'
 import type { LineChartsProps } from '@dashboard/types'
 

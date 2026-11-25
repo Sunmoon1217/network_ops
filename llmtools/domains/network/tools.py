@@ -1,6 +1,6 @@
 """网络域专属 MCP 工具（纯函数，由 ``llmtools.tools`` 统一注册）。
 
-通用工具在 ``llmtools.entity_tools``（find / list_records / query / get_record / bundle /
+通用工具在 ``llmtools.entities``（find / list_records / query / get_record / bundle /
 relations）；本模块只放必须知道网络域业务语义的工具。当前只有 ``locate``：
 它同时读登记（IPAddress）、观测（ArpMac）与台账（Device / Interface），再做三方
 一致性判断——不是 ``filters`` 能表达的查询。
@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from assets import models
 from configs import models as cm
 from llmtools.domains.network.specs._helpers import _mac_compact, _mac_variants
-from llmtools.entity_tools import _detect, _parse_ip
+from llmtools.entities import _detect, _parse_ip
 
 #: 观测数据超过这个时长没刷新就提示「旧数据」，避免拿三个月前的 ARP 下结论
 STALE_HOURS = 24

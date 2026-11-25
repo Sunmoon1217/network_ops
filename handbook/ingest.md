@@ -10,7 +10,7 @@
 |----|------|------|------|
 | 阶段式工作流 | `/api/core/tasks/` → `core.tasks.create_task` | `run_collection_stage` → `run_parsing_stage` → `run_storage_stage` | 设备维度的采集/解析/存储，进度落在 `core.Stage` |
 | 配置导入 | `ingest.device_import._import_configs` → `workflow.submit_config_job` | `run_config_pipeline_stage`（单阶段，建 `core.Task`） | Excel 里的配置文件批量导入，每份配置一条任务，复用 `pipeline` |
-| 访问流重建 | `PolicySaver` 保存成功后 `ingest.access_flow_trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
+| 访问流重建 | `PolicySaver` 保存成功后 `configs.trigger.request_rebuild` | `analysis.rebuild_access_flows` | 见 [`analysis.md`](analysis.md) |
 
 配置导入是**按份建任务**：`submit_config_job` 调 `core.tasks.create_task("import_config", params={"config_id": ...})`，
 阶段 `config_pipeline` 直接跑同步路径的 `pipeline.run_config_pipeline`——解析入库只有这一份实现，
@@ -21,7 +21,7 @@
 **通用任务控制在 core**：建任务 / 投递阶段 / 取消是 `core.tasks` 的
 `create_task` / `dispatch` / `cancel`，那三个函数不认识任何业务词汇——任务类型到
 「第一个阶段是什么」的映射、以及阶段名到 celery 任务的映射，都由本域在
-`ingest/apps.py` 的 `ready()` 里登记进 `core.task_types` 注册表。
+`ingest/apps.py` 的 `ready()` 里登记进 `core.tasktypes` 注册表。
 `core.Task.task_type` / `core.Stage.stage_type` 因此是**自由字符串**（不带 `choices`）：
 词表一旦写进迁移，就会与运行时注册永久漂移；显示名一律由注册表反查。
 机制本身（注册表 API、字段语义、新增任务类型要改哪几处）见
@@ -515,6 +515,6 @@ python manage.py refresh_link_cache [--check]       # 链路缓存（--check 只
 - Sheet 顺序有意义：「设备组」排在「设备」之后（行里的设备必须已存在）；组名 / 角色
   不填表，由导入推导。
 
-**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `core.config_repo.save_config`（写 Git
+**为什么整个模块在 ingest 而不是 assets**：它最后一步是 `core.repo.save_config`（写 Git
 仓库）与 `workflow.submit_config_job`（投递采集链），两者都是 ingest 的能力；留在 assets
 就是 `assets → ingest` 反向依赖（依赖矩阵禁止）。

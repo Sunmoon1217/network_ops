@@ -1,4 +1,4 @@
-"""MCP 出口接入层（``netops/mcp_gateway.py``）：路径判定、IP 取值、匿名限流、关闭时的 404。
+"""MCP 出口接入层（``netops/mcp.py``）：路径判定、IP 取值、匿名限流、关闭时的 404。
 
 限流用例全都用**假 Redis**（不连真实例）：要断言的是「超限之后回什么」「Redis 挂了怎么办」，
 真去 INCR 会把单测绑到运行环境上，还会留下串味的计数键。
@@ -15,7 +15,8 @@ import pytest
 import redis as redis_module
 from django.test import override_settings
 
-from netops import asgi, mcp_gateway
+from netops import asgi
+from netops import mcp as gateway
 
 
 class _FakeRedis:
@@ -43,7 +44,7 @@ class _FakeRedis:
 
 
 def _patch_redis(monkeypatch, fake: _FakeRedis) -> _FakeRedis:
-    monkeypatch.setattr(mcp_gateway.redis, "from_url", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(gateway.redis, "from_url", lambda *args, **kwargs: fake)
     return fake
 
 
@@ -79,7 +80,7 @@ def _body(sent: list[dict]) -> dict:
     [("/mcp", True), ("/mcp/", True), ("/mcp/messages", True), ("/mcpx", False), ("/api/mcp", False), ("/", False)],
 )
 def test_is_mcp_path(path, expected):
-    assert mcp_gateway.is_mcp_path(path) is expected
+    assert gateway.is_mcp_path(path) is expected
 
 
 @pytest.mark.parametrize(
@@ -96,7 +97,7 @@ def test_is_mcp_path(path, expected):
     ],
 )
 def test_client_ip(headers, client, expected):
-    assert mcp_gateway.client_ip(_scope(headers=headers, client=client)) == expected
+    assert gateway.client_ip(_scope(headers=headers, client=client)) == expected
 
 
 @override_settings(MCP_RATE_LIMIT_PER_MINUTE=2)
@@ -110,9 +111,9 @@ def test_quota_allows_then_429(monkeypatch):
 
     scope = _scope()
     for _ in range(2):
-        assert _drive(mcp_gateway.McpGuardMiddleware(app), scope)[0]["status"] == 200
+        assert _drive(gateway.McpGuardMiddleware(app), scope)[0]["status"] == 200
 
-    sent = _drive(mcp_gateway.McpGuardMiddleware(app), scope)
+    sent = _drive(gateway.McpGuardMiddleware(app), scope)
     assert sent[0]["status"] == 429
     assert "频率超限" in _body(sent)["detail"]
     assert len(handled) == 2  # 超限那次没有进 MCP 子应用
@@ -129,7 +130,7 @@ def test_zero_means_no_limit(monkeypatch):
         await send({"type": "http.response.start", "status": 200, "headers": []})
 
     for _ in range(5):
-        assert _drive(mcp_gateway.McpGuardMiddleware(app), _scope())[0]["status"] == 200
+        assert _drive(gateway.McpGuardMiddleware(app), _scope())[0]["status"] == 200
 
     assert fake.counts == {}  # 0 = 不计数，连 Redis 都不碰
 
@@ -142,7 +143,7 @@ def test_redis_failure_fails_open(monkeypatch, caplog):
     async def app(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
 
-    sent = _drive(mcp_gateway.McpGuardMiddleware(app), _scope())
+    sent = _drive(gateway.McpGuardMiddleware(app), _scope())
 
     assert sent[0]["status"] == 200
     assert any("限流计数失败" in record.message for record in caplog.records)
@@ -156,7 +157,7 @@ def test_non_mcp_paths_are_not_guarded(monkeypatch):
     async def app(scope, receive, send):
         seen.append(scope["path"])
 
-    _drive(mcp_gateway.McpGuardMiddleware(app), _scope("/api/assets/devices/"))
+    _drive(gateway.McpGuardMiddleware(app), _scope("/api/assets/devices/"))
 
     assert seen == ["/api/assets/devices/"]
     assert fake.counts == {}
@@ -185,7 +186,7 @@ def test_dispatch_returns_explicit_404_when_disabled(monkeypatch):
 
 
 def test_dispatch_hands_mcp_paths_to_the_guarded_app(monkeypatch):
-    monkeypatch.setattr(asgi, "mcp_http_app", mcp_gateway.McpGuardMiddleware(_recorder(seen := [])))
+    monkeypatch.setattr(asgi, "mcp_http_app", gateway.McpGuardMiddleware(_recorder(seen := [])))
 
     _drive(asgi._dispatch, _scope("/mcp"))
 

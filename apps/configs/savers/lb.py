@@ -27,7 +27,7 @@ class LBVirtualServerSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import LtmIRule, LtmPersist, LtmProfile, LtmVirtualServer
-        from configs.serializers.views import LtmIRuleSerializer, LtmPersistSerializer, LtmProfileSerializer
+        from configs.serializers.config import LtmIRuleSerializer, LtmPersistSerializer, LtmProfileSerializer
 
         virtuals = as_list(parsed_data.get("virtuals"))
         if not virtuals:
@@ -298,7 +298,7 @@ class GtmDatacenterSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import GtmDatacenter
-        from configs.serializers.views import GtmDatacenterSerializer
+        from configs.serializers.config import GtmDatacenterSerializer
 
         created, updated = 0, 0
         for dc in as_list(parsed_data.get("datacenters")):
@@ -320,7 +320,7 @@ class GtmServerSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import GtmServer, GtmVServer
-        from configs.serializers.views import GtmServerSerializer, GtmVServerSerializer
+        from configs.serializers.config import GtmServerSerializer, GtmVServerSerializer
 
         servers = as_list(parsed_data.get("servers"))
         if not servers:
@@ -386,7 +386,7 @@ class GtmPoolSaver(BaseSaver):
 
     def _save(self, device, parsed_data: dict) -> tuple[int, int]:
         from configs.models import GtmPool
-        from configs.serializers.views import GtmPoolSerializer
+        from configs.serializers.config import GtmPoolSerializer
 
         created, updated = 0, 0
         for pool in as_list(parsed_data.get("pools")):

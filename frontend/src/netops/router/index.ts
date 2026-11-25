@@ -59,7 +59,7 @@ const router = createRouter({
         { path: 'ip-addresses', name: 'asset-ip-addresses', component: () => import('@netops/views/ipam/ip-address.vue') },
         { path: 'ip-addresses/create', name: 'asset-ip-create', component: () => import('@netops/views/ipam/forms/IpAddressForm.vue'), meta: { requiresOperator: true } },
         { path: 'ip-addresses/:id/edit', name: 'asset-ip-edit', component: () => import('@netops/views/ipam/forms/IpAddressForm.vue'), meta: { requiresOperator: true } },
-        { path: 'subnets', name: 'asset-subnets', component: () => import('@netops/views/ipam/index.vue') },
+        { path: 'subnets', name: 'asset-subnets', component: () => import('@netops/views/ipam/subnets.vue') },
         { path: 'subnets/create', name: 'asset-subnet-create', component: () => import('@netops/views/ipam/forms/SubnetForm.vue'), meta: { requiresOperator: true } },
         { path: 'subnets/:id/edit', name: 'asset-subnet-edit', component: () => import('@netops/views/ipam/forms/SubnetForm.vue'), meta: { requiresOperator: true } },
         { path: 'load-balancer', name: 'asset-load-balancer', component: () => import('@netops/views/asset/load-balancer.vue'), meta: { title: '负载均衡（资产）' } },
@@ -122,9 +122,8 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/docs/knowledge' },
         { path: 'knowledge', name: 'docs-knowledge', component: () => import('@netops/views/docs/knowledge.vue') },
-        { path: 'temp', name: 'docs-temp', component: () => import('@netops/views/docs/temp.vue') },
-        { path: 'spreadsheet', name: 'docs-spreadsheet', component: () => import('@netops/views/docs/spreadsheet.vue') },
-        { path: 'spreadsheet/:id', name: 'docs-spreadsheet-edit', component: () => import('@netops/views/docs/spreadsheet-edit.vue') },
+        { path: 'spreadsheet', name: 'docs-spreadsheet', component: () => import('@netops/views/docs/spreadsheet/index.vue') },
+        { path: 'spreadsheet/:id', name: 'docs-spreadsheet-edit', component: () => import('@netops/views/docs/spreadsheet/edit.vue') },
       ],
     },
     {
@@ -132,7 +131,7 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', redirect: '/tools/path-trace' },
-        { path: 'path-trace', name: 'tools-path-trace', component: () => import('@netops/views/tools/path-trace.vue') },
+        { path: 'path-trace', name: 'tools-path-trace', component: () => import('@netops/views/tools/path-trace/index.vue') },
         { path: 'rack-view', name: 'tools-rack-view', component: () => import('@netops/views/tools/rack-view.vue') },
         { path: 'subnet-calc', name: 'tools-subnet-calc', component: () => import('@netops/views/tools/subnet-calc.vue') },
         { path: 'dns-query', name: 'tools-dns-query', component: () => import('@netops/views/tools/dns-query.vue') },

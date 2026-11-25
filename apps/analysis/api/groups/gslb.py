@@ -12,10 +12,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from analysis.api.analysis import _join_ip_port, _parse_member_entry
-from analysis.api.group_merge import GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 from analysis.api.lb_chain import _xlsx_response, gtm_facet_values
 from configs.models import GtmPool, GtmServer, GtmVServer, GtmWideip
 from netops.pagination import StandardPagination
+
+from .common import GroupKey, _differs, _join_devices, _union_lists, resolve_groups
 
 # 集群口径：只认 group_type=cluster 的设备组（单机/堆叠/主备不参与 GTM 集群合并）
 CLUSTER_GROUP_TYPES = frozenset({"cluster"})
@@ -53,7 +54,7 @@ CLUSTER_EXPORT_HEADERS = [
 CLUSTER_EXPORT_COLUMN_WIDTHS = (28, 24, 10, 14, 10, 10, 16, 22, 24, 20, 8, 24, 12, 12, 14, 14, 10, 12)
 
 
-# 集群划分（口径复用 group_merge 的公共层）
+# 集群划分（口径复用 common 的公共层）
 
 
 def _resolve_clusters(device_id: int | None = None, cluster_key: str | None = None) -> list[GroupKey]:
@@ -77,7 +78,7 @@ def cluster_options() -> list[dict]:
     ]
 
 
-# 合并工具（口径复用 group_merge 的公共层）
+# 合并工具（口径复用 common 的公共层）
 
 
 def _uniq_join(values) -> str:

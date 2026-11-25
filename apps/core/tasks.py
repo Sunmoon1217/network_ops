@@ -1,6 +1,6 @@
 """通用任务机制：建任务、投递阶段、取消。
 
-纯机制层：只认 ``task_type`` / ``stage_type`` 两个字符串与 ``core.task_types`` 注册表，
+纯机制层：只认 ``task_type`` / ``stage_type`` 两个字符串与 ``core.tasktypes`` 注册表，
 不认识任何业务词汇。「下一个阶段是什么」也不在这里。链路与不变量见 ``handbook/tasks.md``。
 """
 
@@ -13,7 +13,7 @@ from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
 
-from core import task_types
+from core import tasktypes
 from core.models import Stage, Task
 from netops.celery import app as celery_app
 
@@ -34,7 +34,7 @@ def dispatch(task: Task, stage_type: str, input_data: dict[str, Any] | None = No
         status="running",
         input_data=input_data or {},
     )
-    handler = task_types.handler_for(stage_type)
+    handler = tasktypes.handler_for(stage_type)
     try:
         async_result = handler.delay(stage.pk)
     except Exception as e:
@@ -63,7 +63,7 @@ def create_task(
 
     ``first_stage`` 缺省由注册表按 ``task_type`` 反查。``target_*`` 是软引用，core 只存不校验。
     """
-    stage_type = first_stage or task_types.first_stage_of(task_type)
+    stage_type = first_stage or tasktypes.first_stage_of(task_type)
     task = Task.objects.create(
         task_type=task_type,
         target_type=target_type,

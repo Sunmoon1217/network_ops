@@ -33,7 +33,7 @@ class OperatorConfig(AppConfig):
 
         core 只按 key 反查，见 ``handbook/tasks.md``。
         """
-        from core.task_types import register_stage, register_task_type
+        from core.tasktypes import register_stage, register_task_type
         from ingest.tasks import run_collection_stage, run_config_pipeline_stage, run_parsing_stage, run_storage_stage
 
         # 五个任务类型当前都从采集阶段起跑

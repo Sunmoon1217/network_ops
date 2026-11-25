@@ -53,7 +53,7 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 
 | 位置 | 目标 |
 |---|---|
-| `apps/analysis/models/internet.py:16` | `InternetAnalysis.device → assets.Device` |
+| `apps/analysis/models/internet.py` | `InternetAnalysis.device → assets.Device` |
 
 `Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
 见 [`../tasks.md`](../tasks.md) §作用目标），现在 core 侧一处也不剩。

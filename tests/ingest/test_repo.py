@@ -1,4 +1,4 @@
-"""每设备独立配置仓库（``config_repo.init_repo(hostname)``）的行为。
+"""每设备独立配置仓库（``repo.init_repo(hostname)``）的行为。
 
 覆盖四件事：
 
@@ -18,7 +18,7 @@ import pytest
 
 from assets.models import Device, DeviceModel, Vendor
 from configs.models import DeviceConfig
-from core import config_repo
+from core import repo
 
 
 @pytest.fixture(autouse=True)
@@ -65,33 +65,33 @@ def _legacy_root(root: Path, hostname: str, versions: list[tuple[str, str, datet
 
 
 def test_isolated_repos_and_unchanged_config_returns_own_commit(_repo_path):
-    a = config_repo.save_config("dev-a", "sysname A\n", "import: dev-a config")
-    b = config_repo.save_config("dev-b", "sysname B\n", "import: dev-b config")
+    a = repo.save_config("dev-a", "sysname A\n", "import: dev-a config")
+    b = repo.save_config("dev-b", "sysname B\n", "import: dev-b config")
     assert (_repo_path / "dev-a" / ".git").is_dir()
     assert (_repo_path / "dev-b" / ".git").is_dir()
 
     # 核心回归：dev-a 内容没变，即使 dev-b 刚提交过，返回的必须是 dev-a 自己的提交
-    again = config_repo.save_config("dev-a", "sysname A\n", "import: dev-a config")
+    again = repo.save_config("dev-a", "sysname A\n", "import: dev-a config")
     assert again == a
     assert again != b
 
     repo_a = git.Repo(str(_repo_path / "dev-a"))
     messages = [c.message.splitlines()[0] for c in repo_a.iter_commits()]
     assert messages == ["import: dev-a config", "init: 初始化配置仓库"]
-    assert config_repo.get_config("dev-a", a) == "sysname A\n"
-    assert config_repo.get_config("dev-b", b) == "sysname B\n"
+    assert repo.get_config("dev-a", a) == "sysname A\n"
+    assert repo.get_config("dev-b", b) == "sysname B\n"
 
 
 def test_history_lists_only_this_device_versions(_repo_path):
-    config_repo.save_config("dev-a", "one\n", "v1")
-    config_repo.save_config("dev-b", "other\n", "dev-b v1")
-    config_repo.save_config("dev-a", "two\n", "v2")
+    repo.save_config("dev-a", "one\n", "v1")
+    repo.save_config("dev-b", "other\n", "dev-b v1")
+    repo.save_config("dev-a", "two\n", "v2")
 
-    history = config_repo.get_history("dev-a")
+    history = repo.get_history("dev-a")
     assert [h["message"] for h in history] == ["v2", "v1"]
-    assert config_repo.get_history("dev-b")[0]["message"] == "dev-b v1"
+    assert repo.get_history("dev-b")[0]["message"] == "dev-b v1"
 
-    diff = config_repo.diff_configs("dev-a", history[1]["full_hash"], history[0]["full_hash"])
+    diff = repo.diff_configs("dev-a", history[1]["full_hash"], history[0]["full_hash"])
     assert "-one" in diff and "+two" in diff
 
 
@@ -104,7 +104,7 @@ def test_first_open_replays_legacy_history_and_rewrites_hashes(_repo_path, devic
     old_v1 = list(legacy.iter_commits())[1].hexsha
     cfg = DeviceConfig.objects.create(device=device, git_commit_hash=old_tip, config_json={"x": 1})
 
-    history = config_repo.get_history("dev-a")  # 首次打开 → 自动迁移
+    history = repo.get_history("dev-a")  # 首次打开 → 自动迁移
 
     assert [h["message"] for h in history] == ["v2: 改ACL", "v1: 基线"]
     assert history[0]["date"].startswith("2026-02-03T04:05:06"), "重放要保留原提交时间"
@@ -113,12 +113,12 @@ def test_first_open_replays_legacy_history_and_rewrites_hashes(_repo_path, devic
 
     cfg.refresh_from_db()
     assert cfg.git_commit_hash == new_tip
-    assert config_repo.get_config("dev-a", new_tip) == "two\n"
-    assert config_repo.get_config("dev-a", new_v1) == "one\n"
-    assert config_repo.get_config("dev-a", old_v1) == "one\n", "未回写引用的旧 hash 由共享仓库兜底"
+    assert repo.get_config("dev-a", new_tip) == "two\n"
+    assert repo.get_config("dev-a", new_v1) == "one\n"
+    assert repo.get_config("dev-a", old_v1) == "one\n", "未回写引用的旧 hash 由共享仓库兜底"
 
     # 内容没变的重复导入直接命中回写后的 hash → 不再新增记录
-    assert config_repo.save_config("dev-a", "two\n", "import: dev-a config") == new_tip
+    assert repo.save_config("dev-a", "two\n", "import: dev-a config") == new_tip
 
 
 @pytest.mark.django_db
@@ -134,7 +134,7 @@ def test_dirty_row_pointing_at_foreign_commit_is_anchored(_repo_path, device):
 
     dirty = DeviceConfig.objects.create(device=device, git_commit_hash=foreign, config_json={})
 
-    history = config_repo.get_history("dev-a")
+    history = repo.get_history("dev-a")
     dirty.refresh_from_db()
     assert dirty.git_commit_hash != foreign, "不该继续指向 dev-b 的提交"
     assert dirty.git_commit_hash == history[0]["full_hash"], "应锚到本设备 v1 重放后的提交"
@@ -142,15 +142,15 @@ def test_dirty_row_pointing_at_foreign_commit_is_anchored(_repo_path, device):
 
 def test_get_config_and_diff_fall_back_to_legacy_repo(_repo_path):
     """迁移没跑到（先有设备仓库、后出现共享仓库）时，旧 hash 仍可读、可 diff。"""
-    config_repo.init_repo("dev-a")  # 此时还没有共享仓库 → 不迁移
+    repo.init_repo("dev-a")  # 此时还没有共享仓库 → 不迁移
 
     when = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
     legacy = _legacy_root(_repo_path, "dev-a", [("v1", "old content\n", when)])
     old_hash = next(legacy.iter_commits()).hexsha
 
-    assert config_repo.get_config("dev-a", old_hash) == "old content\n"
-    assert config_repo.get_history("dev-a") == [], "迁移没跑就不该凭空出现重放的历史"
+    assert repo.get_config("dev-a", old_hash) == "old content\n"
+    assert repo.get_history("dev-a") == [], "迁移没跑就不该凭空出现重放的历史"
 
-    new_hash = config_repo.save_config("dev-a", "new content\n")
-    diff = config_repo.diff_configs("dev-a", old_hash, new_hash)
+    new_hash = repo.save_config("dev-a", "new content\n")
+    diff = repo.diff_configs("dev-a", old_hash, new_hash)
     assert "-old content" in diff and "+new content" in diff

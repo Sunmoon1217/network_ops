@@ -1,4 +1,4 @@
-"""积压明细（analysis.queue_monitor.collect_backlog + manage.py queue_backlog）：
+"""积压明细（analysis.monitor.queue.collect_backlog + manage.py queue_backlog）：
 
 与 test_queue_monitor 的「数量 + 告警」互补，这里对账「积压了哪些」的三段清单：
 队列排队消息（broker JSON + base64 解码）、Stream PEL（重投排序、点名设备）、
@@ -13,7 +13,7 @@ import pytest
 from django.core.management import call_command
 
 from analysis.access_stream import GROUP
-from analysis.queue_monitor import collect_backlog
+from analysis.monitor.queue import collect_backlog
 
 
 def broker_message(task: str, task_id: str, args) -> bytes:
@@ -163,7 +163,7 @@ def test_command_renders_three_sections(monkeypatch, capsys):
         undelivered=[("2-0", _fields(3, "NET-FW01"))],
         last_delivered="1-0",
     )
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: client)
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: client)
     call_command("queue_backlog")
     out = capsys.readouterr().out
     assert "ingest.tasks.x" in out  # 队列消息解码
@@ -173,7 +173,7 @@ def test_command_renders_three_sections(monkeypatch, capsys):
 
 @pytest.mark.django_db
 def test_command_json_output(monkeypatch, capsys):
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: FakeRedis())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: FakeRedis())
     call_command("queue_backlog", "--json", "--limit", "3")
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["limit"] == 3
@@ -186,6 +186,6 @@ def test_command_renders_redis_outage(monkeypatch, capsys):
         def lrange(self, name, start, end):
             raise ConnectionError("redis down")
 
-    monkeypatch.setattr("analysis.queue_monitor.get_redis", lambda: Broken())
+    monkeypatch.setattr("analysis.monitor.queue.get_redis", lambda: Broken())
     call_command("queue_backlog")  # 不抛异常，如实降级
     assert "Redis 不可达" in capsys.readouterr().out

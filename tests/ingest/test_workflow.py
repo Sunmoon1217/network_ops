@@ -59,7 +59,7 @@ def test_chain_from_parsing_to_storage_completes_task(eager_celery):
 def test_start_task_dispatches_collection_stage(eager_celery):
     """``create_task`` = 建 Task + 建并投递首个阶段（采集无可用连接 → 失败收尾）。
 
-    首个阶段由 ``core.task_types`` 按 task_type 反查得到，core 不认识 ``collection``。
+    首个阶段由 ``core.tasktypes`` 按 task_type 反查得到，core 不认识 ``collection``。
     """
     device = _switch("_t_wf_fail")  # 没有可用连接 → 采集阶段必然失败
 
@@ -133,7 +133,7 @@ def test_defer_pipeline_skips_sync_pipeline(monkeypatch):
 def test_submit_config_job_runs_pipeline_as_task(eager_celery, monkeypatch):
     """导入投递：建一条「导入配置」任务，单阶段跑完解析 → 入库。"""
     raw = "sysname E2E\nvlan 10\nvlan 20\n"
-    monkeypatch.setattr("core.config_repo.get_config", lambda hostname, commit=None: raw)
+    monkeypatch.setattr("core.repo.get_config", lambda hostname, commit=None: raw)
     soft_asset_syncs = []
     monkeypatch.setattr("configs.signals.request_soft_asset_sync", lambda reason: soft_asset_syncs.append(reason))
     device = _switch("_t_wf_chain")

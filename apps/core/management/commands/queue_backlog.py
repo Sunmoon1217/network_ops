@@ -1,7 +1,7 @@
 """积压明细命令：看「积压了哪些」——各队列排队消息 + 访问流 Stream 的点名清单。
 
 与 ``queue_status``（数量 + 告警 + 退出码）互补：那个答「堆了多少、超没超阈值」，
-本命令答「堆的是什么」。采集逻辑在 ``analysis.queue_monitor.collect_backlog``
+本命令答「堆的是什么」。采集逻辑在 ``analysis.monitor.queue.collect_backlog``
 （与 API 同源），本命令只做渲染。
 
 用法::
@@ -23,7 +23,7 @@ import json
 
 from django.core.management.base import BaseCommand
 
-from analysis.queue_monitor import collect_backlog
+from analysis.monitor.queue import collect_backlog
 
 
 class Command(BaseCommand):

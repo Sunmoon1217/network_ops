@@ -7,6 +7,16 @@
 > 待定项已全部收口（2026-11-16）：`existing_asset_registry` 定为留在 assets（§待定项 6）。**
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)。
 > 进度与实测差异见文末 §「实施进度」。
+>
+> **路径说明（2026-11 命名简化后）**：本文是拆分时的历史记录，正文部分路径已随命名简化调整：
+> `assets/serializers/views.py` → `assets/serializers/asset.py`；`assets/services/soft_asset_sync.py`
+> → `assets/services/softasset.py`；`assets/services/existing_asset_registry.py`
+> → `assets/services/registry.py`；`configs/services/soft_asset_builder.py`
+> → `configs/services/softasset/build.py`；`configs/services/soft_asset_sync.py`
+> → `configs/services/softasset/sync.py`；`analysis/api/{firewall_groups,ltm_groups,gslb_clusters,group_merge}.py`
+> → `analysis/api/groups/{firewall,ltm,gslb,common}.py`；`configs/access_flow_trigger.py`
+> → `configs/trigger.py`；`core/config_repo.py` → `core/repo.py`；`core/task_types.py`
+> → `core/tasktypes.py`。
 
 ## 为什么要拆
 
@@ -672,7 +682,7 @@ VLAN / 路由 / 策略 / NAT / SLB / GTM / ARP 的分布）。切片 4 把 26 �
 | 视图 | `apps/assets/api/views.py` 的 `overview` → **新模块** `apps/analysis/api/overview.py`（函数改名 `assets_overview`，逻辑逐行照抄） |
 | 路由 | `assets/api/urls.py` 删一行；`analysis/api/urls.py` 以 `path("assets/overview/", …)` + `name="assets-overview"` 注册——**路径与 name 一字未改**，`frontend/src/netops/views/Home.vue` 与 `reverse()` 零改动 |
 | 清理 | `assets/api/views.py` 去掉 `configs.models` 15 个模型导入、`logging` / `logger` / `api_view` / `Response`（只剩 DCIM ViewSet，assets 全目录对上层域 import 归零） |
-| 守卫 | `tests/core/test_layering.py` 新增 `test_assets_imports_no_upper_domain`：AST 扫 `apps/assets`，出现 `configs/ingest/analysis/egest/docs/cloud` 即失败 |
+| 守卫 | `tests/core/test_layering.py` 新增 `test_assets_imports_no_upper_domain`：AST 扫 `apps/assets`，出现 `configs/ingest/analysis/egest/docs` 即失败 |
 | 契约 | 新增 `tests/analysis/test_overview_api.py`：普通用户 200 + **41 个顶层字段的冻结清单**（前端整包消费，少一个就是一块空白卡片），外加「两侧计数同时生效」用例 |
 | 文档 | `handbook/api.md` 该行从 assets 表移入 analysis 表并注明 URL 不变；`layering.md` 的 assets 行从「目标态」改为「叶子节点（有守卫）」 |
 
