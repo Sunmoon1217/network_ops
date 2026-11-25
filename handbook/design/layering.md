@@ -47,13 +47,13 @@ ConfigBase 家族 24 个子类的入口。② 的根因是 `resolve_config_owner
 端点随迁、URL 前缀不变；设备台账 sheet 由 ingest 调 assets 服务落库（ingest → assets ✓）。
 ② → `resolve_config_owner` **迁 configs**（读 `DeviceGroup` 是 configs → assets ✓，
 `DeviceConfigViewSet` 本就随 DeviceConfig 归 configs）。细节见
-[`assets-configs-split.md`](assets-configs-split.md)。
+[`assets-configs.md`](assets-configs.md)。
 
 ### 跨 app 外键（指向 assets）
 
 | 位置 | 目标 |
 |---|---|
-| `apps/analysis/models/internet_analysis.py:16` | `InternetAnalysis.device → assets.Device` |
+| `apps/analysis/models/internet.py` | `InternetAnalysis.device → assets.Device` |
 
 `Task.device` 原先是第二处，**2026-11-16 已改成软引用**（`target_type` + `target_id`，
 见 [`../tasks.md`](../tasks.md) §作用目标），现在 core 侧一处也不剩。
@@ -88,7 +88,7 @@ core 曾传递依赖 `ingest → assets`。
 >
 > **同时实测出原文漏数的两处 core → analysis**：
 > `core/management/commands/queue_status.py:25`、`queue_backlog.py:26` 都
-> `from analysis.queue_monitor import ...`。按本表「例外与豁免」登记为运维工具例外
+> `from analysis.monitor.queue import ...`。按本表「例外与豁免」登记为运维工具例外
 > （精确到「文件 + 模块」），由 `tests/core/test_layering.py` 的 AST 断言守住，
 > 且例外失效会被 `test_operational_exceptions_are_still_needed` 抓出来。
 
@@ -162,15 +162,15 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 读采集产物（链路缓存、大屏供数）是它的本职。现状三处依赖里，`dashboard.py` 的 `link_cache`
 与 `rebuild_access_flows.py` 的 `request_rebuild` 方向合法、保持不动；仅 `trace.py` 的
 `TMPLS_DIR` 会随 `parsers/` 归 configs 而变成 `analysis -> configs`（见
-[`assets-configs-split.md`](assets-configs-split.md)）。
+[`assets-configs.md`](assets-configs.md)）。
 
 ### 例外与豁免
 
 | 位置 | 例外 | 理由 |
 |---|---|---|
-| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs-split.md`](assets-configs-split.md) |
-| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.queue_monitor`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
-| `ingest/access_flow_trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
+| `scripts/purge_configs.py` | **已迁出 app**（2026-11-16，切片 8：`manage.py purge_configs` → 独立脚本） | 跨域**运维工具**，同时动 configs / assets / analysis / core 四域的表；脱离业务域后不再参与依赖矩阵，豁免自然取消。见 [`assets-configs.md`](assets-configs.md) |
+| `core/management/commands/queue_status.py`<br>`core/management/commands/queue_backlog.py` | import `analysis.monitor.queue`（精确到文件+模块，不是整个目录） | 队列巡检是**平台级运维命令**（`AGENTS.md` 约定运维命令统一放 core），而积压指标来自 analysis 的访问流，与 API / 前端卡片同源；复制一份会让同一份口径裂成两处实现。见 `tests/core/test_layering.py::OPERATIONAL_EXCEPTIONS` |
+| `configs/trigger.py` | 不 import analysis，用任务名 | 见 §「跨域调用」 |
 | `ingest/collectors/dashboard.py` | 不 import analysis，用任务名 | 同上 |
 
 ## 各域职责边界
@@ -180,7 +180,7 @@ core 的认证。原矩阵把 docs 对 assets/configs/ingest/analysis 全标 ✓
 **装什么**：用户 / 认证 / Token / 权限 / 用户偏好；`Task` / `Stage` 模型与通用任务控制
 （`create_task` / `dispatch` / `cancel`）；外部连接实例与 client 生命周期
 （`core/integrations/`：各域在 `ready()` 里注册 provider，core 持有实例并负责释放）；
-Git 配置仓库（`config_repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
+Git 配置仓库（`repo.py`：写侧在 ingest、读侧在 ingest/api、`scripts/purge_configs.py`
 还要删目录——放任一业务域都会让另一边反向依赖，故归平台层；`DeviceConfig` 的 hash 回写
 走 configs 注册的钩子，core 不认识那张表）。
 
@@ -285,7 +285,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 （如软资产归并：configs 计算 + assets 落库共享一个 `pg_advisory_xact_lock`），
 用**同进程服务函数调用**串联，不走任务名。判断标准：**跨域协作是否需要与调用方
 共享事务边界**——需要就同进程调用，不需要就走 Celery 任务名。详见
-[`assets-configs-split.md`](assets-configs-split.md)。
+[`assets-configs.md`](assets-configs.md)。
 
 ## 跨域写入：写入权归属
 
@@ -332,7 +332,7 @@ egest 会依赖 ingest 的连接管理代码——那可能更适合做成 inges
 
 1. **core 去除业务依赖**（✅ 2026-11-16 已落地，现状见 [`../tasks.md`](../tasks.md)）
    ——core 变叶子后，上面的拆分才有稳定的基座；
-2. **拆 configs 域**（✅ 切片 1–9 全部落地，见 [`assets-configs-split.md`](assets-configs-split.md)）
+2. **拆 configs 域**（✅ 切片 1–9 全部落地，见 [`assets-configs.md`](assets-configs.md)）
    ——迁模型、迁 parsers/savers、拆软资产归并；
 3. **ingest 收窄**（✅ 已落地）——配置语义随 parsers/savers 归 configs，Excel 导入从 assets
    整体迁入，ingest 只留采集与编排；

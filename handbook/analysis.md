@@ -150,7 +150,7 @@ Redis 不可达时 `backlog()` 返回 0（不背压）：真正的失败会在�
 ### 任务名与依赖方向
 
 任务名的**唯一定义处**是 `settings.ACCESS_FLOW_TASK`。ingest 侧的投递触点
-（`ingest.access_flow_trigger`）按这个名字 `send_task`，**不 import analysis**
+（`configs.trigger`）按这个名字 `send_task`，**不 import analysis**
 （依赖方向 `analysis → ingest` 单向）。三处（常量 / 装饰器 `name=` /
 `CELERY_TASK_ROUTES` 的 key）由 `tests/analysis/test_access_flow_task.py` 对账。
 
@@ -240,7 +240,7 @@ SLB_Rule规则 / 服务器地址#端口 / 负责人。几个别顺手改坏的�
   `row` 是它自己的 `DefaultRow`，传给形参类型为 `PathRow` 的函数会 `vue-tsc` 报错；把拼好的值
   预先算进行字段（`llbTarget` / `slbTarget` / `serverTarget`）再读属性即可。
 
-## 设备组配置合并（`api/group_merge.py` + `ltm_groups` / `gslb_clusters` / `firewall_groups`）
+## 设备组配置合并（`api/groups/common.py` + `groups/ltm` / `groups/gslb` / `groups/firewall`）
 
 三处共用一套组口径与合并信封，差异只在「同一条配置怎么认」与「冲突怎么取值」：
 
@@ -258,7 +258,7 @@ SLB_Rule规则 / 服务器地址#端口 / 负责人。几个别顺手改坏的�
 - **URL**：GSLB 集群有独立前缀 `/api/analysis/gslb-clusters/`（带 cluster 维度的返回结构，
   刻意不混进 `lb-chain` 的旧接口）。
 
-## 五、队列积压巡检（`queue_monitor.py`）
+## 五、队列积压巡检（`monitor/queue.py`）
 
 访问流是「celery 队列 → Redis Stream → 单写者 consumer」三段接力，任何一段卡死
 （worker 挂了 / consumer OOM 循环 / 毒消息反复重投）都表现为**静默积压**——

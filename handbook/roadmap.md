@@ -46,11 +46,11 @@
 ## 现状基线（截至 2026-11，已完成）
 
 - [x] 资产与配置模型 + REST API：基础资产（DCIM / 设备台账 / IPAM / CI 台账 / 关系 / 软资产扩展表）在 `apps/assets/models/`，配置行家族 26 张表在 `apps/configs/`（`ConfigBase` 25 子类 + `DeviceConfig`）；Excel 导入在 `apps/ingest/device_import.py`
-- [x] 配置采集解析入库管道：`apps/core/config_repo.py`（每台设备一个独立 git 仓库）→ `apps/configs/parsers`（TTP 解析）→ `apps/configs/savers`（写库）；三阶段编排在 `apps/ingest/`
-- [x] 分析域（`apps/analysis/`）：路径追踪、访问流、互联网资产分析、分组查询（firewall_groups/lb_chain/ltm_groups/gslb_clusters/group_merge）
+- [x] 配置采集解析入库管道：`apps/core/repo.py`（每台设备一个独立 git 仓库）→ `apps/configs/parsers`（TTP 解析）→ `apps/configs/savers`（写库）；三阶段编排在 `apps/ingest/`
+- [x] 分析域（`apps/analysis/`）：路径追踪、访问流、互联网资产分析、分组查询（`groups/{firewall,ltm,gslb,common}` + `lb_chain`）
 - [x] 运行态巡检雏形：queue/celery/redis 三 monitor（`apps/analysis/{queue,celery,redis}_monitor.py` + `/api/analysis/queue-status/`）
 - [x] 阿里云接入雏形（`apps/cloud/`：client/products/response + AliyunVPC 等 8 模型；无 api/）
-- [x] MCP：`netops/asgi.py` 挂 `/mcp`（Streamable HTTP，官方 SDK 2.x）+ `netops/mcp_gateway.py`（路径分发 / **匿名**限流 / 关闭时 404）+ 根目录 `llmtools/`（注册表 + `entity_tools.py` 六个通用工具 + `domains/network/` 实体与边声明）
+- [x] MCP：`netops/asgi.py` 挂 `/mcp`（Streamable HTTP，官方 SDK 2.x）+ `netops/mcp.py`（路径分发 / **匿名**限流 / 关闭时 404）+ 根目录 `llmtools/`（注册表 + `entities.py` 六个通用工具 + `domains/network/` 实体与边声明）
 
 ## 阶段一：补信息基础（数据层，其余一切的前提）
 
@@ -70,7 +70,7 @@
 | T7 | 关系图谱与业务视图 | 任意 CI 上下游、多跳链路可视化；按业务/部门/环境聚合；"谁依赖谁"与影响路径 | `apps/analysis/`（path_tracer 基础）+ 新关系 API + 前端 | 未开始 |
 | T8 | 资产健康与数据质量治理 | 孤儿资源/缺负责人/未登记 IP/过期未退役识别；多源对账（云/自动发现/监控/日志）；漂移冲突清单与闭环 | 新管理命令 + API | 未开始 |
 | T9 | 容量与成本视图 | 机柜 U 位/机房空间、IP 利用率（SubnetUsageLog）、云规格分布、低负载闲置识别、扩容/采购依据 | assets IPAM + cloud | 未开始 |
-| T10 | AI 基础设施 | MCP 工具网关三件套（**鉴权/限流/审计**）+ Dify 工作流 + 向量库（手册/预案/历史故障）+ 按角色字段级脱敏 | `netops/mcp_gateway.py`（匿名限流）、`llmtools/`（工具面）、Dify 待接 | 进行中（限流与工具面已建；**鉴权与审计未落地**——`/mcp` 出口当前匿名、无 `McpToolCall` 表；Dify/向量库/脱敏 未做） |
+| T10 | AI 基础设施 | MCP 工具网关三件套（**鉴权/限流/审计**）+ Dify 工作流 + 向量库（手册/预案/历史故障）+ 按角色字段级脱敏 | `netops/mcp.py`（匿名限流）、`llmtools/`（工具面）、Dify 待接 | 进行中（限流与工具面已建；**鉴权与审计未落地**——`/mcp` 出口当前匿名、无 `McpToolCall` 表；Dify/向量库/脱敏 未做） |
 
 ## 阶段三：查询与混合云增强
 
@@ -94,7 +94,7 @@
 
 - [x] 骨架：`netops/mcp_server.py` 根单例 + `@mcp.tool()` import 即注册（对齐 Django admin 惯用法）
 - [x] assets 域：`search_devices` / `get_device` / `list_device_groups`（`apps/assets/mcp/tools.py`）
-- [x] **接线**（2026-11）：`netops/asgi.py` 挂 `/mcp`（Streamable HTTP，官方 SDK 2.x）+ `McpGatewayMiddleware`（路径分发、`MCP_ENABLED` 开关、关闭时明确 404）+ nginx `/mcp` 段（`proxy_buffering off`、3600s，tests/deploy 契约锁定）。**出口当前是匿名的**——不验身份，只按客户端 IP 限流（`netops/mcp_gateway.py` 抬头有明确说明）；写侧工具开放前必须先补鉴权
+- [x] **接线**（2026-11）：`netops/asgi.py` 挂 `/mcp`（Streamable HTTP，官方 SDK 2.x）+ `McpGatewayMiddleware`（路径分发、`MCP_ENABLED` 开关、关闭时明确 404）+ nginx `/mcp` 段（`proxy_buffering off`、3600s，tests/deploy 契约锁定）。**出口当前是匿名的**——不验身份，只按客户端 IP 限流（`netops/mcp.py` 抬头有明确说明）；写侧工具开放前必须先补鉴权
 - [~] **治理**（2026-11）：Redis 限流（`MCP_RATE_LIMIT_PER_MINUTE`，Redis 不可用时 fail-open）+ 工具清单对账测试（`tests/mcp/test_tool_registry.py` 快照）已落地；**`McpToolCall` 审计表未落地**——2026-11-16 复核全仓搜不到该模型（core 只有 User / Token / UserPreference / Task / Stage）
 - [ ] ingest 域：`config_*`（配置历史/diff/parser 清单，config_repo 现成能力直接包）
 - [ ] analysis 域：关系遍历、影响路径、路径追踪

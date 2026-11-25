@@ -142,15 +142,15 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `MCP_ENABLED` | dev/container 开、prod 关 | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。默认值在 `settings/defaults.py`，env 可覆盖。见 [`llmtools.md`](llmtools.md) |
-| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp.py` 模块注释 |
 
-### Git 配置仓库（`core/config_repo.py`）
+### Git 配置仓库（`core/repo.py`）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `CONFIG_REPO_PATH` | `<项目根>/data/config_repo` | 配置快照仓库根：**每台设备一个独立仓库** `<CONFIG_REPO_PATH>/<hostname>/`。容器里覆盖成命名卷挂载点（`/configs`，见 [`deploy.md`](deploy.md)）——宿主与容器各一份历史，互不影响 |
 
-路径的唯一来源是 `settings.CONFIG_REPO_PATH`：`core/config_repo.py` **每次调用都读**（不缓存成
+路径的唯一来源是 `settings.CONFIG_REPO_PATH`：`core/repo.py` **每次调用都读**（不缓存成
 模块常量），所以测试用 `override_settings(CONFIG_REPO_PATH=tmp_path)` 就能换目录，
 `scripts/purge_configs.py --purge-repo` 也读同一个值。
 
@@ -222,7 +222,7 @@ client 单例与登录逻辑在 `core/integrations/providers/zabbix/client.py`�
 | `AUTOTASK_BASE_URL` | 空 | 工单 / 巡检 / SLB 服务地址；未配置则大屏的 autotask 源失败（其余源不受影响） |
 | `AUTOTASK_TIMEOUT` | `30` | HTTP 超时秒数 |
 
-内网服务，无凭据。地址原先硬编码在 `ingest/collectors/autotask/autotask.py`，2026-11-19 起走 env。
+内网服务，无凭据。地址原先硬编码在 `ingest/collectors/autotask/client.py`，2026-11-19 起走 env。
 
 ## 守卫矩阵（什么时候拒绝启动）
 

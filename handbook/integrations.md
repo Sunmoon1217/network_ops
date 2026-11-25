@@ -8,7 +8,7 @@
 
 ## 为什么不是「各域自己管单例」
 
-迁移前 Zabbix 的单例住在 `apps/ingest/collectors/zabbix/zabbix.py`，形态本身是对的
+迁移前 Zabbix 的单例住在 `apps/ingest/collectors/zabbix/client.py`，形态本身是对的
 （懒建 + 复用 + 显式释放），但两个问题：
 
 1. **`close_zapi()` 全项目没有调用点**——session 一直泄漏到进程退出；
@@ -84,7 +84,7 @@ def ready(self):
   `asyncio.run(...)` = 一个新事件循环，实例绑在旧 loop 上就必须先释放再重建
   （`_zapi_loop is loop` 判定）。**这条判定留在 provider 实现里，不上提到 registry**——
   否则 core 得懂事件循环，provider 变成哑的。
-- `apps/ingest/collectors/zabbix/zabbix.py` 是**薄转发**（`from core.integrations.providers.zabbix import ...`），
+- `apps/ingest/collectors/zabbix/client.py` 是**薄转发**（`from core.integrations.providers.zabbix import ...`），
   目的是让 `queries.py` 的 9 处 `await get_zapi()` 与
   `tests/ingest/test_link_cache.py` 的 `patch.object(queries, "get_zapi")` 都不用动。
   新代码请直接走 `acquire("zabbix")`。

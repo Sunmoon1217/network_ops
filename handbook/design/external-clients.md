@@ -15,7 +15,7 @@
 各域只交出一个**工厂函数**，不交实现；core 负责实例的懒建、复用与释放。
 
 这不是「新建一层抽象」，而是**搬家 + 统一生命周期**：Zabbix 的 client 现在就已经是
-进程级单例（`apps/ingest/collectors/zabbix/zabbix.py`），只是住在域里。
+进程级单例（`apps/ingest/collectors/zabbix/client.py`），只是住在域里。
 
 ## 现状实测（2026-11-16）
 
@@ -24,9 +24,9 @@
 | 外部 | 连接配置 | client 实现 | 形态 |
 |---|---|---|---|
 | 阿里云 | `settings.ALIYUN_CONFIG`（region + endpoints + accounts） | `apps/cloud/client.py` | 同步 SDK，per-call `AcsClient` |
-| Zabbix | `settings.ZABBIX_CONFIG`（url + token/user/password） | `apps/ingest/collectors/zabbix/zabbix.py` | **异步进程级单例**，绑事件循环 |
+| Zabbix | `settings.ZABBIX_CONFIG`（url + token/user/password） | `apps/ingest/collectors/zabbix/client.py` | **异步进程级单例**，绑事件循环 |
 | Dify | `settings.DIFY_CONFIG`（api_base_url + api_key + dataset_id） | `apps/docs/dify.py` | 同步 `requests`，无状态 |
-| Autotask | **代码里硬编码 `BASE_URL`**（`collectors/autotask/autotask.py:11`） | `apps/ingest/collectors/autotask/autotask.py` | 异步 `httpx2`，per-call |
+| Autotask | **代码里硬编码 `BASE_URL`**（`collectors/autotask/client.py:11`） | `apps/ingest/collectors/autotask/client.py` | 异步 `httpx2`，per-call |
 
 四套配置字段名各不相同（`url` / `api_base_url`）、超时散落、错误语义三套
 （`ImproperlyConfigured` / 返 503 / 直接 KeyError）、「是否已配置」的判定各写各的。
@@ -36,7 +36,7 @@
 
 ### Zabbix 单例已经是目标形态，只是住错了地方
 
-`apps/ingest/collectors/zabbix/zabbix.py` 现有实现：
+`apps/ingest/collectors/zabbix/client.py` 现有实现：
 
 ```python
 _zapi: TypedZabbixAPI | None = None       # :118 模块级全局
@@ -78,7 +78,7 @@ SSH / napalm / netmiko 连接（address / port / username / password / enable_pa
 
 ### 边界一：注册范式
 
-照抄 `core/task_types.py` 的既有约定（现状见 [`../tasks.md`](../tasks.md)）——**各域在
+照抄 `core/tasktypes.py` 的既有约定（现状见 [`../tasks.md`](../tasks.md)）——**各域在
 `ready()` 里追加**：
 
 ```python
@@ -146,7 +146,7 @@ core/
 ├── models.py         User / Token / UserPreference / Task / Stage
 │                    + IntegrationHealth（新增）
 ├── tasks.py          create_task / dispatch / cancel（通用机制）
-├── task_types.py     业务词汇注册表（各域在 ready() 里追加）
+├── tasktypes.py      业务词汇注册表（各域在 ready() 里追加）
 ├── integrations/     外部连接实例与 client 生命周期 ★ 新增
 ├── permissions.py    IsOperatorOrReadOnly
 ├── api/              auth / preferences / tasks / stages
@@ -260,7 +260,7 @@ def register_providers():
 
 **状态：已落地（2026-11-19）**。四件事全部完成：
 
-1. `apps/ingest/collectors/autotask/autotask.py` 的硬编码 `BASE_URL` 收进
+1. `apps/ingest/collectors/autotask/client.py` 的硬编码 `BASE_URL` 收进
    `settings.AUTOTASK_CONFIG`（`AUTOTASK_BASE_URL` / `AUTOTASK_TIMEOUT`）——全项目最后一处
    游离在配置外的连接信息清零；
 2. 四套 CONFIG 统一字段 `base_url` / `credential_ref` / `timeout` / `enabled`，域特有项保留
@@ -290,7 +290,7 @@ def register_providers():
 | client + DTO | `core/integrations/providers/zabbix/{client,schemas}.py`（`schemas.py` 一起搬，否则 core → ingest 反向依赖） |
 | provider | `core/integrations/providers/zabbix/provider.py`（只转发 `get_zapi` / `close_zapi`，不持第二份状态） |
 | 注册 | `apps/ingest/apps.py.ready()`（「用不用 Zabbix」是采集域的决定） |
-| 薄转发 | `apps/ingest/collectors/zabbix/zabbix.py` 只 re-export core 的符号，`queries.py` 的 9 处调用与 `patch.object(queries, "get_zapi")` 全不动 |
+| 薄转发 | `apps/ingest/collectors/zabbix/client.py` 只 re-export core 的符号，`queries.py` 的 9 处调用与 `patch.object(queries, "get_zapi")` 全不动 |
 | 释放钩子 | `netops/asgi.py` 的 `LIFESPAN_HOOKS`（`_release_integrations`，排最后 → 逆序先执行）+ `netops/celery.py` 的 `worker_process_shutdown` |
 | 收尾健壮性 | `_dispose` 对 `logout` / `session.close()` 都兜异常：进程收尾时实例常绑在已关闭的 loop 上，**关不掉也不能炸** |
 
@@ -317,8 +317,8 @@ def register_providers():
 | 设计稿 | 关系 |
 |---|---|
 | [`layering.md`](layering.md) | 本方案是 core 的第三块职责（用户/认证 + 任务机制 + 外部连接实例）。依赖矩阵里 core 一行**仍是零业务依赖**——core 持有的是域交上来的 provider 对象，不 import 域 |
-| [`../tasks.md`](../tasks.md) | **范本**（已落地的现状文档）。`core/task_types.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
-| [`assets-configs-split.md`](assets-configs-split.md) | 无直接关系。assets 拆 configs 不触及外部连接 |
+| [`../tasks.md`](../tasks.md) | **范本**（已落地的现状文档）。`core/tasktypes.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
+| [`assets-configs.md`](assets-configs.md) | 无直接关系。assets 拆 configs 不触及外部连接 |
 
 **与 egest 的关系**：egest（配置下发 / 消息推送）将来做设备侧写操作时，
 需要的正是「core 统一持有 client 实例」这套机制。
@@ -340,5 +340,5 @@ def register_providers():
 1. **`handbook/roadmap.md` 与代码不一致**：roadmap 写「McpToolCall 审计表（core）✅」，
    但在 `develop` 与所有本地分支都搜不到该模型定义（只在 roadmap 文本里命中）。
    写侧审计要落地的话，这张表得先补。
-2. **MCP 出口当前是匿名的**：`netops/mcp_gateway.py` 注明「能访问到 `/mcp` 就能调工具」。
+2. **MCP 出口当前是匿名的**：`netops/mcp.py` 注明「能访问到 `/mcp` 就能调工具」。
    外部写侧工具开放前必须先补鉴权，否则等于把写操作裸露出去。

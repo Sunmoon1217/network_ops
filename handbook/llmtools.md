@@ -8,7 +8,7 @@ MCP 的基建、实体注册表、通用工具与出口都在这里，`core` 只
 | `server.py` | 根 server 单例 `mcpserver` + `with_db_lifecycle` + `build_transport_security` |
 | `registry.py` | 实体注册表 `SPEC` / `EDGES`：各域把可查的模型或视图登记进来 |
 | `query.py` | QueryPlan 编译器（受控 AND/OR / 排序 / 投影 / offset） |
-| `entity_tools.py` | 通用工具实现（find / list_records / query / get_record / bundle / relations），纯函数 |
+| `entities.py` | 通用工具实现（find / list_records / query / get_record / bundle / relations），纯函数 |
 | `tools.py` | 工具注册表：汇总各域名单 + 统一套 `with_db_lifecycle` + `add_tool()` |
 | `domains/<域>/` | 各域接入：`specs.py` 实体声明 + `tools.py` 纯函数，契约 `register()` / `TOOLS` |
 
@@ -94,8 +94,8 @@ MCP 同步工具跑在 AnyIO 短命工作线程，不像 Django 视图自带 `re
 **注册是集中式的**：域里既没有 `@mcp.tool()`，也不 import MCP 基建；重名在 `register_all()`
 启动期即抛错（SDK 默认是静默覆盖）。**没有任何「import 即注册」**：`specs/__init__.py` 不自动调用
 `register()`，声明模块 import 进来是纯的；接线只发生在 `llmtools/__init__.py`。防循环靠导入顺序——
-基建（`server` / `registry` / `query` / `entity_tools`）先、`domains` 次之、`tools` 最后，而
-`domains/*` 只 import `registry` / `entity_tools`，绝不 import `tools` 或包本身。
+基建（`server` / `registry` / `query` / `entities`）先、`domains` 次之、`tools` 最后，而
+`domains/*` 只 import `registry` / `entities`，绝不 import `tools` 或包本身。
 
 现状：网络域为实体注册表形态，2026-11 从单文件拆成四层——`domains/network/nodes.py`（`NodeType`，
 零 import 的公共词汇）、`domains/network/specs/`（实体声明，按子域分 `ipam` / `slb` / `firewall` /
@@ -149,7 +149,7 @@ LifespanApp(_dispatch, [mcpserver.session_manager.run])
 ## 出口（`/mcp`）：匿名 + 按 IP 限流
 
 现状**匿名**：能访问到端点就能调工具，身份与配额只到「客户端 IP」这一层
-（`netops/mcp_gateway.py`）。这是有意的临时状态——先把出口打通，鉴权后补。
+（`netops/mcp.py`）。这是有意的临时状态——先把出口打通，鉴权后补。
 
 - **为什么 `Mcp-Session-Id` 不算凭证**：它在 `initialize` 的应答里下发，而 SDK 自己不做认证
   （`scope["user"]` 由外层给）。没有外层身份时，`_session_owners` 的归属比对退化成
