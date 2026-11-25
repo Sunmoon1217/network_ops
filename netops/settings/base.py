@@ -256,7 +256,7 @@ LOGGING = {
             "level": LOG_LEVEL,
         },
     },
-    "loggers": {name: {"handlers": ["netops_console"], "level": LOG_LEVEL} for name in ("core", "ingest", "assets", "analysis", "cloud", "docs", "llmtools", "netops")},
+    "loggers": {name: {"handlers": ["netops_console"], "level": LOG_LEVEL} for name in ("core", "ingest", "assets", "analysis", "docs", "llmtools", "netops")},
 }
 
 # nginx → Django 走 HTTP；不信任该头会让 is_secure() 恒为 False（HTTPS 下重定向循环等）。
@@ -283,7 +283,6 @@ INSTALLED_APPS = [
     # 配置域：configs → assets（Device 外键），所以排在 assets 之后
     "configs.apps.ConfigsConfig",
     "analysis.apps.AnalysisConfig",
-    "cloud.apps.CloudConfig",
     "docs.apps.DocsConfig",
 ]
 
