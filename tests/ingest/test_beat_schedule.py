@@ -11,9 +11,9 @@ from ingest import tasks as ingest_tasks
 
 def test_beat_schedule_covers_dashboard_chains():
     schedule = settings.CELERY_BEAT_SCHEDULE
-    assert schedule["dashboard-link-cache"]["task"] == ingest_tasks.refresh_link_cache_task.name
-    assert schedule["dashboard-collect-zabbix"]["task"] == ingest_tasks.collect_dashboard.name
-    assert schedule["dashboard-collect-autotask"]["task"] == ingest_tasks.collect_dashboard.name
+    assert schedule["dashboard-link-cache"]["task"] == getattr(ingest_tasks.refresh_link_cache_task, "name")
+    assert schedule["dashboard-collect-zabbix"]["task"] == getattr(ingest_tasks.collect_dashboard, "name")
+    assert schedule["dashboard-collect-autotask"]["task"] == getattr(ingest_tasks.collect_dashboard, "name")
 
 
 def test_beat_schedule_passes_source_args():
@@ -24,8 +24,18 @@ def test_beat_schedule_passes_source_args():
 
 
 def test_beat_schedule_periods_are_positive():
+    """区间型条目周期必须 > 0；crontab 型条目由 cron 表达式自身保证。"""
     for name, entry in settings.CELERY_BEAT_SCHEDULE.items():
-        assert int(entry["schedule"]) > 0, f"{name} 的周期必须 > 0"
+        schedule = entry["schedule"]
+        if isinstance(schedule, int):
+            assert schedule > 0, f"{name} 的周期必须 > 0"
+
+
+def test_beat_schedule_covers_inspection_chains():
+    """巡检两条链（采集调度 / 滚存清理）由内置 beat 投递，任务名与 settings 一致。"""
+    schedule = settings.CELERY_BEAT_SCHEDULE
+    assert schedule["inspection-dispatch"]["task"] == settings.INSPECTION_DISPATCH_TASK
+    assert schedule["inspection-prune"]["task"] == settings.INSPECTION_PRUNE_TASK
 
 
 def test_autotask_period_not_faster_than_zabbix():
