@@ -28,8 +28,8 @@ const buildGaugeData = (cpu: number, mem: number): GaugeDataItem[] =>
     { name: '内存', value: mem },
   ].map((item, i, arr) => ({
     ...item,
-    title: { offsetCenter: [`${-X_GAP}%`, `${rowCenter(i, arr.length)}%`] },
-    detail: { offsetCenter: [`${X_GAP}%`, `${rowCenter(i, arr.length)}%`] },
+    title: { offsetCenter: [`${-X_GAP}%`, `${rowCenter(i, arr.length) * 2 / 3}%`] },
+    detail: { offsetCenter: [`${X_GAP}%`, `${rowCenter(i, arr.length) * 2 / 3}%`] },
   }))
 
 interface DeviceCard {
