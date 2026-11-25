@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import GaugeCharts from '@dashboard/ui/GaugeCharts.vue'
 import DeviceTopList from './DeviceTopList.vue'
 import { getDashboard } from '@/api/dashboard'
@@ -95,6 +95,39 @@ const fetchCards = async () => {
 
 const { start } = useInterval(fetchCards, 5 * 60 * 1000, true)
 
+const hoveredIndex = ref(-1)
+const popoverStyle = ref<Record<string, string>>({})
+
+// 弹出框用 position: fixed 挂到 transformed 祖先（.dashboard-frame）坐标系，
+// 脱离面板 overflow: hidden 的裁剪；坐标按屏幕缩放比换算，并按弹出框实际尺寸收进大屏边界。
+const showPopover = async (event: MouseEvent, index: number) => {
+  const wrap = event.currentTarget as HTMLElement
+  const frame = wrap.closest('.dashboard-frame') as HTMLElement | null
+  if (!frame) return
+  const frameRect = frame.getBoundingClientRect()
+  const scale = frameRect.width / frame.offsetWidth || 1
+  const rect = wrap.getBoundingClientRect()
+  let left = (rect.left - frameRect.left) / scale
+  let top = (rect.top - frameRect.top) / scale
+  hoveredIndex.value = index
+  await nextTick()
+  const pop = wrap.querySelector('.toplist-popover') as HTMLElement | null
+  if (pop) {
+    const margin = 4
+    if (left + pop.offsetWidth > frame.offsetWidth - margin) {
+      left = frame.offsetWidth - pop.offsetWidth - margin
+    }
+    if (top + pop.offsetHeight > frame.offsetHeight - margin) {
+      top = frame.offsetHeight - pop.offsetHeight - margin
+    }
+    popoverStyle.value = { left: `${Math.max(left, margin)}px`, top: `${Math.max(top, margin)}px` }
+  }
+}
+
+const hidePopover = () => {
+  hoveredIndex.value = -1
+}
+
 onMounted(() => {
   start()
 })
@@ -102,14 +135,18 @@ onMounted(() => {
 
 <template>
   <div class="container">
-    <div v-for="card in cards" :key="card.name" class="item">
+    <div v-for="(card, index) in cards" :key="card.name" class="item">
       <div class="item-head">
         <h4>{{ card.name }}</h4>
         <span class="status-badge" :class="card.statusClass">{{ card.status }}</span>
       </div>
-      <div class="chart-wrap">
+      <div
+        class="chart-wrap"
+        @mouseenter="showPopover($event, index)"
+        @mouseleave="hidePopover"
+      >
         <GaugeCharts :data="card.gaugeData" />
-        <div class="toplist-popover">
+        <div v-show="hoveredIndex === index" class="toplist-popover" :style="popoverStyle">
           <DeviceTopList :data="card.top" />
         </div>
       </div>
@@ -174,14 +211,9 @@ onMounted(() => {
 }
 
 .toplist-popover {
-  display: none;
-  position: absolute;
-  z-index: 5;
-  top: 0;
-  left: 0;
+  position: fixed;
+  z-index: 50;
 }
-
-.chart-wrap:hover .toplist-popover { display: block; }
 
 .metrics { display: grid; gap: 4px; margin-top: 4px; }
 
