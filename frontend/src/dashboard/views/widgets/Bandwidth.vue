@@ -69,11 +69,14 @@ const toGroups = (scopeIds: string[]): ChartDataGroup[] =>
     }
   })
 
-// 面板与 scope 归属来自后端配置；缓存未到时用数据里出现的 scope 兜底（不写死线路名）
+// 面板与 scope 归属来自后端配置；缓存未到时用数据里出现的 scope 兜底；
+// 空数据时也返回一个默认 panel，确保图表框架始终渲染
 const renderPanels = computed<LinkPanelMeta[]>(() => {
   if (panels.value.length) return panels.value
   const scopeIds = Array.from(new Set(points.value.flatMap((point) => Object.keys(point.data))))
-  return scopeIds.length ? [{ id: 'links', label: '链路使用率', scopes: scopeIds }] : []
+  if (scopeIds.length) return [{ id: 'links', label: '链路使用率', scopes: scopeIds }]
+  // 兜底：数据和缓存都空，返回默认 panel，LineCharts 会渲染空坐标系
+  return [{ id: 'links', label: '链路使用率', scopes: [] }]
 })
 const panelGroups = computed(() =>
   renderPanels.value.map((panel) => ({ panel, groups: toGroups(panel.scopes) })),
@@ -135,8 +138,8 @@ onMounted(() => {
     </section>
     <div v-for="item in panelGroups" :key="item.panel.id" class="items linechart">
       <h4>{{ item.panel.label }}</h4>
-      <LineCharts v-if="points.length" :data="item.groups" :xAxisData="timeAxis" />
-      <div v-else class="chart-empty">暂无链路采样数据</div>
+      <!-- LineCharts 始终渲染：空数据时显示空坐标系框架 -->
+      <LineCharts :data="item.groups" :xAxisData="timeAxis" />
     </div>
   </div>
 </template>

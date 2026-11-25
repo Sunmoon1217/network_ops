@@ -43,8 +43,8 @@ const loadCabinets = async () => {
     const previous = selectedCabinet.value
     // 大屏专用只读接口（免认证）：一次返回机柜与设备上架位置，不需要登录态
     const data = await getDashboardCabinets()
-    cabinets.value = data.cabinets
-    devices.value = data.devices
+    cabinets.value = data.cabinets ?? []
+    devices.value = data.devices ?? []
     if (!selectedDC.value) selectedDC.value = dcOptions.value[0] ?? ''
     if (!cabinets.value.some((c) => c.id === previous)) {
       selectedCabinet.value = cabinetOptions.value[0]?.id ?? null
@@ -72,7 +72,6 @@ onMounted(() => {
 <template>
   <div class="container">
     <div v-if="loadError" class="empty-state">{{ loadError }}</div>
-    <div v-else-if="!cabinets.length" class="empty-state">资产库暂无机柜数据</div>
     <template v-else>
       <div class="rack-wrap">
         <div class="select">
@@ -80,16 +79,18 @@ onMounted(() => {
             <option value="">全部数据中心</option>
             <option v-for="dc in dcOptions" :key="dc" :value="dc">{{ dc }}</option>
           </select>
-          <select v-model.number="selectedCabinet" aria-label="机柜">
+          <select v-model.number="selectedCabinet" aria-label="机柜" :disabled="!cabinets.length">
+            <option v-if="!cabinets.length">资产库暂无机柜</option>
             <option v-for="cabinet in cabinetOptions" :key="cabinet.id" :value="cabinet.id">
               {{ cabinet.name }}
             </option>
           </select>
         </div>
         <div class="usage">
-          机柜 {{ current?.name || '--' }} · {{ uCount }}U · 已用 {{ usedU }}U · 利用率 {{ utilization }}%
+          机柜 {{ current?.name || (cabinets.length ? '--' : '空库') }} · {{ uCount }}U · 已用 {{ usedU }}U · 利用率 {{ utilization }}%
         </div>
-        <div v-if="current" class="rack" :style="rackStyle">
+        <!-- rack 框架始终渲染：有选中机柜显示其 U 位，无选中/无数据显示默认 42U 空架 -->
+        <div class="rack" :style="rackStyle">
           <div
             v-for="u in uRows"
             :key="`label-${u}`"
@@ -111,7 +112,6 @@ onMounted(() => {
             @mouseenter="hoverDevice = device"
           >{{ device.hostname }}</div>
         </div>
-        <div v-else class="empty-state">请选择机柜</div>
       </div>
       <div class="detail">
         <h4>设备信息</h4>
@@ -121,6 +121,8 @@ onMounted(() => {
           <p>类型：{{ hoverDevice.device_type_display || '未设置' }}</p>
           <p>U 位：{{ hoverDevice.u_position }}（{{ hoverDevice.height || 1 }}U）</p>
         </template>
+        <p v-else-if="!cabinetDevices.length && cabinets.length" class="hint">该机柜暂无上架设备</p>
+        <p v-else-if="!cabinets.length" class="hint">资产库暂无机柜，显示 42U 空机柜框架</p>
         <p v-else class="hint">鼠标移到机柜设备上查看详情</p>
       </div>
     </template>
