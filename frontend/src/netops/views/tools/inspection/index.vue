@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import PageLayout from '@/components/PageLayout.vue'
 import InspectionResults from './InspectionResults.vue'
-import InspectionHistoryDrawer from './InspectionHistoryDrawer.vue'
-import InspectionConfigDrawer from './InspectionConfigDrawer.vue'
 import { getInspectionConfig } from '@/api/inspection'
 
 import type { InspectionConfig } from '@/types'
@@ -11,8 +9,6 @@ const route = useRoute()
 const router = useRouter()
 const kind = computed<'device' | 'line'>(() => (route.meta.kind === 'line' ? 'line' : 'device'))
 const config = ref<InspectionConfig | null>(null)
-const historyVisible = ref(false)
-const configVisible = ref(false)
 
 const formatDay = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -27,6 +23,8 @@ const scheduleHint = computed(() => {
 })
 
 const goOverview = () => router.push('/tools/inspection')
+const goHistory = () => router.push({ path: '/tools/inspection/history', query: { kind: kind.value } })
+const goConfig = () => router.push('/tools/inspection/config')
 
 const loadConfig = async () => {
   try {
@@ -49,15 +47,12 @@ onMounted(loadConfig)
           <span v-if="scheduleHint" class="head-sub">{{ scheduleHint }}</span>
         </div>
         <div class="head-actions">
-          <el-button @click="historyVisible = true">历史巡检</el-button>
-          <el-button type="primary" @click="configVisible = true">巡检配置</el-button>
+          <el-button @click="goHistory">历史巡检</el-button>
+          <el-button type="primary" @click="goConfig">巡检配置</el-button>
         </div>
       </div>
 
       <InspectionResults :kind="kind" :date="today" :show-stats="false" />
-
-      <InspectionHistoryDrawer v-model="historyVisible" :kind="kind" />
-      <InspectionConfigDrawer v-model="configVisible" :kind="kind" @saved="loadConfig" />
     </div>
   </PageLayout>
 </template>

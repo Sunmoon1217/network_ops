@@ -133,6 +133,8 @@ const router = createRouter({
         { path: '', redirect: '/tools/path-trace' },
         { path: 'path-trace', name: 'tools-path-trace', component: () => import('@netops/views/tools/path-trace/index.vue') },
         { path: 'inspection', name: 'tools-inspection-overview', component: () => import('@netops/views/tools/inspection/InspectionOverview.vue') },
+        { path: 'inspection/history', name: 'tools-inspection-history', component: () => import('@netops/views/tools/inspection/InspectionHistory.vue') },
+        { path: 'inspection/config', name: 'tools-inspection-config', component: () => import('@netops/views/tools/inspection/InspectionConfig.vue') },
         {
           path: 'inspection/device',
           name: 'tools-inspection-device',

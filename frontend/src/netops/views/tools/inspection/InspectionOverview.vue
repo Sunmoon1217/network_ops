@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import PageLayout from '@/components/PageLayout.vue'
-import InspectionConfigDrawer from './InspectionConfigDrawer.vue'
 import { getInspectionConfig, getInspectionDevices, getInspectionInterfaces, getInspectionRuns, getInspectionSummary } from '@/api/inspection'
 import { Monitor, Connection } from '@element-plus/icons-vue'
 
 import type { InspectionConfig, InspectionDeviceSummary, InspectionRun } from '@/types'
 
 const router = useRouter()
-const configVisible = ref(false)
 const config = ref<InspectionConfig | null>(null)
 
 const today = (() => {
@@ -98,7 +96,7 @@ const lineStatus = computed(() => cardStatus(lineRun.value))
           <span class="head-sched">{{ scheduleHint }}</span>
         </div>
         <div class="head-right">
-          <el-button type="primary" @click="configVisible = true">巡检配置</el-button>
+          <el-button type="primary" @click="router.push('/tools/inspection/config')">巡检配置</el-button>
         </div>
       </div>
 
@@ -180,7 +178,6 @@ const lineStatus = computed(() => cardStatus(lineRun.value))
       </div>
     </div>
 
-    <InspectionConfigDrawer v-model="configVisible" :kind="'device'" @saved="loadAll" />
   </PageLayout>
 </template>
 
