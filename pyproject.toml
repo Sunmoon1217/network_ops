@@ -95,7 +95,7 @@ exclude = ["**/.*"]
 site-packages-path = ["typings"]
 search-path = ["apps", "."]
 project-includes = ["apps"]
-project-excludes = ["**/.*"]
+project-excludes = ["**/.*", "**/migrations/*"]
 
 
 [dependency-groups]
