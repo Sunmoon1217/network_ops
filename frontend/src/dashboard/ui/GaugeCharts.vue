@@ -21,49 +21,8 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 const handleResize = () => myChart?.resize()
 
-// 多指标布局：每个指标占一行（数值在左、名称在右，同一 y），指标之间上下错开。
-// 注意 offsetCenter 百分比基准是仪表盘半径（卡片内约 50px）。
-// 单指标保持原样（弧线下方居中，数值上、名称下）。
-const transformData = (data: Array<{ name: string; value: number }>) => {
-  const count = Math.max(data.length, 1)
-  const spanY = 26 // 首尾指标行的纵向偏移（半径百分比）
-  const xGap = 24 // 单行内数值与名称的横向偏移
-  return data.map((item, i) => {
-    if (count === 1) {
-      return {
-        ...item,
-        title: { show: true, offsetCenter: ['0', '46%'], fontSize: '0.7rem', color: '#b6d7ef' },
-        detail: {
-          show: true,
-          offsetCenter: ['0', '16%'],
-          width: 10,
-          fontSize: '0.78rem',
-          color: '#ecf7ff',
-          formatter: '{value}%',
-        },
-      }
-    }
-    // n>1：每行一个指标，行中心从 -spanY 均匀分布到 +spanY
-    const yc = ((i / (count - 1)) * 2 - 1) * spanY
-    return {
-      ...item,
-      title: {
-        show: true,
-        offsetCenter: [`${xGap}%`, `${yc.toFixed(1)}%`],
-        fontSize: '0.7rem',
-        color: '#b6d7ef',
-      },
-      detail: {
-        show: true,
-        offsetCenter: [`${-xGap}%`, `${yc.toFixed(1)}%`],
-        width: 10,
-        fontSize: '0.78rem',
-        color: '#ecf7ff',
-        formatter: '{value}%',
-      },
-    }
-  })
-}
+// 文字位置等由调用方通过 data item 的 title/detail 传入（未传时用 series 级默认值）。
+// 本组件只负责把 data 原样交给 gauge，不做布局计算。
 
 // 初始化图表
 const initChart = () => {
@@ -74,7 +33,7 @@ const initChart = () => {
       {
         type: 'gauge',
         center: ['50%', '66%'],
-        radius: '102%',
+        radius: '116%',
         startAngle: 200,
         endAngle: -20,
         min: 0,
@@ -101,7 +60,7 @@ const initChart = () => {
       {
         type: 'gauge',
         center: ['50%', '66%'],
-        radius: '95%',
+        radius: '108%',
         startAngle: 200,
         endAngle: -20,
         min: 0,
@@ -144,18 +103,17 @@ const initChart = () => {
           },
         },
         title: {
-          fontSize: '0.8rem',
+          fontSize: '0.76rem',
           color: '#b6d7ef',
-          offsetCenter: ['0', '32%'],
+          offsetCenter: ['0', '46%'],
         },
         detail: {
-          width: 10,
-          fontSize: '0.9rem',
+          fontSize: '0.86rem',
           color: '#ecf7ff',
-          formatter: '{value} %',
-          offsetCenter: ['0', '-12%'],
+          formatter: '{value}%',
+          offsetCenter: ['0', '16%'],
         },
-        data: transformData(props.data),
+        data: props.data,
       },
     ],
   })
@@ -164,7 +122,7 @@ const initChart = () => {
 const updateChart = () => {
   if (!myChart) return
   myChart?.setOption({
-    series: [{}, { data: transformData(props.data) }],
+    series: [{}, { data: props.data }],
   })
 }
 
