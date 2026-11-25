@@ -21,27 +21,41 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 const handleResize = () => myChart?.resize()
 
-// 给每个 data item 加独立的 title/detail：按索引分布到弧线左右两端，避免多指标文字重叠。
-// 注意 offsetCenter 的百分比基准是仪表盘半径（不是容器宽度），卡片内半径仅 ~50px，
-// 所以偏移必须给足（±58%~62%），否则标签仍会挤在中间。
+// 多指标布局：每个指标占一行（数值在左、名称在右，同一 y），指标之间上下错开。
+// 注意 offsetCenter 百分比基准是仪表盘半径（卡片内约 50px）。
+// 单指标保持原样（弧线下方居中，数值上、名称下）。
 const transformData = (data: Array<{ name: string; value: number }>) => {
   const count = Math.max(data.length, 1)
-  const spread = 58 // 两端各偏移半径的 58%
+  const spanY = 26 // 首尾指标行的纵向偏移（半径百分比）
+  const xGap = 24 // 单行内数值与名称的横向偏移
   return data.map((item, i) => {
-    // n=1 居中；n=2 左右各一端；n>=3 从 -spread 均匀铺到 +spread
-    const ratio = count === 1 ? 0 : (i / (count - 1)) * 2 - 1
-    const xPct = `${(ratio * spread).toFixed(1)}%`
+    if (count === 1) {
+      return {
+        ...item,
+        title: { show: true, offsetCenter: ['0', '46%'], fontSize: '0.7rem', color: '#b6d7ef' },
+        detail: {
+          show: true,
+          offsetCenter: ['0', '16%'],
+          width: 10,
+          fontSize: '0.78rem',
+          color: '#ecf7ff',
+          formatter: '{value}%',
+        },
+      }
+    }
+    // n>1：每行一个指标，行中心从 -spanY 均匀分布到 +spanY
+    const yc = ((i / (count - 1)) * 2 - 1) * spanY
     return {
       ...item,
       title: {
         show: true,
-        offsetCenter: [xPct, '46%'],
+        offsetCenter: [`${xGap}%`, `${yc.toFixed(1)}%`],
         fontSize: '0.7rem',
         color: '#b6d7ef',
       },
       detail: {
         show: true,
-        offsetCenter: [xPct, '16%'],
+        offsetCenter: [`${-xGap}%`, `${yc.toFixed(1)}%`],
         width: 10,
         fontSize: '0.78rem',
         color: '#ecf7ff',
