@@ -3,6 +3,10 @@
 外部系统（Zabbix / 阿里云 / Dify / 未来的 egest 写侧）的 **client 实例归 core 统管**。
 业务域只交一个 provider，不交实现；core 负责懒建、复用与释放。
 
+**例外是无状态的通道**（目前只有阿里云）：没有 session / 登录态 / 循环亲和，core 没有可托管
+的东西，因此不注册 provider，调用方直接 import。判据是「手里有没有需要托管的进程内资源」，
+不是「是不是外部平台」——见下方「阿里云通道」。
+
 设计取向与未落地部分见 [`design/external-clients.md`](design/external-clients.md)；
 本文只写**现在已经这么跑**的行为。
 
@@ -24,6 +28,7 @@ apps/core/integrations/
 ├── __init__.py          对外出口：acquire / acquire_sync / release_all / register_provider
 ├── provider.py          Provider 协议（system / instance / acquire / release / describe）
 ├── registry.py          注册表（纯 dict，不 import models、不 import 业务域）
+├── aliyun/              阿里云通道：client.py + products.py + response.py（无状态，不注册 provider）
 └── providers/
     └── zabbix/          具体系统：client.py（单例）+ schemas.py（DTO）+ provider.py
 ```
@@ -121,9 +126,33 @@ def ready(self):
 
 ## 还没做的（设计稿 Step 5 / 多实例）
 
-- **Dify / 阿里云接入 provider**：无状态、每次新建，接进来只为统一入口，收益有限，按需做。
+- **Dify 接入 provider**：无状态、每次新建，接进来只为统一入口，收益有限，按需做。
+  （阿里云已按无状态通道落地、不注册 provider，见下节。）
 - **多实例**：注册键与健康表都已支持 `(system, instance)`，目前只有 `default`；
   T16 的多 Zabbix 实例治理再铺开。
+
+## 阿里云通道（`core/integrations/aliyun/`）
+
+**无状态，不注册 provider**（2026-11-25 自 `apps/cloud` 迁入）：调用方直接
+`from core.integrations.aliyun import AliyunASAPI, ecs_call`，不经 `acquire()`。
+
+一朵云、两个资源集（生产 / 测试），两套账号，**共用 region**；各产品 endpoint 不同，
+分别由环境变量传入（清单见 [`settings.md`](settings.md)），凭据链路同为
+`*_FILE > 环境变量 > 空`。
+
+| 模块 | 职责 |
+|------|------|
+| `client.py` | `get_client`（`AcsClient` 封装）+ `aliyunapi` 动作表（各产品 `list` / `info` 的 version 与 action 名）+ `AliyunASAPI`（走 ASAPI 网关，`timeout=30`、`verify=False`，异常统一转 `RuntimeError`） |
+| `products.py` | 各产品调用封装：`ecs_call` / `vpc_call` / `slb_call` / `sls_call`，统一走 `_call`（注入 `RegionId`、按 `set_<Param>` 设参数、空响应直接报错） |
+| `response.py` | ASAPI 响应解包（`asapiSuccess` 信封），`LoadBalancesResponse` 是 SLB 列表的范本 |
+
+**现场只有 ASAPI 网关、没有产品 openapi 直连**，所以 `get_client` / `products._call` 这条
+直连产品 endpoint 的路径在现场不可用；出站请求一律走
+`AliyunASAPI.call(product, version, action, params)`。响应不是产品 SDK 的 DTO——
+`asapiSuccess` 为假时要读 `message` 报错，别按产品响应结构解析。
+
+云资源缓存表（`AliyunVPC` / `AliyunVSwitch` / `AliyunLoadBalancer`）在 assets，见
+[`assets.md`](assets.md)「云资源缓存」：通道与数据分属两个域。
 
 ## 与「被管设备连接」的边界
 

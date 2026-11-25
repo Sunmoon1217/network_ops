@@ -72,7 +72,7 @@
 | `DJANGO_DEBUG` | `1` | `0/false/no` 收紧；prod 硬覆盖为 `False`，此变量无效 |
 | `DJANGO_ALLOWED_HOSTS` | `*` | 逗号分隔；nginx 用 `proxy_set_header Host $http_host` 透传原样 Host（含端口），Django 校验时剥端口再比对，所以必须放行；prod 必填且不许 `*` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 空 | 正常拓扑留空（Origin 天然等于当前 host）。只在「浏览器看到的来源 ≠ 转给 Django 的 Host」时才需要（外层 LB 改写 Host、TLS 提前终结）；值带 scheme，逗号分隔 |
-| `DJANGO_LOG_LEVEL` | `INFO` | 业务命名空间（`core/ingest/assets/analysis/cloud/docs/llmtools/netops`）的日志级别，见下方 `LOGGING` |
+| `DJANGO_LOG_LEVEL` | `INFO` | 业务命名空间（`core/ingest/assets/analysis/docs/llmtools/netops`）的日志级别，见下方 `LOGGING` |
 | `DJANGO_API_DOCS_REQUIRE_LOGIN` | dev/container 关、prod 开 | 控制 `/api/schema/*` 是否收紧成 `IsAuthenticated`；默认值在 `settings/defaults.py`，env 可覆盖 |
 
 ### 数据库 / Redis
@@ -142,15 +142,15 @@ MySQL 驱动是 **mysqlclient**（C 扩展）。它在 PyPI 没有 cp312 manylin
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `MCP_ENABLED` | dev/container 开、prod 关 | `0` = 不 import `llmtools`、不建 MCP 子应用、不装 lifespan 钩子，`/mcp` 明确回 404（**不能**交给 Django，SPA 兜底会返回 `index.html`）。默认值在 `settings/defaults.py`，env 可覆盖。见 [`llmtools.md`](llmtools.md) |
-| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp_gateway.py` 模块注释 |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `60` | 匿名出口的护栏：按客户端 IP 的分钟固定窗口，`0` = 不限流；Redis 不可用时**放行**（只告警）。身份口径见 `netops/mcp.py` 模块注释 |
 
-### Git 配置仓库（`core/config_repo.py`）
+### Git 配置仓库（`core/repo.py`）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `CONFIG_REPO_PATH` | `<项目根>/data/config_repo` | 配置快照仓库根：**每台设备一个独立仓库** `<CONFIG_REPO_PATH>/<hostname>/`。容器里覆盖成命名卷挂载点（`/configs`，见 [`deploy.md`](deploy.md)）——宿主与容器各一份历史，互不影响 |
 
-路径的唯一来源是 `settings.CONFIG_REPO_PATH`：`core/config_repo.py` **每次调用都读**（不缓存成
+路径的唯一来源是 `settings.CONFIG_REPO_PATH`：`core/repo.py` **每次调用都读**（不缓存成
 模块常量），所以测试用 `override_settings(CONFIG_REPO_PATH=tmp_path)` 就能换目录，
 `scripts/purge_configs.py --purge-repo` 也读同一个值。
 
@@ -248,7 +248,7 @@ Django 的 `DEFAULT_LOGGING` 只给 `django` / `django.server` 装了 handler，
 WARNING 以上，INFO 全被静默丢弃。常驻的 consumer 运行期输出全是 INFO，于是「日志文件里除了
 报错什么都没有」。
 
-`base.py` 的 `LOGGING` 给 `core / ingest / assets / analysis / cloud / docs / llmtools / netops`
+`base.py` 的 `LOGGING` 给 `core / ingest / assets / analysis / docs / llmtools / netops`
 各配一个 `StreamHandler(ext://sys.stderr)`，级别取 `DJANGO_LOG_LEVEL`：
 
 - **不动 root**：celery worker 会 hijack root，第三方库的 INFO 也不该跟着喷进日志；

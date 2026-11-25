@@ -41,9 +41,8 @@ network_ops/
 │   ├── configs/     # 配置行家族（ConfigBase 25 子类 + DeviceConfig）+ TTP 解析 / Saver / 归一 / 序列化器 / API
 │   ├── ingest/      # 采集与入库编排：pipeline / workflow / device_import(Excel) / 配置仓库读接口 + collectors/（外部数据源）
 │   ├── analysis/    # 只读消费侧：路径追踪、访问流、互联网资产、监控、大屏供数；models/ 是包
-│   ├── cloud/       # 阿里云接入：客户端封装 + 云资源缓存（暂无对外 API）
 │   └── docs/        # 功能域：表格编辑 + 文档转换 + Dify 推送（与 handbook/ 无关）
-├── llmtools/        # MCP 工具子系统（根目录包、非 app）：server / registry / query / entity_tools / tools / domains
+├── llmtools/        # MCP 工具子系统（根目录包、非 app）：server / registry / query / entities / tools / domains
 ├── frontend/        # Vue 3 + TS + Vite 双入口；src/{shared,netops,dashboard} 三层，dist/ 由 nginx 直出
 ├── nginx/           # 反向代理（静态直出 + API/MCP 代理 + 启动时 resolver 推导）
 ├── entrypoint/      # 容器入口脚本（code_init / app / worker / consumer / beat）+ README（容器化构建手册）
@@ -77,7 +76,7 @@ network_ops/
 | 资产模型与导入、admin 约定 | [`handbook/assets.md`](handbook/assets.md) |
 | 文档转换规则与 Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
 | MCP 工具子系统 | [`handbook/llmtools.md`](handbook/llmtools.md) |
-| 阿里云接入 | [`handbook/cloud.md`](handbook/cloud.md) |
+| 阿里云通道（ASAPI，无状态） | [`handbook/integrations.md`](handbook/integrations.md) |
 | 产品路线图（四阶段 18 项 + MCP 工具域路线） | [`handbook/roadmap.md`](handbook/roadmap.md) |
 
 ## 知识库（跨会话共享的实测结论）
@@ -175,11 +174,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 - **模型包入口**：`assets` 与 `analysis` 都用 `models/` 包，`__init__.py` **只做 re-export、
   不写模型定义**，并用 `__all__` 声明公开名字（**不要**用文件级 `noqa: F401` 抑制 re-export，
   那会把整个文件的未使用导入检查一起关掉）。`assets` 的模型定义在 `network.py`（历史网络域模型）与 `ci.py`（统一配置项），
-  `analysis` 在 `access_flow` / `internet_analysis` / `dashboard`。`from assets.models import X`
+  `analysis` 在 `accessflow` / `internet` / `dashboard`。`from assets.models import X`
   与 `app_label` 保持不变、历史迁移不受影响；新增内聚模块独立成子文件，`__init__.py` 不写实现。
   **不能同时留 `models.py` 与 `models/`**（包优先，单文件被静默忽略）。细节：[`handbook/assets.md`](handbook/assets.md)。
 - **应用注册**：`core.apps.CoreConfig`、`ingest.apps.OperatorConfig`（label 仍是 `operator`）、
-  `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、`cloud.apps.CloudConfig`、
+  `assets.apps.AssetsConfig`、`analysis.apps.AnalysisConfig`、
   `docs.apps.DocsConfig`；另加 `drf_spectacular` / `drf_spectacular_sidecar`。
 - **五条 Celery 链**：① 阶段式工作流（`/api/core/tasks/` 唯一入口，采集→解析→存储由 `Stage` 回写推进）；
   ② 批量导入配置（每份配置建一条 `core.Task`，单阶段 `config_pipeline` 复用 pipeline）；③ 访问流重建
@@ -196,7 +195,7 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
   拉到 HTML）；另有 `/api/schema/swagger-ui/`、`/api/schema/redoc/`（**不叫 `/api/docs/`**，那是
   docs 业务域）；UI 资源走 sidecar（内网不通外网），权限由 `DJANGO_API_DOCS_REQUIRE_LOGIN` 控制。
   见 [`handbook/api.md`](handbook/api.md)。
-- **业务日志**：`LOGGING` 只给项目命名空间（core/ingest/assets/analysis/cloud/docs/llmtools/netops）
+- **业务日志**：`LOGGING` 只给项目命名空间（core/ingest/assets/analysis/docs/llmtools/netops）
   装 stderr handler，级别 `DJANGO_LOG_LEVEL`（默认 INFO）；**不动 root**（celery 会 hijack）、
   `propagate` 保持 True（`caplog` 仍可捕获）。
 - **DeviceConfig 解析入库默认同步**（`pipeline.run_config_pipeline` 在 post_save 调用栈里跑完）；
@@ -267,12 +266,11 @@ uv run ruff check ; uv run ruff format ; uv run pyrefly check
 
 | 层 | 职责 | 细节 |
 |----|------|------|
-| `core/` | 用户与认证、`Task` / `Stage`、外部连接实例（`integrations/`）、Git 配置仓库、运维命令（积压巡检也在这里） | [`handbook/integrations.md`](handbook/integrations.md) |
+| `core/` | 用户与认证、`Task` / `Stage`、外部连接实例（`integrations/`，含无状态的阿里云通道）、Git 配置仓库、运维命令（积压巡检也在这里） | [`handbook/integrations.md`](handbook/integrations.md) |
 | `assets/` | 基础资产模型（DCIM / 设备台账 / IPAM / CI 统一台账）+ 序列化器 + API | [`handbook/assets.md`](handbook/assets.md) |
-| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 + 软资产计算 | [`handbook/design/assets-configs-split.md`](handbook/design/assets-configs-split.md) |
+| `configs/` | 配置行家族（`ConfigBase` 25 子类）+ `DeviceConfig` 快照 + TTP 解析 + Saver 写库 + 键归一 + 软资产计算 | [`handbook/design/assets-configs.md`](handbook/design/assets-configs.md) |
 | `ingest/` | 采集与入库编排、Git 配置仓库、Excel 批量导入；三阶段工作流与访问流 / 大屏投递触点；`collectors/` 接外部数据源 | [`handbook/ingest.md`](handbook/ingest.md) |
 | `analysis/` | 路径追踪、策略展开 / 访问流、资产分析、队列与运行监控、大屏供数（只读消费） | [`handbook/analysis.md`](handbook/analysis.md) |
-| `cloud/` | 阿里云客户端封装 + 云资源缓存（暂无对外 API） | [`handbook/cloud.md`](handbook/cloud.md) |
 | `docs/`（app） | 表格编辑 + 文档转换 + Dify 推送 | [`handbook/docs-domain.md`](handbook/docs-domain.md) |
 | `llmtools/` | MCP 工具出口（根目录包，与 `api/` 平行） | [`handbook/llmtools.md`](handbook/llmtools.md) |
 

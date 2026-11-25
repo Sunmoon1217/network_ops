@@ -12,7 +12,7 @@
 其中 22 个已配 Saver）。
 
 > **配置行正在迁往 `configs` 域**（2026-11-16 起，见
-> [`design/assets-configs-split.md`](design/assets-configs-split.md)）：`ConfigBase` 与 `Vlan`
+> [`design/assets-configs.md`](design/assets-configs.md)）：`ConfigBase` 与 `Vlan`
 > 已经搬走（`from configs.models import Vlan`），其余 23 个子类仍在 `assets/models/network.py`。
 > 下表的「配置基类 / 网络」两行是**迁移中的现状**，不是终态——终态里它们全在 `configs`，
 > assets 只留 DCIM / 设备台账 / IPAM / CI 台账。
@@ -143,7 +143,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 | 做法 | 结论 |
 |---|---|
 | 只在 `ConfigurationItem` 插一条，专属字段塞 `tags` / JSON | 不行：违背蓝图「公共属性上收、**专属属性留类型扩展**」，T1 已用 `_CIExtension` 确立同一模式 |
-| 不落表，每次请求从配置行实时归并 | 不行：等于 `apps/analysis/api/ltm_groups.py` 的 `_build_rows` 全量算完再切页，换页重新计算全量 |
+| 不落表，每次请求从配置行实时归并 | 不行：等于 `apps/analysis/api/groups/ltm.py` 的 `_build_rows` 全量算完再切页，换页重新计算全量 |
 | **新增 2 张 `_CIExtension` 扩展表 + 归并结果落库** | **采用**：列表读主表 + 扩展表做 SQL 分页，详情 / 关联从扩展表取 |
 
 这不是「复制配置」，粒度不同：配置行按 `(device, name)`、跨设备重复；资产按归一键跨设备去重，
@@ -165,7 +165,7 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 ### 归并链路
 
 1. 数据源：`GtmWideip` / `LtmVirtualServer` 及其从属的 `GtmPool` / `GtmVServer` / `LtmPoolMember` 等。
-2. 按归一键分组、跨设备去重；同一键在各设备上取值不同时，沿用 `group_merge` 的
+2. 按归一键分组、跨设备去重；同一键在各设备上取值不同时，沿用 `groups/common` 的
    `inconsistent` / `conflict_fields` 口径标注，取主机名序第一台的值。域名比较 `lb_mode` / `ttl`，
    服务比较 `protocol` / `status`；池名与 VIP 列表是并集，不判冲突。
 3. 增量 upsert 到 `ConfigurationItem` + 对应扩展表；配置行不动不删。重复执行幂等：
@@ -181,11 +181,11 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
      全量重建（异常兜底 / 对账）。
    已消失的配置**不删除**对应资产（可能已有人工标注），需要时另行处理。
 
-实现分两段（域拆分后）：**算**在 `apps/configs/services/soft_asset_builder.py`（只读配置行，
-产出 `SoftAssetDraft`，零写操作），**写**在 `apps/assets/services/soft_asset_sync.py`
+实现分两段（域拆分后）：**算**在 `apps/configs/services/softasset/build.py`（只读配置行，
+产出 `SoftAssetDraft`，零写操作），**写**在 `apps/assets/services/softasset.py`
 （`apply_soft_assets`，只写 CI 台账与两张扩展表）；编排 `sync_soft_assets` /
 `sync_domain_assets` / `sync_load_balancer_services` 与信号、命令都在 configs
-（`configs/services/soft_asset_sync.py`、`configs/signals.py`、`configs/management/commands/`）。
+（`configs/services/softasset/sync.py`、`configs/signals.py`、`configs/management/commands/`）。
 依赖方向 `configs → assets`，assets 不认识 configs。
 
 **字段映射要点**：
@@ -232,8 +232,20 @@ T4 把**域名 / 负载均衡服务**从「某台设备上的一条配置行」�
 - 映射表不继承 `ConfigBase`，`purge_configs` 不会清掉台账；`ci_type` 与 `source_type`
   不一致时 `save()` 抛 `ValueError`（与 `_CIExtension` 同一道防线）。
 
-实现：`apps/assets/models/registry.py`、`apps/assets/services/existing_asset_registry.py`、
+实现：`apps/assets/models/registry.py`、`apps/assets/services/registry.py`、
 `apps/assets/management/commands/register_assets.py`，迁移 `0035_ci_object_link`。
+
+## 云资源缓存（`models/cloud.py`）
+
+阿里云 VPC / VSwitch / SLB 的本地副本（`AliyunVPC` / `AliyunVSwitch` / `AliyunLoadBalancer`，
+2026-11-25 自原 `apps/cloud` 迁入）。云 API 有配额与延迟，分析 / 展示链路直接打云 API 既慢
+又容易限流；缓存表让「读」变成纯本地查询，拉取变成显式的同步动作。
+
+- **外部事实的副本**：可整表重建、**不挂源表外键**、不参与人工归并——与人工维护的台账区别对待。
+- **为什么在 assets 而不单开一个 app**：VPC ⊃ VSwitch ⊃ ECS / SLB 与 IPAM / 软资产是同一张
+  资产图上的节点，同域才能与 `ConfigurationItem` 做跨类型关联。
+- **写入权归 assets**（见 `design/layering.md`「跨域写入」），同步动作由 ingest 的采集器发起（待建）。
+- 阿里云通道在 `core/integrations/aliyun/`，见 [`integrations.md`](integrations.md)「阿里云通道」。
 
 ## API 视图（`api/views.py`）
 

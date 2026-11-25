@@ -2,7 +2,8 @@
 
 > **状态：切片式实施中（2026-11-16 起）。Step 1–4 已落地（连接配置统一 + AUTOTASK 收口；
 > `core/integrations/` 骨架 + Zabbix 下沉 + 释放钩子；`IntegrationHealth` + beat 探活 + 只读接口），
-> 只剩 Step 5（Dify / 阿里云接入 provider）未做。**
+> 只剩 Step 5（Dify / 阿里云接入 provider）未做——2026-11-25 起阿里云改按无状态通道落地
+> （`core/integrations/aliyun/`，不注册 provider），实际只剩 Dify。**
 > **现状文档见 [`../integrations.md`](../integrations.md)**——本文保留设计论证与未完成部分。
 > 分层总图与依赖矩阵见 [`layering.md`](layering.md)；core 的任务机制（已落地）见
 > [`../tasks.md`](../tasks.md)。
@@ -23,7 +24,7 @@
 
 | 外部 | 连接配置 | client 实现 | 形态 |
 |---|---|---|---|
-| 阿里云 | `settings.ALIYUN_CONFIG`（region + endpoints + accounts） | `apps/cloud/client.py` | 同步 SDK，per-call `AcsClient` |
+| 阿里云 | `settings.ALIYUN_CONFIG`（region + endpoints + accounts） | `core/integrations/aliyun/client.py` | 同步 SDK，per-call `AcsClient` / ASAPI |
 | Zabbix | `settings.ZABBIX_CONFIG`（url + token/user/password） | `apps/ingest/collectors/zabbix/zabbix.py` | **异步进程级单例**，绑事件循环 |
 | Dify | `settings.DIFY_CONFIG`（api_base_url + api_key + dataset_id） | `apps/docs/dify.py` | 同步 `requests`，无状态 |
 | Autotask | **代码里硬编码 `BASE_URL`**（`collectors/autotask/autotask.py:11`） | `apps/ingest/collectors/autotask/autotask.py` | 异步 `httpx2`，per-call |
@@ -78,7 +79,7 @@ SSH / napalm / netmiko 连接（address / port / username / password / enable_pa
 
 ### 边界一：注册范式
 
-照抄 `core/task_types.py` 的既有约定（现状见 [`../tasks.md`](../tasks.md)）——**各域在
+照抄 `core/tasktypes.py` 的既有约定（现状见 [`../tasks.md`](../tasks.md)）——**各域在
 `ready()` 里追加**：
 
 ```python
@@ -146,7 +147,7 @@ core/
 ├── models.py         User / Token / UserPreference / Task / Stage
 │                    + IntegrationHealth（新增）
 ├── tasks.py          create_task / dispatch / cancel（通用机制）
-├── task_types.py     业务词汇注册表（各域在 ready() 里追加）
+├── tasktypes.py     业务词汇注册表（各域在 ready() 里追加）
 ├── integrations/     外部连接实例与 client 生命周期 ★ 新增
 ├── permissions.py    IsOperatorOrReadOnly
 ├── api/              auth / preferences / tasks / stages
@@ -309,22 +310,27 @@ def register_providers():
 
 ### Step 5 — Dify / 阿里云接入（按需）
 
-**状态：未做**。无状态的以 provider 形式注册，每次调用新建，实现上零心智负担。
-**不必为了"统一"强行把它们变成单例。**
+**状态：阿里云已落地（2026-11-25），Dify 未做。**
+
+阿里云的落地方式与原设想不同：它无状态、每次新建，**没有需要 core 托管的东西**，所以没有
+注册成 provider，而是作为 `core/integrations/aliyun/` 的通道直接 import（同步与异步调用方
+共享同一套构造逻辑，用 `acquire_sync` 只会让路径更绕）。无状态系统接进 registry 只会
+换来一个恒为 `ok` 的假健康行——`acquire()` 只是构造对象，永远不会失败。Dify 同理，
+接入前先确认探活语义，否则别为了「统一」硬注册。
 
 ## 与其他设计稿的关系
 
 | 设计稿 | 关系 |
 |---|---|
 | [`layering.md`](layering.md) | 本方案是 core 的第三块职责（用户/认证 + 任务机制 + 外部连接实例）。依赖矩阵里 core 一行**仍是零业务依赖**——core 持有的是域交上来的 provider 对象，不 import 域 |
-| [`../tasks.md`](../tasks.md) | **范本**（已落地的现状文档）。`core/task_types.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
-| [`assets-configs-split.md`](assets-configs-split.md) | 无直接关系。assets 拆 configs 不触及外部连接 |
+| [`../tasks.md`](../tasks.md) | **范本**（已落地的现状文档）。`core/tasktypes.py` 的「各域在 `ready()` 里追加业务词汇」与本方案的 provider 注册是同一范式，实现照抄 |
+| [`assets-configs.md`](assets-configs.md) | 无直接关系。assets 拆 configs 不触及外部连接 |
 
-**与 egest 的关系**：egest（配置下发 / 消息推送）将来做设备侧写操作时，
-需要的正是「core 统一持有 client 实例」这套机制。
-`layering.md` 里 egest 的待定项「是否复用 ingest 的采集通道」，
-若答案是"复用"，则连接管理的归属问题在本方案下自然解决——
-**外部平台连接归 core 的 integrations，被管设备连接仍归 assets 的 `DeviceConnection`**。
+**与 egest 的关系**：egest（配置下发 / 消息推送）将来做设备侧写操作时，取外部连接走本方案
+（`core.integrations`），不需要 import 任何上游域。`layering.md` 已定 **egest 不 import ingest**
+（2026-11-25）：两者方向相反，复用 napalm / netmiko 的连接管理必须上提到 core，而不是让
+下发路径反向依赖采集域。**外部平台连接归 core 的 integrations，被管设备连接仍归 assets 的
+`DeviceConnection`**。
 
 ## 待定项
 
@@ -333,12 +339,12 @@ def register_providers():
 | 1 | `instance` 命名：固定枚举（`prod`/`test`/`default`）还是允许自定义名（如 `zabbix-生产机房`） | 后者对 T16 的「实例职责边界」更友好，但要求可读且唯一 |
 | 2 | 健康状态落 DB 还是 Redis | 本文倾向 DB（要记「上次成功时间」供对账） |
 | 3 | `DeviceConnection` 的明文密码要不要一并治 | 与本方案**边界不同**（被管设备 vs 外部平台），但同属「凭据存储」问题，可一起排期 |
-| 4 | MCP 工具能否直接用 core 的 client 实例 | `llmtools/registry.py` 现有硬规矩是「不 import core 业务模块」；`core.integrations` 是否算「业务模块」需明确，否则 MCP 工具只能走各域自带的 `zabbix_*` / `cloud_*` 工具 |
+| 4 | MCP 工具能否直接用 core 的 client 实例 | `llmtools/registry.py` 现有硬规矩是「不 import core 业务模块」；`core.integrations` 是否算「业务模块」需明确，否则 MCP 工具只能走各域自带的 `zabbix_*` / `aliyun_*` 工具 |
 
 ## 附带发现（不在本方案范围）
 
 1. **`handbook/roadmap.md` 与代码不一致**：roadmap 写「McpToolCall 审计表（core）✅」，
    但在 `develop` 与所有本地分支都搜不到该模型定义（只在 roadmap 文本里命中）。
    写侧审计要落地的话，这张表得先补。
-2. **MCP 出口当前是匿名的**：`netops/mcp_gateway.py` 注明「能访问到 `/mcp` 就能调工具」。
+2. **MCP 出口当前是匿名的**：`netops/mcp.py` 注明「能访问到 `/mcp` 就能调工具」。
    外部写侧工具开放前必须先补鉴权，否则等于把写操作裸露出去。
