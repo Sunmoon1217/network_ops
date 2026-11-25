@@ -25,7 +25,7 @@ from typing import Any, TypedDict
 
 from django.utils import timezone
 
-from .autotask.autotask import fetch_case, fetch_inspect, fetch_slb
+from .autotask.autotask import fetch_case, fetch_slb
 from .zabbix import queries
 
 logger = getLogger(__name__)
@@ -179,8 +179,12 @@ def _success_rate(case_rows):
 
 
 async def _collect_autotask(sampled_at):
-    """工单 / SLB / 巡检三个接口并发；工单保留外部原字段供前端表格用。"""
-    cases, slb, inspect = await asyncio.gather(fetch_case(), fetch_slb(), fetch_inspect(), return_exceptions=True)
+    """工单 / SLB 两个接口并发；工单保留外部原字段供前端表格用。
+
+    巡检不再走这条链路：大屏 ``inspection/device/list`` 由每日 Zabbix 巡检物化
+    （analysis.write_inspection），``fetch_inspect`` 保留给独立的定时任务。
+    """
+    cases, slb = await asyncio.gather(fetch_case(), fetch_slb(), return_exceptions=True)
     metrics, case_rows = [], []
 
     if isinstance(cases, BaseException):
@@ -196,11 +200,6 @@ async def _collect_autotask(sampled_at):
     else:
         # 前端要 {instance, listener}；巡检数据不在这里拼
         metrics.append(_metric("slb", "slb", "slb", list_value=[row.model_dump() for row in slb], sampled_at=sampled_at))
-
-    if isinstance(inspect, BaseException):
-        logger.warning("巡检采集失败: %s", inspect)
-    else:
-        metrics.append(_metric("inspection", "device", "list", list_value=[row.model_dump() for row in inspect], sampled_at=sampled_at))
 
     return metrics, case_rows
 

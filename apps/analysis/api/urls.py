@@ -8,11 +8,14 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, lb_chain, ltm_groups, monitor, overview, trace
+from . import accessflows, analysis, dashboard, firewall_groups, gslb_clusters, inspection, lb_chain, ltm_groups, monitor, overview, trace
 
 router = SimpleRouter()
 # 访问流（2026-09 随模型由 ingest 迁入）：只读，列表即策略展开结果
 router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-flow")
+# 巡检日指标（每日任务写入）：只读，date 缺省取最新有数据的一天
+router.register("inspection-devices", inspection.DeviceMetricDailyViewSet, basename="inspection-device")
+router.register("inspection-interfaces", inspection.InterfaceMetricDailyViewSet, basename="inspection-interface")
 
 urlpatterns = [
     path(
