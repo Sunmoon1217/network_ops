@@ -21,6 +21,24 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 const handleResize = () => myChart?.resize()
 
+// 给每个 data item 加独立的 title/detail，按索引水平分布 x 偏移，避免多 gauge 文字重叠
+const transformData = (data: Array<{ name: string; value: number }>) => {
+  const count = Math.max(data.length, 1)
+  return data.map((item, i) => {
+    // 两个 gauge 时一个偏左一个偏右；n 个按 (i+1)/(count+1) 对称分布
+    const xPct = count === 1 ? '0' : `${Math.round(((i + 1) / (count + 1)) * 100 - 50)}%`
+    return {
+      ...item,
+      title: {
+        offsetCenter: [xPct, '32%'],
+      },
+      detail: {
+        offsetCenter: [xPct, '-12%'],
+      },
+    }
+  })
+}
+
 // 初始化图表
 const initChart = () => {
   if (!chartRef.value) return
@@ -111,7 +129,7 @@ const initChart = () => {
           formatter: '{value} %',
           offsetCenter: ['0', '-12%'],
         },
-        data: props.data,
+        data: transformData(props.data),
       },
     ],
   })
@@ -120,7 +138,7 @@ const initChart = () => {
 const updateChart = () => {
   if (!myChart) return
   myChart?.setOption({
-    series: [{}, { data: props.data }],
+    series: [{}, { data: transformData(props.data) }],
   })
 }
 
