@@ -1,11 +1,12 @@
 """分析域模型包：本文件只做 re-export，模型定义在 ``access_flow`` / ``internet_analysis`` /
-``dashboard`` 子模块；``from analysis.models import X`` 与 ``app_label`` 保持不变。
+``dashboard`` / ``inspection`` 子模块；``from analysis.models import X`` 与 ``app_label`` 保持不变。
 
 不能同时留 ``models.py`` 与 ``models/``：包优先，单文件会被静默忽略。
 """
 
 from .access_flow import AccessFlow
 from .dashboard import CollectionRun, DashboardMetric, ItsmCase, LinkTarget, MetricSample
+from .inspection import DeviceMetricDaily, InspectionRun, InspectionTarget, InterfaceMetricDaily
 from .internet_analysis import InternetAnalysis
 
 __all__ = [
@@ -16,4 +17,8 @@ __all__ = [
     "ItsmCase",
     "CollectionRun",
     "LinkTarget",
+    "InspectionTarget",
+    "InspectionRun",
+    "DeviceMetricDaily",
+    "InterfaceMetricDaily",
 ]

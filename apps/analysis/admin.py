@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AccessFlow, InternetAnalysis
+from .models import AccessFlow, DeviceMetricDaily, InspectionRun, InspectionTarget, InterfaceMetricDaily, InternetAnalysis
 
 
 @admin.register(InternetAnalysis)
@@ -46,4 +46,68 @@ class AccessFlowAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InspectionTarget)
+class InspectionTargetAdmin(admin.ModelAdmin):
+    """接口带宽巡检目标：采集器的输入清单，人工维护。"""
+
+    list_display = ("id", "host", "ifname", "enabled", "updated_at")
+    list_filter = ("enabled",)
+    search_fields = ("host", "ifname")
+    list_editable = ("enabled",)
+
+
+@admin.register(InspectionRun)
+class InspectionRunAdmin(admin.ModelAdmin):
+    """巡检批次：由每日任务写入，这里只读。"""
+
+    list_display = ("id", "date", "status", "device_count", "interface_count", "finished_at")
+    list_filter = ("status",)
+    date_hierarchy = "date"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DeviceMetricDaily)
+class DeviceMetricDailyAdmin(admin.ModelAdmin):
+    list_display = ("id", "date", "host", "cpu_avg", "cpu_max", "memory_avg", "memory_max")
+    search_fields = ("host",)
+    date_hierarchy = "date"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InterfaceMetricDaily)
+class InterfaceMetricDailyAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "date",
+        "host",
+        "ifname",
+        "in_bps_avg",
+        "in_bps_max",
+        "out_bps_avg",
+        "out_bps_max",
+        "in_usage_avg",
+        "in_usage_max",
+        "out_usage_avg",
+        "out_usage_max",
+    )
+    search_fields = ("host", "ifname")
+    date_hierarchy = "date"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False

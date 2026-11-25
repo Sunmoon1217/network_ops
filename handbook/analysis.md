@@ -364,3 +364,36 @@ target label（不含 host / ifname），前端一次请求拿全。缓存未生
   `LineCharts` 用 `replaceMerge` 清掉已删除的 series。
 - 前端那份 `dashboard.config.json` 没有采用（只改 UI，不解决「监控哪几条线」）；
   `MetricSample` 里旧的 `link_bandwidth` 样本不再被读，可忽略；`LinkTarget` 表仍未启用。
+
+## 巡检（`ingest/collectors/inspection.py` + `analysis/models/inspection.py`）
+
+每天从 Zabbix 采集**前一天**的 CPU / 内存 / 接口带宽，按自然日聚合落 analysis 日表；
+大屏巡检面板由写库任务物化，前端 `InspectionWidget` 的数据契约不变。
+
+```
+analysis.dispatch_inspection(date_start=None, date_end=None)   # beat：INSPECTION_DISPATCH_HOUR:MINUTE，默认 06:00
+  ← 读 InspectionTarget（启用的 host + ifname 清单，随任务参数下发）
+  → send_task(ingest.collect_inspection)
+ingest.collect_inspection(...)          # 只调 Zabbix、产纯 dict；ingest 不 import analysis
+  → send_task(analysis.write_inspection)
+analysis.write_inspection(payload)      # 唯一写库入口：一个事务内 upsert + 物化 inspection/device/list
+analysis.prune_inspection()             # beat：删除 date < today - INSPECTION_RETENTION_DAYS
+```
+
+- **日期**：任务参数缺省为「昨天」；可传 `date_start` / `date_end` 补任意区间，内部按本地
+  自然日分桶，**一天一行**。唯一键含 `date`，同一天重跑 upsert，不产生重复。
+- **CPU / 内存**：`DEVICE_GROUPS × CPU_KEYS / MEM_KEYS`，多核 / 多监控项样本合并算日均与峰值；
+  `NULL` 表示当天无样本，不用 0 伪装（避免把采集中断显示成 0 负载）。
+- **接口带宽**：8 个字段 = 出 / 入 × 带宽 bps 与使用率 % × 日均 / 峰值。方向判定先看 `key_`
+  （`net.if.in` / `net.if.out`、`ifInOctets` / `ifOutOctets`），再看名称（入 / 接收、出 / 发送）；
+  识别不出方向的监控项不进方向字段，原文留 `payload` 溯源。
+- **history 取数**：20 项一批并发，`limit = max(2000, 400 × 天数)`（一天 288 点）；单组 / 单接口
+  失败只 warning 并跳过，全部失败由采集任务投递 `failed` 批次并上抛。
+- **物化**：`panel=inspection, group=device, name=list`，形状对齐前端 `InspectItem`
+  （`name / cpu_avg / cpu_max / memory_avg / memory_max`）。**只在当天有设备行时写**，
+  一次采集失败不清空上次成功的数据。
+- **保留**：按业务日期滚存 `INSPECTION_RETENTION_DAYS`（默认 365，0 = 永久保留直接跳过）。
+- **读接口**：`GET /api/analysis/inspection-devices/`、`inspection-interfaces/`（只读，
+  `?date=` 缺省取最新有数据的一天，`?host=` 模糊）；`inspection-devices/summary/` 给当天概览。
+- **旧来源**：Autotask 的 `fetch_inspect` 保留给独立定时任务，但不再写大屏
+  `inspection/device/list`——该行由本链路独占，避免两套来源互相覆盖。

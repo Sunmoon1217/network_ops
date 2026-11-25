@@ -181,3 +181,153 @@ def write_dashboard(delivery):
 
     logger.info("Dashboard 写库完成: source=%s, status=%s, items=%s", payload["source"], run["status"], run["item_count"])
     return run["item_count"]
+
+
+# 巡检：调度（读目标投采集）/ 写库（唯一入口）/ 滚存清理。口径见 handbook/analysis.md「巡检」
+
+
+@shared_task(name=settings.INSPECTION_DISPATCH_TASK)
+def dispatch_inspection(date_start=None, date_end=None):
+    """读启用的接口带宽目标 → 投递 ingest 巡检采集任务（本任务不碰 Zabbix）。
+
+    日期为空时由采集器取「昨天」，手动补数可传 ``date_start`` / ``date_end``。
+    """
+    from celery import current_app
+
+    from analysis.models import InspectionTarget
+
+    targets = list(InspectionTarget.objects.filter(enabled=True).values("host", "ifname", "itemids"))
+    current_app.send_task(settings.INSPECTION_COLLECT_TASK, args=[date_start, date_end, targets])
+    logger.info("巡检采集已投递: %s ~ %s, targets=%d", date_start, date_end, len(targets))
+    return {"date_start": date_start, "date_end": date_end, "targets": len(targets)}
+
+
+@shared_task(name=settings.INSPECTION_WRITE_TASK)
+def write_inspection(payload):
+    """巡检唯一写库入口：upsert 日指标与批次，并把当天设备行物化成大屏巡检面板。
+
+    物化只在当天有设备数据时进行——一次采集失败不清空上次成功的结果。
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from django.utils.dateparse import parse_date, parse_datetime
+
+    from analysis.models import DashboardMetric, DeviceMetricDaily, InspectionRun, InterfaceMetricDaily
+
+    devices = payload.get("devices") or []
+    interfaces = payload.get("interfaces") or []
+    run = payload.get("run") or {}
+    batch_date = parse_date(payload.get("date_end") or "") or timezone.localdate()
+
+    try:
+        with transaction.atomic():
+            for row in devices:
+                DeviceMetricDaily.objects.update_or_create(
+                    date=parse_date(row["date"]),
+                    host=row["host"],
+                    defaults={
+                        "cpu_avg": row.get("cpu_avg"),
+                        "cpu_max": row.get("cpu_max"),
+                        "memory_avg": row.get("memory_avg"),
+                        "memory_max": row.get("memory_max"),
+                        "payload": row.get("payload") or {},
+                    },
+                )
+
+            for row in interfaces:
+                InterfaceMetricDaily.objects.update_or_create(
+                    date=parse_date(row["date"]),
+                    host=row["host"],
+                    ifname=row["ifname"],
+                    defaults={
+                        "in_bps_avg": row.get("in_bps_avg"),
+                        "in_bps_max": row.get("in_bps_max"),
+                        "out_bps_avg": row.get("out_bps_avg"),
+                        "out_bps_max": row.get("out_bps_max"),
+                        "in_usage_avg": row.get("in_usage_avg"),
+                        "in_usage_max": row.get("in_usage_max"),
+                        "out_usage_avg": row.get("out_usage_avg"),
+                        "out_usage_max": row.get("out_usage_max"),
+                        "payload": row.get("payload") or {},
+                    },
+                )
+
+            InspectionRun.objects.update_or_create(
+                date=batch_date,
+                defaults={
+                    "status": run.get("status") or "success",
+                    "device_count": len(devices),
+                    "interface_count": len(interfaces),
+                    "error": run.get("error") or "",
+                    "started_at": parse_datetime(run.get("started_at") or "") or timezone.now(),
+                    "finished_at": parse_datetime(run.get("finished_at") or "") or timezone.now(),
+                },
+            )
+
+            day_rows = [row for row in devices if row.get("date") == payload.get("date_end")]
+            if day_rows:
+                DashboardMetric.objects.update_or_create(
+                    panel="inspection",
+                    group="device",
+                    name="list",
+                    defaults={
+                        "value": None,
+                        "list_value": [
+                            {
+                                "name": row["host"],
+                                "cpu_avg": row.get("cpu_avg"),
+                                "cpu_max": row.get("cpu_max"),
+                                "memory_avg": row.get("memory_avg"),
+                                "memory_max": row.get("memory_max"),
+                            }
+                            for row in day_rows
+                        ],
+                        "sampled_at": timezone.now(),
+                    },
+                )
+    except Exception as exc:
+        logger.exception("巡检写库失败: date_end=%s", payload.get("date_end"))
+        try:
+            InspectionRun.objects.update_or_create(
+                date=batch_date,
+                defaults={
+                    "status": "failed",
+                    "device_count": 0,
+                    "interface_count": 0,
+                    "error": str(exc)[:2000],
+                    "started_at": parse_datetime(run.get("started_at") or "") or timezone.now(),
+                    "finished_at": timezone.now(),
+                },
+            )
+        except Exception:
+            logger.exception("巡检失败批次写入失败")
+        raise
+
+    logger.info("巡检写库完成: date_end=%s, devices=%d, interfaces=%d", payload.get("date_end"), len(devices), len(interfaces))
+    return {"devices": len(devices), "interfaces": len(interfaces)}
+
+
+@shared_task(name=settings.INSPECTION_PRUNE_TASK)
+def prune_inspection():
+    """滚存：删除业务日期早于保留期的日指标与批次；``INSPECTION_RETENTION_DAYS <= 0`` 跳过。"""
+    from datetime import timedelta
+
+    from django.db import transaction
+    from django.utils import timezone
+
+    from analysis.models import DeviceMetricDaily, InspectionRun, InterfaceMetricDaily
+
+    days = settings.INSPECTION_RETENTION_DAYS
+    if days <= 0:
+        logger.info("巡检保留期为 0（永久保留），跳过清理")
+        return {"skipped": True}
+
+    cutoff = timezone.localdate() - timedelta(days=days)
+    with transaction.atomic():
+        device_deleted = DeviceMetricDaily.objects.filter(date__lt=cutoff).delete()[0]
+        interface_deleted = InterfaceMetricDaily.objects.filter(date__lt=cutoff).delete()[0]
+        run_deleted = InspectionRun.objects.filter(date__lt=cutoff).delete()[0]
+
+    summary = {"cutoff": cutoff.isoformat(), "devices": device_deleted, "interfaces": interface_deleted, "runs": run_deleted}
+    logger.info("巡检滚存完成: %s", summary)
+    return summary

@@ -4,6 +4,7 @@ import logging
 from functools import lru_cache
 
 from celery import shared_task
+from django.conf import settings
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -295,3 +296,65 @@ def refresh_link_cache_task():
 
     logger.info("链路缓存刷新完成: %s", summary)
     return {"status": "success", **summary}
+
+
+# 巡检采集任务：采集与存储分离（采集编排见 ingest/collectors/inspection.py）
+
+
+@shared_task(name=settings.INSPECTION_COLLECT_TASK)
+def collect_inspection(date_start=None, date_end=None, targets=None):
+    """巡检采集（日期缺省=昨天，可传区间补数）→ 投递给 analysis 写库任务；**本任务不写数据库**。
+
+    ingest 侧只认 ``settings.INSPECTION_WRITE_TASK`` 字符串，不 import analysis。
+    采集整体失败仍投递一条 failed 批次让巡检表可见新鲜度，随后上抛让 Celery 记 FAILURE。
+    """
+    import asyncio
+    from datetime import timedelta
+
+    from celery import current_app
+
+    from ingest.collectors.inspection import InspectionPayload, collect
+
+    failed: Exception | None = None
+    payload: InspectionPayload
+    try:
+        payload = asyncio.run(collect(date_start, date_end, targets))
+    except Exception as exc:
+        logger.exception("巡检采集任务异常: %s ~ %s", date_start, date_end)
+        failed = exc
+        now = timezone.now()
+        fallback_day = (timezone.localdate() - timedelta(days=1)).isoformat()
+        payload = {
+            "date_start": date_start or fallback_day,
+            "date_end": date_end or fallback_day,
+            "devices": [],
+            "interfaces": [],
+            "run": {
+                "status": "failed",
+                "device_count": 0,
+                "interface_count": 0,
+                "started_at": now.isoformat(),
+                "finished_at": now.isoformat(),
+                "error": str(exc),
+            },
+        }
+
+    current_app.send_task(settings.INSPECTION_WRITE_TASK, args=[payload])
+    if failed is not None:
+        raise failed
+
+    logger.info(
+        "巡检采集已投递: %s ~ %s, devices=%d, interfaces=%d, run=%s",
+        payload["date_start"],
+        payload["date_end"],
+        len(payload["devices"]),
+        len(payload["interfaces"]),
+        payload["run"]["status"],
+    )
+    return {
+        "date_start": payload["date_start"],
+        "date_end": payload["date_end"],
+        "run": payload["run"],
+        "devices": len(payload["devices"]),
+        "interfaces": len(payload["interfaces"]),
+    }
