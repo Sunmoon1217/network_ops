@@ -15,10 +15,7 @@ const renderIcon = (icon: Component) => {
   return () => h(ElIcon, null, { default: () => h(icon) })
 }
 
-/**
- * 导航分组：侧栏只渲染一级，主页面顶部渲染当前一级下的递归子菜单。
- * 约定：叶子节点的 index 就是路由路径（以 / 开头），分组节点的 index 是唯一 key。
- */
+/** 导航分组：侧栏只到一级 > 二级，三级放顶栏水平。 */
 export const menuOptions: MenuItem[] = [
   { index: '/overview', label: '总览', icon: renderIcon(IconOverview) },
   {
@@ -33,17 +30,11 @@ export const menuOptions: MenuItem[] = [
         ],
       },
       {
-        index: 'assets-component', label: '组件',
-        children: [
-          { index: '/asset/interfaces', label: '网卡/接口', icon: renderIcon(IconInterfaces) },
-          { index: '/asset/vlans', label: 'VLAN' },
-        ],
-      },
-      {
         index: 'assets-network-service', label: '网络服务',
         children: [
           { index: '/asset/ip-addresses', label: 'IP 地址', icon: renderIcon(IconIp) },
           { index: '/asset/subnets', label: '网段', icon: renderIcon(IconSubnet) },
+          { index: '/asset/cloud-network', label: '云资产' },
           { index: '/asset/load-balancer', label: '负载均衡' },
           { index: '/asset/domain', label: '域名' },
           { index: '/asset/link', label: '链路信息' },
@@ -68,15 +59,41 @@ export const menuOptions: MenuItem[] = [
   {
     index: 'config', label: '配置', icon: renderIcon(IconConfig),
     children: [
-      { index: '/config/slb', label: '负载均衡', icon: renderIcon(IconLoadBalancer) },
-      { index: '/config/gslb', label: '域名解析', icon: renderIcon(IconDns) },
-      { index: '/config/firewall', label: 'NAT 管理', icon: renderIcon(IconPolicy) },
-      { index: '/config/routing-table', label: '路由表', icon: renderIcon(IconRouting) },
-      { index: '/config/arp-mac', label: 'ARP/MAC', icon: renderIcon(IconInterfaces) },
-      { index: '/config/policy', label: '访问策略', icon: renderIcon(IconPolicy) },
-      { index: '/config/baseline', label: '基线管理', icon: renderIcon(IconBaseline) },
-      { index: '/config/parsers', label: '解析器模板', icon: renderIcon(IconParsers) },
-      { index: '/config/accounts', label: '设备账号', icon: renderIcon(IconBaseline) },
+      {
+        index: 'config-firewall', label: '防火墙',
+        children: [
+          { index: '/config/policy', label: '访问策略', icon: renderIcon(IconPolicy) },
+          { index: '/config/firewall', label: '地址转换(NAT)' },
+          { index: '/config/address-service', label: '地址与服务对象' },
+        ],
+      },
+      {
+        index: 'config-lb', label: '负载均衡',
+        children: [
+          { index: '/config/slb', label: '本地LB(SLB)' },
+          { index: '/config/gslb', label: '全局LB(GSLB)' },
+          { index: '/config/cloud-lb', label: '云LB配置' },
+        ],
+      },
+      {
+        index: 'config-network', label: '网络基础',
+        children: [
+          { index: '/config/routing-table', label: '路由表', icon: renderIcon(IconRouting) },
+          { index: '/config/arp-mac', label: 'ARP/MAC', icon: renderIcon(IconInterfaces) },
+          { index: '/config/interfaces', label: '网卡/接口', icon: renderIcon(IconInterfaces) },
+          { index: '/config/vlans', label: 'VLAN' },
+          { index: '/config/vrf', label: 'VRF 实例' },
+        ],
+      },
+      {
+        index: 'config-baseline', label: '基线配置',
+        children: [
+          { index: '/config/baseline', label: '基线参数' },
+          { index: '/config/accounts', label: '设备账号' },
+          { index: '/config/cloud-accounts', label: '云平台账号' },
+          { index: '/config/parsers', label: '解析器模板', icon: renderIcon(IconParsers) },
+        ],
+      },
     ],
   },
   {
@@ -101,6 +118,7 @@ export const menuOptions: MenuItem[] = [
       { index: '/tools/rack-view', label: '机柜视图', icon: renderIcon(IconBaseline) },
       { index: '/tools/subnet-calc', label: '子网计算器', icon: renderIcon(IconSubnet) },
       { index: '/tools/dns-query', label: 'DNS 查询', icon: renderIcon(IconDns) },
+      { index: '/tools/sls-query', label: 'SLS 日志查询' },
       { index: '/tools/internet-asset', label: '互联网资产分析', icon: renderIcon(DataAnalysis) },
       { index: '/tools/parser-mapping', label: '解析映射', icon: renderIcon(Connection) },
     ],
