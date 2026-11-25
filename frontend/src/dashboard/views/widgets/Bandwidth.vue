@@ -50,6 +50,21 @@ const subjectCount = computed(() => {
   return subjects.size
 })
 
+// 按 scope 分组统计 enabled 的链路数；meta 未到时回退到空（不显示伪零）
+const scopeCounts = computed<Array<{ slug: string; label: string; count: number }>>(() => {
+  if (!targets.value.length || !Object.keys(scopes.value).length) return []
+  const enabled = targets.value.filter((t) => t.enabled)
+  const grouped: Record<string, number> = {}
+  for (const t of enabled) grouped[t.scope] = (grouped[t.scope] ?? 0) + 1
+  // 按 scopes 定义顺序输出，保证展示顺序稳定
+  return Object.keys(scopes.value).map((slug) => ({
+    slug,
+    label: scopes.value[slug],
+    count: grouped[slug] ?? 0,
+  }))
+})
+const totalLinks = computed(() => scopeCounts.value.reduce((sum, s) => sum + s.count, 0))
+
 // 后端返回的 EAV：{time, data: {scope: {subject: value}}}；系列按实际出现的 subject 动态生成。
 const toGroups = (scopeIds: string[]): ChartDataGroup[] =>
   scopeIds.map((scope) => {
@@ -69,11 +84,14 @@ const toGroups = (scopeIds: string[]): ChartDataGroup[] =>
     }
   })
 
-// 面板与 scope 归属来自后端配置；缓存未到时用数据里出现的 scope 兜底（不写死线路名）
+// 面板与 scope 归属来自后端配置；缓存未到时用数据里出现的 scope 兜底；
+// 空数据时也返回一个默认 panel，确保图表框架始终渲染
 const renderPanels = computed<LinkPanelMeta[]>(() => {
   if (panels.value.length) return panels.value
   const scopeIds = Array.from(new Set(points.value.flatMap((point) => Object.keys(point.data))))
-  return scopeIds.length ? [{ id: 'links', label: '链路使用率', scopes: scopeIds }] : []
+  if (scopeIds.length) return [{ id: 'links', label: '链路使用率', scopes: scopeIds }]
+  // 兜底：数据和缓存都空，返回默认 panel，LineCharts 会渲染空坐标系
+  return [{ id: 'links', label: '链路使用率', scopes: [] }]
 })
 const panelGroups = computed(() =>
   renderPanels.value.map((panel) => ({ panel, groups: toGroups(panel.scopes) })),
@@ -115,19 +133,22 @@ onMounted(() => {
         <h4>链路运行总览</h4>
         <p>近 3 小时带宽峰值采样</p>
       </div>
+      <!-- 总数卡片：按 meta.targets 统计 enabled 的链路总数 -->
       <div class="stats-total">
-        <span>采样时间点</span>
-        <strong>{{ points.length }}</strong>
+        <span>监控链路总数</span>
+        <strong>{{ scopeCounts.length ? totalLinks : '--' }}</strong>
       </div>
+      <!-- scope 分类卡片：互联网线路 / 三方专线 / 广域网线路 -->
       <div class="stats-list">
-        <article class="stats-card">
-          <div class="stats-head"><span>监控链路</span><strong>{{ subjectCount }}</strong></div>
-          <div class="stats-meta"><span>有效样本 {{ values.length }}</span><span>峰值 {{ peak === null ? '--' : peak.toFixed(1) + '%' }}</span></div>
+        <article v-for="s in scopeCounts" :key="s.slug" class="stats-card">
+          <div class="stats-head"><span>{{ s.label }}</span><strong>{{ s.count }}</strong></div>
         </article>
-        <article class="stats-card">
-          <div class="stats-head"><span>最新采样</span><strong>{{ timeAxis.length ? timeAxis[timeAxis.length - 1] : '--' }}</strong></div>
-          <div class="stats-meta"><span>数据源 Zabbix</span><span>由后端缓存供数</span></div>
-        </article>
+        <!-- meta 还没到时不渲染伪零卡片，保持骨架安静 -->
+      </div>
+      <!-- 采样 + 峰值保留在下方，不再占主要位置 -->
+      <div class="stats-meta-row">
+        <span>采样点 {{ points.length }}</span>
+        <span>峰值 {{ peak === null ? '--' : peak.toFixed(1) + '%' }}</span>
       </div>
       <p v-if="loadError" class="error">{{ loadError }}</p>
       <p v-else-if="!points.length" class="hint">近 3 小时暂无链路采样</p>
@@ -135,8 +156,8 @@ onMounted(() => {
     </section>
     <div v-for="item in panelGroups" :key="item.panel.id" class="items linechart">
       <h4>{{ item.panel.label }}</h4>
-      <LineCharts v-if="points.length" :data="item.groups" :xAxisData="timeAxis" />
-      <div v-else class="chart-empty">暂无链路采样数据</div>
+      <!-- LineCharts 始终渲染：空数据时显示空坐标系框架 -->
+      <LineCharts :data="item.groups" :xAxisData="timeAxis" />
     </div>
   </div>
 </template>
@@ -189,6 +210,7 @@ onMounted(() => {
 .stats-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; }
 .stats-head strong { color: #34c8ff; font-size: 20px; line-height: 1; }
 .stats-meta { margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #cfe8ff; }
+.stats-meta-row { margin-top: 4px; display: flex; justify-content: space-between; font-size: 11px; color: #88a9c8; }
 .error { margin: 0; font-size: 11px; color: #ffb7c3; }
 .hint { margin: 0; font-size: 11px; color: #88a9c8; }
 

@@ -54,7 +54,6 @@ onMounted(() => {
     </section>
     <div class="table-wrap">
       <p v-if="loadError" class="error">{{ loadError }}</p>
-      <p v-else-if="!tickets.length" class="empty">暂无工单数据</p>
       <table v-else>
         <thead>
           <tr><th>标题</th><th>工单号</th><th>申请人</th><th>状态</th></tr>
@@ -65,6 +64,10 @@ onMounted(() => {
             <td>{{ item.case_no }}</td>
             <td>{{ item.shenqing || '--' }}</td>
             <td><span class="status" :class="item.status || 'unknown'">{{ item.status || '未采集' }}</span></td>
+          </tr>
+          <!-- 空数据占位行：表头保留、tbody 显示一行灰色提示 -->
+          <tr v-if="!tickets.length" class="empty-row">
+            <td colspan="4">暂无工单数据</td>
           </tr>
         </tbody>
       </table>
@@ -96,7 +99,7 @@ onMounted(() => {
 .table-wrap th, .table-wrap td { padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(111, 244, 255, 0.1); }
 .table-wrap th { color: #8eb8d8; font-weight: 500; }
 .table-wrap td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.error, .empty { margin: 0; padding: 10px; color: #88a9c8; }
+.error, .empty-row td { margin: 0; padding: 10px; color: #88a9c8; text-align: center; font-style: italic; }
 .error { color: #ffb7c3; }
 
 .status { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid transparent; font-style: normal; }

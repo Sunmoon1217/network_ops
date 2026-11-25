@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import echarts from '@dashboard/utils/echarts'
 import type { GaugeChartsProps } from '@dashboard/types'
 
@@ -21,6 +21,9 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 const handleResize = () => myChart?.resize()
 
+// 文字位置等由调用方通过 data item 的 title/detail 传入（未传时用 series 级默认值）。
+// 本组件只负责把 data 原样交给 gauge，不做布局计算。
+
 // 初始化图表
 const initChart = () => {
   if (!chartRef.value) return
@@ -30,7 +33,7 @@ const initChart = () => {
       {
         type: 'gauge',
         center: ['50%', '66%'],
-        radius: '102%',
+        radius: '116%',
         startAngle: 200,
         endAngle: -20,
         min: 0,
@@ -57,7 +60,7 @@ const initChart = () => {
       {
         type: 'gauge',
         center: ['50%', '66%'],
-        radius: '95%',
+        radius: '108%',
         startAngle: 200,
         endAngle: -20,
         min: 0,
@@ -100,14 +103,15 @@ const initChart = () => {
           },
         },
         title: {
-          fontSize: '0.8rem',
+          fontSize: '0.76rem',
           color: '#b6d7ef',
+          offsetCenter: ['0', '46%'],
         },
         detail: {
-          width: 10,
-          fontSize: '0.8rem',
+          fontSize: '0.86rem',
           color: '#ecf7ff',
-          formatter: '{value} %',
+          formatter: '{value}%',
+          offsetCenter: ['0', '16%'],
         },
         data: props.data,
       },

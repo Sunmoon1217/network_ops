@@ -1,10 +1,10 @@
 import { markRaw } from 'vue'
 import { use } from 'echarts/core'
 import { PieChart, BarChart, GaugeChart } from 'echarts/charts'
-import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-use([PieChart, BarChart, GaugeChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
+use([PieChart, BarChart, GaugeChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent, CanvasRenderer])
 
 export const COLORS = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0']
 
@@ -57,6 +57,17 @@ export const gaugeOpt = (title: string, value: number, max: number) => {
       detail: { valueAnimation: true, fontSize: 22, fontWeight: 700, offsetCenter: [0, '10%'], formatter: `{value}/${max}` },
       data: [{ value }],
       max,
+    }],
+  })
+}
+
+// 空数据占位 option：标题 + center 文字「暂无数据」
+export const emptyOpt = (title: string) => {
+  return markRaw({
+    title: { text: title, left: 'center', textStyle: { fontSize: 13, fontWeight: 600 } },
+    graphic: [{
+      type: 'text', left: 'center', top: 'middle',
+      style: { text: '暂无数据', fill: 'var(--el-text-color-placeholder, #a8abb2)', fontSize: 14 },
     }],
   })
 }

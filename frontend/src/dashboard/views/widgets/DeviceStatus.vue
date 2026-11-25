@@ -3,7 +3,7 @@ import { nextTick, onMounted, ref } from 'vue'
 import GaugeCharts from '@dashboard/ui/GaugeCharts.vue'
 import TopList from './TopList.vue'
 import { getDashboard } from '@/api/dashboard'
-import type { DashboardData, DeviceTopItem } from '@dashboard/types'
+import type { DashboardData, DeviceTopItem, GaugeDataItem } from '@dashboard/types'
 import { useInterval } from '@dashboard/utils/timer'
 
 const GROUPS = [
@@ -16,11 +16,27 @@ const GROUPS = [
 
 const EMPTY = '暂无数据'
 
+// 仪表盘文字布局在调用方配置：每个指标一行，名称在左、数值在右，两行上下错开。
+// offsetCenter 百分比基准是仪表盘半径（卡片内约 50px），xGap 按最长数值 "100%" 预留空间。
+const X_GAP = 30
+const Y_SPAN = 26
+const rowCenter = (i: number, count: number) => ((i / Math.max(count - 1, 1)) * 2 - 1) * Y_SPAN
+
+const buildGaugeData = (cpu: number, mem: number): GaugeDataItem[] =>
+  [
+    { name: 'CPU', value: cpu },
+    { name: '内存', value: mem },
+  ].map((item, i, arr) => ({
+    ...item,
+    title: { offsetCenter: [`${-X_GAP}%`, `${rowCenter(i, arr.length) * 2 / 3}%`] },
+    detail: { offsetCenter: [`${X_GAP}%`, `${rowCenter(i, arr.length) * 2 / 3}%`] },
+  }))
+
 interface DeviceCard {
   name: string
   status: string
   statusClass: 'ok' | 'warn' | 'muted'
-  gaugeData: Array<{ name: string; value: number }>
+  gaugeData: GaugeDataItem[]
   deviceCount: string
   problemCount: string
   cpuMax: string
@@ -37,10 +53,7 @@ const emptyCard = (name: string): DeviceCard => ({
   name,
   status: EMPTY,
   statusClass: 'muted',
-  gaugeData: [
-    { name: 'CPU', value: 0 },
-    { name: '内存', value: 0 },
-  ],
+  gaugeData: buildGaugeData(0, 0),
   deviceCount: EMPTY,
   problemCount: EMPTY,
   cpuMax: EMPTY,
@@ -74,10 +87,7 @@ const fetchCards = async () => {
       card.problemCount = problems ? String(problems.length) : EMPTY
       card.cpuMax = cpuMax === null ? EMPTY : `${cpuMax}%`
       card.memMax = memMax === null ? EMPTY : `${memMax}%`
-      card.gaugeData = [
-        { name: 'CPU', value: cpuMax ?? 0 },
-        { name: '内存', value: memMax ?? 0 },
-      ]
+      card.gaugeData = buildGaugeData(cpuMax ?? 0, memMax ?? 0)
       card.top = {
         cpu: topList(rows, group, 'cputop'),
         memory: topList(rows, group, 'memtop'),

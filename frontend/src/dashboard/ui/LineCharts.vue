@@ -47,12 +47,17 @@ const initChart = () => {
 // 更新图表数据
 const updateChart = () => {
   if (!myChart) return
-  if (!currentGroup.value) return
-  if (Array.isArray(currentGroup.value)) {
-    groupdata.value = currentGroup.value
+  // 空数据也渲染坐标系框架，只是没有折线
+  if (props.data.length && !currentGroup.value) return
+  if (currentGroup.value) {
+    if (Array.isArray(currentGroup.value)) {
+      groupdata.value = currentGroup.value
+    } else {
+      groupdata.value = currentGroup.value.data
+      grouptitle.value = currentGroup.value.title
+    }
   } else {
-    groupdata.value = currentGroup.value.data
-    grouptitle.value = currentGroup.value.title
+    groupdata.value = []
   }
   const option = {
     tooltip: {
