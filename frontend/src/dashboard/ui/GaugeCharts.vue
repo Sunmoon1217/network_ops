@@ -25,15 +25,24 @@ const handleResize = () => myChart?.resize()
 const transformData = (data: Array<{ name: string; value: number }>) => {
   const count = Math.max(data.length, 1)
   return data.map((item, i) => {
-    // 两个 gauge 时一个偏左一个偏右；n 个按 (i+1)/(count+1) 对称分布
-    const xPct = count === 1 ? '0' : `${Math.round(((i + 1) / (count + 1)) * 100 - 50)}%`
+    // 两个 gauge 时 ±28%（~17px 在 62px 卡片上，够分离）；n 个对称分布
+    const ratio = (count === 1 ? 0 : ((i + 1) / (count + 1)) * 100 - 50)
+    const xPct = `${ratio}%`
     return {
       ...item,
       title: {
+        show: true,
         offsetCenter: [xPct, '32%'],
+        fontSize: '0.8rem',
+        color: '#b6d7ef',
       },
       detail: {
+        show: true,
         offsetCenter: [xPct, '-12%'],
+        width: 10,
+        fontSize: '0.9rem',
+        color: '#ecf7ff',
+        formatter: '{value} %',
       },
     }
   })
