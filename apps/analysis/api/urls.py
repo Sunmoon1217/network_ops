@@ -17,8 +17,9 @@ router.register("access-flows", accessflows.AccessFlowViewSet, basename="access-
 # 巡检日指标（每日任务写入）：只读，date 缺省取最新有数据的一天
 router.register("inspection-devices", inspection.DeviceMetricDailyViewSet, basename="inspection-device")
 router.register("inspection-interfaces", inspection.InterfaceMetricDailyViewSet, basename="inspection-interface")
-# 巡检批次（只读）与带宽采集目标（可写）：巡检项目页展示结果 / 调整采集对象
+# 巡检批次（只读）与两类巡检对象（可写）：巡检页展示结果 / 调整采集对象
 router.register("inspection-runs", inspection.InspectionRunViewSet, basename="inspection-run")
+router.register("inspection-device-targets", inspection.InspectionDeviceTargetViewSet, basename="inspection-device-target")
 router.register("inspection-targets", inspection.InspectionTargetViewSet, basename="inspection-target")
 
 urlpatterns = [
@@ -57,6 +58,8 @@ urlpatterns = [
                 path("firewall-groups/facets/", firewall.firewall_group_facets, name="firewall-groups-facets"),
                 # 队列积压巡检（celery 队列 / 访问流 Stream / 消费者心跳）：只读，Home 页卡片轮询
                 path("queue-status/", runtime.queue_status, name="queue-status"),
+                # 巡检全局配置（单例）：调度时间点 + 每天采集的时间范围
+                path("inspection-config/", inspection.inspection_config, name="inspection-config"),
                 # 运行监控（只读）：Redis 服务状态（INFO）/ Celery worker 与任务（inspect），运行监控页轮询
                 path("redis-status/", runtime.redis_status, name="redis-status"),
                 path("celery-status/", runtime.celery_status, name="celery-status"),

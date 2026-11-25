@@ -159,16 +159,16 @@ DASHBOARD_LINK_CACHE_TTL = int(os.environ.get("DASHBOARD_LINK_CACHE_TTL", "600")
 DASHBOARD_LINK_REFRESH_SECONDS = int(os.environ.get("DASHBOARD_LINK_REFRESH_SECONDS", "180"))
 DASHBOARD_LINK_WINDOW_HOURS = int(os.environ.get("DASHBOARD_LINK_WINDOW_HOURS", "3"))
 
-# 巡检：每日采集前一天（可传区间补数）的 CPU / 内存 / 接口带宽，落 analysis 日表。
+# 巡检：按「巡检配置」的时间点采集配置时段内的 CPU / 内存 / 接口带宽，落 analysis 日表。
+# beat 每分钟触发 tick，由 DB 里的 InspectionConfig 决定是否到点（可随时在页面调整）。
 # 任务名只在这里定义一遍（与 analysis / ingest 的装饰器 name= 及测试对账）；
 # INSPECTION_RETENTION_DAYS 按业务日期滚存，0 = 永久保留（清理任务直接跳过）。
 # 链路与口径见 handbook/analysis.md「巡检」。
+INSPECTION_TICK_TASK = "analysis.inspection_tick"
 INSPECTION_DISPATCH_TASK = "analysis.dispatch_inspection"
 INSPECTION_COLLECT_TASK = "ingest.collect_inspection"
 INSPECTION_WRITE_TASK = "analysis.write_inspection"
 INSPECTION_PRUNE_TASK = "analysis.prune_inspection"
-INSPECTION_DISPATCH_HOUR = os.environ.get("INSPECTION_DISPATCH_HOUR", "6")
-INSPECTION_DISPATCH_MINUTE = os.environ.get("INSPECTION_DISPATCH_MINUTE", "0")
 INSPECTION_PRUNE_HOUR = os.environ.get("INSPECTION_PRUNE_HOUR", "6")
 INSPECTION_PRUNE_MINUTE = os.environ.get("INSPECTION_PRUNE_MINUTE", "40")
 INSPECTION_RETENTION_DAYS = int(os.environ.get("INSPECTION_RETENTION_DAYS", "365"))
@@ -448,10 +448,10 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": DASHBOARD_AUTOTASK_SECONDS,
         "args": ("autotask",),
     },
-    # 巡检：先投采集（读目标清单 → 采 Zabbix → 投写库），再滚存清理超过保留期的日表
-    "inspection-dispatch": {
-        "task": INSPECTION_DISPATCH_TASK,
-        "schedule": crontab(hour=INSPECTION_DISPATCH_HOUR, minute=INSPECTION_DISPATCH_MINUTE),
+    # 巡检：每分钟检查 DB 配置，到配置时间点且当天未投递才投采集（读对象 → 采 Zabbix → 写库）
+    "inspection-tick": {
+        "task": INSPECTION_TICK_TASK,
+        "schedule": crontab(minute="*"),
     },
     "inspection-prune": {
         "task": INSPECTION_PRUNE_TASK,

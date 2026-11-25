@@ -1,14 +1,37 @@
 import api from './index'
 
 import type {
+  InspectionConfig,
+  InspectionConfigPayload,
   InspectionDeviceMetric,
   InspectionDeviceSummary,
+  InspectionDeviceTarget,
+  InspectionDeviceTargetPayload,
   InspectionInterfaceMetric,
   InspectionRun,
   InspectionTarget,
   InspectionTargetPayload,
   Paginated,
 } from '@/types'
+
+// 巡检全局配置（单例）：时间点与每天采集时段，两类巡检共用
+export const getInspectionConfig = () => api.get<InspectionConfig>('/api/analysis/inspection-config/')
+
+export const updateInspectionConfig = (payload: Partial<InspectionConfigPayload>) =>
+  api.patch<InspectionConfig>('/api/analysis/inspection-config/', payload)
+
+// 设备巡检对象（CPU / 内存）：登录用户可读，operator / 超管可写
+export const getInspectionDeviceTargets = (params?: Record<string, any>) =>
+  api.get<Paginated<InspectionDeviceTarget>>('/api/analysis/inspection-device-targets/', { params })
+
+export const createInspectionDeviceTarget = (payload: InspectionDeviceTargetPayload) =>
+  api.post<InspectionDeviceTarget>('/api/analysis/inspection-device-targets/', payload)
+
+export const updateInspectionDeviceTarget = (id: number, payload: Partial<InspectionDeviceTargetPayload>) =>
+  api.patch<InspectionDeviceTarget>(`/api/analysis/inspection-device-targets/${id}/`, payload)
+
+export const deleteInspectionDeviceTarget = (id: number) =>
+  api.delete(`/api/analysis/inspection-device-targets/${id}/`)
 
 // 巡检日指标（只读）：date 缺省取最新有数据的一天，host 模糊匹配
 export const getInspectionDevices = (params?: Record<string, any>) =>

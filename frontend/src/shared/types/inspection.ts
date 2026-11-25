@@ -1,4 +1,37 @@
-/** 巡检带宽采集目标（/api/analysis/inspection-targets/） */
+/** 巡检全局配置（/api/analysis/inspection-config/）：时间点 + 每天采集时段 */
+export interface InspectionConfig {
+  schedule_hour: number
+  schedule_minute: number
+  /** HH:MM:SS */
+  window_start: string
+  /** HH:MM:SS */
+  window_end: string
+  last_dispatch_date: string | null
+  updated_at: string
+}
+
+export interface InspectionConfigPayload {
+  schedule_hour: number
+  schedule_minute: number
+  window_start: string
+  window_end: string
+}
+
+/** 设备巡检对象（/api/analysis/inspection-device-targets/） */
+export interface InspectionDeviceTarget {
+  id: number
+  host: string
+  enabled: boolean
+  updated_at: string
+}
+
+/** 设备巡检对象提交体 */
+export interface InspectionDeviceTargetPayload {
+  host: string
+  enabled: boolean
+}
+
+/** 专线巡检带宽采集目标（/api/analysis/inspection-targets/） */
 export interface InspectionTarget {
   id: number
   host: string

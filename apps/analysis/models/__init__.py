@@ -6,7 +6,14 @@
 
 from .accessflow import AccessFlow
 from .dashboard import CollectionRun, DashboardMetric, ItsmCase, LinkTarget, MetricSample
-from .inspection import DeviceMetricDaily, InspectionRun, InspectionTarget, InterfaceMetricDaily
+from .inspection import (
+    DeviceMetricDaily,
+    InspectionConfig,
+    InspectionDeviceTarget,
+    InspectionRun,
+    InspectionTarget,
+    InterfaceMetricDaily,
+)
 from .internet import InternetAnalysis
 
 __all__ = [
@@ -17,6 +24,8 @@ __all__ = [
     "ItsmCase",
     "CollectionRun",
     "LinkTarget",
+    "InspectionConfig",
+    "InspectionDeviceTarget",
     "InspectionTarget",
     "InspectionRun",
     "DeviceMetricDaily",

@@ -67,10 +67,11 @@ export const TABLE_KEYS = {
   internetAsset: 'tools.internet-asset', // 互联网资产路径 预留
   parserMapping: 'tools.parser-mapping.parsers', // 解析器映射主表 预留
   parserMappingMissing: 'tools.parser-mapping.missing-producers', // 契约缺口表 预留
-  inspectionDevices: 'tools.inspection.devices', // 巡检项目·设备日指标
-  inspectionInterfaces: 'tools.inspection.interfaces', // 巡检项目·接口带宽日指标
-  inspectionRuns: 'tools.inspection.runs', // 巡检项目·巡检批次
-  inspectionTargets: 'tools.inspection.targets', // 巡检项目·采集目标
+  inspectionDevices: 'tools.inspection.devices', // 巡检·设备日指标
+  inspectionInterfaces: 'tools.inspection.interfaces', // 巡检·专线接口带宽日指标
+  inspectionRuns: 'tools.inspection.runs', // 巡检·巡检批次
+  inspectionTargets: 'tools.inspection.targets', // 巡检·专线巡检对象
+  inspectionDeviceTargets: 'tools.inspection.device-targets', // 巡检·设备巡检对象
   spreadsheetList: 'docs.spreadsheet', // 电子表格·工作簿列表（/docs/spreadsheet）
   spreadsheetGrid: 'docs.spreadsheet.grid', // 电子表格·网格（动态列：列键 s<表序>c<列序>，列只追加不删插故键稳定）
   // 拓扑的 DeviceSelector 是弹窗选择列表，列宽偏好价值低，刻意不注册。

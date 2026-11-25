@@ -367,22 +367,29 @@ target label（不含 host / ifname），前端一次请求拿全。缓存未生
 
 ## 巡检（`ingest/collectors/inspection.py` + `analysis/models/inspection.py`）
 
-每天从 Zabbix 采集**前一天**的 CPU / 内存 / 接口带宽，按自然日聚合落 analysis 日表；
+按「巡检配置」的时间点采集当天某个时段内的 CPU / 内存 / 接口带宽，按自然日聚合落 analysis 日表；
 大屏巡检面板由写库任务物化，前端 `InspectionWidget` 的数据契约不变。
 
 ```
-analysis.dispatch_inspection(date_start=None, date_end=None)   # beat：INSPECTION_DISPATCH_HOUR:MINUTE，默认 06:00
-  ← 读 InspectionTarget（启用的 host + ifname 清单，随任务参数下发）
-  → send_task(ingest.collect_inspection)
+beat: crontab(minute="*") → analysis.inspection_tick()
+  ← 读 InspectionConfig（调度时间点 / 采集时段 / last_dispatch_date）
+  → 到点且今天未投递 → analysis.dispatch_inspection(date_start=today, date_end=today)
+       ← 读 InspectionDeviceTarget（设备 host）与 InspectionTarget（专线 host+ifname）
+       → send_task(ingest.collect_inspection, window_start/window_end)
 ingest.collect_inspection(...)          # 只调 Zabbix、产纯 dict；ingest 不 import analysis
   → send_task(analysis.write_inspection)
 analysis.write_inspection(payload)      # 唯一写库入口：一个事务内 upsert + 物化 inspection/device/list
 analysis.prune_inspection()             # beat：删除 date < today - INSPECTION_RETENTION_DAYS
 ```
 
-- **日期**：任务参数缺省为「昨天」；可传 `date_start` / `date_end` 补任意区间，内部按本地
-  自然日分桶，**一天一行**。唯一键含 `date`，同一天重跑 upsert，不产生重复。
-- **CPU / 内存**：`DEVICE_GROUPS × CPU_KEYS / MEM_KEYS`，多核 / 多监控项样本合并算日均与峰值；
+- **调度**：配置存 `InspectionConfig` 单例（默认 23:50），可随时在「巡检配置」里改；beat 每分钟
+  tick 一次，`last_dispatch_date` 防止同一天重复投递。修改时间点无需重启 beat。
+- **时间范围**：`window_start` / `window_end` 为自然日内的采集时段（默认 00:00–23:59），
+  采集器只保留该时段样本；结束必须晚于开始，暂不支持跨天窗口。
+- **日期**：任务参数缺省为「昨天」；定时 tick 显式传当天。可传 `date_start` / `date_end` 补任意
+  区间，内部按本地自然日分桶，**一天一行**。唯一键含 `date`，同一天重跑 upsert，不产生重复。
+- **CPU / 内存**：`DEVICE_GROUPS × CPU_KEYS / MEM_KEYS` 中再按 `InspectionDeviceTarget` 的启用主机过滤，
+  多核 / 多监控项样本合并算日均与峰值；
   `NULL` 表示当天无样本，不用 0 伪装（避免把采集中断显示成 0 负载）。
 - **接口带宽**：8 个字段 = 出 / 入 × 带宽 bps 与使用率 % × 日均 / 峰值。方向判定先看 `key_`
   （`net.if.in` / `net.if.out`、`ifInOctets` / `ifOutOctets`），再看名称（入 / 接收、出 / 发送）；
@@ -395,8 +402,10 @@ analysis.prune_inspection()             # beat：删除 date < today - INSPECTIO
 - **保留**：按业务日期滚存 `INSPECTION_RETENTION_DAYS`（默认 365，0 = 永久保留直接跳过）。
 - **读接口**：`GET /api/analysis/inspection-devices/`、`inspection-interfaces/`（只读，
   `?date=` 缺省取最新有数据的一天，`?host=` 模糊）；`inspection-devices/summary/` 给当天概览。
-- **批次与采集对象**：`GET /api/analysis/inspection-runs/` 只读返回每日批次；`inspection-targets/`
-  对登录用户只读、operator / 超管可增删改（itemids 留空时采集器按主机名 + 接口名自动搜索）。
-  前端入口「工具 → 巡检项目」（`/tools/inspection`），在一个页面里展示结果并维护采集对象。
+- **批次与采集对象**：`GET /api/analysis/inspection-runs/?date=` 只读返回每日批次；
+  `inspection-config/` 读写调度与时段；`inspection-device-targets/` 维护设备 host 清单；
+  `inspection-targets/` 维护专线 host + ifname（itemids 留空时按名称自动搜索）。均对登录用户只读、
+  operator / 超管可写。前端入口「工具 → 巡检」下的三级菜单「设备巡检 / 专线巡检」
+  （`/tools/inspection/device|line`），默认展示今天，另有「历史巡检」「巡检配置」抽屉。
 - **旧来源**：Autotask 的 `fetch_inspect` 保留给独立定时任务，但不再写大屏
   `inspection/device/list`——该行由本链路独占，避免两套来源互相覆盖。

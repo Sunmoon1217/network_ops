@@ -186,20 +186,71 @@ def write_dashboard(delivery):
 # 巡检：调度（读目标投采集）/ 写库（唯一入口）/ 滚存清理。口径见 handbook/analysis.md「巡检」
 
 
+@shared_task(name=settings.INSPECTION_TICK_TASK)
+def inspection_tick():
+    """每分钟由 beat 调用：到配置的时间点且今天未投递 → 投递当天巡检。
+
+    ``last_dispatch_date`` 记录最近投递日，避免同一分钟重复 tick 或手工重试造成重复采集。
+    """
+    from django.utils import timezone
+
+    from analysis.models import InspectionConfig
+
+    now = timezone.localtime()
+    config = InspectionConfig.load()
+    # 用 >= 而不是精确相等：worker 在时间点短暂不可用时，恢复后当天仍能补跑一次
+    if (now.hour, now.minute) < (config.schedule_hour, config.schedule_minute):
+        return {"skipped": "not-scheduled"}
+    if config.last_dispatch_date == now.date():
+        return {"skipped": "already-dispatched"}
+
+    result = dispatch_inspection(date_start=now.date().isoformat(), date_end=now.date().isoformat())
+    config.last_dispatch_date = now.date()
+    config.save(update_fields=["last_dispatch_date", "updated_at"])
+    logger.info("巡检已按配置时间点触发: %s", now.strftime("%Y-%m-%d %H:%M"))
+    return result
+
+
 @shared_task(name=settings.INSPECTION_DISPATCH_TASK)
 def dispatch_inspection(date_start=None, date_end=None):
-    """读启用的接口带宽目标 → 投递 ingest 巡检采集任务（本任务不碰 Zabbix）。
+    """读启用的设备 / 接口对象与时间范围 → 投递 ingest 巡检采集任务（本任务不碰 Zabbix）。
 
-    日期为空时由采集器取「昨天」，手动补数可传 ``date_start`` / ``date_end``。
+    日期为空时由采集器取「昨天」，手动补数可传 ``date_start`` / ``date_end``；
+    定时触发由 ``inspection_tick`` 传入当天日期与配置的采集时段。
     """
     from celery import current_app
 
-    from analysis.models import InspectionTarget
+    from analysis.models import InspectionConfig, InspectionDeviceTarget, InspectionTarget
 
+    config = InspectionConfig.load()
     targets = list(InspectionTarget.objects.filter(enabled=True).values("host", "ifname", "itemids"))
-    current_app.send_task(settings.INSPECTION_COLLECT_TASK, args=[date_start, date_end, targets])
-    logger.info("巡检采集已投递: %s ~ %s, targets=%d", date_start, date_end, len(targets))
-    return {"date_start": date_start, "date_end": date_end, "targets": len(targets)}
+    device_hosts = list(InspectionDeviceTarget.objects.filter(enabled=True).values_list("host", flat=True))
+    current_app.send_task(
+        settings.INSPECTION_COLLECT_TASK,
+        kwargs={
+            "date_start": date_start,
+            "date_end": date_end,
+            "targets": targets,
+            "device_hosts": device_hosts,
+            "window_start": config.window_start.isoformat(),
+            "window_end": config.window_end.isoformat(),
+        },
+    )
+    logger.info(
+        "巡检采集已投递: %s ~ %s, window=%s-%s, targets=%d, device_hosts=%d",
+        date_start,
+        date_end,
+        config.window_start,
+        config.window_end,
+        len(targets),
+        len(device_hosts),
+    )
+    return {
+        "date_start": date_start,
+        "date_end": date_end,
+        "targets": len(targets),
+        "device_hosts": len(device_hosts),
+    }
 
 
 @shared_task(name=settings.INSPECTION_WRITE_TASK)

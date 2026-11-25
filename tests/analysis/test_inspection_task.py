@@ -8,13 +8,22 @@ from django.conf import settings
 from django.utils import timezone
 
 from analysis import tasks as analysis_tasks
-from analysis.models import DashboardMetric, DeviceMetricDaily, InspectionRun, InspectionTarget, InterfaceMetricDaily
+from analysis.models import (
+    DashboardMetric,
+    DeviceMetricDaily,
+    InspectionConfig,
+    InspectionDeviceTarget,
+    InspectionRun,
+    InspectionTarget,
+    InterfaceMetricDaily,
+)
 from ingest import tasks as ingest_tasks
 
 DAY = "2026-11-24"
 
 
 def test_task_names_match_settings():
+    assert getattr(analysis_tasks.inspection_tick, "name") == settings.INSPECTION_TICK_TASK
     assert getattr(analysis_tasks.dispatch_inspection, "name") == settings.INSPECTION_DISPATCH_TASK
     assert getattr(analysis_tasks.write_inspection, "name") == settings.INSPECTION_WRITE_TASK
     assert getattr(analysis_tasks.prune_inspection, "name") == settings.INSPECTION_PRUNE_TASK
@@ -22,18 +31,56 @@ def test_task_names_match_settings():
 
 
 @pytest.mark.django_db
-def test_dispatch_sends_only_enabled_targets():
+def test_dispatch_sends_only_enabled_targets_and_window():
     InspectionTarget.objects.create(host="SW-1", ifname="GE1/0/1", enabled=True)
     InspectionTarget.objects.create(host="SW-2", ifname="GE1/0/2", enabled=False)
+    InspectionDeviceTarget.objects.create(host="SW-1", enabled=True)
+    InspectionDeviceTarget.objects.create(host="SW-9", enabled=False)
 
     with patch("celery.current_app.send_task") as send:
         result = analysis_tasks.dispatch_inspection(DAY, DAY)
 
-    assert result["targets"] == 1
+    assert result == {"date_start": DAY, "date_end": DAY, "targets": 1, "device_hosts": 1}
     assert send.call_args.args[0] == settings.INSPECTION_COLLECT_TASK
-    date_start, date_end, targets = send.call_args.kwargs["args"]
-    assert (date_start, date_end) == (DAY, DAY)
-    assert [row["host"] for row in targets] == ["SW-1"]
+    kwargs = send.call_args.kwargs["kwargs"]
+    assert (kwargs["date_start"], kwargs["date_end"]) == (DAY, DAY)
+    assert [row["host"] for row in kwargs["targets"]] == ["SW-1"]
+    assert kwargs["device_hosts"] == ["SW-1"]
+    assert kwargs["window_start"] == "00:00:00"
+    assert kwargs["window_end"] == "23:59:00"
+
+
+@pytest.mark.django_db
+def test_tick_only_dispatches_at_configured_minute_once_per_day():
+    config = InspectionConfig.load()
+    config.schedule_hour = 6
+    config.schedule_minute = 30
+    config.save()
+    now = timezone.localtime().replace(hour=6, minute=30, second=0, microsecond=0)
+
+    with patch("django.utils.timezone.localtime", return_value=now), patch("celery.current_app.send_task") as send:
+        first = analysis_tasks.inspection_tick()
+        second = analysis_tasks.inspection_tick()
+
+    assert send.call_count == 1
+    assert first["device_hosts"] == 0
+    assert second == {"skipped": "already-dispatched"}
+    config.refresh_from_db()
+    assert config.last_dispatch_date == now.date()
+
+
+@pytest.mark.django_db
+def test_tick_skips_before_configured_time():
+    config = InspectionConfig.load()
+    config.schedule_hour = 6
+    config.schedule_minute = 30
+    config.save()
+    now = timezone.localtime().replace(hour=5, minute=0, second=0, microsecond=0)
+
+    with patch("django.utils.timezone.localtime", return_value=now), patch("celery.current_app.send_task") as send:
+        assert analysis_tasks.inspection_tick() == {"skipped": "not-scheduled"}
+
+    assert send.call_count == 0
 
 
 def _payload(devices=None, interfaces=None):

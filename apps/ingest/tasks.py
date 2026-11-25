@@ -302,7 +302,7 @@ def refresh_link_cache_task():
 
 
 @shared_task(name=settings.INSPECTION_COLLECT_TASK)
-def collect_inspection(date_start=None, date_end=None, targets=None):
+def collect_inspection(date_start=None, date_end=None, targets=None, device_hosts=None, window_start=None, window_end=None):
     """巡检采集（日期缺省=昨天，可传区间补数）→ 投递给 analysis 写库任务；**本任务不写数据库**。
 
     ingest 侧只认 ``settings.INSPECTION_WRITE_TASK`` 字符串，不 import analysis。
@@ -318,7 +318,7 @@ def collect_inspection(date_start=None, date_end=None, targets=None):
     failed: Exception | None = None
     payload: InspectionPayload
     try:
-        payload = asyncio.run(collect(date_start, date_end, targets))
+        payload = asyncio.run(collect(date_start, date_end, targets, device_hosts, window_start, window_end))
     except Exception as exc:
         logger.exception("巡检采集任务异常: %s ~ %s", date_start, date_end)
         failed = exc

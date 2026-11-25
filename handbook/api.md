@@ -126,8 +126,10 @@ address-books, services, policies, nat-rules, routes, arp-mac
 | `/api/analysis/redis-status/` | Redis 服务状态（只读，INFO 口径）：内存/连接/命中率/键空间/运行时长，「任务中心 → 运行监控」页轮询 |
 | `/api/analysis/celery-status/` | Celery worker/任务（只读，inspect 口径）：worker 名单 / 执行中 / 排队 / 延迟，同页轮询 |
 | `/api/analysis/inspection-devices/`、`/api/analysis/inspection-interfaces/` | 巡检日指标（只读）：`?date=` 缺省取最新一天，`?host=` 模糊；另有 `inspection-devices/summary/` 概览 |
-| `/api/analysis/inspection-runs/` | 巡检批次（只读）：每日一条，成功 / 失败与采集条数 |
-| `/api/analysis/inspection-targets/` | 巡检采集对象：登录用户可读，operator / 超管可增删改 |
+| `/api/analysis/inspection-runs/` | 巡检批次（只读）：每日一条，支持 `?date=`，含成功 / 失败与采集条数 |
+| `/api/analysis/inspection-config/` | 巡检全局配置（GET / PATCH）：巡检时间点、每天采集时段、最近投递日期 |
+| `/api/analysis/inspection-device-targets/` | 设备巡检对象（CPU / 内存主机清单）：登录用户可读，operator / 超管可写 |
+| `/api/analysis/inspection-targets/` | 专线巡检对象（host + ifname）：登录用户可读，operator / 超管可增删改 |
 | `/api/analysis/lb-chain/slb/`、`/api/analysis/lb-chain/gslb/` 等 | SLB/GSLB 链路查询与导出（含 `facets/`、`export/`） |
 | `/api/analysis/gslb-clusters/`、`/api/analysis/ltm-groups/`、`/api/analysis/firewall-groups/` | 分组聚合查询（列表 / `facets/` / `export/`；防火墙分 `policies/` 与 `nat-rules/`） |
 

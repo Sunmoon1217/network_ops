@@ -73,6 +73,47 @@ def test_collect_devices_aggregates_by_day():
     assert payload["interfaces"] == []
 
 
+def test_collect_devices_respects_host_list_and_window():
+    today = timezone.localdate()
+    inside = _clock(today, hour=5)
+    outside = _clock(today, hour=12)
+    cpu = _item("cpu-1", "cpu.util", "CPU 使用率")
+    mem = _item("mem-1", "memory.util", "内存使用率")
+
+    async def fake_items(group=None, *, key_=None, **filters):
+        return [cpu] if key_ == inspection.CPU_KEYS else [mem] if key_ == inspection.MEM_KEYS else []
+
+    zapi = FakeZapi([], [("cpu-1", inside, 10.0), ("cpu-1", outside, 30.0), ("mem-1", inside, 40.0)])
+    with (
+        patch.object(queries, "items", new=AsyncMock(side_effect=fake_items)),
+        patch.object(inspection, "get_zapi", new=AsyncMock(return_value=zapi)),
+    ):
+        payload = asyncio.run(
+            inspection.collect(
+                today.isoformat(),
+                today.isoformat(),
+                [],
+                device_hosts=["SW-1"],
+                window_start="00:00:00",
+                window_end="06:00:00",
+            )
+        )
+        empty = asyncio.run(
+            inspection.collect(
+                today.isoformat(),
+                today.isoformat(),
+                [],
+                device_hosts=["OTHER"],
+                window_start="00:00:00",
+                window_end="06:00:00",
+            )
+        )
+
+    assert payload["devices"][0]["cpu_avg"] == 10.0
+    assert payload["devices"][0]["cpu_max"] == 10.0
+    assert empty["devices"] == []
+
+
 def test_collect_interfaces_splits_direction_and_kind():
     today = timezone.localdate()
     clock = _clock(today)
