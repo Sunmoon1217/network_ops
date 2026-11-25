@@ -54,7 +54,7 @@ onMounted(loadConfig)
         </div>
       </div>
 
-      <InspectionResults :kind="kind" :date="today" />
+      <InspectionResults :kind="kind" :date="today" :show-stats="false" />
 
       <InspectionHistoryDrawer v-model="historyVisible" :kind="kind" />
       <InspectionConfigDrawer v-model="configVisible" :kind="kind" @saved="loadConfig" />

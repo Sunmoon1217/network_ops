@@ -16,6 +16,8 @@ import type { InspectionDeviceMetric, InspectionDeviceSummary, InspectionInterfa
 const props = defineProps<{
   kind: 'device' | 'line'
   date: string
+  /** 是否展示顶部统计卡片（详情页隐藏，抽屉里显示） */
+  showStats?: boolean
 }>()
 
 const isDevice = computed(() => props.kind === 'device')
@@ -145,7 +147,7 @@ const statItems = computed((): { label: string; value: string; tagType?: 'succes
       class="run-alert"
     />
 
-    <div class="stat-row">
+    <div v-if="showStats !== false" class="stat-row">
       <div v-for="item in statItems" :key="item.label" class="stat-card">
         <div class="stat-label">{{ item.label }}</div>
         <div class="stat-value">
@@ -155,7 +157,7 @@ const statItems = computed((): { label: string; value: string; tagType?: 'succes
       </div>
     </div>
 
-    <div v-if="isDevice && summary?.cpu_top.length" class="top-line">
+    <div v-if="showStats !== false && isDevice && summary?.cpu_top.length" class="top-line">
       <span class="top-label">CPU 峰值 TOP5：</span>
       <el-tag v-for="row in summary.cpu_top" :key="row.name" size="small" :type="usageTagType(row.cpu_max)">
         {{ row.name }} {{ fmtPct(row.cpu_max) }}
