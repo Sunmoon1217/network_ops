@@ -1,20 +1,7 @@
 """软资产刷新信号（T4）：配置行变化后自动重跑归并。
 
-配置侧（``ingest``）在解析 / 存储完成后调用 ``request_soft_asset_sync()``，表示
-``GtmWideip`` / ``LtmVirtualServer`` 等配置行可能已变。这里做三件事：
-
-1. **事务提交后执行**：解析过程会回写 ``config_json``、批量写多张配置表，提交前归并会
-   读到中间态，所以统一用 ``transaction.on_commit``。
-2. **同批合并**：一个事务里可能多次请求（多设备 / 多 Saver），用单调递增的 revision
-   只执行最后一次；回滚不会把标记卡死（下一次请求带新 revision）。
-3. **跨进程串行**：并发由 ``sync_soft_assets`` 内部的事务级咨询锁保证，这里不重复加锁。
-
-归并失败只记日志、不抛出：配置入库本身已经成功，不能因为派生资产刷新失败而回滚或
-让 Celery 任务失败。需要补救时跑 ``manage.py sync_soft_assets`` 全量重建。
-
-**归属**：接收器住在 configs（信号语义是「配置变了」），落库能力在
-``assets.services.soft_asset_sync``——``configs → assets`` 是矩阵允许的方向，
-反过来不行。拆分前这个信号住在 ``assets.signals``，assets 因此不得不 import configs。
+配置侧解析 / 存储完成后调用 ``request_soft_asset_sync()``；接收器在**事务提交后**执行，
+同一事务只跑最后一次，失败只记日志。归属与理由见 handbook/assets.md「归并链路」。
 """
 
 import logging

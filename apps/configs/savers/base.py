@@ -109,8 +109,7 @@ class BaseSaver(ABC):
     def _leaf(self, value: Any) -> str:
         """取 F5 路径名字的末段：``/Common/pool_web`` → ``pool_web``。
 
-        库里名称字段存末段，关联（池成员按 server_name 找 GtmServer）依赖两边一致。
-        为什么在 Python 侧清理而不是模板里：见 handbook/ingest.md
+        库里名称字段存末段，关联依赖两边一致；清理原因见 handbook/ingest.md
         """
         return str(value or "").strip().strip('"').rstrip("/").rsplit("/", 1)[-1]
 
@@ -120,14 +119,10 @@ class BaseSaver(ABC):
         return [self._leaf(item) for item in items if item]
 
     def upsert(self, serializer_cls, model, device, lookup: dict, payload: dict) -> bool:
-        """用序列化器 upsert 一条记录，返回是否为新建。
+        """用序列化器 upsert 一条记录，返回是否新建。
 
-        Saver 调用序列化器的统一入口（序列化器见 ``apps/assets/serializers/views.py``）：
-
-        - ``partial=True``：解析结果只覆盖配置里出现的字段，模型上的必填项不必凑齐。
-        - ``device`` 必须放进 payload：带 ``unique_together(device, ...)`` 的模型，DRF 的
-          ``UniqueTogetherValidator`` 在 ``instance is None``（create）时会强制要求这些
-          字段，仅靠 ``save(device=device)`` 注入过不了校验。
+        ``partial=True`` 只覆盖配置里出现的字段；``device`` 必须放进 payload，
+        否则 ``UniqueTogetherValidator`` 在 create 时过不了校验。
         """
         instance = model.objects.filter(device=device, **lookup).first()
         serializer = serializer_cls(instance, data={**payload, "device": device.pk}, partial=True)

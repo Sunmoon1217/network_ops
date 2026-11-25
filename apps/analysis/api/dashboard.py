@@ -1,19 +1,8 @@
 """Dashboard 大屏的只读接口（挂在 ``/api/dashboard/``）。
 
-大屏是无人值守的展示页（``dashboard.html`` 独立入口），**不依赖登录态**：这里两个
-视图都显式 ``AllowAny``，前端不带 Token，也不该被 401 重定向到登录页。机柜数据同样
-走本模块的专用只读接口，而不是需要登录的 assets ModelViewSet。
-
-响应包装是**大屏前端的历史契约**（``{status, message, result}``，见
-``frontend/src/shared/api/dashboard.ts`` 里显式取 ``data.result``）；本项目其它接口是
-裸 DRF Response，这里是唯一例外，等前端统一后再改回裸数组。
-
-查询参数 ``panel`` / ``group`` / ``name`` 对齐旧 ``getdashboard``。``DashboardMetric``
-仍然服务设备状态 / 工单 / SLB / 巡检；``group=linechart`` 或 ``name=bandwidth-*`` 时
-**不再读 MetricSample**，而是读 ingest 侧刷新进 Redis 的链路缓存（``link_cache``），
-把完整结果拼回旧 EAV 行视图，并把脱敏的面板 / scope / target label 放在响应的
-``meta`` 里（前端 ``LinkBandwidthWidget`` 一次请求拿全，前端零改动消费数据部分）。
-写入口是 ingest 的 ``refresh_link_cache``，本模块只读。
+大屏是无人值守入口，不依赖登录态（显式 ``AllowAny``）。响应包装 ``{status, message,
+result}`` 是前端既有契约，是全项目唯一例外。``group=linechart`` / ``name=bandwidth-*``
+读 ingest 刷进 Redis 的链路缓存（不落库），本模块只读。
 """
 
 from rest_framework.decorators import api_view, permission_classes

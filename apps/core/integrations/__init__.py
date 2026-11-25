@@ -21,8 +21,7 @@
     register_provider(ZabbixProvider())
 
 **释放**：ASGI 走 ``netops.asgi`` 的 lifespan 钩子，Celery 走 worker 子进程的
-``worker_process_shutdown``——两者都只调 ``release_all()``。这条链路补上了 Zabbix session
-一直到进程退出才被动回收的空缺（迁移前 ``close_zapi()`` 在全项目没有调用点）。
+``worker_process_shutdown``——两者都只调 ``release_all()``。
 
 现状文档见 ``handbook/integrations.md``；设计取向见
 ``handbook/design/external-clients.md``。

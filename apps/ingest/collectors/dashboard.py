@@ -1,8 +1,7 @@
-"""Dashboard 采集编排：**只采集，不落库、不 import analysis**。
+"""Dashboard 采集编排：只采集，不落库、不 import analysis。
 
 Celery 同步任务 ``ingest.tasks.collect_dashboard`` 用 ``asyncio.run(collect(source))``
-取回一份纯 dict payload（可 JSON 序列化），再按任务名投递给 analysis 的写库任务。
-这里是采集器（ingest）的一部分；存储与读接口都在 analysis。
+取回可 JSON 序列化的纯 dict，再按任务名投递给 analysis 的写库任务。
 
 payload 形状（``analysis.tasks.write_dashboard`` 按此消费）::
 
@@ -15,9 +14,8 @@ payload 形状（``analysis.tasks.write_dashboard`` 按此消费）::
       "run":     {"status","item_count","started_at","finished_at","error"},
     }
 
-``sampled_at`` 是数据源采样时刻（3 分钟对齐），与落库时刻 ``updated_at`` 分开。
-单个组 / 单个接口失败只记 warning，其余数据照常返回；整批失败才写 ``run.status=failed``，
-不让一次外部接口抖动清空整屏。
+``sampled_at`` 是数据源采样时刻（3 分钟对齐），与落库时刻分开；单组 / 单接口失败只
+warning，整批失败才写 ``run.status=failed``，不因一次抖动清空整屏。
 """
 
 import asyncio
@@ -93,7 +91,7 @@ DEVICE_GROUPS = {
 CPU_KEYS = ["cpu.util", "cpu.utilization", "topsec.cpu", "cpu.usage"]
 MEM_KEYS = ["memory.util", "mem.tmm.ratio", "zdns.mem.usage"]
 
-# 链路带宽已改由 conf/links.json + link_cache 直取 Zabbix（不落库），这里不再维护清单。
+# 链路带宽走 conf/links.json + link_cache 直取 Zabbix（不落库），不在这里维护清单
 
 
 def _aligned_now():
@@ -196,7 +194,7 @@ async def _collect_autotask(sampled_at):
     if isinstance(slb, BaseException):
         logger.warning("SLB 采集失败: %s", slb)
     else:
-        # 前端要 {instance, listener}；旧 update_aliyunslb 错把巡检数据写进了这里。
+        # 前端要 {instance, listener}；巡检数据不在这里拼
         metrics.append(_metric("slb", "slb", "slb", list_value=[row.model_dump() for row in slb], sampled_at=sampled_at))
 
     if isinstance(inspect, BaseException):

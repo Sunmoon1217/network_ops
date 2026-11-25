@@ -32,9 +32,7 @@ def _patch_send(monkeypatch, settings) -> list:
     return calls
 
 
-# ---------------------------------------------------------------------------
 # 投递开关与任务名
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -64,9 +62,7 @@ def test_request_rebuild_respects_settings_switch(settings, monkeypatch):
     assert calls == [(settings.ACCESS_FLOW_TASK, [7])]
 
 
-# ---------------------------------------------------------------------------
 # PolicySaver 触发
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

@@ -81,9 +81,7 @@ def _healthy_client(**overrides) -> FakeRedis:
     return FakeRedis(**defaults)
 
 
-# ---------------------------------------------------------------------------
 # 采集口径
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -162,9 +160,7 @@ def test_collect_redis_down_is_critical_not_crash():
     assert stats["alerts"][0]["level"] == "critical"
 
 
-# ---------------------------------------------------------------------------
 # 阈值告警
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -207,9 +203,7 @@ def test_evaluate_uses_embedded_thresholds_from_collect():
     assert DEFAULT_THRESHOLDS["max_queue"] == 1000  # 默认值锚点：改默认值要同步文档
 
 
-# ---------------------------------------------------------------------------
 # 背压口径（backlog 用 lag，不是 XLEN）
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -245,9 +239,7 @@ def test_backlog_fallbacks_and_degrades_gracefully(monkeypatch):
     assert backlog() == 0
 
 
-# ---------------------------------------------------------------------------
 # 命令退出码
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -270,9 +262,7 @@ def test_command_json_output_and_exit_one_on_alert(monkeypatch, capsys):
     assert {"queue_backlog", "stream_backlog", "stream_pending"} <= codes
 
 
-# ---------------------------------------------------------------------------
 # API
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture

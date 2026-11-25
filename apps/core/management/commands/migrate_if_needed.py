@@ -1,42 +1,9 @@
-"""启动时按需执行数据库迁移。
+"""启动时按需执行数据库迁移（entrypoint 在起 gunicorn 之前调用）。
 
-由 ``docker/entrypoint.sh`` 在起 gunicorn 之前调用：**只有确实存在未应用的迁移**时才跑
-``migrate --noinput``，已经是最新就打印一行跳过——首次部署第一次启动即自动建表，日常重启
-不再有固定开销。
-
-为什么是管理命令，而不是 entrypoint 里的两行 shell（``migrate --check || migrate``）：
-两个 app 副本同时启动时，双方的 ``--check`` 会**同时**看到「有未应用迁移」，然后一起执行。
-Django 自己并不对 migrate 加锁（翻遍 6.1.1 源码，``advisory`` 零命中），并发迁移会撞
-``django_migrations`` 的唯一约束、或留下半应用状态。所以这里用**数据库自带的命名锁**把
-「检查 + 迁移」整段串行化：先到的副本执行迁移，其余副本在锁上排队，拿到锁后再检查一次
-——此时通常已经是最新，直接跳过。
-
-按后端分派（``connection.vendor``）：
-
-* ``postgresql``：会话级 **advisory lock**（``pg_advisory_lock`` / ``pg_advisory_unlock``）。
-  会话断开即释放，没有 TTL、不建表、不用写 catalog。
-* ``mysql``（含 MariaDB）：**命名锁** ``GET_LOCK`` / ``RELEASE_LOCK``。同样是服务器级的
-  会话锁，不建库不建表，``IS_USED_LOCK()`` 与 ``performance_schema.metadata_locks`` 能看到
-  谁持有；``GET_LOCK`` 的第二个参数是等待秒数，这里用 -1（无限等待，5.7+ / MariaDB 10.0.2+），
-  与 PG 的阻塞语义对齐。
-* 其它后端：**直接报错**，不再「退化成不加锁」——SQLite 是进程内嵌库、单实例部署下不需要锁，
-  而"看上去有锁其实没锁"是最坏的形态。真要跑，就设 ``MIGRATE_ON_START=0`` 自己执行 migrate。
-
-为什么不用「手写锁」：``SELECT ... FOR UPDATE`` 与 ``LOCK TABLE`` 都要求把整段 migrate 关进
-一个事务（PG 里 ``LOCK TABLE`` 在自动提交下直接报错，行锁则在空表上无处可加），会连带禁掉
-``AddIndexConcurrently`` 这类 ``atomic = False`` 的迁移；而「锁表 + 插入一行」或「CREATE TABLE
-当锁」在崩溃后必然残留，且没有任何持有者/时间信息可供超时接管——最后一定会演化成 Flyway 的
-``DATABASECHANGELOGLOCK``（锁表 + 心跳 + 手动解锁）。引擎自带的命名锁把「崩溃自动释放」白送，
-这才是选它的理由。
-
-⚠️ 两个边界：
-  * 锁只覆盖**走同一个数据库服务器**的进程。多副本各自连同一个库，所以安全；迁移若由外部
-    发布流水线负责、或要求人工放行，把 ``MIGRATE_ON_START`` 设为 0 即可（见 ``envs/container.env``）。
-  * **PG 前面不要挂 PgBouncer 的 transaction pooling**：官方特性表明确写着 ``Session-level
-    advisory locks`` 在 transaction pooling 下是 *Never*——事务一结束连接就被回收，
-    ``pg_advisory_unlock`` 可能发到另一个后端上。现在 app 是直连 db、没有 pooler，不受影响。
-
-本命令只做「建表/改表」，不建管理员——``createsuperuser`` 仍要显式执行。
+只在确有未应用迁移时跑 ``migrate --noinput``；「检查 + 迁移」由数据库命名锁串行化
+（PG ``pg_advisory_lock`` / MySQL ``GET_LOCK``），其它后端直接报错而非静默不加锁。
+为什么必须自己加锁、为什么不用 ``SELECT FOR UPDATE``、PgBouncer 禁忌见
+handbook/deploy.md「启动三步」与技能 ``django-drf-gotchas`` 第 2 节。
 """
 
 from contextlib import contextmanager
@@ -96,7 +63,8 @@ class Command(BaseCommand):
         """
         with connection.cursor() as cursor:
             cursor.execute("SELECT GET_LOCK(%s, %s)", [MYSQL_LOCK_NAME, MYSQL_LOCK_TIMEOUT])
-            got = cursor.fetchone()[0]
+            row = cursor.fetchone()
+            got = row[0] if row else None
             if got != 1:
                 raise CommandError(f"没能拿到 MySQL 命名锁 {MYSQL_LOCK_NAME!r}（GET_LOCK 返回 {got!r}）")
             try:

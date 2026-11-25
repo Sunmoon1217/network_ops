@@ -1,7 +1,5 @@
 from django.db import models
 
-# 阿里云资源模型（待后续添加：账户、资源同步记录、VSW/SLB/SLS/ECS 缓存等)
-
 
 class AliyunVPC(models.Model):
     """阿里云 VPC"""

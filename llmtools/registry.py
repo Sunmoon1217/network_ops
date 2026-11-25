@@ -1,22 +1,8 @@
 """MCP 实体注册表（通用层，不属于任何业务域）。
 
-各域把「可被 MCP 查询的模型或视图」登记到这里，通用工具（``llmtools.entity_tools``）
-只认注册表，不认具体域：
-
-- ``register_entity(spec)``：登记一个实体类型（模型或视图 + 序列化器 + 业务键 +
-  过滤/排序白名单）；
-- ``register_edge(edge)``：登记两个类型之间的有向边（两端必须已登记）。
-
-**本模块不 import 任何域模块**（``assets`` / ``analysis`` / ``docs`` …），也不
-import ``core`` 的业务模块（``core.models`` / ``core.api``）——MCP 子系统只提供
-查询基建，不读用户、任务等 core 业务数据。
-
-约定：
-
-- 摘要字段名必须是序列化器里存在的键（``to_dict`` 用 ``.get`` 取，漏写只会少
-  一个字段，不会抛异常）；
-- 过滤走 ``Filter`` 白名单，不接受任意 ``__`` 查找；
-- 边的两端必须先注册，``reverse`` 一定要给（影响面查询全靠反向边）。
+各域把可被 MCP 查询的模型或视图登记为 ``EntitySpec``（模型 + 序列化器 + 业务键 +
+过滤/排序白名单），并可登记两类型间的有向边；通用工具只认注册表。本模块不 import
+任何业务域。摘要字段、过滤白名单与反向边等约定见 handbook/llmtools.md。
 """
 
 from collections.abc import Callable, Iterable

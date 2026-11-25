@@ -10,8 +10,7 @@ class OperatorConfig(AppConfig):
     verbose_name = "数据摄入（采集与解析入库）"
 
     def ready(self):
-        # Saver 注册表已随 parsers / savers / mapping 迁入 configs，注册点移到
-        # configs.apps.ConfigsConfig.ready()（见该文件注释），本域不再负责触发。
+        # Saver 注册点已随 Registry 迁到 configs.apps（本域不再负责触发）
         import ingest.signals  # noqa: F401
 
         self._register_integrations()
@@ -37,7 +36,7 @@ class OperatorConfig(AppConfig):
         from core.task_types import register_stage, register_task_type
         from ingest.tasks import run_collection_stage, run_config_pipeline_stage, run_parsing_stage, run_storage_stage
 
-        # 五个任务类型当前都从采集阶段起跑（与拆分前 start_task 的硬编码行为一致）
+        # 五个任务类型当前都从采集阶段起跑
         for task_type, label in (
             ("collect_config", "采集配置"),
             ("backup_config", "备份配置"),

@@ -49,9 +49,7 @@ def _make_device(hostname: str, device_type: str = "switch", **kwargs) -> Device
     return Device.objects.create(hostname=hostname, device_type=device_type, **kwargs)
 
 
-# ---------------------------------------------------------------------------
 # find
-# ---------------------------------------------------------------------------
 
 
 def test_find_returns_candidates_across_types():
@@ -84,9 +82,7 @@ def test_find_rejects_unknown_type():
     assert "未知的 entity_type" in _error(_call_tool("find", {"q": "x", "types": "docker"}))
 
 
-# ---------------------------------------------------------------------------
 # list_records
-# ---------------------------------------------------------------------------
 
 
 def test_list_records_filter_pagination_and_summary():
@@ -145,9 +141,7 @@ def test_list_records_applies_requested_order():
     assert [row["interface"] for row in ordered["rows"]] == ["Aif", "Zif"]
 
 
-# ---------------------------------------------------------------------------
 # get_record / bundle
-# ---------------------------------------------------------------------------
 
 
 def test_get_record_device_include_groups_keeps_role():
@@ -216,9 +210,7 @@ def test_bundle_returns_profile_and_default_sections():
     assert data["sections"]["arp"]["rows"][0]["mac_address"] == "aa:bb:cc:dd:ee:01"
 
 
-# ---------------------------------------------------------------------------
 # relations
-# ---------------------------------------------------------------------------
 
 
 def test_relations_down_and_type_filter():
@@ -261,9 +253,7 @@ def test_relations_rejects_bad_direction_and_depth():
     assert "depth" in _error(_call_tool("relations", {"entity_type": "device", "key": "NET-SW01", "depth": 9}))
 
 
-# ---------------------------------------------------------------------------
 # locate
-# ---------------------------------------------------------------------------
 
 
 def test_locate_flags_unregistered_online_address():

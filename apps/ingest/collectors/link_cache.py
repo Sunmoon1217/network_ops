@@ -86,10 +86,8 @@ async def build_link_payload(
             previous = scope_data.get(target.subject)
             scope_data[target.subject] = value if previous is None else max(previous, value)
 
-    # 全部失败才抛；单条失败只 warning（其余线路照常显示）。
-    # 全挂时**不再逐条 warning**：异常消息里已带每个 target 的原因；``from None`` 去掉
-    # asyncio 的异常链。管理命令照旧非零退出，Celery 任务捕获它只记一条 ERROR、返回
-    # status=failed（不 raise，避免 180s 一轮刷屏），下个周期自动重试。
+    # 全部失败才抛（单条失败只 warning）；异常消息里带每个 target 的原因，
+    # from None 去掉 asyncio 异常链，避免 180s 一轮刷屏。处理见 handbook/analysis.md
     if enabled and len(failures) == len(enabled):
         detail = "; ".join(f"{target.scope}/{target.subject}: {type(exc).__name__}: {exc}" for target, exc in failures)
         raise LinkCollectionError(f"全部 {len(failures)} 条链路采集失败 —— {detail}") from None

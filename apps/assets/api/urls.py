@@ -5,13 +5,11 @@ from . import views
 
 router = SimpleRouter(trailing_slash=True)
 
-# DCIM
 router.register(r"security-zones", views.SecurityZoneViewSet, basename="security-zone")
 router.register(r"datacenters", views.DataCenterViewSet, basename="datacenter")
 router.register(r"rooms", views.RoomViewSet, basename="room")
 router.register(r"cabinets", views.CabinetViewSet, basename="cabinet")
 
-# Device
 router.register(r"vendors", views.VendorViewSet, basename="vendor")
 router.register(r"device-models", views.DeviceModelViewSet, basename="device-model")
 router.register(r"devices", views.DeviceViewSet, basename="device")
@@ -19,21 +17,9 @@ router.register(r"device-connections", views.DeviceConnectionViewSet, basename="
 router.register(r"device-groups", views.DeviceGroupViewSet, basename="device-group")
 router.register(r"device-group-members", views.DeviceGroupMemberViewSet, basename="device-group-member")
 
-# Network
-
-# Baseline
-
-# SLB (LTM)
-
-# GSLB (GTM)
-
-# Firewall Policy
-
-# Routing
 router.register(r"topologies", views.TopologyViewSet, basename="topology")
 router.register(r"subnet-usage-logs", views.SubnetUsageLogViewSet, basename="subnet-usage-log")
 
-# IPAM
 router.register(r"tags", views.TagViewSet, basename="tag")
 router.register(r"subnets", views.SubnetViewSet, basename="subnet")
 router.register(r"ip-addresses", views.IPAddressViewSet, basename="ip-address")
@@ -52,8 +38,7 @@ router.register(r"ci-relationships", views.CIRelationshipViewSet, basename="ci-r
 router.register(r"domain-assets", views.DomainAssetViewSet, basename="domain-asset")
 router.register(r"load-balancer-services", views.LoadBalancerServiceViewSet, basename="load-balancer-service")
 
+# 只放资产域自己的资源：overview 在 analysis、Excel 导入在 ingest、配置行家族在 configs
 urlpatterns = [
     path("assets/", include(router.urls)),
-    # 只放资产域自己的资源。overview 在 analysis（/api/analysis/overview/）、
-    # Excel 导入在 ingest（/api/ingest/import-*）、配置行家族在 configs（/api/configs/）。
 ]

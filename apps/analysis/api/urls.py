@@ -1,10 +1,8 @@
 """分析域的 API：路径追踪 / 路由采集 / DNS 查询 / 互联网资产分析 / 关联链聚合 /
 设备组配置合并（GSLB 集群、LTM 主备）/ 访问流 / 运行监控 / 资产总览。
 
-全部挂在 ``/api/analysis/`` 下——历史上前缀有五种（``/api/trace/``、
-``/api/internet-analysis/``、``/api/lb-chain/``、``/api/analysis/*``、``/api/access-flows/``），
-看不出归属；现在按域收口，路由表见 ``handbook/api.md``。大屏供数是唯一的独立面
-（``/api/dashboard/``，免认证、契约不同），不并入本前缀。
+全部挂在 ``/api/analysis/`` 下，大屏供数是唯一的独立面（``/api/dashboard/``，免认证、
+契约不同）。路由表见 handbook/api.md。
 """
 
 from django.urls import include, path

@@ -33,9 +33,7 @@ def _message(device: Device) -> dict[str, str]:
     return encode_message(device, collect_device_flows(device))
 
 
-# ---------------------------------------------------------------------------
 # 编解码
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -87,9 +85,7 @@ def test_decode_missing_field_raises():
         decode_message(fields)
 
 
-# ---------------------------------------------------------------------------
 # 单写者入库语义
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -148,9 +144,7 @@ def test_handle_message_clears_device_when_no_policies_left():
     assert AccessFlow.objects.count() == 0, "空消息 = 清掉该设备的全部残留上下文"
 
 
-# ---------------------------------------------------------------------------
 # 消费者命令的 ACK 语义
-# ---------------------------------------------------------------------------
 
 
 class _FakeClient:

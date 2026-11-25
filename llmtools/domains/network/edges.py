@@ -1,19 +1,7 @@
-"""网络域的 MCP 关系边（``specs/`` 之外的独立一层）。
+"""网络域的 MCP 关系边：集中一处、只依赖模型与 ``NodeType``，不 import 任何实体声明。
 
-为什么边不跟着实体分文件：
-
-- 边的归属天然模糊——``device → ltm_pool`` 既可以说属于「设备」，也可以说属于「LB」；
-  按任一侧分，另一侧迟早要 import 对方的存在；
-- 边只依赖 Django 模型与 ``NodeType``，**不 import 任何实体声明**，所以放在这一层
-  永远不会和 ``specs/*.py`` 互相依赖；
-- 36 条边在一屏多一点的范围，集中放能一眼看全图；等 VM / 物理机那批 IPAM 关联
-  （弱匹配或 FK，见 ``ipam_links`` 规划）落地、边数过 60 再按关系主题拆成 ``edges/`` 包。
-
-两条硬约束（写新边前先读）：
-
-- **两端必须已在 ``specs/`` 里声明**，且 ``reverse`` 一定要给——影响面查询全靠反向边；
-- **同一个 ``src`` 下边名必须唯一**：``registry.edge_named`` 只取第一条命中，
-  重名会让 ``get_record(include=...)`` 静默串台（由 ``specs/__init__._validate_edges`` 兜住）。
+端点必须先登记且必须给 ``reverse``（影响面查询靠反向边）；同一个 ``src`` 下边名必须唯一。
+为什么不分文件与后续拆分条件见 handbook/llmtools.md。
 """
 
 from assets import models

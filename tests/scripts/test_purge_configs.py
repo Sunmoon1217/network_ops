@@ -42,9 +42,7 @@ def _run(*args) -> str:
     return output
 
 
-# ---------------------------------------------------------------------------
 # dry-run 与 --yes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -104,9 +102,7 @@ def test_covers_every_configbase_subclass():
         assert model.objects.count() == 0, f"{model.__name__} 没被清掉"
 
 
-# ---------------------------------------------------------------------------
 # 工作流记录（可选）
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -134,9 +130,7 @@ def test_with_workflow_removes_task_and_stage():
     assert Stage.objects.count() == 0
 
 
-# ---------------------------------------------------------------------------
 # 堆叠组：备机折算到主设备
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -158,9 +152,7 @@ def test_stack_backup_resolves_to_master():
     assert DeviceConfig.objects.count() == 0
 
 
-# ---------------------------------------------------------------------------
 # 访问流（AccessFlow）：跨设备聚合行按 contexts 里的设备清理
-# ---------------------------------------------------------------------------
 
 
 def _access_flow(device: Device, *, src_ip: str = "10.0.0.1") -> AccessFlow:
@@ -195,9 +187,7 @@ def test_access_flow_reported_then_removed_per_device():
     assert AccessFlow.objects.filter(pk=theirs.pk).exists(), "只挂着别的设备的行不能误删"
 
 
-# ---------------------------------------------------------------------------
 # 参数校验与 --purge-repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

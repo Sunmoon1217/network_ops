@@ -1,15 +1,7 @@
 """``/api/analysis/access-flows/``：访问流（策略展开结果）的只读查询。
 
-只读——AccessFlow 是派生数据，唯一的写入口是 access_flow_consumer（单写者）；
-要改数据就重建源头的策略，再 ``rebuild_access_flows``。
-
-过滤参数（都命中索引）：
-
-- ``?device=<id>``：contexts 里挂着这台设备的行（``device_ids`` GIN 包含过滤）；
-- ``?policy=<id>``：命中这条策略的行（``policy_ids`` GIN 包含过滤）；
-- ``?action=allow|deny``：按行级动作过滤（action 进唯一键后每行动作单一，面板的
-  「允许/拒绝」筛选走这里；非法值 400）；
-- ``?search=<词>``：键字段里的 IP / 端口 / 协议子串（DRF SearchFilter）。
+唯一写入口是 access_flow_consumer；改数据要重建源头的策略再 ``rebuild_access_flows``。
+过滤参数 ``?device=`` / ``?policy=`` / ``?action=`` / ``?search=`` 都命中索引。
 """
 
 from rest_framework import serializers, viewsets

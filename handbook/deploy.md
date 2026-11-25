@@ -307,7 +307,8 @@ docker compose exec -u root db sh /docker-entrypoint-initdb.d/01-grant-test-db.s
 | `Service` 五列自然键 | 3108 字节没问题 | 超 InnoDB 3072 字节上限（1071） | 按后端分建：PG 普通唯一约束，MySQL 函数唯一索引 `(device_id, MD5(CONCAT_WS(...)))`（`assets.0029`） |
 | 大小写 | 唯一键与 `exact` 区分大小写 | `utf8mb4_0900_ai_ci` 不区分 | 已知差异：普通唯一键会把 `SW-01` / `sw-01` 判重；上面那个函数索引按字节哈希，仍区分 |
 | DDL 回滚 | 迁移失败可回滚 | DDL 隐式提交，回滚不了 | 迁移失败会留半套 schema；MySQL 部署以「删库重建」为恢复手段，见下 |
-| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | 代码本来就不用返回值，无影响 |
+| `bulk_create` 取主键 | 支持 `RETURNING` | 不支持 | `existing_asset_registry` 按 `ci_id` 查回主键再回填；其余代码不用返回值 |
+| 事务级串行锁 | `pg_advisory_xact_lock`，事务结束自动释放 | 只有会话级 `GET_LOCK`，必须**提交后**释放 | `apps/assets/services/db_locks.py`：MySQL 锁放 `atomic()` 外层（获取 → 事务 → 释放）；提前释放会让别的进程在提交前拿锁、读到旧数据。锁名带库名前缀，xdist 各 worker 不互阻塞 |
 
 MySQL 侧要求 **8.0.17+**（多值索引；函数索引只要 8.0.13，Django 6.1 的下限是 8.0.11）。迁移失败（MySQL 上不可回滚）
 的处理：停止 app → `DROP DATABASE netops` → 重建空库 → 重跑 `migrate_if_needed`；MySQL 只面向
@@ -326,3 +327,21 @@ MySQL 侧要求 **8.0.17+**（多值索引；函数索引只要 8.0.13，Django 
 `code-init`。compose 的 app / worker / consumer 共用 `VENV_IMAGE`（根 `.env`，`x-app-base` 锚点
 保证不漂移），`code-init` 用 `CODE_IMAGE`（git SHA 做 tag 便于回滚）；换私有 registry 只改这两个
 镜像变量，不必改 compose。
+
+**跨沙箱传代码镜像**（内网 ↔ 服务器只传镜像，不复制源码）：
+
+```bash
+# 内网开发机
+TAG=$(git rev-parse --short HEAD)
+docker build -t network-ops-code:$TAG -f dockerfile.code .
+docker save network-ops-code:$TAG | gzip -9 > code-$TAG.tar.gz
+scp code-$TAG.tar.gz server:/opt/images/
+# 服务器
+gunzip -c /opt/images/code-$TAG.tar.gz | docker load
+cd /opt/netops && CODE_IMAGE=network-ops-code:$TAG docker compose up -d code-init app
+# 回滚（旧镜像已在服务器上）
+CODE_IMAGE=network-ops-code:<旧SHA> docker compose up -d code-init app
+```
+
+换源构建加 `--build-arg APT_MIRROR=... --build-arg UV_DEFAULT_INDEX=...`（uv 不读 pip 配置，
+换源后必须重新 `uv lock`，见 [`settings.md`](settings.md) 与技能 `uv-package-and-lockfile`）。

@@ -1,18 +1,7 @@
-"""软资产「算」这一半：配置行 → 候选资产值（**纯计算，零写操作**）。
+"""软资产「算」这一半：配置行 → 候选资产值（纯计算，零写操作）。
 
-两条映射：
-
-- ``GtmWideip``       → 域名资产（归一键：FQDN 小写去尾点）
-- ``LtmVirtualServer`` → 负载均衡服务资产（归一键：``VIP#port``）
-
-配置行是一设备一行、跨设备重复；归并后一行 = 一个域名 / 一个对外服务，设备退居
-「部署位置」多值。**配置行只读**、不动不删。
-
-本模块只产出 :class:`SoftAssetDraft`，落库在 ``assets.services.soft_asset_sync``
-（资产的 CI 台账归 assets，配置域不写别人的表）。这不是洁癖：拆分前一个模块同时读
-configs 的表、写 assets 的表，是整库唯一横跨两域做读写的地方。
-
-``kind`` 用字符串而非 ``CIType`` 常量，让 configs **完全不需要 import assets**。
+``GtmWideip`` → 域名资产，``LtmVirtualServer`` → 负载均衡服务资产；配置行只读。
+落库在 ``assets.services.soft_asset_sync``；``kind`` 用字符串以免 import assets。
 """
 
 from __future__ import annotations

@@ -1,8 +1,7 @@
-"""网络域历史资产模型（原单文件 ``assets/models.py`` 的内容）。
+"""网络域历史资产模型（DCIM / 设备台账 / IPAM）。
 
-T1 拆分时把这段原样搬进来，一字未改：模型之间 35 处跨类直接引用
-（``ForeignKey(DataCenter, ...)`` 等）都还在同一个模块里，不会有循环 import。
-将来若按域细分，从这里分出去即可；``__init__.py`` 只做 re-export。
+原单文件 ``assets/models.py`` 的内容整体搬入，模型间跨类引用仍在同一模块，
+无循环 import；``__init__.py`` 只做 re-export。
 """
 
 import re
@@ -241,11 +240,7 @@ class DeviceConnection(models.Model):
 
 
 class DeviceGroup(models.Model):
-    """设备组。
-
-    组类型属于组本身，成员只表达「该设备在这个组里扮演什么角色」。
-    堆叠（stack）组内多台物理设备共用一个配置文件，备机的配置归属主设备。
-    """
+    """设备组。堆叠组内多台物理设备共用一个配置文件，备机配置归属主设备。"""
 
     GROUP_TYPE_CHOICES = (
         ("cluster", "集群"),
@@ -278,11 +273,7 @@ class DeviceGroup(models.Model):
 
 
 class DeviceGroupMember(models.Model):
-    """设备组成员。
-
-    同一设备可加入多个组（不同组表达不同维度的关系，如既在堆叠组又在主备组），
-    因此不对设备做唯一限制。
-    """
+    """设备组成员。同一设备可加入多个组，故不对设备做唯一限制。"""
 
     ROLE_CHOICES = (
         ("master", "主"),
@@ -306,18 +297,6 @@ class DeviceGroupMember(models.Model):
 
     if TYPE_CHECKING:
         device_id: int
-
-
-# SLB (LTM - Local Traffic Manager)
-
-
-# GSLB (GTM - Global Traffic Manager)
-
-
-# Firewall Policy
-
-
-# IPAM
 
 
 class Tag(models.Model):
@@ -422,9 +401,6 @@ class IPAddress(models.Model):
         return self.ip_address
 
 
-# 网络拓扑
-
-
 class Topology(models.Model):
     """网络拓扑图"""
 
@@ -442,12 +418,6 @@ class Topology(models.Model):
 
     def __str__(self):
         return self.name
-
-
-# ARP/MAC 表
-
-
-# 子网使用率趋势
 
 
 class SubnetUsageLog(models.Model):
@@ -468,16 +438,10 @@ class SubnetUsageLog(models.Model):
         return f"{self.subnet.network} @ {self.recorded_at:%Y-%m-%d %H:%M}"
 
 
-# 服务器负责人（人工维护）
-
-
 class ServerOwner(models.Model):
-    """服务器 IP 与负责人的对应关系。
+    """服务器 IP 与负责人的对应关系（人工维护，不进 ``ConfigBase``）。
 
-    人工维护、不从设备配置提取，所以是裸 ``models.Model``（不进 ``ConfigBase``）。
-    ``ip`` 是查询键：资产分析拿到链路最后的 IP 后按它反查负责人；用
-    ``GenericIPAddressField`` 是为了让 IPv6 统一小写压缩，避免 ``2001:DB8::1``
-    与 ``2001:db8::1`` 匹配不上。
+    ``ip`` 是查询键，用 ``GenericIPAddressField`` 统一 IPv6 小写压缩。
     """
 
     STATUS_CHOICES = (("enabled", "启用"), ("disabled", "停用"))

@@ -1,16 +1,12 @@
 # syntax=docker/dockerfile:1
-#
-# 基础（OS 运行时）镜像：只装 git / libpq5 / libmariadb3 / 清理系统 pip，不含 Python 依赖、不含项目代码。
-# 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
+# 基础（OS 运行时）镜像：只装 git / libpq5 / libmariadb3，不含 Python 依赖与项目代码。
+# 分层取舍与构建命令见 entrypoint/README.md §2-§3。
 
 FROM python:3.12-slim
 
 ARG APT_MIRROR=mirrors.cloud.tencent.com
 
-# 运行期只需要 git（配置仓库）、libpq5（psycopg2）与 libmariadb3（mysqlclient 编译产物的
-# 运行期依赖）；**不装** build-essential / 头文件 / curl —— 依赖都有 cp312 manylinux 轮子，
-# 唯一的例外 mysqlclient 在 dockerfile.venv 的构建阶段现场编译。同一层里清掉 apt 索引与
-# 基础镜像自带的系统 pip / site-packages，依赖只留 /opt/venv。
+# 运行期只需 git（配置仓库）、libpq5 与 libmariadb3；不装编译器/头文件，并清掉系统 pip。
 RUN set -eux; \
     sed -i "s#://deb.debian.org#s://${APT_MIRROR}#g" /etc/apt/sources.list.d/debian.sources; \
     apt-get update; \

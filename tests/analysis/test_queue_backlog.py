@@ -44,11 +44,13 @@ class FakeRedis:
         if not self.groups:
             raise LookupError("no such key")
         # 真实 redis-py：name / last-delivered-id 都是 bytes，且字段名是 last-delivered-id
-        return [{
-            "name": GROUP.encode(),
-            "last-delivered-id": self.last_delivered.encode(),
-            "lag": len(self.undelivered),
-        }]
+        return [
+            {
+                "name": GROUP.encode(),
+                "last-delivered-id": self.last_delivered.encode(),
+                "lag": len(self.undelivered),
+            }
+        ]
 
     def xrange(self, stream, min="-", max="+", count=None):
         self.xrange_calls.append(min)
@@ -66,9 +68,7 @@ def _fields(device_id: int, hostname: str) -> dict:
     return {b"device_id": str(device_id).encode(), b"hostname": hostname.encode(), b"flows": b"[]"}
 
 
-# ---------------------------------------------------------------------------
 # 队列排队消息
-# ---------------------------------------------------------------------------
 
 
 def test_queue_entries_are_decoded():
@@ -109,9 +109,7 @@ def test_limit_caps_queue_entries():
     assert len(stats["queues"]["celery"]) == 5
 
 
-# ---------------------------------------------------------------------------
 # Stream 两段积压
-# ---------------------------------------------------------------------------
 
 
 def test_pending_sorted_by_deliveries_and_named_by_device():
@@ -154,9 +152,7 @@ def test_redis_down_degrades_not_crash():
     assert "redis down" in stats["error"]
 
 
-# ---------------------------------------------------------------------------
 # 命令
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

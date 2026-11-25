@@ -1,14 +1,7 @@
-"""TTP 模板的顶层数据键提取。
+"""TTP 模板的顶层数据键提取：只有行首无缩进的顶层 ``<group>`` 会成为解析结果的键。
 
-只有顶层 ``<group>``（行首无缩进）会成为解析结果的键，子 group 嵌套在父节点内部。
-组名可能带 TTP 语法，需要取字面前缀作为键名，例如：
-
-    <group name="interfaces*.{{ interface }}">   →  interfaces
-    <group name="src**.{{ address_type }}*">     →  src
-    <group name="pools*">                        →  pools
-
-该模块同时被契约测试与映射清单接口使用，用于校验
-「解析器声明的 provides_keys」与「模板实际产出的键」是否一致。
+组名带 TTP 语法时取字面前缀，例如 ``<group name="interfaces*.{{ interface }}">`` → ``interfaces``。
+契约测试与映射清单接口靠它校验「解析器声明的 provides_keys」与「模板实际产出」一致。
 """
 
 import re

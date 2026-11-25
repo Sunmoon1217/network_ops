@@ -1,50 +1,7 @@
-"""Zabbix API 客户端：**进程级单例**（全局唯一）+ 懒创建 + 并发安全 + response 对象化。
+"""Zabbix API 客户端：进程级单例 + 懒创建 + 并发安全，结果校验成 ``schemas.py`` 的 DTO。
 
-**位置**：本模块与 ``schemas.py`` 原先住在 ``apps/ingest/collectors/zabbix/``，2026-11-16 随
-「client 实例下沉 core」迁入这里——实例归 ``core.integrations`` 统管，采集侧只留
-``queries.py``（查什么、怎么组装）。``apps/ingest/collectors/zabbix/zabbix.py`` 仍是薄转发，
-调用方与测试的 patch 点不用动。业务侧推荐入口是 ``core.integrations.acquire("zabbix")``。
-
-``get_zapi()`` 返回 ``TypedZabbixAPI``（``AsyncZabbixAPI`` 的子类）。子类只做一件事：
-给每个用到的官方 API 对象配一个 ``<object>_get`` 扩展方法 —— 方法内部仍按官方形态
-``await self.<object>.get(**params)``，再把 JSON-RPC ``result`` **校验并实例化**成
-``schemas.py`` 里的 DTO 列表。**不写额外功能**：ID 提取、映射组装、条件组合、峰值
-计算等编排一律留在 ``queries.py``，扩展方法只有「调 API → 校验 → 实例化」两步。
-
-允许**有限的参数固化**：只固化保证 DTO 能校验通过的字段参数（``output`` /
-``selectHosts`` / ``object``），过滤条件（``groupids`` / ``hostids`` / ``itemids`` /
-``search`` / ``limit`` / ``time_*`` ...）一律由调用方按官方 API 原样传入；固化项以
-本类为准（同名传参会被覆盖），其余参数原样透传。
-
-用法（`await` 只能在 async 函数里用，模块顶层没有事件循环，不能写
-`zapi = await get_zapi()`）：
-    from core.integrations.providers.zabbix import get_zapi   # 或 core.integrations.acquire("zabbix")
-
-    async def collect_items():
-        zapi = await get_zapi()
-        return await zapi.item_get(limit=10)                # -> list[ZAPIItem]
-
-    # countOutput 等返回标量的调用，直接用官方动态 API（不经过 DTO 校验）：
-    #   count = await zapi.host.get(groupids=ids, countOutput=1)
-
-同步上下文（Celery 任务 / management command）用 asyncio.run 把「取实例 + 业务调用」
-包在**同一个** loop 里；单例绑定创建它的 loop，分两次 asyncio.run 会导致第二次重建：
-    import asyncio
-
-    items = asyncio.run(collect_items())
-
-为什么不在模块 import 时创建（旧版写法的坑）：
-    - `aiohttp.ClientSession` 必须在事件循环内创建，import 期没有（或不是最终那个）
-      running loop，session 会绑错循环甚至直接炸；
-    - `AsyncZabbixAPI.__init__` 内部会创建 session 并做**同步版本探测**，同样要求 running loop；
-    - Celery worker / ASGI / 测试各自有独立进程与循环，import 即建的实例无法跨循环复用。
-
-生命周期：
-    - `get_zapi()`：懒创建 + 登录（token 优先，其次 user/password），缓存在模块级；
-      并发调用经 asyncio.Lock 串行，永远返回同一个实例；
-    - 已有实例时只做健康检查（同一事件循环且 session 未关闭），命中即零开销返回；
-    - 事件循环变化（如测试里多个 loop）或 session 已关时，先释放旧实例再重建；
-    - `close_zapi()`：显式释放（登出 + 关 session），供进程收尾 / 长期任务结束后回收。
+扩展方法只有「调官方 API → 校验 → 实例化」三步，编排留在 ingest 的 ``queries.py``。
+用法、生命周期与覆写禁忌见 handbook/integrations.md「Zabbix 这条链」。
 """
 
 import asyncio

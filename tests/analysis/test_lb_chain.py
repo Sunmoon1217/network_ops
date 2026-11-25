@@ -243,9 +243,7 @@ def test_chain_endpoints_paginated(api):
         assert isinstance(data["results"], list)
 
 
-# ---------------------------------------------------------------------------
 # GTM 搜索六形态 / 过滤 / facets
-# ---------------------------------------------------------------------------
 
 
 def _seed_gtm_search(device: Device):
@@ -311,9 +309,7 @@ def test_gtm_facets(api):
     assert data["monitors"] == ["dns", "gtm_https", "gtm_tcp", "icmp"]
 
 
-# ---------------------------------------------------------------------------
 # 扁平宽表导出（xlsx）
-# ---------------------------------------------------------------------------
 
 
 def _read_xlsx(resp):

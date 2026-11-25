@@ -1,19 +1,11 @@
-"""清理「配置解析产物」——独立运维脚本（原 ``manage.py purge_configs``）。
+"""清理「配置解析产物」——独立运维脚本（原 manage.py purge_configs）。
 
     uv run python scripts/purge_configs.py --device sw-bj-01            # 只报告（默认 dry-run）
     uv run python scripts/purge_configs.py --device sw-bj-01 --yes      # 真正删除
-    uv run python scripts/purge_configs.py --all --yes --with-workflow  # 连 Task/Stage 一起清
     uv run python scripts/purge_configs.py --all --yes --purge-repo     # 连 Git 仓库一起删
 
-解析结果落在各配置表里、与 ``DeviceConfig`` 之间没有外键，删记录不会级联清掉，所以需要
-一个显式的清理口。背景、边界与取舍见 ``handbook/ingest.md``。
-
-**为什么不在 app 里**：它一次要动四个域的表（configs 的配置行、assets 的派生缓存、
-analysis 的 InternetAnalysis / AccessFlow、core 的 Task / Stage）。作为管理命令挂在
-ingest 时，它是 ``ingest → analysis`` 的反向依赖（依赖矩阵禁止），只能靠「运维工具例外」
-豁免。挪到 ``scripts/`` 后它脱离业务域，不再参与依赖矩阵，豁免自然取消。
-
-退出码：0 正常；2 参数错误（如 ``--purge-repo`` 未配 ``--all``、设备不存在）。
+放在 scripts/ 是为了脱离业务域依赖矩阵（一次跨四个域的表）。背景与取舍见 handbook/ingest.md。
+退出码：0 正常；2 参数错误。
 """
 
 from __future__ import annotations
@@ -35,11 +27,7 @@ class PurgeError(Exception):
 
 
 def _setup_django() -> None:
-    """把项目根塞进 sys.path 再 ``django.setup()``。
-
-    ``python scripts/purge_configs.py`` 时 ``sys.path[0]`` 是 ``scripts/`` 而不是项目根
-    （``manage.py`` 在根目录所以没这个问题），不补这一步 ``import netops`` 直接 ModuleNotFoundError。
-    """
+    """把项目根塞进 sys.path 再 django.setup()（直接跑脚本时 sys.path[0] 是 scripts/）。"""
     import os
 
     import django

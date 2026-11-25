@@ -240,6 +240,24 @@ SLB_Rule规则 / 服务器地址#端口 / 负责人。几个别顺手改坏的�
   `row` 是它自己的 `DefaultRow`，传给形参类型为 `PathRow` 的函数会 `vue-tsc` 报错；把拼好的值
   预先算进行字段（`llbTarget` / `slbTarget` / `serverTarget`）再读属性即可。
 
+## 设备组配置合并（`api/group_merge.py` + `ltm_groups` / `gslb_clusters` / `firewall_groups`）
+
+三处共用一套组口径与合并信封，差异只在「同一条配置怎么认」与「冲突怎么取值」：
+
+- **组口径**：`cluster` 只给 GSLB；`ha` / `failover` 给 LTM 与防火墙；单机 / 堆叠不参与
+  （堆叠备机无配置，归属主设备）。未入组设备各自成单机组——GSLB 的需求口径是「单机也算
+  集群」，集群键 `device-<id>`；一台设备在多个组时按组名 + id 排序取第一个。
+- **信封**：每个合并条目带 `device`（出现它的设备主机名按序逗号拼接）、`inconsistent`
+  （同名条目取值不同）、`conflict_fields`（不一致的字段名）。
+- **合并策略**：条目集合按自然键并集——GSLB（域名 + 记录类型）→ 池 → 成员；LTM（VS 名）
+  → 池 → 成员（名称 + 端口）；防火墙策略按 `policy_id`、NAT 按 `order`（策略有序，并集
+  会破坏顺序语义，所以只去重）。标量冲突统一取「主机名排序第一台 + 标注」；列表型
+  （profiles / iRules / monitor）取并集，不算冲突。
+- **读时算、不落库**：每组若干次查询 + dict 组装，配置重解析随时覆盖，派生表只会背上
+  失效同步的包袱；资产分析落库的是它自己的结果缓存，不是这份中间态。
+- **URL**：GSLB 集群有独立前缀 `/api/analysis/gslb-clusters/`（带 cluster 维度的返回结构，
+  刻意不混进 `lb-chain` 的旧接口）。
+
 ## 五、队列积压巡检（`queue_monitor.py`）
 
 访问流是「celery 队列 → Redis Stream → 单写者 consumer」三段接力，任何一段卡死

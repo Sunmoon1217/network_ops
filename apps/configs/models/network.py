@@ -1,11 +1,7 @@
-"""配置行模型：ConfigBase 的 25 个子类（设备上的一条配置行）。
+"""配置行模型：``ConfigBase`` 的 25 个子类（设备上的一条配置行）。
 
-从 ``assets/models/network.py`` 迁入（拆分切片 2；``Vlan`` 是切片 1 的首个模型）。
-模型之间仍沿用原来的类名直接引用：Vrf / AddressBook / Service / GtmServer 都在本模块里，
-不需要跨模块 import。``DeviceConfig`` 是配置快照（不继承 ConfigBase），单独放
-``device_config.py``。
-判定依据见 ``handbook/assets.md``「资产分类边界」与
-``handbook/design/assets-configs-split.md``。
+模型间直接用类名引用（同在本模块）；``DeviceConfig`` 是配置快照、不继承 ConfigBase。
+分类判据见 handbook/assets.md「资产分类边界」。
 """
 
 from typing import TYPE_CHECKING
@@ -241,9 +237,8 @@ class LtmPoolMember(ConfigBase):
     """LTM 池成员
 
     ``pool_name`` 是池名称而不是外键，归属靠 ``device`` 限定：``LtmPool`` 的
-    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池。此前没有
-    ``device``，不同设备上的同名池成员会互相串（资产分析、路径追踪都按
-    ``pool_name`` 全局匹配，删池成员时也会跨设备误删）。
+    ``(device, name)`` 唯一，所以「设备 + 池名」才能定位到唯一的池；去掉 ``device``
+    会让不同设备的同名池成员互相串（分析 / 路径追踪按名字全局匹配，删池会跨设备误删）。
     """
 
     pool_name = models.CharField(max_length=255, blank=True, default="", verbose_name="关联池名称")

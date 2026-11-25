@@ -46,10 +46,8 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, _stop)
         signal.signal(signal.SIGINT, _stop)
 
-        # 启动/退出是给操作者看的，走 BaseCommand 的输出通道而不是 logger：手动执行时
-        # 终端直接可见、call_command(stdout=...) 可捕获，也不受 DJANGO_LOG_LEVEL 摆布。
-        # 显式 flush：宿主脚本经 uv run 启动时它已注入 PYTHONUNBUFFERED=1，但容器入口
-        # / 手工 python 直跑不保证；统一 flush，保证重定向到文件时这一行立即落盘。
+        # 操作者可见走 BaseCommand 输出通道（不受 DJANGO_LOG_LEVEL 摆布）；
+        # 显式 flush，保证重定向到文件时这一行立即落盘。
         self.stdout.write(f"访问流消费启动: stream={STREAM} group={GROUP} consumer={name}")
         self.stdout.flush()
         beat(client)
@@ -59,8 +57,7 @@ class Command(BaseCommand):
             # 否则持续失败会让心跳停更、healthcheck 把活着的进程判死。
             beat(client)
             try:
-                # xreadgroup 的返回类型是宽 Union（混着 dict / Awaitable 分支）：
-                # 运行期形状固定，cast 成真实形状，免得 pyright 逐分支推断报错。
+                # 返回类型是宽 Union，运行期形状固定，cast 成真实形状免得逐分支推断报错
                 responses = cast(
                     "list[tuple[str, list[tuple[str, dict]]]] | None",
                     client.xreadgroup(GROUP, name, {STREAM: ">"}, count=count, block=block),

@@ -1,20 +1,8 @@
-"""ASGI config for netops project.
+"""ASGI 入口：导出模块级 ``application``（gunicorn 与构建期冒烟检查都用它）。
 
-导出模块级 ``application``：``gunicorn netops.asgi:application`` 与 Dockerfile 的
-构建期冒烟检查（``django.setup()`` + import）都拿这个对象。
-
-四层结构：
-1. ``get_asgi_application()`` 完成 ``django.setup()``，产出只处理 http 的 Django handler；
-2. ``_dispatch`` 按路径分发：``/mcp*`` 给 MCP 的 Streamable HTTP 子应用，其余给 Django；
-3. MCP 子应用外面包 ``netops.mcp_gateway.McpGuardMiddleware``（匿名限流，只管 /mcp）；
-4. 最外面是 ``netops.lifespan.LifespanApp``，负责 lifespan 握手与启动/关闭钩子
-   （MCP 的 ``session_manager.run()`` 就是其中一个钩子）。Django 6.1 的 ASGIHandler
-   遇到 lifespan scope 会直接抛 ValueError，而 uvicorn 的 ``lifespan=auto`` 会把这当成
-   「app 不支持 lifespan」静默跳过——为什么必须包这一层、失败消息为什么必须是
-   ``*.failed``，见 ``netops/lifespan.py`` 模块注释。
-
-``MCP_ENABLED=0`` 时不 import ``llmtools``、不建子应用、不装钩子，`/mcp` 明确回 404
-（不能交给 Django——它会落到 SPA 兜底返回 ``index.html``）。
+分层：Django handler → ``_dispatch``（/mcp* 交 MCP，其余交 Django，MCP 外再包匿名限流）
+→ ``LifespanApp``（握手 + LIFESPAN_HOOKS）。生命周期细节见 netops/lifespan.py 与 handbook/llmtools.md。
+``MCP_ENABLED=0`` 时不建子应用、不装钩子，/mcp 明确回 404。
 """
 
 import os
@@ -34,12 +22,7 @@ django_application = get_asgi_application()
 
 @asynccontextmanager
 async def _release_integrations():
-    """进程收尾释放外部 client（``core.integrations.release_all``）。
-
-    迁移前 Zabbix 的 ``close_zapi()`` 全项目没有调用点，session 一直泄漏到进程退出；
-    现在 ASGI worker 与 Celery 子进程退出都会走这条钩子（见 ``handbook/integrations.md``）。
-    ``release_all`` 内部对单个 provider 失败只记日志，不会挡住 shutdown。
-    """
+    """进程收尾释放外部 client（core.integrations.release_all）；单个失败不阻塞 shutdown。"""
     try:
         yield
     finally:
@@ -51,15 +34,12 @@ async def _release_integrations():
 if settings.MCP_ENABLED:
     from llmtools import build_transport_security, mcpserver  # noqa: E402 — import 即接线（实体 + 工具）
 
-    # Streamable HTTP 子应用：内部自带 /mcp 路由；构建之后 mcpserver.session_manager 才存在。
-    # transport_security 必须显式传——默认值只信任 localhost，用 IP/域名访问会 421。
-    # 外面再包一层出口护栏（匿名限流）；不套在 _dispatch 上，免得每条 /api 请求都过卡。
+    # Streamable HTTP 子应用：内部自带 /mcp 路由。transport_security 必须显式传
+    # （默认只信任 localhost，用 IP/域名访问会 421）；外层是匿名限流护栏。
     mcp_http_app = McpGuardMiddleware(mcpserver.streamable_http_app(transport_security=build_transport_security()))
 
-    # 生命周期钩子的唯一组合点：MCP 的 session_manager.run() 必须在 lifespan 里进入一次
-    # （全进程只能调用一次），否则 tool 调用会挂在没有任务组的 manager 上。
-    # _release_integrations 排在最后 → AsyncExitStack 逆序退出时它**先**执行：
-    # 先断开外部 client，再收 MCP 的任务组。
+    # 生命周期钩子只在这里组合：session_manager.run() 全进程只能进入一次。
+    # _release_integrations 排在最后 → AsyncExitStack 逆序退出时它先执行。
     LIFESPAN_HOOKS = [mcpserver.session_manager.run, _release_integrations]
 else:
     mcp_http_app = None
@@ -67,11 +47,9 @@ else:
 
 
 async def _dispatch(scope, receive, send):
-    """按路径分发：/mcp* → MCP 子应用，其余 → Django。
+    """按路径分发：/mcp* → MCP 子应用，其余 → Django；lifespan 由外层 LifespanApp 处理。
 
-    不用 Starlette Mount 的原因：streamable_http_app() 内部路由就是 /mcp，
-    Mount("/mcp", ...) 会把端点叠成 /mcp/mcp；Mount("/", ...) 又会被 Django
-    侧整体吞掉。lifespan scope 不在这里处理——它已在更外层被 LifespanApp 接走。
+    不用 Starlette Mount：streamable_http_app() 内部路由已是 /mcp，Mount 会叠成 /mcp/mcp。
     """
     path = scope.get("path", "")
     if scope["type"] in ("http", "websocket") and is_mcp_path(path):

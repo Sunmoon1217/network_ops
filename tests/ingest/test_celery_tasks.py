@@ -47,9 +47,7 @@ def test_parsing_failure_marks_task_as_failure(eager_celery):
     assert result.state == "FAILURE", "阶段失败必须向上抛，否则 Celery 会记成 SUCCESS"
 
 
-# ---------------------------------------------------------------------------
 # 存储阶段：Saver 的 key 是**列表**
-# ---------------------------------------------------------------------------
 
 
 def _stage_with_parsed_data(task, parsed_data) -> Stage:
@@ -159,9 +157,7 @@ def test_each_saver_only_receives_its_own_keys():
     assert checked, "这个用例没匹配到任何 Saver，等于没测"
 
 
-# ---------------------------------------------------------------------------
 # 导入配置的阶段：单阶段复用同步流水线（pipeline.run_config_pipeline）
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db

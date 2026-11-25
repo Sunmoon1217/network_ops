@@ -1,14 +1,7 @@
 """DRF 权限类。
 
-角色模型（见 ``core.models.User.role``）：
-
-- ``normal``   普通用户：登录后只读（查询）
-- ``operator`` 操作员：登录后可读 + 增删改
-
-``IsOperatorOrReadOnly`` 是全局默认权限：读方法（GET / HEAD / OPTIONS）任何已认证用户
-都可，写方法（POST / PUT / PATCH / DELETE）要求操作员或超管。登录 / 注册等公开接口仍由
-各自的 ``AllowAny`` 覆盖；改自己密码 / 自己偏好这类「自服务」接口保持 ``IsAuthenticated``
-（普通用户管理自己的数据，不需要操作员身份）。
+``IsOperatorOrReadOnly`` 是全局默认权限：读方法任何已认证用户可用，写方法要求操作员
+（``role=operator``）或超管。登录 / 注册等公开接口由各自的 ``AllowAny`` 覆盖。
 """
 
 from typing import cast

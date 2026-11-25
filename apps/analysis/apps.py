@@ -6,5 +6,4 @@ class AnalysisConfig(AppConfig):
     name = "analysis"
     verbose_name = "分析（路径追踪 / 资产分析）"
 
-    # 本 app 没有需要注册的信号：Saver 注册表在 ingest.apps.OperatorConfig.ready() 里，
-    # 拆分时保持那里的 `import configs.savers` 不动（见 apps/ingest/apps.py 注释）。
+    # 本 app 无信号可注册；Saver 注册在 configs.apps.ConfigsConfig.ready()

@@ -1,12 +1,7 @@
-"""配置行基类。
+"""配置行基类 ``ConfigBase``：子类都是「某台设备上的一条配置行」。
 
-从 ``assets/models/network.py`` 迁入（拆分第 1 步）。``ConfigBase`` 的子类都是
-「某台设备上的一条配置行」，与 assets 的设备台账是两回事——判据见 ``handbook/assets.md``
-「资产分类边界」，方案见 ``handbook/design/assets-configs-split.md``。
-
-``device`` 用**字符串**引用 ``assets.Device``（不 import assets 的模型）：configs → assets
-是合法的向下依赖，但两个 models 包互相 import 会绕成环，且 app registry 尚未就绪时
-import 业务模型会炸。
+``device`` 用字符串引用 ``assets.Device``：两边的 models 包互相 import 会成环，
+且 app registry 未就绪时 import 业务模型会炸。
 """
 
 from typing import TYPE_CHECKING

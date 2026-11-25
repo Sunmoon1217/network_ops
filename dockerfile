@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
-#
-# 项目镜像：${VENV_IMAGE}（venv 镜像）+ 源码 + 宿主机构建好的静态成品。
-# 构建前置与命令、COPY 范围、挂载点、git 身份与 safe.directory：docker/README.md §2、§4
+# 项目镜像（传统方案）：venv 镜像 + 源码 + 宿主机构建好的静态成品。
+# 构建前置、COPY 范围、挂载点与 git 身份见 entrypoint/README.md §2、§4。
 
 ARG VENV_IMAGE=network-ops-venv:latest
 

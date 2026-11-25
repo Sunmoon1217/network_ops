@@ -30,9 +30,7 @@ from analysis.policy_expand import (
 from assets.models import Device
 from configs.models import AddressBook, Policy, Service
 
-# ---------------------------------------------------------------------------
 # 造数据助手
-# ---------------------------------------------------------------------------
 
 
 def _device(hostname: str) -> Device:
@@ -95,9 +93,7 @@ def _key(row: AccessFlow) -> tuple:
     )
 
 
-# ---------------------------------------------------------------------------
 # 归一化：唯一键的十个字段
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -198,9 +194,7 @@ def test_protocol_choices_match_service_model():
     assert set(AccessFlow.PROTOCOL_CHOICES) == service_choices
 
 
-# ---------------------------------------------------------------------------
 # 展开与合并
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -326,9 +320,7 @@ def test_unique_constraint_allows_same_key_different_action():
     assert deny.action == "deny"
 
 
-# ---------------------------------------------------------------------------
 # 摘除与重建
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -436,9 +428,7 @@ def test_rebuild_device_cleans_up_when_all_policies_removed():
     assert (created, updated) == (0, 0)
 
 
-# ---------------------------------------------------------------------------
 # rebuild_access_flows 管理命令
-# ---------------------------------------------------------------------------
 
 
 def _run_command(*args) -> str:
@@ -490,9 +480,7 @@ def test_command_unknown_device_raises():
         _run_command("--device", "no-such-host")
 
 
-# ---------------------------------------------------------------------------
 # 服务拆行的端到端（真实模板 → 真实 Saver 顺序 → AccessFlow 两组合）
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -561,9 +549,7 @@ def test_policy_reference_gets_all_rows_even_when_defined_first():
     assert policy.services.count() == 2
 
 
-# ------------------------------------------------------------------------------
 # action 进键：同五元组按动作分行
-# ------------------------------------------------------------------------------
 @pytest.mark.django_db
 def test_same_five_tuple_allow_and_deny_land_as_two_rows():
     """真实展开路径：同五元组被 allow 与 deny 策略命中 → 两行、action 各一

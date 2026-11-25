@@ -1,16 +1,11 @@
 # syntax=docker/dockerfile:1
-#
-# Python 虚拟环境（venv）镜像：只装 uv sync 产物，不含 OS 依赖、不含项目代码。
-# FROM ${BASE_IMAGE}（Dockerfile.base）继承 git / libpq5 / libmariadb3。
-#
-# **两阶段构建**：mysqlclient 在 PyPI 没有 manylinux 轮子（只有 sdist），必须现场编译，
-# 而基础镜像刻意不装编译器。所以编译器与 MySQL 头文件只出现在 build 阶段，运行阶段
-# 只 `COPY --from=build /opt/venv`，基础镜像「不带 build-essential」的取舍不变。
-# 构建命令、分层取舍、镜像源、冒烟清单契约、踩过的坑：docker/README.md §2-§3
+# Python 依赖镜像（/opt/venv），不含 OS 依赖、不含项目代码。
+# mysqlclient 无 manylinux 轮子，故两阶段构建：编译器只留在 build 阶段。
+# 分层取舍、构建命令与冒烟清单契约见 entrypoint/README.md §2-§3。
 
 ARG BASE_IMAGE=localhost/network-ops-base:py312
 
-# ---- 构建阶段：只为编译 mysqlclient 存在的工具链 ----
+# 构建阶段：只为编译 mysqlclient 存在的工具链
 FROM ${BASE_IMAGE} AS build
 
 ARG UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple
@@ -26,8 +21,7 @@ RUN set -eux; \
         build-essential pkg-config default-libmysqlclient-dev; \
     rm -rf /var/lib/apt/lists/*
 
-# uv sync 只认 pyproject.toml + uv.lock（--no-install-project），把两份文件拷到临时目录、
-# 跑完即删：运行阶段的 /app 由 code 卷覆盖，不该残留构建期文件。
+# uv sync 只认 pyproject.toml + uv.lock；拷到临时目录、跑完即删
 COPY pyproject.toml uv.lock /opt/app/
 WORKDIR /opt/app
 
@@ -37,7 +31,7 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.13,source=/uv,target=/usr/local/bin/uv \
     && rm -rf /opt/app /root/.cache/uv \
     && find "${VIRTUAL_ENV}" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
-# ---- 运行阶段：只有 venv，没有编译器与头文件 ----
+# 运行阶段：只有 venv，没有编译器与头文件
 FROM ${BASE_IMAGE}
 
 ENV VIRTUAL_ENV=/opt/venv

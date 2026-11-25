@@ -1,25 +1,7 @@
-"""设备组配置合并的**公共层**（只读）。
+"""设备组配置合并的公共层：组划分、合并信封（device / inconsistent / conflict_fields）与取值工具。
 
-同一个「设备组配置合并」能力在三个域被用到：
-
-- **GTM / GSLB 集群**（``cluster`` 组）→ 配置展示页 + 互联网资产分析；
-- **LTM / SLB 主备**（``ha`` / ``failover`` 组）→ 负载均衡页 + 路径追踪；
-- **防火墙主备**（``ha`` / ``failover`` 组）→ 防火墙页 + 路径追踪。
-
-三者的**组口径与合并信封**一致，差异只在「同一份配置怎么识别为同一条」与「冲突字段怎么取
-值」，所以把可复用的部分收到这里，各域只写自己的策略：
-
-- 组划分：哪些设备算一组（``group_types``）、一台设备多组时取哪个、未入组设备各自成组；
-- 合并信封：每个合并条目都带 ``device``（出现它的设备主机名逗号拼接）/
-  ``inconsistent``（同名条目取值不同）/ ``conflict_fields``（不一致的字段名）；
-- 取值工具：``_differs``（多值比较）/ ``_union_lists``（列表并集去重）。
-
-**不建模型存合并结果**：合并是「读时算」的廉价内存 join（每组若干次查询 + dict 组装）。
-组配置入库是低频动作、且随时可能被重新解析覆盖（更新既有 ``DeviceConfig`` 还不触发流水线），
-存派生表只会背上失效同步的包袱。资产分析要落库的是**自己的结果缓存**，不是这份合并中间态。
-
-用法：``resolve_groups("gslb", {"cluster"})`` / ``resolve_groups("slb", HA_GROUP_TYPES)`` /
-``resolve_groups("firewall", HA_GROUP_TYPES)``，拿到 ``GroupKey`` 列表后各域自己组装合并行。
+三处消费（GSLB 集群、LTM 主备、防火墙主备）只写各自的「识别 + 冲突」策略；
+组口径、合并与 URL 见 handbook/analysis.md「设备组配置合并」。
 """
 
 from __future__ import annotations

@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-#
-# 生成自签证书（仅用于本地开发 / 测试环境）
-#
-# 用法：
-#   bash nginx/gen-self-signed-cert.sh
-#   SSL_CN=netops.local bash nginx/gen-self-signed-cert.sh   # 自定义域名
-#
+# 生成自签证书（仅本地开发 / 测试）：bash nginx/gen-self-signed-cert.sh
+# 可用 SSL_CN=netops.local 指定域名。
 set -euo pipefail
 
 SSL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ssl"

@@ -1,12 +1,7 @@
-"""Excel 批量导入：设备台账 / 机柜 / 设备组 / 配置文件（原 ``assets/device_import.py``）。
+"""Excel 批量导入：设备台账 / 机柜 / 设备组 / 配置文件。
 
-**为什么在 ingest**：这个模块是「外部资料 → 落库」的采集入口之一，最后一步要往 Git 配置
-仓库写文件（``core.config_repo.save_config``）、并投递配置采集任务
-（``ingest.workflow.submit_config_job``）。留在 assets 会让 assets 反向 import ingest
-（依赖矩阵禁止）。迁过来之后方向是 ``ingest → assets`` ✓，两处反向依赖一起消失。
-
-导入器按 Sheet 注册在模块末尾的 ``IMPORT_SHEETS``：Sheet 名 → 列头 + 导入函数，
-``ingest/api/imports.py`` 的「上传 Excel」与「下载模板」两个接口读的都是这一份表。
+放在 ingest 是因为最后一步要写 Git 配置仓库并投递采集任务，依赖方向保持
+``ingest → assets``。Sheet 注册在 ``IMPORT_SHEETS``，上传与下载模板共用这一份表。
 """
 
 import re
@@ -16,12 +11,10 @@ from assets.models import Cabinet, DataCenter, Device, DeviceConnection, DeviceG
 from configs.models import DeviceConfig
 from core.config_repo import save_config
 
-# Excel「配置文件」sheet 的 config_dir 列为空时的默认目录：
-# 容器内是 data 卷（绑定宿主机 data 目录，挂载点 /data）下的 configs/；
-# 宿主机直跑时该路径通常不存在，表里显式填写 config_dir 即可。
+# Excel「配置文件」sheet 的 config_dir 列为空时的默认目录（容器内的 data 卷）；
+# 宿主直跑通常不存在，表里显式填写 config_dir 即可。
 DEFAULT_CONFIG_DIR = "/data/configs"
 
-# Connection config map
 
 CONNECTION_CONFIG_MAP = {
     ("H3C", "switch"): {"connection_type": "napalm", "driver": "h3c_comware"},
@@ -382,7 +375,7 @@ def _import_configs(ws):
 
         # 用「先查后建」而不是 update_or_create：重复导入同一版本时不该动已解析好的
         # config_json（created=False 又不会重新解析，结果就永久丢了）。
-        # 批量导入挂 `_defer_pipeline` 跳过同步流水线、改投 celery 链——理由见 handbook/assets.md
+        # 批量导入挂 `_defer_pipeline` 跳过同步流水线、改投 Celery 链，见 handbook/assets.md
         if DeviceConfig.objects.filter(device=device, git_commit_hash=commit_hash).exists():
             skipped += 1
             continue

@@ -63,9 +63,7 @@ def _dispatch(monkeypatch, django_env=None, **env):
     return importlib.import_module("netops.settings")
 
 
-# ---------------------------------------------------------------------------
 # 分发矩阵
-# ---------------------------------------------------------------------------
 
 
 def test_dev_is_default(monkeypatch):
@@ -117,9 +115,7 @@ def test_unknown_django_env_rejected(monkeypatch):
         _dispatch(monkeypatch, "prd")
 
 
-# ---------------------------------------------------------------------------
 # 数据库后端：DB_ENGINE 只换 ENGINE 与默认端口，连接参数统一用 DB_*
-# ---------------------------------------------------------------------------
 
 
 def test_db_engine_defaults_to_postgresql(monkeypatch):
@@ -152,9 +148,7 @@ def test_db_engine_rejects_unknown(monkeypatch):
         _dispatch(monkeypatch, DB_ENGINE="mysq1")
 
 
-# ---------------------------------------------------------------------------
 # prod：DEBUG 硬覆盖 + 5 个必填守卫（查 os.environ 原始值，启动即拒）
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -205,9 +199,7 @@ def test_prod_debug_hard_false(monkeypatch):
     assert m.DEBUG is False
 
 
-# ---------------------------------------------------------------------------
 # base 的 env 动态链（凭据三级：*_FILE > 同名环境变量 > 默认值；三环境统一）
-# ---------------------------------------------------------------------------
 
 
 def test_credential_chain_file_env_default(monkeypatch, tmp_path):
@@ -225,9 +217,7 @@ def test_credential_chain_file_env_default(monkeypatch, tmp_path):
     assert m.DATABASES["default"]["PASSWORD"] == "netops_password"
 
 
-# ---------------------------------------------------------------------------
 # 业务日志：INFO 必须有 handler，且输出到 stderr（宿主日志重定向 / docker logs 收这条流）
-# ---------------------------------------------------------------------------
 
 
 def test_logging_covers_business_namespaces(monkeypatch):
@@ -249,9 +239,7 @@ def test_log_level_env_dynamic(monkeypatch):
     assert m.LOGGING["loggers"]["analysis"]["level"] == "WARNING"
 
 
-# ---------------------------------------------------------------------------
 # 按环境区分的代码默认值（settings/defaults.py）
-# ---------------------------------------------------------------------------
 
 
 def test_env_defaults_tighten_mcp_and_docs_in_prod(monkeypatch):

@@ -1,13 +1,6 @@
 """资产序列化器（API 视图与解析入库共用）。
 
-从 apps/assets/api/serializers.py 迁移而来，改造点：
-
-- 通用展示字段 ``device_hostname`` 上提到 ``DeviceRelatedSerializer``
-- ``Meta`` 由 ``@model`` 装饰器统一注入（``fields="__all__"``、仅主键只读）
-- 各序列化器只保留自己特有的展示字段与方法
-
-需要精简字段的场景（例如列表页不想带大 JSON），在类体内自定义 ``Meta`` 即可，
-装饰器会尊重子类的定义。
+各序列化器只写自己特有的展示字段；通用 ``Meta`` 由 ``@model`` 注入，见 ``base.py``。
 """
 
 from rest_framework import serializers
@@ -67,11 +60,7 @@ class DeviceGroupSerializer(ParentClass):
         return len(obj.members.all())
 
     def get_group_type_display(self, obj) -> str:
-        """组类型的中文名。
-
-        MCP 工具只按序列化器口径取字段（不在工具层调 ``get_FOO_display``），
-        缺这个键，`list_records` / `get_record` 里就只剩 ``ha`` 这种内部值。
-        """
+        """组类型的中文名；MCP 工具按序列化器口径取字段，缺它会只剩 ``ha`` 这类内部值。"""
         return obj.get_group_type_display() or ""
 
 

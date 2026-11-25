@@ -1,12 +1,6 @@
-"""数据库层面的「事务级串行锁」辅助（跨 PostgreSQL / MySQL）。
+"""数据库命名锁辅助：MySQL 的 ``GET_LOCK`` 需在事务提交后释放，故放在 ``atomic()`` 外层。
 
-PG 有事务级 advisory lock（``pg_advisory_xact_lock``），事务一结束自动释放；MySQL 只有
-会话级 ``GET_LOCK``，必须在事务**提交后**才能 ``RELEASE_LOCK``——提前释放会让另一个进程
-在提交前拿到锁、读到旧数据，照样撞唯一约束。所以这里用上下文管理器把 MySQL 的锁放在
-``transaction.atomic()`` 外层：获取 → 事务 → 释放；PG 侧仍由调用方在事务内用 xact lock。
-
-锁名带当前库名前缀：生产各进程连同一个库 → 同一把锁、互相串行；xdist 的
-``test_netops_gwN`` 各 worker 库名不同 → 不会互相阻塞。
+锁名带库名前缀，xdist 各 worker 库名不同、不会互相阻塞。跨库差异见 handbook/deploy.md。
 """
 
 from contextlib import contextmanager

@@ -49,9 +49,7 @@ def fake_dify(monkeypatch):
     return calls
 
 
-# ---------------------------------------------------------------------------
 # 上传转换
-# ---------------------------------------------------------------------------
 
 
 def test_upload_converts_to_md(operator_client):
@@ -92,9 +90,7 @@ def test_upload_pdf_passthrough(operator_client):
     assert (body["source_format"], body["target_format"], body["converted"]) == ("pdf", "pdf", "")
 
 
-# ---------------------------------------------------------------------------
 # 查看 / 下载
-# ---------------------------------------------------------------------------
 
 
 def test_list_and_detail(operator_client):
@@ -114,9 +110,7 @@ def test_download_source_file(operator_client):
     assert "filename*=UTF-8''%E6%89%8B%E5%86%8C.pdf" in resp["Content-Disposition"]
 
 
-# ---------------------------------------------------------------------------
 # 编辑产物
-# ---------------------------------------------------------------------------
 
 
 def test_edit_converted_lands_revision(operator_client):
@@ -149,9 +143,7 @@ def test_edit_after_push_marks_pending_sync(operator_client, fake_dify):
     assert body["pending_sync"] is True and body["status"] == "pushed"
 
 
-# ---------------------------------------------------------------------------
 # 重新转换（替换源文件）
-# ---------------------------------------------------------------------------
 
 
 def test_reconvert_replaces_source_and_lands_revision(operator_client):
@@ -180,9 +172,7 @@ def test_reconvert_keeps_edit_history_rollbackable(operator_client):
     assert resp.json()["converted"] == "人工修改"
 
 
-# ---------------------------------------------------------------------------
 # 版本历史 / 回滚
-# ---------------------------------------------------------------------------
 
 
 def test_revision_list_and_detail(operator_client):
@@ -206,9 +196,7 @@ def test_revision_restore_lands_new_version(operator_client):
     assert DocumentRevision.objects.filter(document_id=doc_id).count() == 3  # 历史不被改写
 
 
-# ---------------------------------------------------------------------------
 # 推送（create / update 两态）/ 状态
-# ---------------------------------------------------------------------------
 
 
 def test_push_markdown_uses_create_by_text(operator_client, fake_dify):
@@ -306,9 +294,7 @@ def test_status_before_push_rejected(operator_client):
     assert operator_client.get(f"{LIST_URL}{doc_id}/status/").status_code == 400
 
 
-# ---------------------------------------------------------------------------
 # 删除 / 权限
-# ---------------------------------------------------------------------------
 
 
 def test_delete_document(operator_client):

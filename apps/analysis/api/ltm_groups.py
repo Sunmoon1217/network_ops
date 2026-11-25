@@ -1,16 +1,7 @@
-"""LTM（SLB）主备设备组的配置合并接口（只读）。
+"""LTM（SLB）主备设备组的配置合并接口（只读）：VS → 池 → 成员逐层合并。
 
-把同一主备组（``ha`` / ``failover``）内多台 SLB 的 LTM 配置**逐层合并**成一行：
-
-    VS（按 VS 名称去重）
-      └─ 池（按池名并集去重）
-          └─ 成员（按 名称 + 端口 并集去重）
-
-组口径与合并信封复用 ``analysis.api.group_merge``：主备参与合并、单机/堆叠不参与；
-每个合并条目都带 ``device``（出现它的设备主机名逗号拼接）、``inconsistent``、
-``conflict_fields``。**列表型字段取并集**（profiles / iRules / 池 monitor），
-**标量字段冲突取主机名第一台 + 标注**——LTM 的标量（地址/端口/模式）没有「并集值」，
-与防火墙 ``policy_id`` 冲突口径一致；条目集合（VS/池/成员）则是并集。
+组口径与合并信封复用 ``analysis.api.group_merge``；LTM 的标量冲突取主机名第一台，
+条目与列表字段取并集。细节见 handbook/analysis.md「设备组配置合并」。
 """
 
 from __future__ import annotations

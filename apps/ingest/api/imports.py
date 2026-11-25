@@ -1,10 +1,6 @@
-"""Excel 导入的两个接口：上传分发 + 模板下载（原在 ``assets/api/views.py``）。
+"""Excel 导入的两个接口：上传分发 + 模板下载。
 
-随 ``device_import.py`` 一起迁 ingest——它读的 ``IMPORT_SHEETS`` 就是那个模块的表，
-放在一起才不会出现「接口在本域、导入器在别域」的跨域引用。
-
-URL 是 ``/api/ingest/import-devices/`` 与 ``/api/ingest/import-template/``：接口与它读的
-导入器同域，不再借用 assets 前缀（路由表见 ``handbook/api.md``）。
+读的 ``IMPORT_SHEETS`` 在 ``device_import.py``，两者必须同域；路由见 handbook/api.md。
 """
 
 import logging

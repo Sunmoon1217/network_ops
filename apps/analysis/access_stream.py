@@ -1,16 +1,8 @@
-"""访问流（AccessFlow）的生产者-消费者通道：Redis Stream + 单写者入库。
+"""访问流的生产者-消费者通道：Redis Stream + 单写者入库。
 
-链路::
-
-    celery worker（analysis.rebuild_access_flows，队列 access_flow，多进程并行展开）
-        ──XADD──> access_flow_stream ──XREADGROUP──> access_flow_consumer（唯一写库者）
-                                                      摘旧上下文 + 合并入库 → 成功才 XACK
-
-**单写者**是「先查后合并 + bulk」能成立的前提（并行展开没问题，冲突全在写库），
-也意味着消费者只能跑一个实例。恢复语义、socket_timeout 与积压口径等坑见 handbook/analysis.md
-
-投递触发不在这里：PolicySaver 在 ingest 侧经 ``configs.access_flow_trigger`` 按任务名
-send_task——依赖方向 analysis → ingest 单向，ingest 不许 import analysis。
+celery worker 并行展开 → XADD → 唯一 consumer 摘旧上下文 + 合并入库 → 成功才 XACK。
+**单写者**是「先查后合并 + bulk」成立的前提，也意味着 consumer 只能跑一个实例。
+恢复语义与积压口径见 handbook/analysis.md；投递触发在 ``configs.access_flow_trigger``。
 """
 
 from __future__ import annotations
@@ -138,9 +130,8 @@ def decode_message(fields: dict) -> tuple[int, list[dict]]:
         for context in contexts:
             filled = {**context, "device_id": device_id, "hostname": hostname}
             context_map[f"{device_id}:{filled['policy_pk']}"] = filled
-        # 键按唯一约束原样还原；升级前的旧 wire 消息是九元组（没有 action 一位）——
-        # 按 allow 兜底，否则消费侧 key[9] 直接 IndexError 崩掉 consumer；
-        # deny 混行由下一次 rebuild 的 sync_device 拆正。
+        # 旧 wire 消息是九元组（没有 action 一位），按 allow 兜底：否则消费侧 key[9]
+        # 直接 IndexError 崩掉 consumer；deny 行由下一次 rebuild 的 sync_device 拆正。
         key = tuple(key)
         if len(key) == 9:
             key = (*key, "allow")

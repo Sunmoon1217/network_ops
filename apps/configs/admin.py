@@ -1,6 +1,6 @@
 """配置域 admin：配置行家族 26 个模型（含 ArpMac）与 DeviceConfig 快照。
 
-从 assets/admin.py 迁入（拆分切片 4）。列表/搜索/筛选口径逐字照抄，前端与运维习惯不变。
+列表 / 搜索 / 筛选口径与 assets/admin.py 一致。
 """
 
 from django.contrib import admin
@@ -40,7 +40,7 @@ DEVICE_FILTER = ("device", admin.RelatedOnlyFieldListFilter)
 
 @admin.register(DeviceConfig)
 class DeviceConfigAdmin(admin.ModelAdmin):
-    # config_json 是整份解析结果的大 JSON，不进列表（原先一行把列表页撑爆）；详情页查看
+    # config_json 是整份解析结果的大 JSON，不进列表；详情页查看
     list_display = (
         "id",
         "device",
@@ -499,7 +499,6 @@ class PolicyAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    # action（放行/拒绝）原先筛不了，是策略审计最高频的过滤维度
     list_filter = (DEVICE_FILTER, "action", "is_active", "enabled", "log", "created_at")
     autocomplete_fields = ("device", "source_addresses", "destination_addresses", "services")
     search_fields = ("name", "policy_id", "description", "device__hostname")
@@ -557,7 +556,7 @@ class RouteAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    # protocol 原先筛不了；device 继承自 ConfigBase，按设备圈路由是最常用入口
+    # device 继承自 ConfigBase，按设备圈路由是最常用入口
     list_filter = (DEVICE_FILTER, ("vrf", admin.RelatedOnlyFieldListFilter), "protocol", "enabled", "created_at")
     autocomplete_fields = ("device", "vrf")
     search_fields = ("destination", "nexthop", "interface", "description", "device__hostname")
@@ -581,7 +580,6 @@ class ArpMacAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    # arp_type / status 这类有限取值原先只能翻页碰
     list_filter = (DEVICE_FILTER, "arp_type", "status", "learned_at", "created_at")
     autocomplete_fields = ("device",)
     search_fields = ("ip_address", "mac_address", "interface", "vendor", "device__hostname")

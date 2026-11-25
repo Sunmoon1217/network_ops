@@ -1,17 +1,7 @@
-"""资产总览的跨域聚合（``/api/analysis/overview/``）。
+"""资产总览的跨域聚合（``/api/analysis/overview/``，name 仍是 ``assets-overview``）。
 
-Home 页的一次请求要同时看**资产**（机柜 / 设备 / 网段）与**配置行**（接口 / VLAN /
-路由 / 策略 / NAT / SLB / GTM / ARP）的分布。这是全项目唯一在读取侧同时消费两个域的
-查询：assets 是叶子节点（矩阵禁止 ``assets → configs``），configs 也不该反过来读 assets
-的设备 / 机柜，所以聚合只能落在两者之上——按依赖矩阵 ``analysis → ingest → configs →
-assets``，最自然的落点就是 analysis（它本来就有 dashboard / lb-chain / 设备组合并这些
-跨域只读聚合）。
-
-**URL 是 ``/api/analysis/overview/``（``assets-overview``）**：总览读的是 assets + configs
-两个域的分布，故归 analysis 前缀；name 保留 ``assets-overview``（前端按业务名反解，不跟 URL 走）。
-
-口径就是「按字段分组计数」：只读、无缓存、无写操作。单个 count 走索引，68 次查询在
-内网毫秒级；真成瓶颈时再谈缓存，别提前加。
+读取侧同时消费 assets（机柜 / 设备 / 网段）与 configs（配置行）的分布，所以落在
+两者之上的 analysis；按字段分组计数，只读、无缓存。归属理由见 handbook/analysis.md。
 """
 
 from django.db.models import Count

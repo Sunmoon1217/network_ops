@@ -92,6 +92,20 @@ def ready(self):
 - 进程收尾时实例常绑在已关闭的 loop 上，`_dispose` 对登出与 `session.close()` 都兜住异常
   ——迁移前 `close_zapi()` 无人调用是「不释放」，这里是「想关但关不掉也不炸」。
 
+### `TypedZabbixAPI` 的薄封装契约
+
+- 只有 `<object>_get` 扩展方法：一次官方 `<object>.get` + 结果校验并实例化成 `schemas.py`
+  的 DTO。ID 提取、映射组装、条件组合、峰值计算等编排**仍在** `queries.py`。
+- 允许有限的参数固化：只固化保证 DTO 能校验通过的字段（`output` / `selectHosts` /
+  `object`）；过滤条件（`hostids` / `time_*` / `limit` ...）原样透传，固化项以本类为准。
+- **不覆写** `__init__` / `login` / `logout`：父类构造会做同步版本探测，登录态与 session
+  存在 name-mangled 私有属性里。**不覆写** `__getattr__`：父类对任意未知属性都返回
+  `APIObject`（拼错也不抛 `AttributeError`），动态分派不能被截断——扩展方法因此统一叫
+  `<object>_get`，避开 `item` / `history` 这些动态对象名。
+- 调用必须在 async 函数里；同步栈（Celery / management command）用
+  `asyncio.run(collect())` 把「取实例 + 业务调用」包在**同一个** loop 里，分两次
+  `asyncio.run` 会让单例因 loop 变化而重建。
+
 ## 健康状态（`IntegrationHealth` + beat 探活）
 
 实例是进程内的，跨进程只能看外化状态：
