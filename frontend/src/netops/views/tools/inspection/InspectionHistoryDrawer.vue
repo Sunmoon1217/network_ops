@@ -31,22 +31,25 @@ const visible = computed({
 
 <template>
   <el-drawer v-model="visible" :title="kind === 'device' ? '设备巡检历史' : '专线巡检历史'" size="82%">
-    <div class="history-toolbar">
-      <el-date-picker
-        v-model="historyDate"
-        type="date"
-        value-format="YYYY-MM-DD"
-        :clearable="false"
-        :disabled-date="disableFuture"
-        style="width: 180px"
-      />
-      <span class="hint">选择日期查看当天巡检结果，默认昨天</span>
+    <div class="history-drawer">
+      <div class="history-toolbar">
+        <el-date-picker
+          v-model="historyDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          :disabled-date="disableFuture"
+          style="width: 180px"
+        />
+        <span class="hint">选择日期查看当天巡检结果，默认昨天</span>
+      </div>
+      <InspectionResults :kind="kind" :date="historyDate" />
     </div>
-    <InspectionResults :kind="kind" :date="historyDate" table-height="calc(82vh - 300px)" />
   </el-drawer>
 </template>
 
 <style scoped>
-.history-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.history-drawer { display: flex; flex-direction: column; height: 100%; }
+.history-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-shrink: 0; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

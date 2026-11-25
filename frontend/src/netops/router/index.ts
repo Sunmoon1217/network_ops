@@ -132,7 +132,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/tools/path-trace' },
         { path: 'path-trace', name: 'tools-path-trace', component: () => import('@netops/views/tools/path-trace/index.vue') },
-        { path: 'inspection', redirect: '/tools/inspection/device' },
+        { path: 'inspection', name: 'tools-inspection-overview', component: () => import('@netops/views/tools/inspection/InspectionOverview.vue') },
         {
           path: 'inspection/device',
           name: 'tools-inspection-device',

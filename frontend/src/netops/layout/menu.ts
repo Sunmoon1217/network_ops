@@ -97,13 +97,7 @@ export const menuOptions: MenuItem[] = [
     index: 'tools', label: '工具', icon: renderIcon(IconTools),
     children: [
       { index: '/tools/path-trace', label: '路径追踪', icon: renderIcon(IconPathTrace) },
-      {
-        index: 'tools-inspection', label: '巡检',
-        children: [
-          { index: '/tools/inspection/device', label: '设备巡检' },
-          { index: '/tools/inspection/line', label: '专线巡检' },
-        ],
-      },
+      { index: '/tools/inspection', label: '巡检', icon: renderIcon(Timer) },
       { index: '/tools/rack-view', label: '机柜视图', icon: renderIcon(IconBaseline) },
       { index: '/tools/subnet-calc', label: '子网计算器', icon: renderIcon(IconSubnet) },
       { index: '/tools/dns-query', label: 'DNS 查询', icon: renderIcon(IconDns) },

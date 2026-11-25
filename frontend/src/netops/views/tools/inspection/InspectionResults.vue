@@ -2,7 +2,6 @@
 import DataTable from '@/components/DataTable.vue'
 import DataColumn from '@/components/DataColumn.vue'
 import DataPagination from '@/components/DataPagination.vue'
-import StatCard from '@/components/StatCard.vue'
 import { TABLE_KEYS } from '@/constants/tableKeys'
 import { useCrudApi } from '@/composables/useCrudApi'
 import {
@@ -14,14 +13,10 @@ import {
 
 import type { InspectionDeviceMetric, InspectionDeviceSummary, InspectionInterfaceMetric, InspectionRun } from '@/types'
 
-const props = withDefaults(
-  defineProps<{
-    kind: 'device' | 'line'
-    date: string
-    tableHeight?: string
-  }>(),
-  { tableHeight: '420px' },
-)
+const props = defineProps<{
+  kind: 'device' | 'line'
+  date: string
+}>()
 
 const isDevice = computed(() => props.kind === 'device')
 const run = ref<InspectionRun | null>(null)
@@ -37,6 +32,7 @@ const {
   total: deviceTotal,
   fetchData: fetchDevices,
   refetch: refetchDevices,
+  pageParams: deviceParams,
 } = useCrudApi<InspectionDeviceMetric>()
 
 const {
@@ -47,6 +43,7 @@ const {
   total: interfaceTotal,
   fetchData: fetchInterfaces,
   refetch: refetchInterfaces,
+  pageParams: interfaceParams,
 } = useCrudApi<InspectionInterfaceMetric>()
 
 const loading = computed(() => runLoading.value || summaryLoading.value || devicesLoading.value || interfacesLoading.value)
@@ -74,10 +71,10 @@ const load = async () => {
       summaryLoading.value = false
     }
     devicePage.value = 1
-    await fetchDevices(() => getInspectionDevices({ date: props.date, page: devicePage.value, page_size: devicePageSize.value }))
+    await fetchDevices(() => getInspectionDevices(deviceParams({ date: props.date })))
   } else {
     interfacePage.value = 1
-    await fetchInterfaces(() => getInspectionInterfaces({ date: props.date, page: interfacePage.value, page_size: interfacePageSize.value }))
+    await fetchInterfaces(() => getInspectionInterfaces(interfaceParams({ date: props.date })))
   }
 }
 
@@ -85,8 +82,6 @@ watch(() => [props.kind, props.date], load)
 onMounted(load)
 
 const fmtPct = (value: number | null) => (value == null ? '—' : `${value}%`)
-
-/** 带宽统一换算到 Kbps / Mbps / Gbps，便于阅读 */
 const fmtBps = (value: number | null) => {
   if (value == null) return '—'
   const units = [
@@ -94,31 +89,36 @@ const fmtBps = (value: number | null) => {
     { size: 1e6, label: 'Mbps' },
     { size: 1e3, label: 'Kbps' },
   ]
-  const hit = units.find((unit) => value >= unit.size)
+  const hit = units.find((u) => value >= u.size)
   return hit ? `${(value / hit.size).toFixed(2)} ${hit.label}` : `${value.toFixed(0)} bps`
 }
-
 const usageTagType = (value: number | null) => {
   if (value == null) return 'info'
   if (value >= 80) return 'danger'
   if (value >= 60) return 'warning'
   return 'success'
 }
-
 const fmtTime = (value: string | null) => (value ? value.replace('T', ' ').slice(0, 19) : '—')
 
-const cards = computed(() => {
+const statusTag = computed((): { type: 'success' | 'danger' | 'info'; text: string } => {
+  if (run.value) {
+    return { type: run.value.status === 'success' ? 'success' : 'danger', text: run.value.status === 'success' ? '成功' : '失败' }
+  }
+  return { type: 'info', text: '未执行' }
+})
+
+const statItems = computed((): { label: string; value: string; tagType?: 'success' | 'danger' | 'info' }[] => {
   if (isDevice.value) {
     return [
-      { label: '巡检状态', value: run.value ? (run.value.status === 'success' ? '成功' : '失败') : '未执行' },
-      { label: '设备数', value: summary.value?.device_count ?? 0 },
+      { label: '巡检状态', value: statusTag.value.text, tagType: statusTag.value.type },
+      { label: '设备数', value: String(summary.value?.device_count ?? 0) },
       { label: 'CPU 日均', value: fmtPct(summary.value?.cpu_avg ?? null) },
       { label: '内存日均', value: fmtPct(summary.value?.memory_avg ?? null) },
     ]
   }
   return [
-    { label: '巡检状态', value: run.value ? (run.value.status === 'success' ? '成功' : '失败') : '未执行' },
-    { label: '专线接口数', value: interfaceTotal.value },
+    { label: '巡检状态', value: statusTag.value.text, tagType: statusTag.value.type },
+    { label: '专线接口数', value: String(interfaceTotal.value) },
     { label: '完成时间', value: fmtTime(run.value?.finished_at ?? null) },
     { label: '数据日期', value: props.date },
   ]
@@ -146,7 +146,13 @@ const cards = computed(() => {
     />
 
     <div class="stat-row">
-      <StatCard v-for="card in cards" :key="card.label" :label="card.label" :value="card.value" />
+      <div v-for="item in statItems" :key="item.label" class="stat-card">
+        <div class="stat-label">{{ item.label }}</div>
+        <div class="stat-value">
+          <el-tag v-if="item.tagType" :type="item.tagType" size="default">{{ item.value }}</el-tag>
+          <span v-else>{{ item.value }}</span>
+        </div>
+      </div>
     </div>
 
     <div v-if="isDevice && summary?.cpu_top.length" class="top-line">
@@ -156,12 +162,13 @@ const cards = computed(() => {
       </el-tag>
     </div>
 
-    <div class="table-box" :style="{ height: tableHeight }">
+    <div class="table-wrap">
       <DataTable
         v-if="isDevice"
         :table-key="TABLE_KEYS.inspectionDevices"
         :data="devices"
         :loading="loading"
+        height="100%"
         size="small"
       >
         <DataColumn prop="host" label="主机" min-width="180" show-overflow-tooltip />
@@ -192,6 +199,7 @@ const cards = computed(() => {
         :table-key="TABLE_KEYS.inspectionInterfaces"
         :data="interfaces"
         :loading="loading"
+        height="100%"
         size="small"
       >
         <DataColumn prop="host" label="主机" width="160" show-overflow-tooltip />
@@ -222,29 +230,41 @@ const cards = computed(() => {
       </DataTable>
     </div>
 
-    <DataPagination
-      v-if="isDevice"
-      v-model:page="devicePage"
-      v-model:page-size="devicePageSize"
-      :total="deviceTotal"
-      @change="refetchDevices"
-    />
-    <DataPagination
-      v-else
-      v-model:page="interfacePage"
-      v-model:page-size="interfacePageSize"
-      :total="interfaceTotal"
-      @change="refetchInterfaces"
-    />
+    <div class="pagination-wrap">
+      <DataPagination
+        v-if="isDevice"
+        v-model:page="devicePage"
+        v-model:page-size="devicePageSize"
+        :total="deviceTotal"
+        @change="refetchDevices"
+      />
+      <DataPagination
+        v-else
+        v-model:page="interfacePage"
+        v-model:page-size="interfacePageSize"
+        :total="interfaceTotal"
+        @change="refetchInterfaces"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
-.results { display: flex; flex-direction: column; gap: 8px; }
-.run-alert { margin-bottom: 2px; }
-.stat-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.stat-row :deep(.stat-card) { flex: 1; min-width: 150px; }
-.top-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.results { display: flex; flex-direction: column; min-height: 0; gap: 10px; flex: 1; }
+.run-alert { margin-top: 2px; }
+
+.stat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; flex-shrink: 0; }
+.stat-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.stat-label { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
+.stat-value { font-size: 18px; font-weight: 600; color: var(--el-text-color-primary); display: flex; align-items: center; }
+
+.top-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; flex-shrink: 0; }
 .top-label { color: var(--el-text-color-secondary); }
-.table-box { background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
+
+.table-wrap { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; overflow: hidden; }
+.pagination-wrap { flex-shrink: 0; }
+
+@media (max-width: 900px) {
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>
