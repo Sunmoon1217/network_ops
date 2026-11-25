@@ -7,7 +7,7 @@ import {
   IconOverview, IconDevices, IconDeviceList, IconBaseline, IconInterfaces,
   IconParsers, IconConfig, IconLoadBalancer, IconDns, IconPolicy,
   IconIp, IconSubnet, IconTools, IconPathTrace, IconRouting,
-  IconDoc, IconKnowledge, IconTemp,
+  IconDoc, IconKnowledge,
 } from '@/assets/menu-icons'
 
 // 包装成 Element Plus 的 el-icon 渲染函数；只给侧栏一级菜单用
@@ -91,7 +91,6 @@ export const menuOptions: MenuItem[] = [
     children: [
       { index: '/docs/knowledge', label: '知识库', icon: renderIcon(IconKnowledge) },
       { index: '/docs/spreadsheet', label: '电子表格', icon: renderIcon(Grid) },
-      { index: '/docs/temp', label: '临时', icon: renderIcon(IconTemp) },
     ],
   },
   {

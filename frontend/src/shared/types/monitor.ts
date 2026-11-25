@@ -1,4 +1,4 @@
-/** 队列积压巡检（/api/analysis/queue-status/，后端 analysis.queue_monitor 采集） */
+/** 队列积压巡检（/api/analysis/queue-status/，后端 analysis.monitor.queue 采集） */
 
 /** PEL 里重投最多的消息（毒消息预警） */
 export interface QueuePendingEntry {
@@ -50,7 +50,7 @@ export interface QueueStatus {
 
 // ---------------------------------------------------------------------------
 // 运行监控（/api/analysis/redis-status/ 与 /api/analysis/celery-status/，
-// 后端 analysis.redis_monitor / analysis.celery_monitor 采集）
+// 后端 analysis.monitor.redis / analysis.monitor.celery 采集）
 // ---------------------------------------------------------------------------
 
 /** Redis 服务状态（INFO 口径） */
