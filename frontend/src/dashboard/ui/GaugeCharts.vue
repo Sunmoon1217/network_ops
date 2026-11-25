@@ -21,28 +21,31 @@ let myChart: echarts.ECharts | null = null
 let carouselInterval: number | null = null
 const handleResize = () => myChart?.resize()
 
-// 给每个 data item 加独立的 title/detail，按索引水平分布 x 偏移，避免多 gauge 文字重叠
+// 给每个 data item 加独立的 title/detail：按索引分布到弧线左右两端，避免多指标文字重叠。
+// 注意 offsetCenter 的百分比基准是仪表盘半径（不是容器宽度），卡片内半径仅 ~50px，
+// 所以偏移必须给足（±58%~62%），否则标签仍会挤在中间。
 const transformData = (data: Array<{ name: string; value: number }>) => {
   const count = Math.max(data.length, 1)
+  const spread = 58 // 两端各偏移半径的 58%
   return data.map((item, i) => {
-    // 两个 gauge 时 ±28%（~17px 在 62px 卡片上，够分离）；n 个对称分布
-    const ratio = (count === 1 ? 0 : ((i + 1) / (count + 1)) * 100 - 50)
-    const xPct = `${ratio}%`
+    // n=1 居中；n=2 左右各一端；n>=3 从 -spread 均匀铺到 +spread
+    const ratio = count === 1 ? 0 : (i / (count - 1)) * 2 - 1
+    const xPct = `${(ratio * spread).toFixed(1)}%`
     return {
       ...item,
       title: {
         show: true,
-        offsetCenter: [xPct, '32%'],
-        fontSize: '0.8rem',
+        offsetCenter: [xPct, '46%'],
+        fontSize: '0.7rem',
         color: '#b6d7ef',
       },
       detail: {
         show: true,
-        offsetCenter: [xPct, '-12%'],
+        offsetCenter: [xPct, '16%'],
         width: 10,
-        fontSize: '0.9rem',
+        fontSize: '0.78rem',
         color: '#ecf7ff',
-        formatter: '{value} %',
+        formatter: '{value}%',
       },
     }
   })
