@@ -60,9 +60,7 @@ class Command(BaseCommand):
             self.stdout.write("  （无）")
         for entry in stream["pending"]:
             host = entry["hostname"] or f"device {entry['device_id']}"
-            self.stdout.write(
-                f"  {entry['id']}  {host}  空闲 {entry['idle_ms'] // 1000}s  已重投 {entry['deliveries']} 次"
-            )
+            self.stdout.write(f"  {entry['id']}  {host}  空闲 {entry['idle_ms'] // 1000}s  已重投 {entry['deliveries']} 次")
 
         self.stdout.write(f"\n访问流 Stream · 未投递积压（lag 口径，最多 {limit} 条）:")
         if not stream["undelivered"]:

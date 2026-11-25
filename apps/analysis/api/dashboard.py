@@ -105,9 +105,7 @@ def dashboard_cabinets(request):
     ModelViewSet 走全局权限（GET 也要登录）。这里只投影画 U 位和标签必需的字段，
     不返回账号、SNMP/口令、备注等数据，让大屏在无人登录时也能完整展示。
     """
-    cabinet_rows = Cabinet.objects.values(
-        "id", "name", "row", "total_u", "status", "room__name", "room__datacenter__name"
-    ).order_by("room__datacenter__name", "room__name", "name")
+    cabinet_rows = Cabinet.objects.values("id", "name", "row", "total_u", "status", "room__name", "room__datacenter__name").order_by("room__datacenter__name", "room__name", "name")
     cabinets = [
         {
             "id": row["id"],
@@ -122,9 +120,11 @@ def dashboard_cabinets(request):
     ]
 
     type_labels = dict(Device.DEVICE_TYPE_CHOICES)
-    device_rows = Device.objects.filter(cabinet__isnull=False, u_position__isnull=False).values(
-        "id", "hostname", "cabinet_id", "u_position", "height", "ip_address", "device_type"
-    ).order_by("hostname")
+    device_rows = (
+        Device.objects.filter(cabinet__isnull=False, u_position__isnull=False)
+        .values("id", "hostname", "cabinet_id", "u_position", "height", "ip_address", "device_type")
+        .order_by("hostname")
+    )
     devices = [
         {
             "id": row["id"],

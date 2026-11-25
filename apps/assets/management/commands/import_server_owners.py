@@ -60,11 +60,7 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         verb = "将新建" if options["dry_run"] else "新建"
-        self.stdout.write(
-            f"完成：{verb} {len(to_create)} 条，"
-            f"{'将更新' if options['dry_run'] else '更新'} {len(to_update)} 条，"
-            f"文件内重复 {len(duplicates)} 个 ip"
-        )
+        self.stdout.write(f"完成：{verb} {len(to_create)} 条，{'将更新' if options['dry_run'] else '更新'} {len(to_update)} 条，文件内重复 {len(duplicates)} 个 ip")
 
     def _read(self, sheet):
         """按列名解析，返回 ``(有效行, 错误清单, 重复的 ip)``。

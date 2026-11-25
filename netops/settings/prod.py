@@ -39,8 +39,4 @@ if not os.environ.get("REDIS_HOST"):
     _errors.append("REDIS_HOST —— Redis 地址（生产不沿用本机默认）")
 
 if _errors:
-    raise ImproperlyConfigured(
-        "生产环境配置缺失/非法（共 {n} 项，一次列全）：\n{n_lines}".format(
-            n=len(_errors), n_lines="\n".join(f"  - {item}" for item in _errors)
-        )
-    )
+    raise ImproperlyConfigured("生产环境配置缺失/非法（共 {n} 项，一次列全）：\n{n_lines}".format(n=len(_errors), n_lines="\n".join(f"  - {item}" for item in _errors)))

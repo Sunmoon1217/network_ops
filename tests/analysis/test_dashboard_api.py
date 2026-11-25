@@ -23,9 +23,7 @@ def test_dashboard_cabinets_allow_anonymous_and_project_minimal_fields():
     datacenter = DataCenter.objects.create(name="DC-A")
     room = Room.objects.create(datacenter=datacenter, name="R1")
     cabinet = Cabinet.objects.create(room=room, name="A01", total_u=42)
-    Device.objects.create(
-        hostname="SW-01", device_type="switch", cabinet=cabinet, u_position=40, height=2
-    )
+    Device.objects.create(hostname="SW-01", device_type="switch", cabinet=cabinet, u_position=40, height=2)
 
     response = APIClient().get("/api/dashboard/cabinets/")
 

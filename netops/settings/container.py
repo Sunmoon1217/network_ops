@@ -12,6 +12,4 @@ from django.core.exceptions import ImproperlyConfigured
 # 不做「修一个、再启动、又缺一个」的挤牙膏式失败。
 _missing = [key for key in ("DB_HOST", "REDIS_HOST") if not os.environ.get(key)]
 if _missing:
-    raise ImproperlyConfigured(
-        f"容器环境缺少必须由 envs/container.env 注入的变量（共 {len(_missing)} 个）：{', '.join(_missing)}"
-    )
+    raise ImproperlyConfigured(f"容器环境缺少必须由 envs/container.env 注入的变量（共 {len(_missing)} 个）：{', '.join(_missing)}")
