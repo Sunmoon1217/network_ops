@@ -32,9 +32,12 @@ def test_beat_schedule_periods_are_positive():
 
 
 def test_beat_schedule_covers_inspection_chains():
-    """巡检两条链（采集调度 / 滚存清理）由内置 beat 投递，任务名与 settings 一致。"""
+    """巡检 tick（每分钟判断 DB 配置）与滚存清理由内置 beat 投递，任务名与 settings 一致。"""
+    from analysis import tasks as analysis_tasks
+
     schedule = settings.CELERY_BEAT_SCHEDULE
-    assert schedule["inspection-dispatch"]["task"] == settings.INSPECTION_DISPATCH_TASK
+    assert schedule["inspection-tick"]["task"] == getattr(analysis_tasks.inspection_tick, "name")
+    assert schedule["inspection-tick"]["task"] == settings.INSPECTION_TICK_TASK
     assert schedule["inspection-prune"]["task"] == settings.INSPECTION_PRUNE_TASK
 
 

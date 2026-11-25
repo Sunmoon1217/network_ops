@@ -4,11 +4,61 @@
 重跑走 upsert，不产生重复。设计链路见 handbook/analysis.md「巡检」。
 """
 
+from datetime import time
+
 from django.db import models
 
 
+class InspectionConfig(models.Model):
+    """巡检全局配置（单例）：调度时间点 + 每次采集的时间范围。
+
+    beat 每分钟触发 ``analysis.inspection_tick``，到点且 ``last_dispatch_date`` 不是今天
+    才投递，避免同一分钟 / 同一天重复采集。时间范围按自然日内的 ``[开始, 结束]`` 取样本。
+    """
+
+    schedule_hour = models.PositiveSmallIntegerField(default=23, verbose_name="巡检时间点-时")
+    schedule_minute = models.PositiveSmallIntegerField(default=50, verbose_name="巡检时间点-分")
+    window_start = models.TimeField(default=time(0, 0), verbose_name="巡检时间范围-开始")
+    window_end = models.TimeField(default=time(23, 59), verbose_name="巡检时间范围-结束")
+    last_dispatch_date = models.DateField(null=True, blank=True, verbose_name="最近投递日期")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "巡检配置"
+        verbose_name_plural = verbose_name
+
+    @classmethod
+    def load(cls) -> "InspectionConfig":
+        """取单例（pk=1），不存在时用默认值创建。"""
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+    def __str__(self):
+        return f"{self.schedule_hour:02d}:{self.schedule_minute:02d} {self.window_start}-{self.window_end}"
+
+
+class InspectionDeviceTarget(models.Model):
+    """设备巡检对象：逐台 Zabbix 主机，启用的参与 CPU / 内存采集。
+
+    与 ``InspectionTarget``（接口带宽）并列；两者都由 admin 或「巡检」页维护，
+    调度任务读取后作为参数传给 ingest，ingest 不反向 import 本表。
+    """
+
+    host = models.CharField(max_length=128, unique=True, verbose_name="Zabbix 主机名")
+    enabled = models.BooleanField(default=True, verbose_name="启用")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "设备巡检对象"
+        verbose_name_plural = verbose_name
+        ordering = ("host",)
+
+    def __str__(self):
+        return self.host
+
+
 class InspectionTarget(models.Model):
-    """接口带宽巡检目标：采集器的输入配置，admin 维护。
+    """接口带宽巡检目标：采集器的输入配置，admin 或「巡检」页维护。
 
     与 ``LinkTarget`` 同类职责：执行采集的 ingest 任务是按任务参数拿到这份清单的
     （``analysis → ingest`` 正向），ingest 不反向 import 本表。

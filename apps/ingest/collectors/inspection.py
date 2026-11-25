@@ -1,5 +1,6 @@
-"""巡检采集：从 Zabbix 取指定日期区间的 CPU / 内存 / 接口带宽，按天聚合。
+"""巡检采集：从 Zabbix 取指定日期区间、指定每日时段的 CPU / 内存 / 接口带宽，按天聚合。
 
+设备侧只采 ``device_hosts`` 清单内主机（``None`` 表示不限），专线侧只采 ``targets``。
 只调 Zabbix、返回可 JSON 序列化的 dict，**不碰数据库、不 import analysis**；写库由
 ``analysis.write_inspection`` 唯一负责。区间内按本地时区的自然日分桶，一天一行。
 方向识别与字段口径见 handbook/analysis.md「巡检」。
@@ -67,14 +68,35 @@ def _day_start(day: date) -> datetime:
     return timezone.make_aware(datetime.combine(day, time.min), timezone.get_current_timezone())
 
 
-def _bounds(date_start: date, date_end: date) -> tuple[int, int]:
-    """区间 → unix 秒 ``[start, end)``（含末日全天）。"""
-    return int(_day_start(date_start).timestamp()), int(_day_start(date_end + timedelta(days=1)).timestamp())
+def _parse_window(window_start: str | None, window_end: str | None) -> tuple[time, time] | None:
+    """``HH:MM[:SS]`` → 当天的 ``[开始, 结束]``；任一为空则不限时段（整天）。"""
+    if not window_start or not window_end:
+        return None
+    start = time.fromisoformat(window_start)
+    end = time.fromisoformat(window_end)
+    if start >= end:
+        raise ValueError(f"巡检时间范围结束必须晚于开始: {start} >= {end}")
+    return start, end
 
 
-def _local_day(clock: int) -> date:
-    """Zabbix clock（unix 秒）→ 本地自然日。"""
-    return timezone.localtime(datetime.fromtimestamp(clock, tz=UTC)).date()
+def _bounds(date_start: date, date_end: date, window: tuple[time, time] | None) -> tuple[int, int]:
+    """区间 + 时段 → unix 秒 ``[start, end]``；未配置时段时取整段自然日。"""
+    tz = timezone.get_current_timezone()
+    if window is None:
+        return int(_day_start(date_start).timestamp()), int(_day_start(date_end + timedelta(days=1)).timestamp())
+    start_time, end_time = window
+    start = int(timezone.make_aware(datetime.combine(date_start, start_time), tz).timestamp())
+    # 结束时刻含当秒（TimeField 精度到秒），+1 后由 history_get 的 time_till 截断
+    return start, int(timezone.make_aware(datetime.combine(date_end, end_time), tz).timestamp()) + 1
+
+
+def _local_time(clock: int) -> datetime:
+    """Zabbix clock（unix 秒）→ 本地时区的 datetime。"""
+    return timezone.localtime(datetime.fromtimestamp(clock, tz=UTC))
+
+
+def _in_window(moment: datetime, window: tuple[time, time] | None) -> bool:
+    return window is None or window[0] <= moment.time() <= window[1]
 
 
 def _as_float(value: str | None) -> float | None:
@@ -172,9 +194,22 @@ async def _device_item_meta() -> dict[str, dict[str, str]]:
     return meta
 
 
-async def _collect_devices(days: set[date], start: int, end: int) -> list[dict[str, Any]]:
-    """设备 CPU / 内存：区间样本按 (日期, 主机) 分桶后聚合。"""
+async def _collect_devices(
+    days: set[date],
+    start: int,
+    end: int,
+    device_hosts: list[str] | None = None,
+    window: tuple[time, time] | None = None,
+) -> list[dict[str, Any]]:
+    """设备 CPU / 内存：区间样本按 (日期, 主机) 分桶后聚合。
+
+    ``device_hosts`` 为 ``None`` 时不限主机（兼容旧调用），否则只保留清单内主机；
+    空清单表示没有配置设备巡检对象，直接返回空。
+    """
     meta = await _device_item_meta()
+    if device_hosts is not None:
+        allowed = set(device_hosts)
+        meta = {itemid: info for itemid, info in meta.items() if info["host"] in allowed}
     if not meta:
         return []
     histories = await _history_values(sorted(meta), start, end, max(1, len(days)))
@@ -184,9 +219,9 @@ async def _collect_devices(days: set[date], start: int, end: int) -> list[dict[s
         if info is None:
             continue
         for clock, value in samples:
-            day = _local_day(clock)
-            if day in days:
-                buckets[(day, info["host"])][info["kind"]].append(value)
+            moment = _local_time(clock)
+            if moment.date() in days and _in_window(moment, window):
+                buckets[(moment.date(), info["host"])][info["kind"]].append(value)
 
     rows: list[dict[str, Any]] = []
     for (day, host), data in sorted(buckets.items()):
@@ -241,7 +276,13 @@ async def _interface_item_meta(targets: list[dict[str, Any]]) -> dict[str, dict[
     return meta
 
 
-async def _collect_interfaces(days: set[date], start: int, end: int, targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def _collect_interfaces(
+    days: set[date],
+    start: int,
+    end: int,
+    targets: list[dict[str, Any]],
+    window: tuple[time, time] | None = None,
+) -> list[dict[str, Any]]:
     """接口带宽：入/出方向各聚合 bps 与使用率的日均、峰值。"""
     if not targets:
         return []
@@ -256,9 +297,9 @@ async def _collect_interfaces(days: set[date], start: int, end: int, targets: li
             continue
         key = f"{info['direction']}_{info['kind']}"
         for clock, value in samples:
-            day = _local_day(clock)
-            if day in days:
-                buckets[(day, info["host"], info["ifname"])][key].append(value)
+            moment = _local_time(clock)
+            if moment.date() in days and _in_window(moment, window):
+                buckets[(moment.date(), info["host"], info["ifname"])][key].append(value)
 
     rows: list[dict[str, Any]] = []
     for (day, host, ifname), data in sorted(buckets.items()):
@@ -280,9 +321,18 @@ async def _collect_interfaces(days: set[date], start: int, end: int, targets: li
     return rows
 
 
-async def collect(date_start: str | None = None, date_end: str | None = None, targets: list[dict[str, Any]] | None = None) -> InspectionPayload:
+async def collect(
+    date_start: str | None = None,
+    date_end: str | None = None,
+    targets: list[dict[str, Any]] | None = None,
+    device_hosts: list[str] | None = None,
+    window_start: str | None = None,
+    window_end: str | None = None,
+) -> InspectionPayload:
     """采集区间内的巡检指标 → 纯 dict；日期缺省为「昨天」。
 
+    ``window_start`` / ``window_end`` 为每天采集时段（``HH:MM[:SS]``），缺省整天；
+    ``device_hosts`` 限定设备巡检对象，``None`` 表示不限（兼容旧调用）。
     单组 / 单接口失败只 warning 并跳过，全部失败的异常交给调用方记批次 ``failed``。
     """
     started = timezone.now()
@@ -293,11 +343,12 @@ async def collect(date_start: str | None = None, date_end: str | None = None, ta
         raise ValueError(f"date_start 不能晚于 date_end: {start_day} > {end_day}")
 
     days = {start_day + timedelta(days=offset) for offset in range((end_day - start_day).days + 1)}
-    start, end = _bounds(start_day, end_day)
+    window = _parse_window(window_start, window_end)
+    start, end = _bounds(start_day, end_day, window)
 
     devices, interfaces = await asyncio.gather(
-        _collect_devices(days, start, end),
-        _collect_interfaces(days, start, end, targets or []),
+        _collect_devices(days, start, end, device_hosts, window),
+        _collect_interfaces(days, start, end, targets or [], window),
         return_exceptions=True,
     )
     error = ""

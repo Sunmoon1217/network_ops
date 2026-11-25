@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import AccessFlow, DeviceMetricDaily, InspectionRun, InspectionTarget, InterfaceMetricDaily, InternetAnalysis
+from .models import (
+    AccessFlow,
+    DeviceMetricDaily,
+    InspectionConfig,
+    InspectionDeviceTarget,
+    InspectionRun,
+    InspectionTarget,
+    InterfaceMetricDaily,
+    InternetAnalysis,
+)
 
 
 @admin.register(InternetAnalysis)
@@ -47,6 +56,24 @@ class AccessFlowAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(InspectionConfig)
+class InspectionConfigAdmin(admin.ModelAdmin):
+    """巡检配置单例：时间点与采集时段，也可在「巡检」页修改。"""
+
+    list_display = ("id", "schedule_hour", "schedule_minute", "window_start", "window_end", "last_dispatch_date")
+    readonly_fields = ("last_dispatch_date", "updated_at")
+
+
+@admin.register(InspectionDeviceTarget)
+class InspectionDeviceTargetAdmin(admin.ModelAdmin):
+    """设备巡检对象：CPU / 内存采集的主机清单，人工维护。"""
+
+    list_display = ("id", "host", "enabled", "updated_at")
+    list_filter = ("enabled",)
+    search_fields = ("host",)
+    list_editable = ("enabled",)
 
 
 @admin.register(InspectionTarget)
