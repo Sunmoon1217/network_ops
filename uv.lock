@@ -237,6 +237,11 @@ wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/e9/cf/cd7fcb9d8f5a21fa420ddf19ee96969e36820182275a731abdf4260ed86a/celery-5.7.0-py3-none-any.whl", hash = "sha256:18310a9c919f9029e4735367484d93e6a25cdfd30afdc474622cc263d9b35f6e" },
 ]
 
+[package.optional-dependencies]
+redis = [
+    { name = "kombu", extra = ["redis"] },
+]
+
 [[package]]
 name = "celery-stubs"
 version = "0.1.3"
@@ -845,6 +850,12 @@ wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/84/20/f73d8e0bff9708b0f2337220be1b5d7ebd738bc3a89b63cf44d257157014/kombu-5.7.0-py3-none-any.whl", hash = "sha256:dede73bff4c89175be382c4203d2f167cf7017c384396ec75c36a1b5678f1587" },
 ]
 
+[package.optional-dependencies]
+redis = [
+    { name = "packaging" },
+    { name = "redis" },
+]
+
 [[package]]
 name = "librt"
 version = "0.16.0"
@@ -992,7 +1003,7 @@ dependencies = [
     { name = "aliyun-python-sdk-slb" },
     { name = "aliyun-python-sdk-sls" },
     { name = "aliyun-python-sdk-vpc" },
-    { name = "celery" },
+    { name = "celery", extra = ["redis"] },
     { name = "django" },
     { name = "django-filter" },
     { name = "djangorestframework" },
@@ -1004,12 +1015,9 @@ dependencies = [
     { name = "markdown" },
     { name = "mcp" },
     { name = "openpyxl" },
-    { name = "psycopg2-binary" },
     { name = "pydantic" },
-    { name = "pymysql" },
     { name = "python-docx" },
     { name = "python-dotenv" },
-    { name = "redis" },
     { name = "requests" },
     { name = "ttp" },
     { name = "uvicorn" },
@@ -1017,24 +1025,37 @@ dependencies = [
     { name = "zabbix-utils", extra = ["async"] },
 ]
 
+[package.optional-dependencies]
+mysql = [
+    { name = "pymysql" },
+]
+pg = [
+    { name = "psycopg", extra = ["binary"] },
+]
+
 [package.dev-dependencies]
-dev = [
+check = [
     { name = "celery-stubs" },
     { name = "django-stubs" },
     { name = "django-ty" },
     { name = "django-types" },
     { name = "djangorestframework-stubs" },
-    { name = "inflection" },
-    { name = "ipykernel" },
     { name = "openpyxl-stubs" },
     { name = "pyrefly" },
+    { name = "ruff" },
+    { name = "ty" },
+    { name = "types-markdown" },
+]
+dev = [
+    { name = "ipython" },
+]
+jupyter = [
+    { name = "ipykernel" },
+]
+test = [
     { name = "pytest" },
     { name = "pytest-django" },
     { name = "pytest-xdist" },
-    { name = "pyyaml" },
-    { name = "ruff" },
-    { name = "types-markdown" },
-    { name = "uritemplate" },
 ]
 
 [package.metadata]
@@ -1046,7 +1067,7 @@ requires-dist = [
     { name = "aliyun-python-sdk-slb", specifier = ">=3.3.22" },
     { name = "aliyun-python-sdk-sls", specifier = ">=1.1.2" },
     { name = "aliyun-python-sdk-vpc", specifier = ">=3.0.48" },
-    { name = "celery", specifier = ">=5.6.3" },
+    { name = "celery", extras = ["redis"], specifier = ">=5.6.3" },
     { name = "django", specifier = ">=6.1.3" },
     { name = "django-filter", specifier = ">=26.1" },
     { name = "djangorestframework", specifier = ">=3.18.0" },
@@ -1058,37 +1079,38 @@ requires-dist = [
     { name = "markdown", specifier = ">=3.11.2" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "psycopg2-binary", specifier = ">=2.9.12" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'pg'" },
     { name = "pydantic", specifier = ">=2.14.2" },
-    { name = "pymysql", specifier = ">=1.2.4" },
+    { name = "pymysql", marker = "extra == 'mysql'" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "redis", specifier = ">=8.1.0" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "ttp", specifier = ">=0.10.1" },
     { name = "uvicorn", specifier = ">=0.53.0" },
     { name = "uvicorn-worker", specifier = ">=0.4.0" },
     { name = "zabbix-utils", extras = ["async"], specifier = "==2.0.2" },
 ]
+provides-extras = ["pg", "mysql"]
 
 [package.metadata.requires-dev]
-dev = [
+check = [
     { name = "celery-stubs", specifier = ">=0.1.3" },
     { name = "django-stubs", specifier = ">=6.1.0" },
     { name = "django-ty", specifier = ">=0.8.0" },
     { name = "django-types", specifier = ">=0.24.0" },
     { name = "djangorestframework-stubs", specifier = ">=3.18.1" },
-    { name = "inflection", specifier = ">=0.5.1" },
-    { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "openpyxl-stubs", specifier = ">=0.1.25" },
-    { name = "pyrefly", specifier = ">=1.4.0" },
-    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pyrefly", specifier = ">=1.4.1" },
+    { name = "ruff", specifier = ">=0.17.4" },
+    { name = "ty", specifier = ">=0.0.107" },
+    { name = "types-markdown", specifier = ">=3.11.2.20261029" },
+]
+dev = [{ name = "ipython", specifier = ">=9.18.1" }]
+jupyter = [{ name = "ipykernel", specifier = ">=7.4.0" }]
+test = [
+    { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-django", specifier = ">=4.14.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ruff", specifier = ">=0.16.5" },
-    { name = "types-markdown", specifier = ">=3.11.2.20261029" },
-    { name = "uritemplate", specifier = ">=4.2.0" },
 ]
 
 [[package]]
@@ -1230,13 +1252,29 @@ wheels = [
 ]
 
 [[package]]
-name = "psycopg2-binary"
-version = "2.9.13"
+name = "psycopg"
+version = "3.3.9"
 source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
-sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/ed/76/7b4383014be0fcc6c1c0e24292845a14e1672cf17fca62ca0a2bd5f4563d/psycopg2_binary-2.9.13.tar.gz", hash = "sha256:e324ecf60f952d21dd11413b8bbed0951bbd99579a06fd06f28bfc37737cd373" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/b4/74/ff710399dfa9fe9b546c2f5a05ea2f9b9d1dc2145c0b59e53a3fa2013679/psycopg-3.3.9.tar.gz", hash = "sha256:87c1d85c3e0e88e811d3c0b3808f947bd967c6faf34af6cd86fd021f77793d6c" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/8d/c4/a9a67ae65ad3d567eb0fc9cdf9a5a2783b779aecdcdc8945f1807b13d99e/psycopg2_binary-2.9.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:e3861eba31f8ea8663fd876166b032fd89179e42aa63764d6feb281f13f9eb60" },
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/7d/3d/c406c9f698f518c264381192c2bdf8952ee84e469ffa9f82db1411f57385/psycopg2_binary-2.9.13-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:7e2405196a8cfe6cd3e54172a54452dcf85c241eaf2e9dde7190d7469f7f5ef7" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/52/5d/a7957d1b5484f8e5094a15b1a400929324f978b670bd4a95179e1a012ec2/psycopg-3.3.9-py3-none-any.whl", hash = "sha256:d2d7d04a1ce6dab4f5b27316bea3b52585cafa2f2d631e5b09dd69823f5c26f6" },
+]
+
+[package.optional-dependencies]
+binary = [
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
+]
+
+[[package]]
+name = "psycopg-binary"
+version = "3.3.9"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/4d/aa/f1b6e1cd71aeafa78ab33875adf0339818fe014cde197a1c0c7c419dd0b0/psycopg_binary-3.3.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a99f0b9a19ed7a56bf5d6776456b8f15f5364db8853b0f5d184db394a45c391d" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/eb/84/0ea715e106cc80a89aca36e34dd6685fa1ee75da9546d41a1d87356efb9f/psycopg_binary-3.3.9-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:30a95cb2b00b94b4ec4fd5d41de047598c60e0db26fd43bd9154152cc380b282" },
 ]
 
 [[package]]
