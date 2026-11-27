@@ -418,12 +418,10 @@ def _find_lb_backend(dst_ip: str, dst_port: str) -> list[dict]:
 
 
 def _is_ip_address(s: str) -> bool:
-    """判断是否为IP地址"""
-    try:
-        ipaddress.ip_address(s)
-        return True
-    except ValueError:
-        return False
+    """判断是否为IP地址。委托给 ``netops.utils.ip.is_valid_ip``。"""
+    from netops.utils.ip import is_valid_ip
+
+    return is_valid_ip(s)
 
 
 def trace_path(src_ip: str, dst_ip: str, dst_port: str, max_hops: int = MAX_HOPS) -> TraceResult:

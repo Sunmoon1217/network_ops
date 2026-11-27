@@ -1,6 +1,5 @@
 """Saver 基类 - 自动注册"""
 
-import ipaddress
 from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Any
@@ -97,14 +96,10 @@ class BaseSaver(ABC):
             return None
 
     def _safe_ip(self, value: Any) -> str | None:
-        """GenericIPAddressField 不接受空串和非法值，统一在这里清洗"""
-        text = str(value or "").strip()
-        if not text:
-            return None
-        try:
-            return str(ipaddress.ip_address(text))
-        except ValueError:
-            return None
+        """GenericIPAddressField 不接受空串和非法值，统一在这里清洗。委托给 ``netops.utils.ip.canon_ip_or_none``。"""
+        from netops.utils.ip import canon_ip_or_none
+
+        return canon_ip_or_none(value)
 
     def _leaf(self, value: Any) -> str:
         """取 F5 路径名字的末段：``/Common/pool_web`` → ``pool_web``。

@@ -302,12 +302,12 @@ def _format_address_entry(entry) -> str:
 
 
 def _format_service_entry(entry) -> str:
-    """服务条目的展示串：``协议/端口``（带结束端口时是 ``协议/起-止``）。"""
-    protocol = (entry.protocol or "").strip().lower()
-    port = (entry.port or "").strip()
-    port2 = (entry.port2 or "").strip()
-    if port and port2 and port2 != port:
-        port = f"{port}-{port2}"
-    if port and protocol:
-        return f"{protocol}/{port}"
-    return port or protocol or entry.name
+    """服务条目的展示串：``协议/端口``（带结束端口时是 ``协议/起-止``）。
+
+    协议/端口归一委托 ``netops.utils.ports.service_label``；额外保留
+    ``entry.name`` 兜底（展示侧比存储侧多一条：端口和协议都空时回退名字）。
+    """
+    from netops.utils.ports import service_label
+
+    label = service_label(entry.protocol, entry.port, entry.port2)
+    return label or entry.name

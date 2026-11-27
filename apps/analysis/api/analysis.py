@@ -3,7 +3,6 @@
 链路图、成员三种形态、IPv6 规范化与分隔符的取舍见 handbook/analysis.md
 """
 
-import ipaddress
 import time
 from io import BytesIO
 from typing import cast
@@ -63,20 +62,16 @@ def _parse_member_entry(entry) -> tuple[str, str, dict]:
 
 
 def _normalize_ip(value) -> str:
-    """把地址规范化为可比较形式：IPv6 统一小写压缩，非法值退化为小写文本。
+    """把地址规范化为可比较形式。委托给 ``netops.utils.ip.canon_ip_or_lower``。
 
     两边字段类型不同：``GtmVServer.ip_address`` 是 GenericIPAddressField，Django 会
     规范化（小写 + 压缩）；而 ``LtmVirtualServer.vs_address`` 是 CharField，原样存。
     直接按字符串比较时，``2001:DB8::1`` / ``2001:0db8::1`` / 展开写法都匹配不上
     同一个地址，IPv6 的链路就会断在"找不到对应的 LLB 虚拟服务器"。
     """
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return str(ipaddress.ip_address(text))
-    except ValueError:
-        return text.lower()
+    from netops.utils.ip import canon_ip_or_lower
+
+    return canon_ip_or_lower(value)
 
 
 # 分隔符用 "#" 不用 ":"（IPv6 自带冒号会分不清端口）；前端 TARGET_SEPARATOR 必须一致
