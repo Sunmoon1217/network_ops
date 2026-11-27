@@ -40,14 +40,10 @@ ComboKey = tuple[str, int, str, str, int, str, str, str, str, str]
 
 
 def _canon_ip(value: Any) -> str | None:
-    """IP 规范化：IPv6 大小写/压缩写法（``2001:DB8::1`` vs ``2001:db8::1``）必须落到同一个键。"""
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return str(ipaddress.ip_address(text))
-    except ValueError:
-        return None
+    """IP 规范化：IPv6 大小写/压缩写法必须落到同一个键。委托给 ``netops.utils.ip``。"""
+    from netops.utils.ip import canon_ip_or_none
+
+    return canon_ip_or_none(value)
 
 
 def _host_part(ip: str) -> AddrPart:
@@ -99,24 +95,17 @@ def _dim_parts(books: Iterable) -> list[AddrPart]:
     return parts or [ANY_ADDR]
 
 
-def _canon_port(value: Any) -> str:
-    """端口归一：空即空串（非 NULL，参与唯一约束），纯数字去掉前导零（080 == 80）。"""
-    text = str(value or "").strip()
-    return str(int(text)) if text.isdigit() else text
-
-
 def service_parts(service) -> tuple[str, str, str]:
     """一条 Service → ``(protocol, port, port2)``。
 
     protocol 取值与 ``Service.protocol`` 同一套（空值归 any）；port2 表示范围结束，
     与 port 相同或为空时归一成空串（``80-80`` 就是单端口）；icmp 等无端口的服务
-    两段皆空。
+    两段皆空。端口归一委托 ``netops.utils.ports.normalize_port``。
     """
+    from netops.utils.ports import normalize_port
+
     protocol = str(service.protocol or "").strip().lower() or ANY
-    port = _canon_port(service.port)
-    port2 = _canon_port(service.port2)
-    if port2 == port:
-        port2 = ""
+    port, port2 = normalize_port(service.port, service.port2)
     return (protocol, port, port2)
 
 
@@ -147,7 +136,7 @@ def expand_policy(policy) -> list[dict]:
 
     context_key = f"{policy.device_id}:{policy.pk}"
     context = _context_of(policy)
-    # action 归一进键：模型 choices 管不到「没走序列化器的手工数据」，与 _canon_port
+    # action 归一进键：模型 choices 管不到「没走序列化器的手工数据」，与端口归一
     # 同哲学——出口处兜一次底，键值恒为小写 allow/deny
     action = str(policy.action or "allow").strip().lower() or "allow"
     if action not in ("allow", "deny"):
